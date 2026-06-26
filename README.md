@@ -1,12 +1,27 @@
 # OpenDeezer
 
-A terminal Deezer client. Log in with your Deezer ARL, browse your liked songs,
-playlists and search, and stream — the track is downloaded, Blowfish
-stripe-decrypted, MP3-decoded and played **locally**. Your ARL never leaves your
-machine except in the requests it makes to Deezer.
+**An open source reimplementation of Deezer.** Log in with your Deezer ARL,
+browse your liked songs, playlists and search, and stream — the track is
+downloaded, Blowfish stripe-decrypted, MP3-decoded and played **locally**. Your
+ARL never leaves your machine except in the requests it makes to Deezer.
 
-A Bubble Tea terminal client that does the whole Deezer streaming path on your
-own machine — login, decrypt and decode — with nothing in between.
+One Go engine does the whole streaming path (login, decrypt, decode, playback);
+several native front-ends sit on top of it.
+
+## Clients
+
+| Client | Stack | Status |
+|--------|-------|--------|
+| **Terminal (TUI)** | Go · Bubble Tea | ✅ |
+| **macOS** | SwiftUI · Liquid Glass (macOS 26) | ✅ `gui/macos` |
+| **GNOME** | GTK4 · libadwaita | 🚧 `gui/gnome` |
+| **KDE** | Qt6 | 🚧 `gui/kde` |
+
+The macOS/GNOME/KDE apps link the engine as a C archive (`corelib`,
+`go build -buildmode=c-archive`) and are UI only. The sections below cover the
+terminal client; see each `gui/<platform>/README.md` for the GUIs.
+
+By **Cycl0o0**.
 
 ## Requirements
 
