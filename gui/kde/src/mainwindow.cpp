@@ -362,7 +362,7 @@ void MainWindow::buildMenu() {
     connect(about, &QAction::triggered, this, [this] {
         QMessageBox::about(
             this, "About OpenDeezer",
-            "<h3>OpenDeezer</h3>"
+            "<h3>OpenDeezer 0.2.0</h3>"
             "<p>An open source reimplementation of Deezer.</p>"
             "<p>Native KDE / Qt6 client. The engine (login, browse, Blowfish"
             " decrypt, MP3 decode, playback) is a Go core linked in-process.</p>"

@@ -15,6 +15,7 @@ qt_add_executable(opendeezer-kde
     src/mainwindow.cpp
     src/mpris.cpp
     src/settingsdialog.cpp
+    resources.qrc            # embeds the app icon (opendeezer.png)
 )
 
 # The generated C header (libdeezercore.h) lives in lib/, next to the archive.

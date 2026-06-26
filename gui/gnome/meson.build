@@ -22,6 +22,11 @@ deps = [
   dependency('gio-2.0'),
 ]
 
+# Embedded resources (app icon) compiled into the binary.
+gnome = import('gnome')
+resources = gnome.compile_resources('opendeezer-resources',
+  'data/opendeezer.gresource.xml', source_dir: 'data')
+
 # Prebuilt Go engine archive + its generated header.
 core_archive = meson.current_source_dir() / 'lib' / 'libdeezercore.a'
 dzcore = declare_dependency(
@@ -30,7 +35,7 @@ dzcore = declare_dependency(
 )
 
 executable('opendeezer-gnome',
-  'src/main.c',
+  'src/main.c', resources,
   dependencies: deps + [dzcore],
   install: true)
 

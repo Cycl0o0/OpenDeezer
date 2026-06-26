@@ -1081,7 +1081,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.0.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "0.2.0");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -1092,7 +1092,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "1.0.0",
+      "version", "0.2.0",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -1281,6 +1281,11 @@ static void on_activate(GApplication *app, gpointer data) {
 
   load_css();
   adw_style_manager_set_color_scheme(adw_style_manager_get_default(), ADW_COLOR_SCHEME_PREFER_DARK);
+
+  /* make the embedded app icon resolvable by app-id (window/shell icon) */
+  gtk_icon_theme_add_resource_path(
+      gtk_icon_theme_get_for_display(gdk_display_get_default()),
+      "/org/opendeezer/OpenDeezer/icons");
 
   App *a = g_new0(App, 1);
   a->app = ADW_APPLICATION(app);

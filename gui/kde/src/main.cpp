@@ -13,11 +13,11 @@ int main(int argc, char **argv) {
     QApplication::setOrganizationName("OpenDeezer");
     QApplication::setDesktopFileName("org.opendeezer.OpenDeezer");
 
-    // App/window icon: prefer the theme (when installed), else the PNG shipped
-    // next to the binary (build.sh copies opendeezer.png into the build dir).
-    QIcon icon = QIcon::fromTheme("org.opendeezer.OpenDeezer");
+    // App/window icon: the embedded resource works for the single binary; fall
+    // back to the installed theme icon if present.
+    QIcon icon(QStringLiteral(":/opendeezer.png"));
     if (icon.isNull())
-        icon = QIcon(QCoreApplication::applicationDirPath() + "/opendeezer.png");
+        icon = QIcon::fromTheme("org.opendeezer.OpenDeezer");
     QApplication::setWindowIcon(icon);
 
     // Background playback: hiding the window to the tray must not quit the app.
