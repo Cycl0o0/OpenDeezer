@@ -4,6 +4,8 @@ import SwiftUI
 // now-playing centre with a thin scrubber, utilities right.
 struct PlayerBar: View {
     @EnvironmentObject var app: AppState
+    @State private var scrubbing = false
+    @State private var scrub = 0.0
 
     private var isPlaying: Bool { app.state == .playing }
     private var progress: Double {
@@ -25,6 +27,8 @@ struct PlayerBar: View {
             .padding(.horizontal, 18)
             .frame(height: 66)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+            // Swallow clicks so they don't fall through to the track list behind.
+            .contentShape(RoundedRectangle(cornerRadius: 22))
         }
     }
 
@@ -72,16 +76,19 @@ struct PlayerBar: View {
 
     private var scrubber: some View {
         HStack(spacing: 6) {
-            Text(Track.timeText(app.positionMs))
+            Text(Track.timeText(scrubbing ? Int64(scrub * Double(app.durationMs)) : app.positionMs))
                 .font(.system(size: 9)).monospacedDigit().foregroundStyle(DZ.textSec)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(DZ.hairline).frame(height: 3)
-                    Capsule().fill(DZ.accent).frame(width: progress * g.size.width, height: 3)
-                }
-                .frame(maxHeight: .infinity, alignment: .center)
-            }
-            .frame(height: 3)
+            Slider(value: Binding(
+                get: { scrubbing ? scrub : progress },
+                set: { scrub = $0 }),
+                in: 0...1,
+                onEditingChanged: { editing in
+                    scrubbing = editing
+                    if !editing { app.seek(toFraction: scrub) }
+                })
+            .controlSize(.mini)
+            .tint(DZ.accent)
+            .disabled(app.current == nil)
             Text(Track.timeText(app.durationMs))
                 .font(.system(size: 9)).monospacedDigit().foregroundStyle(DZ.textSec)
         }

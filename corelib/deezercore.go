@@ -258,6 +258,9 @@ func DZTogglePause() { withPlayer(func(p *audio.Player) { p.TogglePause() }) }
 //export DZStop
 func DZStop() { withPlayer(func(p *audio.Player) { p.Stop() }) }
 
+//export DZSeek
+func DZSeek(ms C.longlong) { withPlayer(func(p *audio.Player) { p.SeekMS(int64(ms)) }) }
+
 //export DZState
 func DZState() C.int {
 	v := 0

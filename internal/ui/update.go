@@ -208,6 +208,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "-", "_":
 		m.status = volStatus(m.player.AddVolume(-0.1))
 		return m, nil
+	case "left":
+		m.player.SeekMS(m.player.PositionMS() - 10000)
+		return m, nil
+	case "right":
+		m.player.SeekMS(m.player.PositionMS() + 10000)
+		return m, nil
 	case "s":
 		m.player.Stop()
 		m.playing = false

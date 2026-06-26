@@ -58,6 +58,7 @@ enum Core {
     }
     static func togglePause() { DZTogglePause() }
     static func stop() { DZStop() }
+    static func seek(_ ms: Int64) { DZSeek(ms) }
     static func setVolume(_ v: Double) { DZSetVolume(v) }
     static var volume: Double { DZVolume() }
     static var state: PlayerState { PlayerState(rawValue: Int(DZState())) ?? .stopped }

@@ -183,7 +183,11 @@ final class AppState: ObservableObject {
         Core.setVolume(v)
     }
 
-    func seekRelativeUnsupported() {} // streaming path has no seek (yet)
+    func seek(toFraction f: Double) {
+        let ms = Int64(max(0, min(1, f)) * Double(durationMs))
+        positionMs = ms              // optimistic; the timer reconciles
+        Core.seek(ms)
+    }
 
     // MARK: polling
 

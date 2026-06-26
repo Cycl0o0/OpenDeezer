@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -46,17 +47,18 @@ const (
 	bytesPerSec = sampleRate * channels * 2 // s16 stereo
 )
 
-// Player owns a single oto context and plays one track at a time.
+// Player owns a single oto context and plays one track at a time. The whole
+// track is downloaded + Blowfish-decrypted up front into a seekable reader so
+// that scrubbing works (the streaming CDN body is not seekable).
 type Player struct {
 	ctx *oto.Context
 
 	mu       sync.Mutex
 	cur      *oto.Player
-	prefetch *prefetchReader
-	httpBody io.Closer
+	decoder  *mp3.Decoder
 
 	state    atomic.Int32
-	played   atomic.Int64 // decoded PCM bytes consumed by oto
+	played   atomic.Int64 // decoded PCM bytes consumed by oto (position)
 	totalMS  atomic.Int64
 	lastErr  atomic.Value // string
 	volume   atomic.Uint64 // float64 bits, 0..1
@@ -135,7 +137,7 @@ func (c countReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// Play stops any current track and starts streaming the given plan.
+// Play downloads + decrypts the whole track, then decodes and plays it.
 func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
 	p.Stop()
 	p.state.Store(int32(Loading))
@@ -154,29 +156,31 @@ func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
 		p.fail(err)
 		return err
 	}
-
-	dr, err := newDecryptReader(resp.Body, plan.TrackID)
+	enc, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
-		resp.Body.Close()
-		p.fail(err)
-		return err
-	}
-	decoder, err := mp3.NewDecoder(dr)
-	if err != nil {
-		resp.Body.Close()
 		p.fail(err)
 		return err
 	}
 
-	// Read ahead so a network stall drains a cushion instead of starving oto.
-	pf := newPrefetchReader(decoder)
-	player := p.ctx.NewPlayer(countReader{r: pf, p: p})
+	// Decrypt the whole BF_CBC_STRIPE buffer, then decode from a seekable reader.
+	mp3bytes, err := deezer.DecryptTrack(plan.TrackID, enc)
+	if err != nil {
+		p.fail(err)
+		return err
+	}
+	decoder, err := mp3.NewDecoder(bytes.NewReader(mp3bytes))
+	if err != nil {
+		p.fail(err)
+		return err
+	}
+
+	player := p.ctx.NewPlayer(countReader{r: decoder, p: p})
 	player.SetVolume(p.Volume())
 
 	p.mu.Lock()
 	p.cur = player
-	p.prefetch = pf
-	p.httpBody = resp.Body
+	p.decoder = decoder
 	p.mu.Unlock()
 
 	player.Play()
@@ -186,6 +190,42 @@ func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
 	return nil
 }
 
+// SeekMS jumps to an absolute position by seeking the decoded stream and
+// rebuilding the oto player (to flush its buffered audio).
+func (p *Player) SeekMS(ms int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.decoder == nil || p.cur == nil {
+		return
+	}
+	if ms < 0 {
+		ms = 0
+	}
+	if total := p.totalMS.Load(); total > 0 && ms > total {
+		ms = total
+	}
+	off := ms * bytesPerSec / 1000
+	off -= off % (channels * 2) // align to a whole stereo frame
+	if _, err := p.decoder.Seek(off, io.SeekStart); err != nil {
+		return
+	}
+	p.played.Store(off)
+
+	wasPlaying := p.State() == Playing
+	old := p.cur
+	np := p.ctx.NewPlayer(countReader{r: p.decoder, p: p})
+	np.SetVolume(p.Volume())
+	p.cur = np
+	old.Pause()
+	old.Close()
+	np.Play()
+	if !wasPlaying {
+		np.Pause()
+		p.state.Store(int32(Paused))
+	}
+	go p.watch(np)
+}
+
 func (p *Player) watch(player *oto.Player) {
 	for {
 		time.Sleep(200 * time.Millisecond)
@@ -193,7 +233,7 @@ func (p *Player) watch(player *oto.Player) {
 		cur := p.cur
 		p.mu.Unlock()
 		if cur != player {
-			return // superseded by another Play/Stop
+			return // superseded by another Play/Seek/Stop
 		}
 		if !player.IsPlaying() && p.State() == Playing {
 			p.mu.Lock()
@@ -248,21 +288,14 @@ func (p *Player) Stop() {
 	p.state.Store(int32(Stopped))
 }
 
-// teardownLocked releases the current player + readers. Caller holds p.mu.
+// teardownLocked releases the current player + decoder. Caller holds p.mu.
 func (p *Player) teardownLocked() {
 	if p.cur != nil {
 		p.cur.Pause()
 		p.cur.Close()
 		p.cur = nil
 	}
-	if p.prefetch != nil {
-		p.prefetch.Close()
-		p.prefetch = nil
-	}
-	if p.httpBody != nil {
-		p.httpBody.Close()
-		p.httpBody = nil
-	}
+	p.decoder = nil
 }
 
 func (p *Player) fail(err error) {
