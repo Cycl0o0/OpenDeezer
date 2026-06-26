@@ -1,0 +1,4 @@
+.build/
+Deezer.app/
+Clib/libdeezercore.a
+Clib/libdeezercore.h

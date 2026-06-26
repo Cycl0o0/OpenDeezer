@@ -1,0 +1,4 @@
+module CDeezerCore {
+    header "libdeezercore.h"
+    export *
+}
