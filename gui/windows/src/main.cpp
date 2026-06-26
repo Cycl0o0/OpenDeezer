@@ -62,6 +62,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <coroutine>
 
 // ---- The Go engine's C ABI (libdeezercore.dll). cdecl, all POD params. -------
 extern "C" {
@@ -110,13 +111,27 @@ namespace wut   = winrt::Windows::UI::Text;
 namespace wsys  = winrt::Windows::System;
 namespace wm    = winrt::Windows::Media;
 namespace wf    = winrt::Windows::Foundation;
-using IInspectable = winrt::Windows::Foundation::IInspectable;
 using winrt::box_value;
 using winrt::unbox_value_or;
 using winrt::hstring;
 using winrt::to_hstring;
 using winrt::to_string;
 using winrt::fire_and_forget;
+
+// winrt::resume_foreground only accepts Windows::System::DispatcherQueue; add an
+// awaiter for WinUI 3's Microsoft::UI::Dispatching::DispatcherQueue so coroutines
+// can hop back onto the UI thread. Found unqualified at the call sites via ADL.
+inline auto resume_foreground(mud::DispatcherQueue const& dq) {
+    struct awaiter {
+        mud::DispatcherQueue dq;
+        bool await_ready() const noexcept { return false; }
+        bool await_suspend(std::coroutine_handle<> h) const {
+            return dq.TryEnqueue([h] { h.resume(); }); // false => resume inline
+        }
+        void await_resume() const noexcept {}
+    };
+    return awaiter{ dq };
+}
 
 // ---- wire models (mirror corelib jTrack/jAlbum/jPlaylist) -------------------
 struct Track    { hstring id, name, artistLine, albumName, artworkUrl; int64_t durationMs = 0; };
@@ -523,7 +538,7 @@ private:
         co_await winrt::resume_background();
         auto bytes = FetchBytes(url);
         if (bytes.empty()) co_return;
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         if (isCover) { if (token != m_playGen) co_return; }
         else         { if (token != m_artGen)  co_return; } // list reloaded -> drop stale
         try {
@@ -556,7 +571,7 @@ private:
         co_await winrt::resume_background();
         std::string s = to_string(arl);
         int ok = DZInit(s.data());
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         if (ok) {
             m_loggedIn = true;
             DZSetQuality(m_settings.quality); // apply persisted quality on startup
@@ -604,7 +619,7 @@ private:
         if (!m_loggedIn) co_return;
         co_await winrt::resume_background();
         auto tracks = ParseTracks(TakeJson(DZFavoritesJSON()));
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         m_tracks = std::move(tracks);
         ++m_artGen;
         FillTrackList(m_trackList, m_tracks);
@@ -615,7 +630,7 @@ private:
         if (!m_loggedIn) co_return;
         co_await winrt::resume_background();
         auto ps = ParsePlaylists(TakeJson(DZPlaylistsJSON()));
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         m_playlists = std::move(ps);
         ++m_artGen;
         FillPlaylistGrid();
@@ -628,7 +643,7 @@ private:
         co_await winrt::resume_background();
         std::string s = to_string(p.id);
         auto tracks = ParseTracks(TakeJson(DZPlaylistTracksJSON(s.data())));
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         m_tracks = std::move(tracks);
         ++m_artGen;
         FillTrackList(m_trackList, m_tracks);
@@ -641,7 +656,7 @@ private:
         co_await winrt::resume_background();
         std::string s = to_string(a.id);
         auto tracks = ParseTracks(TakeJson(DZAlbumTracksJSON(s.data())));
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         m_tracks = std::move(tracks);
         ++m_artGen;
         FillTrackList(m_trackList, m_tracks);
@@ -658,7 +673,7 @@ private:
         auto tracks = ParseTracks(json);
         auto albums = ParseAlbums(json);
         auto plists = ParsePlaylists(json);
-        co_await winrt::resume_foreground(m_win.DispatcherQueue());
+        co_await resume_foreground(m_win.DispatcherQueue());
         m_searchTracks = std::move(tracks);
         m_searchAlbums = std::move(albums);
         m_searchPlaylists = std::move(plists);
