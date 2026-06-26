@@ -1,0 +1,29 @@
+; Module-definition file for the Go c-shared engine (libdeezercore.dll).
+; Used by lib.exe to generate the MSVC import library (build.ps1 step 2):
+;   lib /def:libdeezercore.def /machine:x64 /out:lib\libdeezercore.lib
+; Lists every DZ* export from corelib/deezercore.go.
+LIBRARY libdeezercore
+EXPORTS
+  DZInit
+  DZUserID
+  DZFavoritesJSON
+  DZPlaylistsJSON
+  DZPlaylistTracksJSON
+  DZAlbumTracksJSON
+  DZSearchJSON
+  DZPlay
+  DZPause
+  DZResume
+  DZTogglePause
+  DZStop
+  DZSeek
+  DZState
+  DZPositionMS
+  DZDurationMS
+  DZSetVolume
+  DZVolume
+  DZFinishedCount
+  DZLastErrorJSON
+  DZFree
+  DZFetch
+  DZFreeBytes

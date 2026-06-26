@@ -1,0 +1,14 @@
+.DS_Store
+# build output
+/bin/
+/obj/
+/Generated Files/
+/.vs/
+*.user
+# NuGet restore
+/packages/
+# generated engine artifacts
+/lib/libdeezercore.dll
+/lib/libdeezercore.lib
+/lib/libdeezercore.exp
+/lib/libdeezercore.h

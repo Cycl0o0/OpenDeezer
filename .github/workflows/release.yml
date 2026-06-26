@@ -148,7 +148,8 @@ jobs:
         run: cd gui/windows; ./build.ps1
       - name: Zip
         shell: pwsh
-        run: Compress-Archive -Path gui/windows/build/x64/Release/* -DestinationPath OpenDeezer-windows-x64.zip
+        # build.ps1 / the vcxproj emit to bin\x64\Release (exe + WinAppSDK DLLs + libdeezercore.dll).
+        run: Compress-Archive -Path gui/windows/bin/x64/Release/* -DestinationPath OpenDeezer-windows-x64.zip
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
