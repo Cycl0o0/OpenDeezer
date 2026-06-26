@@ -11,21 +11,21 @@ struct PlayerBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            transport
-            Spacer(minLength: 12)
-            nowPlaying
-            Spacer(minLength: 12)
-            utilities
+        // Liquid Glass (macOS 26): the bar is one glass surface; the play button
+        // is its own tinted, interactive glass shape that morphs within the
+        // container.
+        GlassEffectContainer(spacing: 18) {
+            HStack(spacing: 16) {
+                transport
+                Spacer(minLength: 12)
+                nowPlaying
+                Spacer(minLength: 12)
+                utilities
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 66)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
         }
-        .padding(.horizontal, 16)
-        .frame(height: 64)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(DZ.panelBG)
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(DZ.hairline))
-                .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
-        )
     }
 
     private var transport: some View {
@@ -36,9 +36,9 @@ struct PlayerBar: View {
             Button { app.togglePause() } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(DZ.textPri)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(DZ.accent))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .glassEffect(.regular.tint(DZ.accent).interactive(), in: Circle())
             }
             .buttonStyle(.plain)
             iconButton("forward.fill", size: 16, tint: DZ.textPri) { app.next() }

@@ -6,7 +6,8 @@ import PackageDescription
 // (re)build that archive before `swift build`.
 let package = Package(
     name: "DeezerGUI",
-    platforms: [.macOS(.v14)],
+    // Liquid Glass (WWDC25) ships in macOS 26 (Tahoe).
+    platforms: [.macOS("26.0")],
     targets: [
         .systemLibrary(name: "CDeezerCore", path: "Clib"),
         .executableTarget(

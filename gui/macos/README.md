@@ -7,6 +7,11 @@ decode, playback) is the Go core compiled to a C static archive
 
 ## Look
 
+- **Liquid Glass (macOS 26):** the floating player bar, play button, hero
+  Play/Shuffle buttons and search field use `.glassEffect` / `.buttonStyle(.glass)`;
+  the play button is interactive tinted glass and the bar morphs inside a
+  `GlassEffectContainer`. Hero artwork bleeds under the glass toolbar via
+  `.backgroundExtensionEffect()`.
 - **Theme:** Deezer "Electric Violet" `#A238FF` accent on a deep purple-black
   `#14041E`, defined in `Palette.swift`.
 - **Layout:** source-list sidebar (Search / Library) with a pinned account row,
@@ -25,8 +30,9 @@ make run          # builds the Go archive + app bundle, then opens Deezer.app
 Targets: `make corelib` (Go → `Clib/libdeezercore.a`), `make build`
 (`swift build -c release`), `make app` (assemble `Deezer.app`), `make run`.
 
-Needs Xcode/Swift 5.9+ and Go 1.24+. ARL is read from `$DEEZER_ARL` or
-`~/.config/deezertui/arl.txt` (same as the TUI).
+Needs **macOS 26 (Tahoe)** + Xcode 26 (Swift 6.2) for the Liquid Glass APIs, and
+Go 1.24+. ARL is read from `$DEEZER_ARL` or `~/.config/deezertui/arl.txt` (same
+as the TUI).
 
 ## Architecture
 

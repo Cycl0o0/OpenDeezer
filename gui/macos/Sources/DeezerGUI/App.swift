@@ -204,6 +204,8 @@ struct HeroHeader: View {
                 }
             }
             .frame(height: 280).clipped()
+            // Let the ambient artwork bleed up under the Liquid Glass toolbar.
+            .backgroundExtensionEffect()
 
             HStack(alignment: .bottom, spacing: 22) {
                 heroArt
@@ -217,11 +219,13 @@ struct HeroHeader: View {
                         Button { app.playAll() } label: {
                             Label("Play", systemImage: "play.fill")
                         }
+                        .buttonStyle(.glassProminent).tint(DZ.accent)
                         Button { app.shuffleAll() } label: {
                             Label("Shuffle", systemImage: "shuffle")
                         }
+                        .buttonStyle(.glass)
                     }
-                    .buttonStyle(.borderedProminent).tint(DZ.accent).controlSize(.large)
+                    .controlSize(.large)
                     .padding(.top, 4)
                 }
                 Spacer()
@@ -383,8 +387,8 @@ struct SearchView: View {
                     .textFieldStyle(.plain).foregroundStyle(DZ.textPri)
                     .onSubmit { app.runSearch() }
             }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(DZ.panelBG))
+            .padding(12)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 10)
 
             List {

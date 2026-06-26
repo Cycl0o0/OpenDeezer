@@ -5,7 +5,7 @@ APP     := Deezer.app
 BIN     := DeezerGUI
 BUILDIR := .build/$(CONFIG)
 # Match the SDK so the Go archive and Swift link target agree.
-export MACOSX_DEPLOYMENT_TARGET := 14.0
+export MACOSX_DEPLOYMENT_TARGET := 26.0
 
 .PHONY: all corelib build app run clean
 
