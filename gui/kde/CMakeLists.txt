@@ -6,7 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # List every Qt component explicitly (Qt >= 6.7.2 requires it).
 # DBus powers the MPRIS2 media-controls bridge (system overlay / media keys).
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent DBus)
+# WebEngineWidgets powers the embedded Deezer login webview + automatic ARL
+# cookie capture (src/logindialog.cpp); needs the qt6-webengine-dev package.
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent DBus WebEngineWidgets)
 find_package(Threads REQUIRED)
 qt_standard_project_setup()            # enables AUTOMOC/UIC/RCC
 
@@ -15,6 +17,7 @@ set(OPENDEEZER_SRCS
     src/mainwindow.cpp
     src/mpris.cpp
     src/settingsdialog.cpp
+    src/logindialog.cpp      # Deezer login webview + arl cookie capture
     resources.qrc            # embeds the app icon (opendeezer.png)
 )
 
@@ -24,7 +27,7 @@ qt_add_executable(opendeezer-kde ${OPENDEEZER_SRCS} src/standalone.cpp)
 qt_add_library(opendeezer-qt SHARED ${OPENDEEZER_SRCS})
 target_include_directories(opendeezer-qt PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(opendeezer-qt PRIVATE
-    Qt6::Widgets Qt6::Concurrent Qt6::DBus
+    Qt6::Widgets Qt6::Concurrent Qt6::DBus Qt6::WebEngineWidgets
     deezercore Threads::Threads asound ${CMAKE_DL_LIBS} m)
 
 # The generated C header (libdeezercore.h) lives in lib/, next to the archive.
@@ -43,6 +46,7 @@ target_link_libraries(opendeezer-kde PRIVATE
     Qt6::Widgets
     Qt6::Concurrent
     Qt6::DBus
+    Qt6::WebEngineWidgets
     deezercore
     Threads::Threads      # -pthread
     asound

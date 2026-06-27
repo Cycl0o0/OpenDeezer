@@ -30,18 +30,27 @@ cd gui/kde
 ### Dependencies (Debian/Ubuntu/KDE Neon)
 
 ```sh
-sudo apt install build-essential cmake pkg-config qt6-base-dev libasound2-dev
+sudo apt install build-essential cmake pkg-config qt6-base-dev \
+                 qt6-webengine-dev libasound2-dev
 # plus Go 1.26+ (https://go.dev/dl) — `go` must be on PATH
 ```
 
-`qt6-base-dev` provides Qt6 Widgets + Concurrent; `libasound2-dev` is needed at
-link time because the Go engine (via `oto/v3`) links ALSA (`-lasound`). At
-runtime the host just needs `libasound.so.2`.
+`qt6-base-dev` provides Qt6 Widgets + Concurrent; `qt6-webengine-dev` provides
+Qt6 WebEngineWidgets for the embedded Deezer login (`QWebEngineView`);
+`libasound2-dev` is needed at link time because the Go engine (via `oto/v3`)
+links ALSA (`-lasound`). At runtime the host just needs `libasound.so.2` and the
+Qt6 WebEngine runtime (`libqt6webenginewidgets6` / `qt6-qtwebengine`).
 
-## ARL
+## Login
 
-Login reads the ARL from `$DEEZER_ARL`, or `~/.config/opendeezer/arl.txt`
-(legacy `~/.config/deezertui/arl.txt` is also accepted) — same as the TUI.
+On first launch a **Log in with Deezer** dialog opens an embedded webview at the
+Deezer web login; once you sign in, the app captures the `arl` session cookie
+automatically and writes it to `~/.config/opendeezer/arl.txt` so the next launch
+auto-logs-in — no copy/paste needed. A manual ARL field is offered as a fallback.
+
+Login also still reads an existing ARL from `$DEEZER_ARL`, or
+`~/.config/opendeezer/arl.txt` (legacy `~/.config/deezertui/arl.txt` is also
+accepted) — same as the TUI. If a stored ARL is stale, the login dialog reopens.
 
 ## Architecture
 

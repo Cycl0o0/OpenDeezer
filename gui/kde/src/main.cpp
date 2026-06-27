@@ -11,6 +11,11 @@
 // executable wraps it with a trivial main (standalone.cpp).
 extern "C" __attribute__((visibility("default")))
 int opendeezer_run(int argc, char **argv) {
+    // QtWebEngine (the embedded Deezer login webview, src/logindialog.cpp) shares
+    // an OpenGL context with the GUI; this attribute must be set before the
+    // QApplication is constructed. Harmless when the webview is never opened.
+    QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+
     QApplication app(argc, argv);
     QApplication::setApplicationName("OpenDeezer");
     QApplication::setApplicationDisplayName("OpenDeezer");

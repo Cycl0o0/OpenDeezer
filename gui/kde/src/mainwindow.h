@@ -132,6 +132,8 @@ private:
 
     // ---- flow / browse (all heavy work on a worker thread) ----
     void startLogin();
+    void promptLogin();                       // webview / manual-ARL login dialog
+    void finishLogin(const QByteArray &acct); // post-login bring-up (shared path)
     void onSidebarChanged(int row);
     void loadFavorites();
     void loadFlow();

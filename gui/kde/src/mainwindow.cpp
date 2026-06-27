@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "logindialog.h"
 #include "mpris.h"
 #include "settingsdialog.h"
 
@@ -227,6 +228,12 @@ QString loadARL() {
         }
     }
     return QString();
+}
+
+// Where a captured/entered ARL is written so the next launch auto-logs-in. Must
+// match the path loadARL() reads (~/.config/opendeezer/arl.txt).
+QString arlConfigPath() {
+    return QDir::homePath() + "/.config/opendeezer/arl.txt";
 }
 
 // The app icon: prefer the embedded official logo (Qt resource), then the
@@ -850,10 +857,8 @@ QWidget *MainWindow::buildTransport() {
 void MainWindow::startLogin() {
     const QString arl = loadARL();
     if (arl.isEmpty()) {
-        statusBar()->showMessage("No ARL found");
-        QMessageBox::warning(this, "OpenDeezer",
-                             "No ARL found.\nSet $DEEZER_ARL or write"
-                             " ~/.config/opendeezer/arl.txt");
+        // No stored ARL — offer the webview / manual-entry login dialog.
+        promptLogin();
         return;
     }
     const QByteArray ab = arl.toUtf8();
@@ -866,39 +871,59 @@ void MainWindow::startLogin() {
             acct = takeJson(DZAccountJSON());
         QMetaObject::invokeMethod(this, [this, ok, acct] {
             if (ok) {
-                m_loggedIn = true;
-                applyAccount(acct);          // tier + HiFi/HQ entitlements
-                m_lastFinished = DZFinishedCount();
-                m_vol->setValue(static_cast<int>(qRound(DZVolume() * 100)));
-                // ReplayGain: apply the persisted preference, then mirror back
-                // the engine's actual state from DZReplayGain.
-                DZSetReplayGain(SettingsDialog::loadReplayGain(settingsPath()) ? 1 : 0);
-                m_replayGain = (DZReplayGain() != 0);
-                // Gapless / crossfade / output device: apply persisted prefs and
-                // mirror the engine's actual state back into the cached fields.
-                DZSetGapless(SettingsDialog::loadGapless(settingsPath()) ? 1 : 0);
-                m_gapless = (DZGapless() != 0);
-                DZSetCrossfadeMS(SettingsDialog::loadCrossfadeMs(settingsPath()));
-                m_crossfadeMs = DZCrossfadeMS();
-                const QString dev = SettingsDialog::loadOutputDevice(settingsPath());
-                if (!dev.isEmpty()) {
-                    const QByteArray db = dev.toUtf8();
-                    DZSetAudioDevice(cstr(db));
-                }
-                applyQuality(m_quality);     // apply persisted quality (+ entitlement note)
-                m_poll->start();
-                m_sidebar->setCurrentRow(0); // triggers loadFavorites()
-                const QString conn = (m_haveAccount && !m_accountName.isEmpty())
-                    ? m_accountName + " · " + m_accountOffer
-                    : QStringLiteral("Connected");
-                statusBar()->showMessage(conn, 4000);
+                finishLogin(acct);
             } else {
-                statusBar()->showMessage("Login failed");
-                QMessageBox::critical(this, "OpenDeezer",
-                                      "Login failed — invalid or expired ARL.");
+                // The stored ARL is stale — fall back to the login dialog so the
+                // user can re-authenticate without editing files by hand.
+                statusBar()->showMessage("Stored login expired — please sign in", 4000);
+                promptLogin();
             }
         }, Qt::QueuedConnection);
     });
+}
+
+// Show the Deezer login dialog (embedded webview with automatic arl capture, or
+// manual ARL entry). The dialog verifies + persists the ARL with DZInit itself,
+// so on Accepted the engine is already logged in; we just bring the app up.
+void MainWindow::promptLogin() {
+    statusBar()->showMessage("Log in to continue");
+    LoginDialog dlg(arlConfigPath(), this);
+    if (dlg.exec() == QDialog::Accepted) {
+        finishLogin(takeJson(DZAccountJSON()));
+    } else {
+        statusBar()->showMessage("Not logged in");
+    }
+}
+
+// Post-login bring-up shared by the auto-login (stored ARL) and dialog paths.
+// The engine is already logged in by the time this runs; acct is DZAccountJSON.
+void MainWindow::finishLogin(const QByteArray &acct) {
+    m_loggedIn = true;
+    applyAccount(acct);          // tier + HiFi/HQ entitlements
+    m_lastFinished = DZFinishedCount();
+    m_vol->setValue(static_cast<int>(qRound(DZVolume() * 100)));
+    // ReplayGain: apply the persisted preference, then mirror back the engine's
+    // actual state from DZReplayGain.
+    DZSetReplayGain(SettingsDialog::loadReplayGain(settingsPath()) ? 1 : 0);
+    m_replayGain = (DZReplayGain() != 0);
+    // Gapless / crossfade / output device: apply persisted prefs and mirror the
+    // engine's actual state back into the cached fields.
+    DZSetGapless(SettingsDialog::loadGapless(settingsPath()) ? 1 : 0);
+    m_gapless = (DZGapless() != 0);
+    DZSetCrossfadeMS(SettingsDialog::loadCrossfadeMs(settingsPath()));
+    m_crossfadeMs = DZCrossfadeMS();
+    const QString dev = SettingsDialog::loadOutputDevice(settingsPath());
+    if (!dev.isEmpty()) {
+        const QByteArray db = dev.toUtf8();
+        DZSetAudioDevice(cstr(db));
+    }
+    applyQuality(m_quality);     // apply persisted quality (+ entitlement note)
+    m_poll->start();
+    m_sidebar->setCurrentRow(0); // triggers loadFavorites()
+    const QString conn = (m_haveAccount && !m_accountName.isEmpty())
+        ? m_accountName + " · " + m_accountOffer
+        : QStringLiteral("Connected");
+    statusBar()->showMessage(conn, 4000);
 }
 
 // ---- browse ---------------------------------------------------------------
