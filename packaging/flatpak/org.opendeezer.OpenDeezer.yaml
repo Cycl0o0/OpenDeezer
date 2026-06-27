@@ -1,0 +1,46 @@
+# Flatpak manifest for the OpenDeezer GNOME (GTK4/libadwaita) client.
+#
+# The GNOME runtime ships GTK4, libadwaita and WebKitGTK (for the login web view);
+# Go comes from the freedesktop golang SDK extension.
+#
+# NOTE on Flathub: the build below fetches Go modules, which Flathub's sandbox
+# forbids (no network at build time). For Flathub submission, vendor the modules
+# and drop the `--share=network` build-arg — generate a sources manifest with
+# flatpak-builder-tools (flatpak-go-mod / flatpak-go-vendor). For a LOCAL build
+# (`flatpak-builder --user --install build org.opendeezer.OpenDeezer.yaml`) the
+# network build-arg below is sufficient.
+app-id: org.opendeezer.OpenDeezer
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: opendeezer-gnome
+finish-args:
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.mpris.MediaPlayer2.OpenDeezer
+build-options:
+  append-path: /usr/lib/sdk/golang/bin
+  env:
+    GOFLAGS: "-trimpath"
+modules:
+  - name: opendeezer
+    buildsystem: simple
+    # For a local build, allow network so `go build` can fetch modules.
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - cd gui/gnome && chmod +x build.sh && ./build.sh
+      - install -Dm755 gui/gnome/opendeezer-gnome /app/bin/opendeezer-gnome
+      - install -Dm644 gui/gnome/data/org.opendeezer.OpenDeezer.desktop /app/share/applications/org.opendeezer.OpenDeezer.desktop
+      - install -Dm644 gui/gnome/data/opendeezer.png /app/share/icons/hicolor/256x256/apps/org.opendeezer.OpenDeezer.png
+    sources:
+      - type: git
+        url: https://github.com/Cycl0o0/OpenDeezer.git
+        tag: v0.4.0
