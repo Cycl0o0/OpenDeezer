@@ -62,8 +62,10 @@ type Model struct {
 	lyrics      *deezer.Lyrics
 	lyricsTrack string
 
-	acct        deezer.Account // logged-in plan + entitlements
-	pendingSeek int64          // ms to seek to once the next stream is ready (resume)
+	acct          deezer.Account // logged-in plan + entitlements
+	pendingSeek   int64          // ms to seek to once the next stream is ready (resume)
+	searchPodcast bool           // search screen is in podcast mode
+	episodeMode   bool           // current queue is podcast episodes (plain streams)
 
 	media mpris.Controller // OS media controls (MPRIS on Linux, no-op elsewhere)
 
@@ -164,6 +166,14 @@ type playlistsMsg struct {
 	playlists []deezer.Playlist
 }
 type searchMsg struct{ results *deezer.SearchResults }
+type podcastsMsg struct {
+	title    string
+	podcasts []deezer.Podcast
+}
+type episodesMsg struct {
+	title    string
+	episodes []deezer.Episode
+}
 type lyricsMsg struct {
 	trackID string
 	lyrics  *deezer.Lyrics
@@ -174,6 +184,7 @@ type streamReadyMsg struct {
 	track deezer.Track
 }
 type errMsg struct{ err error }
+type statusMsg struct{ text string }
 type tickMsg time.Time
 type trackFinishedMsg struct{}
 type artMsg struct {
@@ -282,6 +293,57 @@ func (m *Model) lyricsCmd(t deezer.Track) tea.Cmd {
 	return func() tea.Msg {
 		l, err := m.client.Lyrics(t.ID)
 		return lyricsMsg{trackID: t.ID, lyrics: l, err: err}
+	}
+}
+
+func (m *Model) flowCmd() tea.Cmd {
+	return func() tea.Msg {
+		ts, err := m.client.Flow()
+		if err != nil {
+			return errMsg{err}
+		}
+		return tracksMsg{title: "⚡ Flow", tracks: ts}
+	}
+}
+
+func (m *Model) podcastSearchCmd(q string) tea.Cmd {
+	return func() tea.Msg {
+		ps, err := m.client.SearchPodcasts(q)
+		if err != nil {
+			return errMsg{err}
+		}
+		return podcastsMsg{title: "🎙 Podcasts", podcasts: ps}
+	}
+}
+
+func (m *Model) episodesCmd(p deezer.Podcast) tea.Cmd {
+	return func() tea.Msg {
+		es, err := m.client.PodcastEpisodes(p.ID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return episodesMsg{title: p.Name, episodes: es}
+	}
+}
+
+// episodeStreamCmd resolves + plays a podcast episode (plain stream).
+func (m *Model) episodeStreamCmd(t deezer.Track) tea.Cmd {
+	return func() tea.Msg {
+		plan, err := m.client.PodcastEpisodeStream(t.ID)
+		if err != nil {
+			return errMsg{fmt.Errorf("resolve episode %q: %w", t.Name, err)}
+		}
+		return streamReadyMsg{plan: plan, track: t}
+	}
+}
+
+// likeCurrentCmd adds the currently playing track to favorites.
+func (m *Model) likeCurrentCmd(t deezer.Track) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.AddFavoriteTrack(t.ID); err != nil {
+			return errMsg{err}
+		}
+		return statusMsg{"❤ Liked: " + t.Name}
 	}
 }
 

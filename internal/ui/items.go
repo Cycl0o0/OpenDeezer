@@ -11,6 +11,8 @@ const (
 	rowPlaylist
 	rowAlbum
 	rowArtist
+	rowPodcast
+	rowEpisode
 )
 
 // menuAction is the action a rowMenu triggers.
@@ -22,6 +24,8 @@ const (
 	actSearch
 	actCharts
 	actResume
+	actFlow
+	actPodcasts
 )
 
 // row is a single list entry. It implements bubbles/list.Item.
@@ -34,6 +38,8 @@ type row struct {
 	playlist deezer.Playlist   // for rowPlaylist
 	album    deezer.Album      // for rowAlbum
 	artist   deezer.ArtistInfo // for rowArtist
+	podcast  deezer.Podcast    // for rowPodcast
+	episode  deezer.Episode    // for rowEpisode
 }
 
 func (r row) Title() string       { return r.title }
@@ -62,4 +68,16 @@ func albumRow(a deezer.Album) row {
 
 func artistRow(a deezer.ArtistInfo) row {
 	return row{kind: rowArtist, title: "♪ " + a.Name, desc: "artist", artist: a}
+}
+
+func podcastRow(p deezer.Podcast) row {
+	return row{kind: rowPodcast, title: "🎙 " + p.Name, desc: "podcast", podcast: p}
+}
+
+func episodeRow(e deezer.Episode) row {
+	d := e.ReleaseDate
+	if d == "" {
+		d = "episode"
+	}
+	return row{kind: rowEpisode, title: e.Title, desc: d, episode: e}
 }

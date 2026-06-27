@@ -38,3 +38,14 @@ EXPORTS
   DZLyricsJSON
   DZSetReplayGain
   DZReplayGain
+  DZAddFavorite
+  DZRemoveFavorite
+  DZAddToPlaylist
+  DZRemoveFromPlaylist
+  DZCreatePlaylist
+  DZRenamePlaylist
+  DZDeletePlaylist
+  DZFlowJSON
+  DZSearchPodcastsJSON
+  DZPodcastEpisodesJSON
+  DZPlayEpisode

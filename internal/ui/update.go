@@ -26,7 +26,9 @@ func (m *Model) menuRows() []list.Item {
 	rows = append(rows,
 		row{kind: rowMenu, title: "❤  Liked Songs", desc: "your favorite tracks", action: actLiked},
 		row{kind: rowMenu, title: "≡  My Playlists", desc: "playlists you own", action: actPlaylists},
+		row{kind: rowMenu, title: "⚡ Flow", desc: "your personalized stream", action: actFlow},
 		row{kind: rowMenu, title: "📈 Charts", desc: "top tracks, albums & artists", action: actCharts},
+		row{kind: rowMenu, title: "🎙 Podcasts", desc: "search shows & episodes", action: actPodcasts},
 		row{kind: rowMenu, title: "🔍 Search", desc: "tracks, albums, artists, playlists", action: actSearch},
 	)
 	return rows
@@ -75,11 +77,47 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			items[i] = trackRow(t)
 		}
 		m.q.Set(msg.tracks, 0)
+		m.episodeMode = false
 		m.list.Title = msg.title
 		m.list.SetItems(items)
 		m.list.ResetSelected()
 		m.screen = screenList
 		m.status = ""
+		return m, nil
+
+	case podcastsMsg:
+		m.loading = false
+		items := make([]list.Item, len(msg.podcasts))
+		for i, p := range msg.podcasts {
+			items[i] = podcastRow(p)
+		}
+		m.list.Title = msg.title
+		m.list.SetItems(items)
+		m.list.ResetSelected()
+		m.screen = screenList
+		m.status = ""
+		return m, nil
+
+	case episodesMsg:
+		m.loading = false
+		items := make([]list.Item, len(msg.episodes))
+		q := make([]deezer.Track, len(msg.episodes))
+		for i, e := range msg.episodes {
+			items[i] = episodeRow(e)
+			q[i] = e.AsTrack()
+		}
+		m.q.Set(q, 0)
+		m.episodeMode = true
+		m.list.Title = msg.title
+		m.list.SetItems(items)
+		m.list.ResetSelected()
+		m.screen = screenList
+		m.status = ""
+		return m, nil
+
+	case statusMsg:
+		m.loading = false
+		m.status = msg.text
 		return m, nil
 
 	case playlistsMsg:
@@ -112,6 +150,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Keep tracks as the playable queue context.
 		m.q.Set(msg.results.Tracks, 0)
+		m.episodeMode = false
 		m.list.Title = "Results"
 		m.list.SetItems(items)
 		m.list.ResetSelected()
@@ -230,8 +269,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if q == "" {
 				return m, nil
 			}
-			m.status = "Searching…"
 			m.loading = true
+			if m.searchPodcast {
+				m.status = "Searching podcasts…"
+				return m, m.podcastSearchCmd(q)
+			}
+			m.status = "Searching…"
 			return m, m.searchCmd(q)
 		}
 		var cmd tea.Cmd
@@ -261,6 +304,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.next()
 	case "p":
 		return m, m.prev()
+	case "f":
+		// Like the current track.
+		if t, ok := m.q.Current(); ok && !m.episodeMode {
+			m.status = "Liking…"
+			return m, m.likeCurrentCmd(t)
+		}
+		return m, nil
 	case "r":
 		m.status = "Repeat: " + m.q.CycleRepeat().String()
 		return m, nil
@@ -391,7 +441,18 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			m.status = "Loading charts…"
 			m.loading = true
 			return m, m.chartsCmd()
+		case actFlow:
+			m.status = "Loading Flow…"
+			m.loading = true
+			return m, m.flowCmd()
 		case actSearch:
+			m.searchPodcast = false
+			m.search.SetValue("")
+			m.search.Focus()
+			m.screen = screenSearch
+			return m, nil
+		case actPodcasts:
+			m.searchPodcast = true
 			m.search.SetValue("")
 			m.search.Focus()
 			m.screen = screenSearch
@@ -399,6 +460,7 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 		case actResume:
 			if r := LoadResume(); r != nil {
 				m.q.Set([]deezer.Track{r.Track()}, 0)
+				m.episodeMode = false
 				m.pendingSeek = r.PositionMS
 				return m, m.playCurrent()
 			}
@@ -419,6 +481,20 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 		m.status = "Loading artist…"
 		m.loading = true
 		return m, m.artistTopCmd(it.artist)
+	case rowPodcast:
+		m.status = "Loading episodes…"
+		m.loading = true
+		return m, m.episodesCmd(it.podcast)
+	case rowEpisode:
+		// Episodes are already loaded as the queue (episodeMode); play the row.
+		idx := m.list.Index()
+		ts := m.q.Tracks()
+		if idx >= 0 && idx < len(ts) && ts[idx].ID == it.episode.ID {
+			m.q.SetIndex(idx)
+		} else {
+			m.q.SetIndex(m.findInQueue(it.episode.ID))
+		}
+		return m, m.playCurrent()
 	case rowPlaylist:
 		m.status = "Loading playlist…"
 		m.loading = true
@@ -448,6 +524,9 @@ func (m *Model) playCurrent() tea.Cmd {
 	}
 	m.status = "Loading: " + t.Name
 	m.loading = true
+	if m.episodeMode {
+		return m.episodeStreamCmd(t)
+	}
 	return m.streamCmd(t)
 }
 

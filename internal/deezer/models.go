@@ -75,6 +75,39 @@ type Chart struct {
 	Playlists []Playlist
 }
 
+// Podcast is a show (search/browse result).
+type Podcast struct {
+	ID           string
+	Name         string
+	Description  string
+	ArtworkURL   string
+	EpisodeCount int
+}
+
+// Episode is one podcast episode. Episodes stream as plain (unencrypted) MP3.
+type Episode struct {
+	ID          string
+	Title       string
+	Description string
+	ArtworkURL  string
+	DurationMS  int64
+	ReleaseDate string
+	PodcastName string
+}
+
+// AsTrack adapts an episode to a Track so the existing queue/player/now-playing
+// paths can carry it (episodes play via a plain StreamPlan).
+func (e Episode) AsTrack() Track {
+	return Track{
+		ID:         e.ID,
+		Name:       e.Title,
+		DurationMS: e.DurationMS,
+		Artists:    []Artist{{Name: e.PodcastName}},
+		AlbumName:  e.PodcastName,
+		ArtworkURL: e.ArtworkURL,
+	}
+}
+
 // Playlist is a search/browse result.
 type Playlist struct {
 	ID         string

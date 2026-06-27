@@ -570,3 +570,178 @@ func DZReplayGain() C.int {
 	})
 	return C.int(v)
 }
+
+// ---- library write ops (v0.4) — return 1 on success, 0 on failure ----
+
+func ok(err error) C.int {
+	if err != nil {
+		return 0
+	}
+	return 1
+}
+
+func curClient() *deezer.Client {
+	mu.Lock()
+	defer mu.Unlock()
+	return client
+}
+
+//export DZAddFavorite
+func DZAddFavorite(trackID *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	return ok(c.AddFavoriteTrack(C.GoString(trackID)))
+}
+
+//export DZRemoveFavorite
+func DZRemoveFavorite(trackID *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	return ok(c.RemoveFavoriteTrack(C.GoString(trackID)))
+}
+
+//export DZAddToPlaylist
+func DZAddToPlaylist(playlistID, trackID *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	return ok(c.AddToPlaylist(C.GoString(playlistID), C.GoString(trackID)))
+}
+
+//export DZRemoveFromPlaylist
+func DZRemoveFromPlaylist(playlistID, trackID *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	return ok(c.RemoveFromPlaylist(C.GoString(playlistID), C.GoString(trackID)))
+}
+
+// DZCreatePlaylist creates an empty playlist and returns its id as a JSON
+// string {"id":"..."} (or {"error":"..."}).
+//
+//export DZCreatePlaylist
+func DZCreatePlaylist(title *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	id, err := c.CreatePlaylist(C.GoString(title), nil)
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	return jsonStr(map[string]string{"id": id}, nil)
+}
+
+//export DZRenamePlaylist
+func DZRenamePlaylist(playlistID, title *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	return ok(c.RenamePlaylist(C.GoString(playlistID), C.GoString(title)))
+}
+
+//export DZDeletePlaylist
+func DZDeletePlaylist(playlistID *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	return ok(c.DeletePlaylist(C.GoString(playlistID)))
+}
+
+// DZFlowJSON returns the user's Flow personalized stream: {tracks:[...]}.
+//
+//export DZFlowJSON
+func DZFlowJSON() *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ts, err := c.Flow()
+	return jsonStr(map[string]any{"tracks": toJTracks(ts)}, err)
+}
+
+// ---- podcasts (v0.4) ----
+
+type jPodcast struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ArtworkURL   string `json:"artworkUrl"`
+	EpisodeCount int    `json:"episodeCount"`
+}
+
+type jEpisode struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ArtworkURL  string `json:"artworkUrl"`
+	DurationMS  int64  `json:"durationMs"`
+	ReleaseDate string `json:"releaseDate"`
+}
+
+// DZSearchPodcastsJSON returns {podcasts:[...]} for a query.
+//
+//export DZSearchPodcastsJSON
+func DZSearchPodcastsJSON(q *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ps, err := c.SearchPodcasts(C.GoString(q))
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	out := make([]jPodcast, len(ps))
+	for i, p := range ps {
+		out[i] = jPodcast{ID: p.ID, Name: p.Name, Description: p.Description, ArtworkURL: p.ArtworkURL, EpisodeCount: p.EpisodeCount}
+	}
+	return jsonStr(map[string]any{"podcasts": out}, nil)
+}
+
+// DZPodcastEpisodesJSON returns {episodes:[...]} for a show id.
+//
+//export DZPodcastEpisodesJSON
+func DZPodcastEpisodesJSON(podcastID *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	es, err := c.PodcastEpisodes(C.GoString(podcastID))
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	out := make([]jEpisode, len(es))
+	for i, e := range es {
+		out[i] = jEpisode{ID: e.ID, Title: e.Title, Description: e.Description, ArtworkURL: e.ArtworkURL, DurationMS: e.DurationMS, ReleaseDate: e.ReleaseDate}
+	}
+	return jsonStr(map[string]any{"episodes": out}, nil)
+}
+
+// DZPlayEpisode resolves + plays a podcast episode (plain, unencrypted stream).
+//
+//export DZPlayEpisode
+func DZPlayEpisode(episodeID *C.char, durationMS C.longlong) C.int {
+	mu.Lock()
+	c := client
+	p := player
+	mu.Unlock()
+	if c == nil || p == nil {
+		return 0
+	}
+	plan, err := c.PodcastEpisodeStream(C.GoString(episodeID))
+	if err != nil {
+		return 0
+	}
+	if err := p.Play(plan, int64(durationMS)); err != nil {
+		return 0
+	}
+	return 1
+}

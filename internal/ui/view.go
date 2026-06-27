@@ -287,6 +287,7 @@ func (m *Model) helpView() string {
 		{"/", "search (tracks, artists, albums, playlists)"},
 		{"space", "play / pause"},
 		{"n / p", "next / previous track"},
+		{"f", "like the current track"},
 		{"← / →", "seek −10s / +10s"},
 		{"+ / -", "volume up / down"},
 		{"z", "toggle shuffle"},
