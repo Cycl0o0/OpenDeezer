@@ -538,6 +538,11 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 
 void MainWindow::buildMenu() {
     auto *file = menuBar()->addMenu("&File");
+    // Reachable even when already auto-logged-in from a stored ARL — opens the
+    // Deezer web-login dialog on demand (sign in / switch account).
+    auto *login = file->addAction("&Log in / Switch account…");
+    connect(login, &QAction::triggered, this, [this] { promptLogin(); });
+    file->addSeparator();
     auto *settings = file->addAction("&Settings…");
     settings->setShortcut(QKeySequence::Preferences);
     connect(settings, &QAction::triggered, this, &MainWindow::openSettings);

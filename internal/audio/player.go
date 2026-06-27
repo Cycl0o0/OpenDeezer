@@ -190,6 +190,14 @@ func (p *Player) initDevice(deviceID *malgo.DeviceID) error {
 	cfg.Playback.Format = malgo.FormatS16
 	cfg.Playback.Channels = channels
 	cfg.SampleRate = sampleRate
+	// Use a large hardware period (~100ms × 4 ≈ 400ms total). The default period
+	// is tiny (~10ms on CoreAudio), so a Go GC pause longer than that delays the
+	// realtime callback and underruns the device — audible as choppy playback,
+	// especially in the GUI/c-archive process where GC pressure is higher (the
+	// idle TUI doesn't show it). A larger buffer coasts through GC pauses. The
+	// extra output latency is irrelevant for a music player.
+	cfg.Periods = 4
+	cfg.PeriodSizeInMilliseconds = 100
 	if deviceID != nil {
 		cfg.Playback.DeviceID = deviceID.Pointer()
 	}

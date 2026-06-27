@@ -161,9 +161,16 @@ void LoginDialog::showWebLogin() {
                 this, &LoginDialog::onCookieAdded);
         profile->cookieStore()->loadAllCookies();
 
-        // Insert the view into the web page's layout (below the back bar).
+        // Insert the view into the web page's layout (below the back bar). Give
+        // it stretch + a minimum size — without stretch the QWebEngineView gets
+        // its (tiny) size hint and collapses to ~0px, so "nothing shows up".
         auto *page = m_stack->widget(1);
-        page->layout()->addWidget(m_web);
+        if (auto *box = qobject_cast<QVBoxLayout *>(page->layout()))
+            box->addWidget(m_web, 1);
+        else
+            page->layout()->addWidget(m_web);
+        m_web->setMinimumSize(480, 560);
+        m_web->show();
         m_web->load(QUrl(QString::fromUtf8(kLoginUrl)));
     }
     m_status->setVisible(false);
