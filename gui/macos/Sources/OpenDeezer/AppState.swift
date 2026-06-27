@@ -3,7 +3,7 @@ import SwiftUI
 
 // Section is the sidebar selection.
 enum Section: Hashable {
-    case liked, playlists, search
+    case liked, playlists, search, charts
 }
 
 enum RepeatMode: Int { case off, all, one }
@@ -14,6 +14,8 @@ final class AppState: ObservableObject {
     @Published var loginError: String?
     @Published var busy = false
     @Published var userID = ""
+    @Published var account: Account?            // plan + entitlements (DZAccountJSON)
+    @Published var replayGain = false           // loudness normalization (engine-owned)
     @Published var showCredits = false
     @Published var showSettings = false
 
@@ -64,12 +66,16 @@ final class AppState: ObservableObject {
         busy = true
         Task.detached {
             let ok = Core.initialize(arl: arl)
+            // Plan/entitlements are populated by login; fetch off the main thread.
+            let acct = ok ? Core.account() : nil
             await MainActor.run {
                 self.busy = false
                 self.loggedIn = ok
                 if ok {
                     self.userID = Core.userID
+                    self.account = acct
                     self.volume = Core.volume
+                    self.replayGain = Core.replayGain
                     // Apply persisted audio quality, claim the OS Now Playing
                     // slot's command handlers, and wire up the tray.
                     Core.setQuality(self.settings.quality)
@@ -99,6 +105,27 @@ final class AppState: ObservableObject {
         return nil
     }
 
+    // Sidebar/about label for the signed-in account, e.g. "Jane · Premium".
+    var accountLabel: String {
+        if let a = account, !a.name.isEmpty {
+            return a.offer.isEmpty ? a.name : "\(a.name) · \(a.offer)"
+        }
+        return userID.isEmpty ? "—" : "user \(userID)"
+    }
+
+    // Warns when the chosen quality exceeds the account's entitlement; nil otherwise.
+    var qualityEntitlementNote: String? {
+        guard let a = account else { return nil }
+        let plan = a.offer.isEmpty ? "plan" : "\(a.offer) plan"
+        if settings.quality >= 2 && !a.canHifi {
+            return "Your \(plan) doesn't include HiFi (FLAC); playback falls back to MP3."
+        }
+        if settings.quality >= 1 && !a.canHq {
+            return "Your \(plan) doesn't include High (MP3 320); playback falls back to MP3 128."
+        }
+        return nil
+    }
+
     // MARK: browse
 
     func loadFavorites() {
@@ -122,6 +149,22 @@ final class AppState: ObservableObject {
         listIsLiked = false
         listSubtitle = p.owner.isEmpty ? "Playlist" : "Playlist · \(p.owner)"
         runList { Core.playlistTracks(p.id) }
+    }
+    // Global charts, rendered in the shared track-list screen.
+    func loadCharts() {
+        section = .charts
+        listTitle = "Charts"
+        listIsLiked = false
+        listSubtitle = "Top tracks worldwide"
+        busy = true
+        Task.detached {
+            let ts = Core.charts()?.tracks ?? []
+            await MainActor.run {
+                self.tracks = ts
+                self.listArtwork = ts.first?.artworkUrl ?? ""
+                self.busy = false
+            }
+        }
     }
     func openAlbum(_ a: Album) {
         listTitle = a.name
@@ -237,6 +280,12 @@ final class AppState: ObservableObject {
         settings.closeToTray = on
         tray.closeToTray = on
         settings.save()
+    }
+
+    // ReplayGain is owned by the engine (no persisted setting); mirror its state.
+    func setReplayGain(_ on: Bool) {
+        replayGain = on
+        Core.setReplayGain(on)
     }
 
     // MARK: polling

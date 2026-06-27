@@ -39,6 +39,13 @@ enum Core {
         return String(cString: p)
     }
 
+    // MARK: account
+
+    /// Logged-in plan + entitlements; nil until login completes.
+    static func account() -> Account? {
+        decode(Account.self, takeJSON(DZAccountJSON()))
+    }
+
     // MARK: browse
 
     static func favorites() -> [Track] {
@@ -55,6 +62,18 @@ enum Core {
     }
     static func search(_ q: String) -> SearchResponse? {
         decode(SearchResponse.self, takeJSON(withC(q) { DZSearchJSON($0) }))
+    }
+    static func charts() -> ChartsResponse? {
+        decode(ChartsResponse.self, takeJSON(DZChartsJSON()))
+    }
+    static func artistTop(_ id: String) -> [Track] {
+        decode(TracksResponse.self, takeJSON(withC(id) { DZArtistTopJSON($0) }))?.tracks ?? []
+    }
+    static func artistProfile(_ id: String) -> ArtistProfile? {
+        decode(ArtistProfile.self, takeJSON(withC(id) { DZArtistProfileJSON($0) }))
+    }
+    static func lyrics(_ id: String) -> Lyrics? {
+        decode(Lyrics.self, takeJSON(withC(id) { DZLyricsJSON($0) }))
     }
 
     // MARK: playback
@@ -78,4 +97,10 @@ enum Core {
     /// Quality level: 0 = Normal (MP3 128), 1 = High (MP3 320), 2 = HiFi (FLAC).
     static func setQuality(_ level: Int) { DZSetQuality(Int32(level)) }
     static var quality: Int { Int(DZQuality()) }
+
+    // MARK: replay gain
+
+    /// Loudness normalization. The engine owns the value; init UI from `replayGain`.
+    static func setReplayGain(_ on: Bool) { DZSetReplayGain(on ? 1 : 0) }
+    static var replayGain: Bool { DZReplayGain() == 1 }
 }

@@ -49,6 +49,53 @@ struct SearchResponse: Codable {
 }
 struct ErrorResponse: Codable { let error: String }
 
+// Account tier + entitlements (DZAccountJSON).
+struct Account: Codable {
+    let userId: String
+    let name: String
+    let offer: String
+    let canHq: Bool
+    let canHifi: Bool
+    let loggedIn: Bool
+}
+
+// Artist summary (jArtistInfo) used by charts / artist profile.
+struct ArtistInfo: Codable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let artworkUrl: String
+    let nbFans: Int
+}
+
+// Global charts (DZChartsJSON).
+struct ChartsResponse: Codable {
+    let tracks: [Track]
+    let albums: [Album]
+    let artists: [ArtistInfo]
+    let playlists: [Playlist]
+}
+
+// Artist profile page (DZArtistProfileJSON).
+struct ArtistProfile: Codable {
+    let artist: ArtistInfo
+    let top: [Track]
+    let albums: [Album]
+    let related: [ArtistInfo]
+}
+
+// One timed lyric line (DZLyricsJSON.synced[]).
+struct LyricLine: Codable, Hashable {
+    let timeMs: Int64
+    let text: String
+}
+
+// Track lyrics (DZLyricsJSON).
+struct Lyrics: Codable {
+    let plain: String
+    let synced: [LyricLine]
+    let isSynced: Bool
+}
+
 // PlayerState mirrors audio.State in the Go core.
 enum PlayerState: Int {
     case stopped = 0, loading, playing, paused, errored

@@ -83,6 +83,7 @@ struct Sidebar: View {
                     switch sel {
                     case .liked: app.loadFavorites()
                     case .playlists: app.loadPlaylists()
+                    case .charts: app.loadCharts()
                     case .search: break
                     }
                 })) {
@@ -91,6 +92,7 @@ struct Sidebar: View {
                 SwiftUI.Section {
                     SidebarLabel("Liked Songs", "heart.fill", .liked)
                     SidebarLabel("Playlists", "music.note.list", .playlists)
+                    SidebarLabel("Charts", "chart.bar.fill", .charts)
                 } header: {
                     Text("Library")
                         .font(.system(size: 11, weight: .bold)).textCase(.uppercase)
@@ -127,14 +129,25 @@ struct SidebarLabel: View {
 struct AccountRow: View {
     @EnvironmentObject var app: AppState
     let userID: String
+
+    private var accountName: String {
+        if let a = app.account, !a.name.isEmpty { return a.name }
+        return "OpenDeezer"
+    }
+    private var accountSubtitle: String {
+        if let a = app.account, !a.offer.isEmpty { return a.offer }
+        return userID.isEmpty ? "—" : "user \(userID)"
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "person.crop.circle.fill")
                 .font(.system(size: 26)).foregroundStyle(DZ.accent)
             VStack(alignment: .leading, spacing: 1) {
-                Text("OpenDeezer").font(.system(size: 13, weight: .medium)).foregroundStyle(DZ.textPri)
-                Text(userID.isEmpty ? "—" : "user \(userID)")
-                    .font(.system(size: 11)).foregroundStyle(DZ.textSec)
+                Text(accountName).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DZ.textPri).lineLimit(1)
+                Text(accountSubtitle)
+                    .font(.system(size: 11)).foregroundStyle(DZ.textSec).lineLimit(1)
             }
             Spacer()
             Button { app.showSettings = true } label: {
@@ -168,6 +181,11 @@ struct CreditsView: View {
                 .font(.callout).foregroundStyle(DZ.textSec)
             Text("by Cycl0o0").font(.body).foregroundStyle(DZ.accent)
 
+            if app.loggedIn {
+                Text("Signed in as \(app.accountLabel)")
+                    .font(.caption).foregroundStyle(DZ.textSec)
+            }
+
             Divider().frame(width: 240)
 
             VStack(spacing: 4) {
@@ -196,7 +214,7 @@ struct DetailView: View {
     var body: some View {
         Group {
             switch app.section {
-            case .liked:
+            case .liked, .charts:
                 TrackListScreen()
             case .playlists:
                 if app.tracks.isEmpty {

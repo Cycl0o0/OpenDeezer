@@ -66,7 +66,27 @@ struct SettingsView: View {
                     .labelsHidden()
                     Text("HiFi streams lossless FLAC when your account and the track support it, otherwise falls back to MP3. Applied immediately and on next launch.")
                         .font(.caption).foregroundStyle(DZ.textSec)
+                    if let note = app.qualityEntitlementNote {
+                        Label(note, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(DZ.accentMag)
+                    }
                 }
+            }
+
+            // Volume normalization (ReplayGain)
+            settingsCard {
+                Toggle(isOn: Binding(
+                    get: { app.replayGain },
+                    set: { app.setReplayGain($0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Volume normalization", systemImage: "speaker.wave.2.fill")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                        Text("Evens out loudness differences between tracks (ReplayGain).")
+                            .font(.caption).foregroundStyle(DZ.textSec)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(DZ.accent)
             }
 
             // Background playback
