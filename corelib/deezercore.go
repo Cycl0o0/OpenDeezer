@@ -321,7 +321,8 @@ func DZSearchJSON(q *C.char) *C.char {
 		pls[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
 	}
 	return jsonStr(map[string]any{
-		"tracks": toJTracks(r.Tracks), "albums": albums, "playlists": pls,
+		"tracks": toJTracks(r.Tracks), "albums": albums,
+		"artists": toJArtistInfos(r.Artists), "playlists": pls,
 	}, nil)
 }
 
