@@ -64,7 +64,7 @@ type Lyrics struct {
 	Synced []LyricLine
 }
 
-// Synced reports whether time-synced lyrics are present.
+// IsSynced reports whether time-synced lyrics are present.
 func (l Lyrics) IsSynced() bool { return len(l.Synced) > 0 }
 
 // Chart is the global/genre top lists from the public REST /chart endpoint.

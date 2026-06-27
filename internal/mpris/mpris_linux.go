@@ -33,7 +33,7 @@ func New(cmds Commands) Controller {
 
 	props, err := prop.Export(conn, objPath, c.spec())
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return noop{}
 	}
 	c.props = props
@@ -106,7 +106,7 @@ func (c *linuxController) Update(s State) {
 
 func (c *linuxController) Close() {
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 	}
 }
 
@@ -149,7 +149,9 @@ func (o playerObj) SetPosition(_ dbus.ObjectPath, posUS int64) *dbus.Error {
 	}
 	return nil
 }
-func (playerObj) OpenUri(string) *dbus.Error { return nil }
+// OpenUri must keep this exact name: it maps to the MPRIS D-Bus method
+// org.mpris.MediaPlayer2.Player.OpenUri via godbus reflection.
+func (playerObj) OpenUri(string) *dbus.Error { return nil } //nolint:staticcheck // ST1003: D-Bus method name fixed by MPRIS spec
 
 // node is the introspection data so desktops can discover the interfaces.
 func (c *linuxController) node() *introspect.Node {

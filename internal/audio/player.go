@@ -1,3 +1,6 @@
+// Package audio is the oto-backed playback engine: it downloads, decrypts and
+// decodes Deezer streams (MP3 + FLAC) and plays one track at a time with seek,
+// volume and ReplayGain support.
 package audio
 
 import (
@@ -381,7 +384,7 @@ func (p *Player) Stop() {
 func (p *Player) teardownLocked() {
 	if p.cur != nil {
 		p.cur.Pause()
-		p.cur.Close()
+		_ = p.cur.Close()
 		p.cur = nil
 	}
 	p.src = nil
