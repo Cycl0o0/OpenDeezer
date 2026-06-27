@@ -1,10 +1,11 @@
 # OpenDeezer
 
-**An open source reimplementation of Deezer.** Log in with your Deezer ARL,
-browse your liked songs, playlists and search, and stream — the track is
-downloaded, Blowfish stripe-decrypted, decoded and played **locally** (MP3, or
-FLAC on HiFi). Your ARL never leaves your machine except in the requests it
-makes to Deezer.
+**An open source reimplementation of Deezer.** Log in once (the GUIs sign you in
+through an embedded Deezer web view — no ARL hunting), then browse your liked
+songs, playlists, charts, artists and search, and stream — each track is
+streamed, Blowfish stripe-decrypted, decoded and played **locally**, in memory
+(MP3, or FLAC on HiFi). Your ARL never leaves your machine except in the requests
+it makes to Deezer.
 
 One Go engine does the whole streaming path (login, decrypt, decode, playback);
 six native front-ends sit on top of it. By **Cycl0o0**.
@@ -29,19 +30,45 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
 
 ## Features
 
+**Browse & discover**
+- Liked songs, your playlists, and full **search** — tracks, artists, albums, playlists.
+- **Charts** — global top tracks, albums, artists and playlists.
+- **Artist pages** — top tracks, discography and related artists.
+- **Synced lyrics** — karaoke-style, line-by-line; plain-text fallback.
+- **Deezer Flow** — your personalized, endless track stream.
+- **Podcasts** — search shows, browse episodes, play.
+
+**Library editing**
+- **Like / unlike** tracks; **add to playlist**; **create / rename / delete** playlists.
+
+**Playback**
 - **Quality tiers** — Normal (MP3 128), High (MP3 320), **HiFi (FLAC lossless)**;
   HiFi auto-falls-back to MP3 when your account or the track isn't entitled.
-- Liked songs, playlists, search; shuffle, repeat, seek, volume.
+- **Gapless** transitions, **crossfade**, **ReplayGain** loudness normalization.
+- **Output-device selection** (powered by the malgo/miniaudio backend).
+- Shuffle, repeat (off/all/one), seek, volume; **resume** the last track on launch.
+- Shows the **actual output format** that's playing (e.g. "FLAC · lossless").
 - **OS media controls + now-playing** — MPRIS on Linux (GNOME/KDE/TUI media keys
   + overlays), Now Playing + media keys on macOS, SMTC on Windows.
+
+**Accounts & UX**
+- **One-click login** — sign in via the embedded Deezer web view; the ARL is
+  captured automatically (manual ARL entry still available).
+- Shows your **account tier** after login; a clear "ARL expired" re-login prompt.
 - **Background playback** / close-to-tray in the GUIs.
-- Shows the **actual output format** that's playing (e.g. "FLAC · lossless").
 - Album art (truecolor half-blocks in the TUI; native everywhere else).
+- TUI extras: queue view, lyrics, help screen, themes, vim keys, resume.
 - Settings persisted to `~/.config/opendeezer/`; ARL stays local.
 
 ## Install
 
-Download a binary from [Releases](../../releases), or build the TUI:
+Download a binary from [Releases](../../releases).
+
+**GUIs** — just launch and click **Log in with Deezer**: an embedded web view
+opens the Deezer login, and once you're in, your session (ARL) is captured
+automatically and saved locally for next time. No manual token needed.
+
+**Terminal (TUI)** — build it and provide your ARL:
 
 ```sh
 make build          # -> ./opendeezer   (or: go build -o opendeezer ./cmd/opendeezer)
@@ -50,46 +77,68 @@ make build          # -> ./opendeezer   (or: go build -o opendeezer ./cmd/opende
 ```
 
 Or pass it inline: `DEEZER_ARL=<your-arl> ./opendeezer`. For the GUIs, see each
-`gui/<platform>/README.md` for build steps.
+`gui/<platform>/README.md` for build steps. A Homebrew formula is in
+`packaging/homebrew/`.
 
-Your ARL is the `arl` cookie from an authenticated `deezer.com` browser session.
-Treat it like a password — it grants access to your account.
+Your ARL is the `arl` cookie from an authenticated `deezer.com` browser session
+(the GUI web-login grabs it for you). Treat it like a password — it grants
+access to your account.
 
 ## Requirements
 
 - A Deezer **Premium** account (HiFi tier for FLAC).
-- Building from source: **Go 1.24+** and a working audio device.
+- Building from source: **Go 1.25+**, a C compiler, and a working audio device.
+  The audio backend is [malgo](https://github.com/gen2brain/malgo) (miniaudio),
+  so **cgo is required on every platform** (Linux/macOS/Windows).
 - **Linux**: ALSA dev headers (`libasound2-dev`); plus the toolkit dev packages
-  for the GUIs (GTK4/libadwaita/json-glib, and/or Qt6).
-- **macOS GUI**: macOS 26 (Tahoe) + Xcode 26 for the Liquid Glass APIs.
+  for the GUIs — GTK4/libadwaita/json-glib **and `libwebkitgtk-6.0-dev`** (GNOME
+  web-login), and/or Qt6 **and `qt6-webengine-dev`** (KDE web-login).
+- **macOS GUI**: macOS 26 (Tahoe) + Xcode 26 for the Liquid Glass APIs (the login
+  web view uses the system WebKit framework — no extra dependency).
 - **Windows GUI**: Windows 10 1809+/11, Visual Studio 2022 + Windows App SDK,
-  and MinGW-w64 (Go cgo builds the engine DLL).
+  MinGW-w64 (Go cgo builds the engine DLL), and the Edge **WebView2** runtime
+  (preinstalled on Windows 11) for the login web view.
 - TUI album art needs a 256-color or truecolor terminal.
 
 ## TUI controls
 
 | Key | Action | | Key | Action |
 |-----|--------|-|-----|--------|
-| ↑/↓ | move | | z | toggle shuffle |
-| enter | open / play | | r | cycle repeat (off→all→one) |
-| esc / ⌫ | back | | +/- | volume |
-| space | play / pause | | ←/→ | seek ±10s |
-| n / p | next / prev | | h | quality (Normal→High→HiFi) |
-| / | search | | c | now-playing + art |
-| s | stop | | ? | credits · q quit |
+| ↑/↓ or j/k | move | | z | toggle shuffle |
+| g / G | top / bottom | | r | cycle repeat (off→all→one) |
+| enter | open / play | | +/- | volume |
+| esc / ⌫ | back | | ←/→ | seek ±10s |
+| space | play / pause | | h | quality (Normal→High→HiFi) |
+| n / p | next / prev | | R | toggle ReplayGain |
+| f | like current track | | x | cycle crossfade |
+| / | search | | ctrl+g | toggle gapless |
+| l | lyrics (synced) | | d | output device |
+| u | queue view | | c | now-playing + art |
+| s | stop | | t | cycle theme |
+| ? | help | | i | about · q quit |
+
+Home screen entries: Liked Songs · My Playlists · ⚡ Flow · 📈 Charts ·
+🎙 Podcasts · 🔍 Search (and ▶ Resume when a saved position exists).
 
 ## How it works
 
 ```
-ARL ─login (gw-light)→ browse (gw + public REST)
+ARL ─login (gw-light)→ browse (gw + public REST): search, charts, artists,
+                       lyrics, Flow, podcasts, library writes
                      → resolve track → encrypted CDN URL (MP3 128/320 or FLAC)
-                     → HTTP GET → Blowfish BF_CBC_STRIPE decrypt
-                     → MP3 (go-mp3) / FLAC (mewkiz) decode → PCM out (oto)
+                     → streaming download → Blowfish BF_CBC_STRIPE decrypt
+                       (plain stream for podcast episodes)
+                     → MP3 (go-mp3) / FLAC (mewkiz) decode → PCM ring
+                     → malgo (miniaudio) output device → speakers
 ```
 
-- `internal/deezer` — login, browse, track→URL resolve, the stripe decryptor.
-- `internal/audio` — decrypt + MP3/FLAC decode + seekable playback.
+- `internal/deezer` — login, browse (search/charts/artists/lyrics/Flow/podcasts),
+  library writes, track→URL resolve, the stripe decryptor.
+- `internal/audio` — malgo backend: streaming buffer → decode → PCM ring with
+  seek, ReplayGain, gapless, crossfade and output-device selection.
+- `internal/queue` — the shared playback queue (shuffle/repeat/history).
 - `internal/mpris` — Linux MPRIS media controls.
+- `internal/log` — leveled file logging (`$OPENDEEZER_LOG`).
 - `internal/ui` — the Bubble Tea TUI.
 - `corelib` — the engine exposed as a C ABI (`-buildmode=c-archive` for
   macOS/Linux, `-buildmode=c-shared` DLL for Windows) so the native GUIs link it.
@@ -100,9 +149,11 @@ Clone the repo, then build whichever client you want — they all build the same
 Go engine (`corelib`) underneath. Each `build.sh` / `build.ps1` compiles the
 engine first, then the native app.
 
-**Terminal (any OS)** — Go 1.24+ (Linux also needs `libasound2-dev`):
+**Terminal (any OS)** — Go 1.25+ and a C compiler (the malgo audio backend needs
+cgo on every platform; Linux also needs `libasound2-dev`, Windows needs
+MinGW-w64):
 ```sh
-go build -o opendeezer ./cmd/opendeezer      # or: make build
+CGO_ENABLED=1 go build -o opendeezer ./cmd/opendeezer      # or: make build
 ```
 
 **macOS app** — macOS 26 (Tahoe) + Xcode 26, Go:
@@ -111,7 +162,8 @@ cd gui/macos && make app        # -> OpenDeezer.app (universal: Apple Silicon + 
 ```
 
 **Linux — unified** (auto-picks GTK/Qt) — `libgtk-4-dev libadwaita-1-dev
-libjson-glib-dev qt6-base-dev libasound2-dev meson ninja-build cmake` + gcc, Go:
+libjson-glib-dev libwebkitgtk-6.0-dev libsoup-3.0-dev qt6-base-dev
+qt6-webengine-dev libasound2-dev meson ninja-build cmake` + gcc, Go:
 ```sh
 cd gui/linux && ./build.sh && ./dist/opendeezer
 ```
@@ -129,6 +181,25 @@ cd gui\windows; .\build.ps1     # -> bin\x64\Release\OpenDeezer.exe
 ```
 
 ## FAQ
+
+**How do I log in?**
+In the GUIs, click **Log in with Deezer** — an embedded web view opens the real
+Deezer login, and once you sign in, OpenDeezer reads the `arl` session cookie
+automatically and saves it locally. Manual ARL entry is still there as a
+fallback. The TUI uses `DEEZER_ARL` / `opendeezer -save-arl <arl>`.
+
+**Does it have Flow / podcasts / charts / lyrics?**
+Yes — Deezer Flow (personalized stream), podcast search + episode playback,
+global charts, artist pages, and synced lyrics are all built in.
+
+**Can I edit my library?**
+Yes — like/unlike tracks, add tracks to playlists, and create/rename/delete
+playlists.
+
+**Can I choose the output device or use gapless/crossfade?**
+Yes. The audio engine (malgo/miniaudio) supports output-device selection,
+gapless transitions, crossfade and ReplayGain — all in settings (or TUI keys
+`d` / `ctrl+g` / `x` / `R`).
 
 **What's an ARL?**
 Your Deezer session token — the `arl` cookie from a logged-in `deezer.com`
