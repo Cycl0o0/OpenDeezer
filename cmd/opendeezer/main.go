@@ -7,9 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,6 +38,15 @@ func main() {
 		fmt.Println("ARL saved.")
 		return
 	}
+
+	// File logging (level via $OPENDEEZER_LOG); never writes to stdout, so the
+	// TUI is unaffected. Best-effort: discards on failure.
+	if base, err := os.UserConfigDir(); err == nil {
+		if f, err := odlog.OpenFile(filepath.Join(base, "opendeezer")); err == nil {
+			defer f.Close()
+		}
+	}
+	odlog.Info("opendeezer %s starting", version)
 
 	arl := ui.LoadARL()
 	if arl == "" {
