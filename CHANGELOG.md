@@ -4,6 +4,29 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0]
+
+### Added
+- **One-click login**: each GUI embeds a Deezer web view (WKWebView / WebKitGTK /
+  QtWebEngine / WebView2) that captures the `arl` cookie after sign-in — no more
+  pasting an ARL by hand (manual entry kept as a fallback).
+- **Library editing**: like/unlike tracks; add/remove playlist tracks; create,
+  rename and delete playlists. (gw `favorite_song.*` / `playlist.*`.)
+- **Deezer Flow** — personalized endless stream.
+- **Podcasts** — search shows, list episodes, play (plain/unencrypted stream).
+- **Artist pages** surfaced from search/charts; **charts** now show albums,
+  artists and playlists (not just tracks); search returns artists.
+- **New audio engine (malgo / miniaudio)**: streaming buffer (faster start),
+  **output-device selection**, **gapless** transitions, **crossfade**
+  (experimental), seek and ReplayGain. Replaces oto (now cgo on every platform).
+- New C API: write ops, `DZFlowJSON`, podcast + audio-device + gapless/crossfade
+  exports; `DZSearchJSON` now includes artists.
+
+### Notes
+- Output-device selection required the audio-backend swap to malgo; playback
+  paths are runtime-tested by users (CI compiles all platforms incl. cgo).
+- Packaging: AUR, Flatpak and winget manifests added (alongside Homebrew).
+
 ## [0.3.0]
 
 ### Added

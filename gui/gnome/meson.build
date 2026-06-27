@@ -7,7 +7,7 @@
 # -lasound -lpthread -ldl -lm AFTER the archive (left-to-right resolution).
 
 project('opendeezer-gnome', 'c',
-  version: '0.3.0',
+  version: '0.4.0',
   meson_version: '>=0.59.0',
   default_options: ['c_std=c11', 'warning_level=1'])
 
