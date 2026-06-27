@@ -60,6 +60,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <map>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -144,10 +145,18 @@ inline auto resume_foreground(mud::DispatcherQueue const& dq) {
 }
 
 // ---- wire models (mirror corelib jTrack/jAlbum/jPlaylist) -------------------
-struct Track    { hstring id, name, artistLine, albumName, artworkUrl; int64_t durationMs = 0; };
+struct Track    { hstring id, name, artistId, artistLine, albumName, artworkUrl; int64_t durationMs = 0; };
 struct Album    { hstring id, name, artistLine, artworkUrl; };
 struct Playlist { hstring id, name, owner, artworkUrl; int trackCount = 0; };
 struct Account  { hstring userId, name, offer; bool canHq = false, canHifi = false, loggedIn = false; };
+
+// jArtistInfo: {id,name,artworkUrl,nbFans}  (related artists + artist header)
+struct ArtistInfo { hstring id, name, artworkUrl; int64_t nbFans = 0; };
+// DZLyricsJSON: {plain, synced:[{timeMs,text}], isSynced}
+struct LyricLine  { int64_t timeMs = 0; hstring text; };
+struct Lyrics     { hstring plain; std::vector<LyricLine> synced; bool isSynced = false; };
+// DZArtistProfileJSON: {artist, top:[T], albums:[A], related:[Ar]}
+struct ArtistProfile { ArtistInfo artist; std::vector<Track> top; std::vector<Album> albums; std::vector<ArtistInfo> related; };
 
 // ---- persisted settings -----------------------------------------------------
 struct Settings { int quality = 1; bool closeToTray = true; bool replayGain = false; }; // quality: 0 Normal,1 High,2 HiFi
@@ -171,21 +180,41 @@ static hstring TimeText(int64_t ms) {
 static muxc::ColumnDefinition ColAuto() { muxc::ColumnDefinition c; c.Width(mux::GridLength{ 0, mux::GridUnitType::Auto }); return c; }
 static muxc::ColumnDefinition ColStar() { muxc::ColumnDefinition c; c.Width(mux::GridLength{ 1, mux::GridUnitType::Star }); return c; }
 
+// ScrollViewer::ChangeView wants IReference<double>; box a plain double into one.
+static wf::IReference<double> Ref(double v) { return winrt::box_value(v).try_as<wf::IReference<double>>(); }
+
+// "1,234,567 fans" (thousands-grouped); empty when unknown.
+static hstring FansText(int64_t n) {
+    if (n <= 0) return L"";
+    std::wstring s = std::to_wstring(n), out;
+    int len = static_cast<int>(s.size());
+    for (int i = 0; i < len; ++i) {
+        if (i && (len - i) % 3 == 0) out.push_back(L',');
+        out.push_back(s[i]);
+    }
+    return hstring(out) + L" fans";
+}
+
+// One jTrack object -> Track. Pulls artists[0].id so a row can open its artist.
+static Track TrackFromObj(wdj::JsonObject const& o) {
+    Track t;
+    t.id         = o.GetNamedString(L"id", L"");
+    t.name       = o.GetNamedString(L"name", L"");
+    t.durationMs = static_cast<int64_t>(o.GetNamedNumber(L"durationMs", 0));
+    t.artistLine = o.GetNamedString(L"artistLine", L"");
+    t.albumName  = o.GetNamedString(L"albumName", L"");
+    t.artworkUrl = o.GetNamedString(L"artworkUrl", L"");
+    auto artists = o.GetNamedArray(L"artists", wdj::JsonArray{});
+    if (artists.Size() > 0) t.artistId = artists.GetObjectAt(0).GetNamedString(L"id", L"");
+    return t;
+}
+
 static std::vector<Track> ParseTracks(hstring const& json) {
     std::vector<Track> out;
     wdj::JsonObject obj{ nullptr };
     if (!wdj::JsonObject::TryParse(json, obj)) return out;
-    for (auto const& v : obj.GetNamedArray(L"tracks", wdj::JsonArray{})) {
-        auto o = v.GetObject();
-        Track t;
-        t.id         = o.GetNamedString(L"id", L"");
-        t.name       = o.GetNamedString(L"name", L"");
-        t.durationMs = static_cast<int64_t>(o.GetNamedNumber(L"durationMs", 0));
-        t.artistLine = o.GetNamedString(L"artistLine", L"");
-        t.albumName  = o.GetNamedString(L"albumName", L"");
-        t.artworkUrl = o.GetNamedString(L"artworkUrl", L"");
-        out.push_back(std::move(t));
-    }
+    for (auto const& v : obj.GetNamedArray(L"tracks", wdj::JsonArray{}))
+        out.push_back(TrackFromObj(v.GetObject()));
     return out;
 }
 
@@ -206,20 +235,31 @@ static std::vector<Playlist> ParsePlaylists(hstring const& json) {
     return out;
 }
 
+static Album AlbumFromObj(wdj::JsonObject const& o) {
+    Album a;
+    a.id         = o.GetNamedString(L"id", L"");
+    a.name       = o.GetNamedString(L"name", L"");
+    a.artworkUrl = o.GetNamedString(L"artworkUrl", L"");
+    auto artists = o.GetNamedArray(L"artists", wdj::JsonArray{});
+    if (artists.Size() > 0) a.artistLine = artists.GetObjectAt(0).GetNamedString(L"name", L"");
+    return a;
+}
+
+static ArtistInfo ArtistFromObj(wdj::JsonObject const& o) {
+    ArtistInfo a;
+    a.id         = o.GetNamedString(L"id", L"");
+    a.name       = o.GetNamedString(L"name", L"");
+    a.artworkUrl = o.GetNamedString(L"artworkUrl", L"");
+    a.nbFans     = static_cast<int64_t>(o.GetNamedNumber(L"nbFans", 0));
+    return a;
+}
+
 static std::vector<Album> ParseAlbums(hstring const& json) {
     std::vector<Album> out;
     wdj::JsonObject obj{ nullptr };
     if (!wdj::JsonObject::TryParse(json, obj)) return out;
-    for (auto const& v : obj.GetNamedArray(L"albums", wdj::JsonArray{})) {
-        auto o = v.GetObject();
-        Album a;
-        a.id         = o.GetNamedString(L"id", L"");
-        a.name       = o.GetNamedString(L"name", L"");
-        a.artworkUrl = o.GetNamedString(L"artworkUrl", L"");
-        auto artists = o.GetNamedArray(L"artists", wdj::JsonArray{});
-        if (artists.Size() > 0) a.artistLine = artists.GetObjectAt(0).GetNamedString(L"name", L"");
-        out.push_back(std::move(a));
-    }
+    for (auto const& v : obj.GetNamedArray(L"albums", wdj::JsonArray{}))
+        out.push_back(AlbumFromObj(v.GetObject()));
     return out;
 }
 
@@ -234,6 +274,33 @@ static Account ParseAccount(hstring const& json) {     // DZAccountJSON -> singl
     a.canHifi  = o.GetNamedBoolean(L"canHifi", false);
     a.loggedIn = o.GetNamedBoolean(L"loggedIn", false);
     return a;
+}
+
+static Lyrics ParseLyrics(hstring const& json) {            // DZLyricsJSON -> single object
+    Lyrics ly;
+    wdj::JsonObject o{ nullptr };
+    if (!wdj::JsonObject::TryParse(json, o)) return ly;
+    ly.plain    = o.GetNamedString(L"plain", L"");
+    ly.isSynced = o.GetNamedBoolean(L"isSynced", false);
+    for (auto const& v : o.GetNamedArray(L"synced", wdj::JsonArray{})) {
+        auto so = v.GetObject();
+        LyricLine l;
+        l.timeMs = static_cast<int64_t>(so.GetNamedNumber(L"timeMs", 0));
+        l.text   = so.GetNamedString(L"text", L"");
+        ly.synced.push_back(std::move(l));
+    }
+    return ly;
+}
+
+static ArtistProfile ParseArtistProfile(hstring const& json) {  // {artist, top, albums, related}
+    ArtistProfile p;
+    wdj::JsonObject o{ nullptr };
+    if (!wdj::JsonObject::TryParse(json, o)) return p;
+    if (o.HasKey(L"artist")) p.artist = ArtistFromObj(o.GetNamedObject(L"artist", wdj::JsonObject{}));
+    for (auto const& v : o.GetNamedArray(L"top",     wdj::JsonArray{})) p.top.push_back(TrackFromObj(v.GetObject()));
+    for (auto const& v : o.GetNamedArray(L"albums",  wdj::JsonArray{})) p.albums.push_back(AlbumFromObj(v.GetObject()));
+    for (auto const& v : o.GetNamedArray(L"related", wdj::JsonArray{})) p.related.push_back(ArtistFromObj(v.GetObject()));
+    return p;
 }
 
 static void Trim(std::wstring& s) {
@@ -416,6 +483,79 @@ private:
         muxc::Grid::SetRow(m_searchGrid, 4); sp.Children().Append(m_searchGrid);
 
         m_searchPage = sp;
+
+        BuildArtistPage();
+        BuildLyricsPage();
+    }
+
+    // Artist detail: a scrolling column of name/fans + Top Tracks + Albums +
+    // Related Artists. The inner ListView/GridView have their own scrolling
+    // disabled so they size to content and the outer ScrollViewer scrolls.
+    void BuildArtistPage() {
+        m_artistScroll = muxc::ScrollViewer();
+        m_artistScroll.Padding({ 16, 12, 16, 16 });
+        m_artistScroll.HorizontalScrollMode(muxc::ScrollMode::Disabled);
+        m_artistScroll.HorizontalScrollBarVisibility(muxc::ScrollBarVisibility::Disabled);
+
+        muxc::StackPanel col; col.Spacing(8);
+
+        m_artistHeader = muxc::TextBlock();
+        m_artistHeader.FontSize(28); m_artistHeader.FontWeight(wut::FontWeights::SemiBold());
+        m_artistHeader.TextWrapping(mux::TextWrapping::Wrap);
+        col.Children().Append(m_artistHeader);
+
+        m_artistFans = muxc::TextBlock(); m_artistFans.Opacity(0.6);
+        col.Children().Append(m_artistFans);
+
+        auto section = [](hstring text) {
+            muxc::TextBlock h; h.Text(text); h.FontWeight(wut::FontWeights::SemiBold());
+            h.FontSize(18); h.Margin({ 0, 12, 0, 2 });
+            return h;
+        };
+        auto noInnerScroll = [](mux::DependencyObject const& el) {
+            muxc::ScrollViewer::SetVerticalScrollMode(el, muxc::ScrollMode::Disabled);
+            muxc::ScrollViewer::SetVerticalScrollBarVisibility(el, muxc::ScrollBarVisibility::Disabled);
+        };
+
+        col.Children().Append(section(L"Top Tracks"));
+        m_artistTopList = muxc::ListView();
+        m_artistTopList.SelectionMode(muxc::ListViewSelectionMode::None);
+        m_artistTopList.IsItemClickEnabled(true);
+        m_artistTopList.ItemClick({ get_weak(), &MainWindow::OnArtistTopClick });
+        noInnerScroll(m_artistTopList);
+        col.Children().Append(m_artistTopList);
+
+        col.Children().Append(section(L"Albums"));
+        m_artistAlbumsGrid = muxc::GridView();
+        m_artistAlbumsGrid.SelectionMode(muxc::ListViewSelectionMode::None);
+        m_artistAlbumsGrid.IsItemClickEnabled(true);
+        m_artistAlbumsGrid.ItemClick({ get_weak(), &MainWindow::OnArtistAlbumClick });
+        noInnerScroll(m_artistAlbumsGrid);
+        col.Children().Append(m_artistAlbumsGrid);
+
+        col.Children().Append(section(L"Related Artists"));
+        m_artistRelatedGrid = muxc::GridView();
+        m_artistRelatedGrid.SelectionMode(muxc::ListViewSelectionMode::None);
+        m_artistRelatedGrid.IsItemClickEnabled(true);
+        m_artistRelatedGrid.ItemClick({ get_weak(), &MainWindow::OnArtistRelatedClick });
+        noInnerScroll(m_artistRelatedGrid);
+        col.Children().Append(m_artistRelatedGrid);
+
+        m_artistScroll.Content(col);
+        m_artistPage = m_artistScroll;
+    }
+
+    // Lyrics: a scrolling stack of per-line TextBlocks (synced) or one block
+    // (plain). The active line is restyled + scrolled into view from OnTick.
+    void BuildLyricsPage() {
+        m_lyricsScroll = muxc::ScrollViewer();
+        m_lyricsScroll.Padding({ 24, 16, 24, 24 });
+        m_lyricsScroll.HorizontalScrollMode(muxc::ScrollMode::Disabled);
+        m_lyricsScroll.HorizontalScrollBarVisibility(muxc::ScrollBarVisibility::Disabled);
+        m_lyricsPanel = muxc::StackPanel(); m_lyricsPanel.Spacing(6);
+        m_lyricsScroll.Content(m_lyricsPanel);
+        m_lyricsPage = m_lyricsScroll;
+        ShowLyricsMessage(L"Play a track to see its lyrics.");
     }
 
     muxc::Grid BuildTransport() {
@@ -442,6 +582,14 @@ private:
         m_nowArtist = muxc::TextBlock(); m_nowArtist.Opacity(0.6); m_nowArtist.FontSize(12);
         m_nowArtist.TextWrapping(mux::TextWrapping::NoWrap); m_nowArtist.TextTrimming(mux::TextTrimming::CharacterEllipsis);
         now.Children().Append(m_nowTitle); now.Children().Append(m_nowArtist);
+        // Quick links to the Lyrics + Artist views for the current track.
+        muxc::StackPanel meta; meta.Orientation(muxc::Orientation::Horizontal); meta.Spacing(10);
+        m_lyricsBtn = muxc::HyperlinkButton(); m_lyricsBtn.Content(box_value(L"Lyrics"));
+        m_lyricsBtn.Padding({ 0, 0, 0, 0 }); m_lyricsBtn.Click({ get_weak(), &MainWindow::OnLyrics });
+        m_artistBtn = muxc::HyperlinkButton(); m_artistBtn.Content(box_value(L"Artist"));
+        m_artistBtn.Padding({ 0, 0, 0, 0 }); m_artistBtn.Click({ get_weak(), &MainWindow::OnArtist });
+        meta.Children().Append(m_lyricsBtn); meta.Children().Append(m_artistBtn);
+        now.Children().Append(meta);
         muxc::Grid::SetColumn(now, 1); bar.Children().Append(now);
 
         muxc::StackPanel tr; tr.Orientation(muxc::Orientation::Horizontal); tr.Spacing(4); tr.VerticalAlignment(mux::VerticalAlignment::Center);
@@ -631,6 +779,7 @@ private:
             return;
         }
         m_lastContentItem = item;
+        m_lyricsShown = false; // leaving the lyrics/artist page for a menu page
         if (tag == L"liked") {
             nav.Header(box_value(L"Liked Songs")); nav.Content(m_tracksPage); LoadFavorites();
         } else if (tag == L"charts") {
@@ -690,6 +839,7 @@ private:
 
     fire_and_forget OpenPlaylist(Playlist p) {
         auto strong = get_strong();
+        m_lyricsShown = false;
         m_nav.Header(box_value(p.name));
         m_nav.Content(m_tracksPage);
         co_await winrt::resume_background();
@@ -703,6 +853,7 @@ private:
 
     fire_and_forget OpenAlbum(Album a) {
         auto strong = get_strong();
+        m_lyricsShown = false;
         m_nav.Header(box_value(a.name));
         m_nav.Content(m_tracksPage);
         co_await winrt::resume_background();
@@ -712,6 +863,183 @@ private:
         m_tracks = std::move(tracks);
         ++m_artGen;
         FillTrackList(m_trackList, m_tracks);
+    }
+
+    // ---- artist view --------------------------------------------------------
+    // artistID from a jTrack.artists[0].id (transport "Artist" button uses the
+    // now-playing track; Related tiles pass another artist's id).
+    fire_and_forget OpenArtist(hstring artistId) {
+        auto strong = get_strong();
+        if (!m_loggedIn || artistId.empty()) co_return;
+        m_lyricsShown = false;
+        m_nav.Header(box_value(L"Artist"));
+        m_nav.Content(m_artistPage);
+        m_artistHeader.Text(L"Loading…"); m_artistFans.Text(L"");
+        m_artistTopList.Items().Clear();
+        m_artistAlbumsGrid.Items().Clear();
+        m_artistRelatedGrid.Items().Clear();
+        co_await winrt::resume_background();
+        std::string s = to_string(artistId);
+        auto prof = ParseArtistProfile(TakeJson(DZArtistProfileJSON(s.data())));
+        co_await resume_foreground(m_win.DispatcherQueue());
+        m_artistTop     = std::move(prof.top);
+        m_artistAlbums  = std::move(prof.albums);
+        m_artistRelated = std::move(prof.related);
+        m_artistHeader.Text(prof.artist.name.empty() ? hstring(L"Artist") : prof.artist.name);
+        m_artistFans.Text(FansText(prof.artist.nbFans));
+        ++m_artGen;
+        FillTrackList(m_artistTopList, m_artistTop); // reuses MakeTrackRow rows
+        FillArtistAlbums();
+        FillArtistRelated();
+        try { m_artistScroll.ChangeView(nullptr, Ref(0.0), nullptr); } catch (...) {} // back to top
+    }
+
+    void FillArtistAlbums() {
+        m_artistAlbumsGrid.Items().Clear();
+        int i = 0;
+        for (auto const& a : m_artistAlbums) { m_artistAlbumsGrid.Items().Append(MakeTile(a.name, a.artistLine, a.artworkUrl, i)); ++i; }
+    }
+    void FillArtistRelated() {
+        m_artistRelatedGrid.Items().Clear();
+        int i = 0;
+        for (auto const& r : m_artistRelated) { m_artistRelatedGrid.Items().Append(MakeTile(r.name, FansText(r.nbFans), r.artworkUrl, i)); ++i; }
+    }
+    void OnArtistTopClick(wf::IInspectable const&, muxc::ItemClickEventArgs const& e) {
+        int i = TagIndex(e.ClickedItem()); if (i >= 0) PlayFrom(m_artistTop, i);
+    }
+    void OnArtistAlbumClick(wf::IInspectable const&, muxc::ItemClickEventArgs const& e) {
+        int i = TagIndex(e.ClickedItem());
+        if (i >= 0 && i < static_cast<int>(m_artistAlbums.size())) OpenAlbum(m_artistAlbums[i]);
+    }
+    void OnArtistRelatedClick(wf::IInspectable const&, muxc::ItemClickEventArgs const& e) {
+        int i = TagIndex(e.ClickedItem());
+        if (i >= 0 && i < static_cast<int>(m_artistRelated.size())) OpenArtist(m_artistRelated[i].id);
+    }
+    void OnArtist(wf::IInspectable const&, mux::RoutedEventArgs const&) {
+        hstring aid = CurrentArtistId();
+        if (aid.empty()) { ShowMessage(L"No artist", L"Start playing a track to view its artist."); return; }
+        OpenArtist(aid);
+    }
+
+    // ---- lyrics view --------------------------------------------------------
+    void OnLyrics(wf::IInspectable const&, mux::RoutedEventArgs const&) { ShowLyrics(); }
+
+    void ShowLyrics() {
+        if (!m_loggedIn) return;
+        m_lyricsShown = true;
+        m_nav.Header(box_value(L"Lyrics"));
+        m_nav.Content(m_lyricsPage);
+        hstring id = CurrentTrackId();
+        if (id.empty()) { ShowLyricsMessage(L"Play a track to see its lyrics."); return; }
+        LoadLyrics(id);
+    }
+
+    // Fetch off-thread, cache per track id; a generation token drops results
+    // that a track change superseded.
+    fire_and_forget LoadLyrics(hstring trackId) {
+        auto strong = get_strong();
+        if (trackId.empty()) co_return;
+        std::wstring key{ trackId.c_str() };
+        auto it = m_lyricsCache.find(key);
+        if (it != m_lyricsCache.end()) {
+            m_lyricsTrackId = trackId;
+            m_lyrics = it->second;
+            RenderLyrics();
+            co_return;
+        }
+        int gen = ++m_lyricsGen;
+        m_lyricsTrackId = trackId;             // optimistic: stops the tick re-triggering
+        ShowLyricsMessage(L"Loading lyrics…");
+        co_await winrt::resume_background();
+        std::string s = to_string(trackId);
+        auto ly = ParseLyrics(TakeJson(DZLyricsJSON(s.data())));
+        co_await resume_foreground(m_win.DispatcherQueue());
+        m_lyricsCache[key] = ly;               // cache regardless of staleness
+        if (gen != m_lyricsGen) co_return;     // a newer request superseded this one
+        m_lyrics = std::move(ly);
+        if (m_lyricsShown) RenderLyrics();
+    }
+
+    void RenderLyrics() {
+        m_lyricsPanel.Children().Clear();
+        m_lyricLineBlocks.clear();
+        m_lyricActive = -1;
+        if (m_lyrics.isSynced && !m_lyrics.synced.empty()) {
+            for (auto const& l : m_lyrics.synced) {
+                muxc::TextBlock tb;
+                tb.Text(l.text.empty() ? hstring(L"♪") : l.text); // musical note for blank lines
+                tb.TextWrapping(mux::TextWrapping::Wrap);
+                tb.FontSize(18);
+                tb.Opacity(0.45);
+                m_lyricsPanel.Children().Append(tb);
+                m_lyricLineBlocks.push_back(tb);
+            }
+            UpdateLyricsHighlight(DZPositionMS()); // style the current line immediately
+        } else if (!m_lyrics.plain.empty()) {
+            muxc::TextBlock tb;
+            tb.Text(m_lyrics.plain);
+            tb.TextWrapping(mux::TextWrapping::Wrap);
+            tb.FontSize(16);
+            m_lyricsPanel.Children().Append(tb);
+        } else {
+            ShowLyricsMessage(L"No lyrics available.");
+        }
+    }
+
+    void ShowLyricsMessage(hstring msg) {
+        m_lyricsPanel.Children().Clear();
+        m_lyricLineBlocks.clear();
+        m_lyricActive = -1;
+        muxc::TextBlock tb; tb.Text(msg); tb.Opacity(0.7); tb.TextWrapping(mux::TextWrapping::Wrap);
+        m_lyricsPanel.Children().Append(tb);
+    }
+
+    // Active line = last synced line whose timeMs <= pos. Restyle on change only.
+    void UpdateLyricsHighlight(int64_t pos) {
+        if (m_lyricLineBlocks.empty()) return;
+        int active = -1;
+        for (int i = 0; i < static_cast<int>(m_lyrics.synced.size()); ++i) {
+            if (m_lyrics.synced[i].timeMs <= pos) active = i; else break;
+        }
+        if (active == m_lyricActive) return;
+        if (m_lyricActive >= 0 && m_lyricActive < static_cast<int>(m_lyricLineBlocks.size())) {
+            auto prev = m_lyricLineBlocks[m_lyricActive];
+            prev.Opacity(0.45);
+            prev.FontWeight(wut::FontWeights::Normal());
+            prev.ClearValue(muxc::TextBlock::ForegroundProperty()); // back to theme default
+        }
+        m_lyricActive = active;
+        if (active >= 0 && active < static_cast<int>(m_lyricLineBlocks.size())) {
+            auto cur = m_lyricLineBlocks[active];
+            cur.Opacity(1.0);
+            cur.FontWeight(wut::FontWeights::SemiBold());
+            cur.Foreground(m_accent);
+            ScrollLyricToActive();
+        }
+    }
+
+    void ScrollLyricToActive() {
+        if (m_lyricActive < 0 || m_lyricActive >= static_cast<int>(m_lyricLineBlocks.size())) return;
+        auto block = m_lyricLineBlocks[m_lyricActive];
+        try {
+            auto gt = block.TransformToVisual(m_lyricsPanel); // panel == scroll content
+            auto pt = gt.TransformPoint(wf::Point{ 0.0f, 0.0f });
+            double target = static_cast<double>(pt.Y)
+                          - m_lyricsScroll.ViewportHeight() / 2.0
+                          + block.ActualHeight() / 2.0;          // center the active line
+            if (target < 0.0) target = 0.0;
+            m_lyricsScroll.ChangeView(nullptr, Ref(target), nullptr);
+        } catch (...) {}
+    }
+
+    // The now-playing track (head of the active queue), used by both views.
+    hstring CurrentTrackId() {
+        if (m_queueIndex >= 0 && m_queueIndex < static_cast<int>(m_queue.size())) return m_queue[m_queueIndex].id;
+        return L"";
+    }
+    hstring CurrentArtistId() {
+        if (m_queueIndex >= 0 && m_queueIndex < static_cast<int>(m_queue.size())) return m_queue[m_queueIndex].artistId;
+        return L"";
     }
 
     fire_and_forget RunSearch() {
@@ -860,6 +1188,14 @@ private:
                 m_nowArtist.Text(f.empty() ? m_curArtist
                                            : hstring(m_curArtist + L"   ·   " + f));
             }
+        }
+
+        // Lyrics page (when open): drive the synced highlight off the same tick
+        // that moves the progress bar, and refetch when the track changes.
+        if (m_lyricsShown) {
+            if (m_lyrics.isSynced && !m_lyricLineBlocks.empty()) UpdateLyricsHighlight(pos);
+            hstring cur = CurrentTrackId();
+            if (!cur.empty() && cur != m_lyricsTrackId) LoadLyrics(cur);
         }
 
         // Mirror state to the OS overlay: status on change, timeline ~every 5 s.
@@ -1211,6 +1547,28 @@ private:
     muxc::Button    m_playBtn{ nullptr }, m_repeatBtn{ nullptr };
     muxc::FontIcon  m_playIcon{ nullptr };
     muxp::ToggleButton m_shuffleBtn{ nullptr };
+    muxc::HyperlinkButton m_lyricsBtn{ nullptr }, m_artistBtn{ nullptr }; // -> lyrics / artist views
+
+    // ---- lyrics view --------------------------------------------------------
+    mux::UIElement      m_lyricsPage{ nullptr };
+    muxc::ScrollViewer  m_lyricsScroll{ nullptr };
+    muxc::StackPanel    m_lyricsPanel{ nullptr };
+    std::vector<muxc::TextBlock> m_lyricLineBlocks;       // parallel to m_lyrics.synced
+    Lyrics  m_lyrics{};
+    hstring m_lyricsTrackId;                              // track currently rendered/fetching
+    std::map<std::wstring, Lyrics> m_lyricsCache;         // per track id
+    int  m_lyricsGen = 0, m_lyricActive = -1;
+    bool m_lyricsShown = false;                           // lyrics page is the live content
+
+    // ---- artist view --------------------------------------------------------
+    mux::UIElement     m_artistPage{ nullptr };
+    muxc::ScrollViewer m_artistScroll{ nullptr };
+    muxc::TextBlock    m_artistHeader{ nullptr }, m_artistFans{ nullptr };
+    muxc::ListView     m_artistTopList{ nullptr };
+    muxc::GridView     m_artistAlbumsGrid{ nullptr }, m_artistRelatedGrid{ nullptr };
+    std::vector<Track>      m_artistTop;
+    std::vector<Album>      m_artistAlbums;
+    std::vector<ArtistInfo> m_artistRelated;
 
     std::vector<Track>    m_tracks, m_searchTracks, m_queue;
     std::vector<Playlist> m_playlists, m_searchPlaylists;
