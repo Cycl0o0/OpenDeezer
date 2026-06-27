@@ -13,6 +13,7 @@ const (
 	rowArtist
 	rowPodcast
 	rowEpisode
+	rowDevice
 )
 
 // menuAction is the action a rowMenu triggers.
@@ -40,6 +41,7 @@ type row struct {
 	artist   deezer.ArtistInfo // for rowArtist
 	podcast  deezer.Podcast    // for rowPodcast
 	episode  deezer.Episode    // for rowEpisode
+	deviceID string            // for rowDevice ("" = system default)
 }
 
 func (r row) Title() string       { return r.title }
@@ -80,4 +82,14 @@ func episodeRow(e deezer.Episode) row {
 		d = "episode"
 	}
 	return row{kind: rowEpisode, title: e.Title, desc: d, episode: e}
+}
+
+func deviceRow(id, name string, current bool) row {
+	title := name
+	desc := "output device"
+	if current {
+		title = "● " + name
+		desc = "current"
+	}
+	return row{kind: rowDevice, title: title, desc: desc, deviceID: id}
 }

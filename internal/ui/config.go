@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
@@ -117,6 +118,68 @@ func saveBoolFile(name string, v bool) error {
 // LoadReplayGain / SaveReplayGain persist the loudness-normalization toggle.
 func LoadReplayGain() bool        { return boolFile("replaygain.txt") }
 func SaveReplayGain(v bool) error { return saveBoolFile("replaygain.txt", v) }
+
+// LoadGapless / SaveGapless persist the gapless toggle (default: on).
+func LoadGapless() bool {
+	dir, err := configDir()
+	if err != nil {
+		return true
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "gapless.txt"))
+	if err != nil {
+		return true // default on
+	}
+	return strings.TrimSpace(string(b)) != "0"
+}
+func SaveGapless(v bool) error { return saveBoolFile("gapless.txt", v) }
+
+// LoadCrossfadeMS / SaveCrossfadeMS persist the crossfade duration in ms.
+func LoadCrossfadeMS() int {
+	dir, err := configDir()
+	if err != nil {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "crossfade.txt"))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	if n < 0 {
+		n = 0
+	}
+	return n
+}
+func SaveCrossfadeMS(ms int) error {
+	if ms < 0 {
+		ms = 0
+	}
+	return saveStringFile("crossfade.txt", strconv.Itoa(ms))
+}
+
+func saveStringFile(name, v string) error {
+	dir, err := configDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, name), []byte(v+"\n"), 0600)
+}
+
+// LoadAudioDevice / SaveAudioDevice persist the selected output device id.
+func LoadAudioDevice() string {
+	dir, err := configDir()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "device.txt"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+func SaveAudioDevice(id string) error { return saveStringFile("device.txt", id) }
 
 // LoadTheme returns the saved theme name ("" if none).
 func LoadTheme() string {

@@ -111,6 +111,35 @@ func TestShuffleNeverRepeatsCurrentAndRetraces(t *testing.T) {
 	}
 }
 
+func TestPeekNext(t *testing.T) {
+	q := New()
+	q.Set(tracks(3), 0)
+	if n, ok := q.PeekNext(); !ok || n.ID != "b" {
+		t.Fatalf("peek linear -> %q ok=%v", n.ID, ok)
+	}
+	q.SetIndex(2) // last, RepeatOff
+	if _, ok := q.PeekNext(); ok {
+		t.Fatal("peek at end (RepeatOff) should be !ok")
+	}
+	q.SetRepeat(RepeatAll)
+	if n, ok := q.PeekNext(); !ok || n.ID != "a" {
+		t.Fatalf("peek wrap -> %q ok=%v", n.ID, ok)
+	}
+	q.SetRepeat(RepeatOff)
+	q.SetShuffle(true)
+	q.SetIndex(0)
+	if _, ok := q.PeekNext(); ok {
+		t.Fatal("peek under shuffle should be !ok")
+	}
+	// PeekNext must not mutate the cursor.
+	q.SetShuffle(false)
+	q.SetIndex(0)
+	_, _ = q.PeekNext()
+	if q.Index() != 0 {
+		t.Fatalf("PeekNext mutated cursor: %d", q.Index())
+	}
+}
+
 func TestCycleRepeat(t *testing.T) {
 	q := New()
 	if q.CycleRepeat() != RepeatAll || q.CycleRepeat() != RepeatOne || q.CycleRepeat() != RepeatOff {

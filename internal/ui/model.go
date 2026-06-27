@@ -31,6 +31,7 @@ const (
 	screenQueue
 	screenLyrics
 	screenHelp
+	screenDevices
 )
 
 // Model is the root Bubble Tea model.
@@ -151,6 +152,11 @@ func New(client *deezer.Client, player *audio.Player) *Model {
 	})
 	m.applyThemeByName(LoadTheme())
 	player.SetReplayGain(LoadReplayGain())
+	player.SetGapless(LoadGapless())
+	player.SetCrossfadeMS(LoadCrossfadeMS())
+	if d := LoadAudioDevice(); d != "" {
+		_ = player.SetDevice(d)
+	}
 	return m
 }
 
@@ -185,6 +191,11 @@ type streamReadyMsg struct {
 }
 type errMsg struct{ err error }
 type statusMsg struct{ text string }
+type preloadMsg struct {
+	plan *deezer.StreamPlan
+	dur  int64
+}
+type devicesMsg struct{ devices []audio.Device }
 type tickMsg time.Time
 type trackFinishedMsg struct{}
 type artMsg struct {
@@ -344,6 +355,35 @@ func (m *Model) likeCurrentCmd(t deezer.Track) tea.Cmd {
 			return errMsg{err}
 		}
 		return statusMsg{"❤ Liked: " + t.Name}
+	}
+}
+
+// preloadNextCmd resolves the deterministic next track and hands it to the
+// player for a gapless/crossfaded transition. No-op when not applicable.
+func (m *Model) preloadNextCmd() tea.Cmd {
+	if m.episodeMode || (!m.player.Gapless() && m.player.CrossfadeMS() == 0) {
+		return nil
+	}
+	t, ok := m.q.PeekNext()
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		plan, err := m.client.PrepareStream(t.ID)
+		if err != nil {
+			return nil
+		}
+		return preloadMsg{plan: plan, dur: t.DurationMS}
+	}
+}
+
+func (m *Model) devicesCmd() tea.Cmd {
+	return func() tea.Msg {
+		ds, err := m.player.Devices()
+		if err != nil {
+			return errMsg{err}
+		}
+		return devicesMsg{devices: ds}
 	}
 }
 

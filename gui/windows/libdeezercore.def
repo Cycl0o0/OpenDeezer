@@ -49,3 +49,11 @@ EXPORTS
   DZSearchPodcastsJSON
   DZPodcastEpisodesJSON
   DZPlayEpisode
+  DZAudioDevicesJSON
+  DZSetAudioDevice
+  DZCurrentAudioDevice
+  DZSetGapless
+  DZGapless
+  DZSetCrossfadeMS
+  DZCrossfadeMS
+  DZPreload

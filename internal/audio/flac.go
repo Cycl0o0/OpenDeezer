@@ -1,7 +1,6 @@
 package audio
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/mewkiz/flac"
@@ -19,8 +18,8 @@ type flacStream struct {
 	shift int    // bitsPerSample - 16
 }
 
-func newFLACStream(data []byte) (*flacStream, error) {
-	s, err := flac.NewSeek(bytes.NewReader(data))
+func newFLACStream(r io.ReadSeeker) (*flacStream, error) {
+	s, err := flac.NewSeek(r)
 	if err != nil {
 		return nil, err
 	}

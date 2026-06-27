@@ -150,6 +150,26 @@ func (q *Queue) Prev() bool {
 	return false
 }
 
+// PeekNext returns the track Next would advance to, WITHOUT mutating the queue,
+// for the deterministic cases only (linear order, with RepeatAll wrap). Under
+// shuffle or RepeatOne it returns ok=false, since the next track isn't fixed —
+// callers use this to decide whether a gapless preload is safe.
+func (q *Queue) PeekNext() (deezer.Track, bool) {
+	if len(q.tracks) == 0 || q.shuffle || q.repeat == RepeatOne {
+		return deezer.Track{}, false
+	}
+	ni := -1
+	if q.index+1 < len(q.tracks) {
+		ni = q.index + 1
+	} else if q.repeat == RepeatAll {
+		ni = 0
+	}
+	if ni < 0 {
+		return deezer.Track{}, false
+	}
+	return q.tracks[ni], true
+}
+
 // AdvanceAuto is called when a track ends naturally: RepeatOne replays the
 // current track (reports true, cursor unchanged); otherwise it behaves like
 // Next. Returns whether playback should continue.

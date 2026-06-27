@@ -725,6 +725,104 @@ func DZPodcastEpisodesJSON(podcastID *C.char) *C.char {
 	return jsonStr(map[string]any{"episodes": out}, nil)
 }
 
+// ---- audio: devices, gapless, crossfade, preload (v0.4) ----
+
+// DZAudioDevicesJSON returns the available output devices:
+// {devices:[{id,name,isDefault}]}. id "" is the system default.
+//
+//export DZAudioDevicesJSON
+func DZAudioDevicesJSON() *C.char {
+	mu.Lock()
+	p := player
+	mu.Unlock()
+	if p == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ds, err := p.Devices()
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	type jDev struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		IsDefault bool   `json:"isDefault"`
+	}
+	out := make([]jDev, len(ds))
+	for i, d := range ds {
+		out[i] = jDev{ID: d.ID, Name: d.Name, IsDefault: d.IsDefault}
+	}
+	return jsonStr(map[string]any{"devices": out}, nil)
+}
+
+// DZSetAudioDevice switches output to the given device id ("" = default).
+//
+//export DZSetAudioDevice
+func DZSetAudioDevice(id *C.char) C.int {
+	mu.Lock()
+	p := player
+	mu.Unlock()
+	if p == nil {
+		return 0
+	}
+	return ok(p.SetDevice(C.GoString(id)))
+}
+
+// DZCurrentAudioDevice returns the selected device id ("" = default).
+//
+//export DZCurrentAudioDevice
+func DZCurrentAudioDevice() *C.char {
+	mu.Lock()
+	p := player
+	mu.Unlock()
+	if p == nil {
+		return C.CString("")
+	}
+	return C.CString(p.CurrentDevice())
+}
+
+//export DZSetGapless
+func DZSetGapless(on C.int) { withPlayer(func(p *audio.Player) { p.SetGapless(on != 0) }) }
+
+//export DZGapless
+func DZGapless() C.int {
+	v := 0
+	withPlayer(func(p *audio.Player) {
+		if p.Gapless() {
+			v = 1
+		}
+	})
+	return C.int(v)
+}
+
+//export DZSetCrossfadeMS
+func DZSetCrossfadeMS(ms C.int) { withPlayer(func(p *audio.Player) { p.SetCrossfadeMS(int(ms)) }) }
+
+//export DZCrossfadeMS
+func DZCrossfadeMS() C.int {
+	v := 0
+	withPlayer(func(p *audio.Player) { v = p.CrossfadeMS() })
+	return C.int(v)
+}
+
+// DZPreload resolves a track and preloads it for a gapless/crossfaded
+// transition after the current track ends.
+//
+//export DZPreload
+func DZPreload(trackID *C.char, durationMS C.longlong) {
+	mu.Lock()
+	c := client
+	p := player
+	mu.Unlock()
+	if c == nil || p == nil {
+		return
+	}
+	plan, err := c.PrepareStream(C.GoString(trackID))
+	if err != nil {
+		return
+	}
+	p.Preload(plan, int64(durationMS))
+}
+
 // DZPlayEpisode resolves + plays a podcast episode (plain, unencrypted stream).
 //
 //export DZPlayEpisode

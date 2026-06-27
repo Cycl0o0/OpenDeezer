@@ -1,10 +1,11 @@
-// Package audio is the oto-backed playback engine: it downloads, decrypts and
-// decodes Deezer streams (MP3 + FLAC) and plays one track at a time with seek,
-// volume and ReplayGain support.
+// Package audio is the malgo (miniaudio) playback engine: it streams, decrypts
+// and decodes Deezer audio (MP3 + FLAC) into a PCM ring that a single output
+// device drains. Supports seek, per-track ReplayGain, output-device selection,
+// gapless transitions and (experimental) crossfade. In-memory only — nothing is
+// written to disk.
 package audio
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -15,7 +16,7 @@ import (
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/ebitengine/oto/v3"
+	"github.com/gen2brain/malgo"
 	"github.com/hajimehoshi/go-mp3"
 )
 
@@ -48,33 +49,73 @@ func (s State) String() string {
 const (
 	sampleRate  = 44100
 	channels    = 2
-	bytesPerSec = sampleRate * channels * 2 // s16 stereo
+	frameBytes  = channels * 2 // s16 stereo
+	bytesPerSec = sampleRate * frameBytes
+	ringMax     = bytesPerSec // ~1s of decoded PCM buffered
+	decodeChunk = 16 * 1024
 )
 
-// Player owns a single oto context and plays one track at a time. The whole
-// track is downloaded + Blowfish-decrypted up front into a seekable reader so
-// that scrubbing works (the streaming CDN body is not seekable).
-type Player struct {
-	ctx *oto.Context
-
-	mu  sync.Mutex
-	cur *oto.Player
-	src *seekSource
-
-	state    atomic.Int32
-	played   atomic.Int64 // decoded PCM bytes consumed by oto (position)
-	totalMS  atomic.Int64
-	lastErr  atomic.Value  // string
-	format   atomic.Value  // string: resolved Deezer format of the current stream
-	volume   atomic.Uint64 // float64 bits, user volume 0..1
-	gainFac  atomic.Uint64 // float64 bits, ReplayGain factor for current track (≤1)
-	rgOn     atomic.Bool   // apply ReplayGain loudness normalization
-	onFinish func()
+// pcmStream is a decoder yielding interleaved s16 PCM, seekable by PCM byte
+// offset. Both *mp3.Decoder and *flacStream satisfy it.
+type pcmStream interface {
+	io.Reader
+	Seek(offset int64, whence int) (int64, error)
 }
 
-// dbToFactor converts a ReplayGain dB value to a linear amplitude factor,
-// clamped to ≤1 so we only attenuate (oto can't amplify past the source without
-// clipping). 0 dB (or unknown) yields 1.0 (no change).
+// source is one track's pipeline: download+decrypt -> streamBuffer -> decoder ->
+// pcmRing. The download and decode each run on their own goroutine.
+type source struct {
+	plan   *deezer.StreamPlan
+	durMS  int64
+	format string
+	sb     *streamBuffer
+	ring   *pcmRing
+	eof    atomic.Bool  // decoder reached end and ring will not grow
+	seekTo atomic.Int64 // pending PCM-byte seek target, or -1
+	dead   atomic.Bool
+	errMsg atomic.Value // string: download/decode error, if any
+}
+
+func (s *source) setErr(err error) {
+	if err != nil {
+		s.errMsg.Store(err.Error())
+	}
+}
+
+func (s *source) lastErr() string {
+	v, _ := s.errMsg.Load().(string)
+	return v
+}
+
+// Player owns the malgo context + one output device and plays a current source,
+// optionally with a preloaded next source for gapless/crossfade.
+type Player struct {
+	ctx *malgo.AllocatedContext
+
+	mu         sync.Mutex
+	device     *malgo.Device
+	selectedID *malgo.DeviceID
+	cur        *source
+	next       *source
+
+	state       atomic.Int32
+	played      atomic.Int64 // PCM bytes the callback has consumed from cur (position)
+	totalMS     atomic.Int64
+	lastErr     atomic.Value // string
+	format      atomic.Value // string
+	volume      atomic.Uint64
+	gainFac     atomic.Uint64
+	rgOn        atomic.Bool
+	gapless     atomic.Bool
+	crossfadeMS atomic.Int64
+	onFinish    func()
+
+	stopMgr chan struct{}
+	mgrOnce sync.Once
+}
+
+// ---- ReplayGain / volume ----
+
 func dbToFactor(db float64) float64 {
 	if db == 0 {
 		return 1
@@ -89,20 +130,14 @@ func dbToFactor(db float64) float64 {
 	return f
 }
 
-// SetReplayGain enables/disables loudness normalization for subsequent tracks
-// (and updates the current track immediately).
 func (p *Player) SetReplayGain(on bool) {
 	p.rgOn.Store(on)
 	if !on {
 		p.gainFac.Store(math.Float64bits(1))
 	}
-	p.setVolume(p.Volume()) // re-apply effective volume
 }
-
-// ReplayGain reports whether loudness normalization is enabled.
 func (p *Player) ReplayGain() bool { return p.rgOn.Load() }
 
-// effectiveVolume is the user volume scaled by the current ReplayGain factor.
 func (p *Player) effectiveVolume() float64 {
 	f := math.Float64frombits(p.gainFac.Load())
 	if f == 0 {
@@ -111,92 +146,119 @@ func (p *Player) effectiveVolume() float64 {
 	return p.Volume() * f
 }
 
-// Format returns the resolved Deezer format of the current/last stream
-// (e.g. "MP3_128", "MP3_320", "FLAC"), or "" if nothing has played.
-func (p *Player) Format() string {
-	s, _ := p.format.Load().(string)
-	return s
-}
+// SetGapless enables/disables gapless transitions between tracks.
+func (p *Player) SetGapless(on bool) { p.gapless.Store(on) }
 
-// pcmStream is a decoder that yields interleaved s16 PCM and can seek by PCM
-// byte offset. Both *mp3.Decoder and *flacStream satisfy it.
-type pcmStream interface {
-	io.Reader
-	Seek(offset int64, whence int) (int64, error)
-}
-
-// seekSource is the io.Reader oto pulls from. It performs any requested seek on
-// the audio-output goroutine, inside the same lock as Read, so the decoder is
-// never read and seeked concurrently (which aborts the process).
-type seekSource struct {
-	p       *Player
-	dec     pcmStream
-	mu      sync.Mutex
-	pending int64 // PCM byte offset to seek to, or -1 for none
-}
-
-func (s *seekSource) Read(b []byte) (int, error) {
-	s.mu.Lock()
-	if s.pending >= 0 {
-		off := s.pending
-		s.pending = -1
-		// A bad seek must not take down the audio goroutine.
-		func() {
-			defer func() { _ = recover() }()
-			if _, err := s.dec.Seek(off, io.SeekStart); err == nil {
-				s.p.played.Store(off)
-			}
-		}()
+// Gapless reports whether gapless transitions are enabled.
+func (p *Player) Gapless() bool { return p.gapless.Load() }
+func (p *Player) SetCrossfadeMS(ms int) {
+	if ms < 0 {
+		ms = 0
 	}
-	s.mu.Unlock()
-	n, err := s.dec.Read(b)
-	s.p.played.Add(int64(n))
-	return n, err
+	p.crossfadeMS.Store(int64(ms))
 }
+func (p *Player) CrossfadeMS() int { return int(p.crossfadeMS.Load()) }
 
-func (s *seekSource) requestSeek(off int64) {
-	s.mu.Lock()
-	s.pending = off
-	s.mu.Unlock()
-}
+// ---- construction ----
 
-// NewPlayer creates the audio output context.
+// NewPlayer initializes the audio context + default output device.
 func NewPlayer() (*Player, error) {
-	ctx, ready, err := oto.NewContext(&oto.NewContextOptions{
-		SampleRate:   sampleRate,
-		ChannelCount: channels,
-		Format:       oto.FormatSignedInt16LE,
-	})
+	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("audio init: %w", err)
 	}
-	<-ready
-	p := &Player{ctx: ctx}
+	p := &Player{ctx: ctx, stopMgr: make(chan struct{})}
 	p.state.Store(int32(Stopped))
 	p.lastErr.Store("")
 	p.format.Store("")
 	p.gainFac.Store(math.Float64bits(1))
+	p.gapless.Store(true)
 	p.setVolume(1.0)
+	if err := p.initDevice(nil); err != nil {
+		_ = ctx.Uninit()
+		ctx.Free()
+		return nil, err
+	}
+	go p.manage()
 	return p, nil
 }
 
-// SetOnFinish registers a callback fired when a track ends naturally.
-func (p *Player) SetOnFinish(fn func()) { p.onFinish = fn }
-
-// State returns the current playback state.
-func (p *Player) State() State { return State(p.state.Load()) }
-
-// LastError returns the last playback error message ("" if none).
-func (p *Player) LastError() string {
-	s, _ := p.lastErr.Load().(string)
-	return s
+// initDevice (re)creates the playback device, optionally bound to deviceID.
+func (p *Player) initDevice(deviceID *malgo.DeviceID) error {
+	cfg := malgo.DefaultDeviceConfig(malgo.Playback)
+	cfg.Playback.Format = malgo.FormatS16
+	cfg.Playback.Channels = channels
+	cfg.SampleRate = sampleRate
+	if deviceID != nil {
+		cfg.Playback.DeviceID = deviceID.Pointer()
+	}
+	dev, err := malgo.InitDevice(p.ctx.Context, cfg, malgo.DeviceCallbacks{Data: p.onSamples})
+	if err != nil {
+		return fmt.Errorf("audio device: %w", err)
+	}
+	if err := dev.Start(); err != nil {
+		dev.Uninit()
+		return fmt.Errorf("audio device start: %w", err)
+	}
+	p.mu.Lock()
+	old := p.device
+	p.device = dev
+	p.selectedID = deviceID
+	p.mu.Unlock()
+	if old != nil {
+		old.Uninit()
+	}
+	return nil
 }
 
-// PositionMS returns the approximate playback position.
-func (p *Player) PositionMS() int64 { return p.played.Load() * 1000 / bytesPerSec }
+// ---- the audio callback (runs on miniaudio's thread; must be fast) ----
 
-// DurationMS returns the current track duration (from metadata).
-func (p *Player) DurationMS() int64 { return p.totalMS.Load() }
+func (p *Player) onSamples(out, _ []byte, _ uint32) {
+	for i := range out {
+		out[i] = 0
+	}
+	if State(p.state.Load()) != Playing {
+		return
+	}
+	p.mu.Lock()
+	cur := p.cur
+	next := p.next
+	xfadeMS := p.crossfadeMS.Load()
+	p.mu.Unlock()
+	if cur == nil {
+		return
+	}
+
+	n := cur.ring.read(out)
+
+	// Crossfade: within the crossfade window of the end, with a next source
+	// ready, mix in next (fading in) while cur fades out.
+	if xfadeMS > 0 && next != nil {
+		total := cur.durMS
+		pos := p.played.Load() * 1000 / bytesPerSec
+		if total > 0 && pos >= total-xfadeMS {
+			mix := make([]byte, len(out))
+			m := next.ring.read(mix)
+			fade := float64(pos-(total-xfadeMS)) / float64(xfadeMS)
+			if fade < 0 {
+				fade = 0
+			} else if fade > 1 {
+				fade = 1
+			}
+			mixPCM(out[:n], out[:n], 1-fade)
+			mixPCM(mix[:m], mix[:m], fade)
+			addPCM(out, mix)
+			if m > n {
+				n = m
+			}
+		}
+	}
+
+	applyGain(out[:n], p.effectiveVolume())
+	p.played.Add(int64(n))
+}
+
+// ---- volume ----
 
 func (p *Player) setVolume(v float64) {
 	if v < 0 {
@@ -205,105 +267,120 @@ func (p *Player) setVolume(v float64) {
 		v = 1
 	}
 	p.volume.Store(math.Float64bits(v))
-	eff := p.effectiveVolume()
-	p.mu.Lock()
-	if p.cur != nil {
-		p.cur.SetVolume(eff)
-	}
-	p.mu.Unlock()
 }
-
-// Volume returns the current volume (0..1).
 func (p *Player) Volume() float64 { return math.Float64frombits(p.volume.Load()) }
-
-// AddVolume nudges the volume by delta and returns the new value.
 func (p *Player) AddVolume(delta float64) float64 {
-	v := p.Volume() + delta
-	p.setVolume(v)
+	p.setVolume(p.Volume() + delta)
 	return p.Volume()
 }
 
-// Play downloads + decrypts the whole track, then decodes and plays it.
+// ---- accessors ----
+
+func (p *Player) Format() string        { s, _ := p.format.Load().(string); return s }
+func (p *Player) SetOnFinish(fn func()) { p.onFinish = fn }
+func (p *Player) State() State          { return State(p.state.Load()) }
+func (p *Player) LastError() string     { s, _ := p.lastErr.Load().(string); return s }
+func (p *Player) PositionMS() int64     { return p.played.Load() * 1000 / bytesPerSec }
+func (p *Player) DurationMS() int64     { return p.totalMS.Load() }
+
+// ---- playback ----
+
+// Play starts a track immediately, replacing anything current.
 func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
-	p.Stop()
+	p.stopSources()
 	p.state.Store(int32(Loading))
 	p.lastErr.Store("")
 	p.played.Store(0)
 	p.totalMS.Store(durationMS)
 	p.format.Store(plan.Format)
-	// ReplayGain factor for this track (1.0 when disabled or unknown).
 	if p.rgOn.Load() {
 		p.gainFac.Store(math.Float64bits(dbToFactor(plan.GainDB)))
 	} else {
 		p.gainFac.Store(math.Float64bits(1))
 	}
 
-	resp, err := http.Get(plan.CDNURL)
-	if err != nil {
-		p.fail(err)
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		err := fmt.Errorf("CDN returned %s", resp.Status)
-		p.fail(err)
-		return err
-	}
-	enc, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		p.fail(err)
-		return err
-	}
-
-	// Encrypted Deezer streams need BF_CBC_STRIPE decryption first; plain
-	// streams (e.g. podcast episodes) are already raw codec bytes.
-	mp3bytes := enc
-	if plan.Encrypted {
-		mp3bytes, err = deezer.DecryptTrack(plan.TrackID, enc)
-		if err != nil {
-			p.fail(err)
-			return err
-		}
-	}
-	// Decrypt yields the raw codec bytes; pick the decoder by the resolved
-	// format (FLAC for HiFi, else MP3). Both decode to s16 stereo PCM.
-	var decoder pcmStream
-	if strings.Contains(strings.ToUpper(plan.Format), "FLAC") {
-		decoder, err = newFLACStream(mp3bytes)
-	} else {
-		decoder, err = mp3.NewDecoder(bytes.NewReader(mp3bytes))
-	}
-	if err != nil {
-		p.fail(err)
-		return err
-	}
-
-	src := &seekSource{p: p, dec: decoder, pending: -1}
-	player := p.ctx.NewPlayer(src)
-	player.SetVolume(p.effectiveVolume())
+	src := newSource(plan, durationMS)
+	go src.download()
+	go src.decode()
 
 	p.mu.Lock()
-	p.cur = player
-	p.src = src
+	p.cur = src
+	p.next = nil
 	p.mu.Unlock()
-
-	player.Play()
 	p.state.Store(int32(Playing))
-
-	go p.watch(player)
 	return nil
 }
 
-// SeekMS jumps to an absolute position. The actual decoder seek happens on the
-// audio goroutine (see seekSource.Read), so no player is recreated and the
-// decoder is never accessed concurrently — both of which previously aborted the
-// in-process GUI.
+// Preload prepares the next track so the transition is gapless/crossfaded. It is
+// a no-op if gapless is disabled.
+func (p *Player) Preload(plan *deezer.StreamPlan, durationMS int64) {
+	if !p.gapless.Load() && p.crossfadeMS.Load() == 0 {
+		return
+	}
+	src := newSource(plan, durationMS)
+	go src.download()
+	go src.decode()
+	p.mu.Lock()
+	if p.next != nil {
+		p.next.kill()
+	}
+	p.next = src
+	p.mu.Unlock()
+}
+
+// manage advances to the preloaded next source when the current one is drained.
+func (p *Player) manage() {
+	ticker := time.NewTicker(40 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.stopMgr:
+			return
+		case <-ticker.C:
+			if State(p.state.Load()) != Playing {
+				continue
+			}
+			p.mu.Lock()
+			cur := p.cur
+			next := p.next
+			p.mu.Unlock()
+			if cur == nil {
+				continue
+			}
+			if cur.eof.Load() && cur.ring.buffered() == 0 {
+				if e := cur.lastErr(); e != "" {
+					p.lastErr.Store(e)
+				}
+				if next != nil {
+					// Seamless swap to the preloaded next track.
+					p.mu.Lock()
+					cur.kill()
+					p.cur = next
+					p.next = nil
+					p.mu.Unlock()
+					p.played.Store(0)
+					p.totalMS.Store(next.durMS)
+					p.format.Store(next.format)
+					if p.onFinish != nil {
+						p.onFinish()
+					}
+				} else {
+					p.state.Store(int32(Stopped))
+					if p.onFinish != nil {
+						p.onFinish()
+					}
+				}
+			}
+		}
+	}
+}
+
+// SeekMS jumps to an absolute position in the current track.
 func (p *Player) SeekMS(ms int64) {
 	p.mu.Lock()
-	src := p.src
+	cur := p.cur
 	p.mu.Unlock()
-	if src == nil {
+	if cur == nil {
 		return
 	}
 	if ms < 0 {
@@ -313,56 +390,21 @@ func (p *Player) SeekMS(ms int64) {
 		ms = total
 	}
 	off := ms * bytesPerSec / 1000
-	off -= off % (channels * 2) // align to a whole stereo frame
-	p.played.Store(off)         // optimistic, for a snappy scrubber
-	src.requestSeek(off)
+	off -= off % frameBytes
+	p.played.Store(off)
+	cur.requestSeek(off)
 }
 
-func (p *Player) watch(player *oto.Player) {
-	for {
-		time.Sleep(200 * time.Millisecond)
-		p.mu.Lock()
-		cur := p.cur
-		p.mu.Unlock()
-		if cur != player {
-			return // superseded by another Play/Seek/Stop
-		}
-		if !player.IsPlaying() && p.State() == Playing {
-			p.mu.Lock()
-			if p.cur == player {
-				p.teardownLocked()
-			}
-			p.mu.Unlock()
-			p.state.Store(int32(Stopped))
-			if p.onFinish != nil {
-				p.onFinish()
-			}
-			return
-		}
-	}
-}
-
-// Pause halts output, keeping position.
 func (p *Player) Pause() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cur != nil && p.State() == Playing {
-		p.cur.Pause()
+	if p.State() == Playing {
 		p.state.Store(int32(Paused))
 	}
 }
-
-// Resume continues from a paused state.
 func (p *Player) Resume() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cur != nil && p.State() == Paused {
-		p.cur.Play()
+	if p.State() == Paused {
 		p.state.Store(int32(Playing))
 	}
 }
-
-// TogglePause flips between playing and paused.
 func (p *Player) TogglePause() {
 	switch p.State() {
 	case Playing:
@@ -372,25 +414,223 @@ func (p *Player) TogglePause() {
 	}
 }
 
-// Stop ends playback and releases the current player.
+// Stop halts playback and releases sources.
 func (p *Player) Stop() {
-	p.mu.Lock()
-	p.teardownLocked()
-	p.mu.Unlock()
+	p.stopSources()
 	p.state.Store(int32(Stopped))
 }
 
-// teardownLocked releases the current player + decoder. Caller holds p.mu.
-func (p *Player) teardownLocked() {
-	if p.cur != nil {
-		p.cur.Pause()
-		_ = p.cur.Close()
-		p.cur = nil
+func (p *Player) stopSources() {
+	p.mu.Lock()
+	cur, next := p.cur, p.next
+	p.cur, p.next = nil, nil
+	p.mu.Unlock()
+	if cur != nil {
+		cur.kill()
 	}
-	p.src = nil
+	if next != nil {
+		next.kill()
+	}
 }
 
-func (p *Player) fail(err error) {
-	p.lastErr.Store(err.Error())
-	p.state.Store(int32(Errored))
+// Close tears down the device + context.
+func (p *Player) Close() {
+	p.mgrOnce.Do(func() { close(p.stopMgr) })
+	p.stopSources()
+	p.mu.Lock()
+	dev := p.device
+	p.device = nil
+	p.mu.Unlock()
+	if dev != nil {
+		dev.Uninit()
+	}
+	if p.ctx != nil {
+		_ = p.ctx.Uninit()
+		p.ctx.Free()
+	}
+}
+
+// ---- source pipeline ----
+
+func newSource(plan *deezer.StreamPlan, durMS int64) *source {
+	s := &source{
+		plan:   plan,
+		durMS:  durMS,
+		format: plan.Format,
+		sb:     newStreamBuffer(),
+		ring:   newPCMRing(ringMax),
+	}
+	s.seekTo.Store(-1)
+	return s
+}
+
+// download fetches the CDN body, decrypting BF_CBC_STRIPE chunks (encrypted
+// streams) or passing through plain streams (podcasts), into the streamBuffer.
+func (s *source) download() {
+	resp, err := http.Get(s.plan.CDNURL)
+	if err != nil {
+		s.setErr(err)
+		s.sb.finish(err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		e := fmt.Errorf("CDN returned %s", resp.Status)
+		s.setErr(e)
+		s.sb.finish(e)
+		return
+	}
+	if !s.plan.Encrypted {
+		buf := make([]byte, 64*1024)
+		for {
+			n, err := resp.Body.Read(buf)
+			if n > 0 {
+				s.sb.append(buf[:n])
+			}
+			if err != nil {
+				if err != io.EOF {
+					s.setErr(err)
+				}
+				s.sb.finish(eofToNil(err))
+				return
+			}
+			if s.dead.Load() {
+				s.sb.finish(nil)
+				return
+			}
+		}
+	}
+	dec, err := deezer.NewStripeDecryptor(s.plan.TrackID)
+	if err != nil {
+		s.setErr(err)
+		s.sb.finish(err)
+		return
+	}
+	buf := make([]byte, 64*1024)
+	var out []byte
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			out = dec.Feed(buf[:n], out[:0])
+			s.sb.append(out)
+		}
+		if rerr != nil {
+			out = dec.Finish(out[:0])
+			if len(out) > 0 {
+				s.sb.append(out)
+			}
+			if rerr != io.EOF {
+				s.setErr(rerr)
+			}
+			s.sb.finish(eofToNil(rerr))
+			return
+		}
+		if s.dead.Load() {
+			s.sb.finish(nil)
+			return
+		}
+	}
+}
+
+func eofToNil(err error) error {
+	if err == io.EOF {
+		return nil
+	}
+	return err
+}
+
+// decode builds the decoder from the streamBuffer and pumps PCM into the ring,
+// honoring seek requests.
+func (s *source) decode() {
+	var dec pcmStream
+	var err error
+	if strings.Contains(strings.ToUpper(s.format), "FLAC") {
+		dec, err = newFLACStream(s.sb)
+	} else {
+		dec, err = mp3.NewDecoder(s.sb)
+	}
+	if err != nil {
+		if s.lastErr() == "" {
+			s.setErr(err)
+		}
+		s.eof.Store(true)
+		return
+	}
+	buf := make([]byte, decodeChunk)
+	seq := s.ring.seq()
+	for {
+		if s.dead.Load() {
+			return
+		}
+		if to := s.seekTo.Swap(-1); to >= 0 {
+			func() {
+				defer func() { _ = recover() }()
+				_, _ = dec.Seek(to, io.SeekStart)
+			}()
+			seq = s.ring.flush()
+		}
+		n, rerr := dec.Read(buf)
+		if n > 0 {
+			if !s.ring.write(buf[:n], seq) {
+				// flushed (seek) or closed; refresh seq and continue/stop.
+				if s.dead.Load() {
+					return
+				}
+				seq = s.ring.seq()
+			}
+		}
+		if rerr != nil {
+			s.eof.Store(true)
+			return
+		}
+	}
+}
+
+func (s *source) requestSeek(pcmOffset int64) { s.seekTo.Store(pcmOffset) }
+
+func (s *source) kill() {
+	s.dead.Store(true)
+	s.sb.close()
+	s.ring.close()
+}
+
+// ---- PCM helpers ----
+
+// applyGain scales interleaved s16 samples in place by g (0..1).
+func applyGain(b []byte, g float64) {
+	if g >= 0.999 {
+		return
+	}
+	for i := 0; i+1 < len(b); i += 2 {
+		v := int16(uint16(b[i]) | uint16(b[i+1])<<8)
+		v = int16(float64(v) * g)
+		b[i] = byte(v)
+		b[i+1] = byte(uint16(v) >> 8)
+	}
+}
+
+// mixPCM writes src*g into dst (same length); dst and src may alias.
+func mixPCM(dst, src []byte, g float64) {
+	for i := 0; i+1 < len(src) && i+1 < len(dst); i += 2 {
+		v := int16(uint16(src[i]) | uint16(src[i+1])<<8)
+		v = int16(float64(v) * g)
+		dst[i] = byte(v)
+		dst[i+1] = byte(uint16(v) >> 8)
+	}
+}
+
+// addPCM adds src into dst (saturating), in place.
+func addPCM(dst, src []byte) {
+	for i := 0; i+1 < len(src) && i+1 < len(dst); i += 2 {
+		a := int32(int16(uint16(dst[i]) | uint16(dst[i+1])<<8))
+		b := int32(int16(uint16(src[i]) | uint16(src[i+1])<<8))
+		s := a + b
+		if s > 32767 {
+			s = 32767
+		} else if s < -32768 {
+			s = -32768
+		}
+		dst[i] = byte(int16(s))
+		dst[i+1] = byte(uint16(int16(s)) >> 8)
+	}
 }

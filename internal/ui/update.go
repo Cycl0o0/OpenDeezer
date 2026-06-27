@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -171,17 +172,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.player.SeekMS(m.pendingSeek)
 			m.pendingSeek = 0
 		}
-		m.publishMedia()
-		// New track invalidates cached lyrics.
-		m.lyrics = nil
-		m.lyricsTrack = ""
-		// Reset + fetch artwork for the new track.
-		m.curImg = nil
-		m.curCover = ""
-		m.curImgTrack = msg.track.ID
-		if artworkSupported() && msg.track.ArtworkURL != "" {
-			return m, m.coverCmd(msg.track.ID, msg.track.ArtworkURL)
+		cmd := m.onTrackChanged(msg.track)
+		// Preload the next track for a gapless/crossfaded transition.
+		return m, tea.Batch(cmd, m.preloadNextCmd())
+
+	case preloadMsg:
+		if msg.plan != nil {
+			m.player.Preload(msg.plan, msg.dur)
 		}
+		return m, nil
+
+	case devicesMsg:
+		items := make([]list.Item, len(msg.devices))
+		cur := m.player.CurrentDevice()
+		for i, d := range msg.devices {
+			items[i] = deviceRow(d.ID, d.Name, d.ID == cur)
+		}
+		m.list.Title = "Output device"
+		m.list.SetItems(items)
+		m.list.ResetSelected()
+		m.prevScreen = m.screen
+		m.screen = screenDevices
+		m.loading = false
+		m.status = ""
 		return m, nil
 
 	case lyricsMsg:
@@ -203,7 +216,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case trackFinishedMsg:
-		// Advance the queue, then keep waiting for the next finish.
+		// If the player is still Playing, it gaplessly swapped to the preloaded
+		// next track — sync the queue pointer (only preloaded for the linear next)
+		// and refresh the UI without re-Play()ing. Otherwise advance + play.
+		if m.player.State() == audio.Playing {
+			m.q.Next()
+			m.playing = true
+			if t, ok := m.q.Current(); ok {
+				return m, tea.Batch(m.onTrackChanged(t), m.preloadNextCmd(), m.waitFinish())
+			}
+		}
 		return m, tea.Batch(m.advance(), m.waitFinish())
 
 	case errMsg:
@@ -345,6 +367,32 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = "ReplayGain off"
 		}
 		return m, nil
+	case "d":
+		// Output device picker.
+		m.loading = true
+		m.status = "Loading devices…"
+		return m, m.devicesCmd()
+	case "x":
+		// Cycle crossfade: 0 → 3s → 6s → 12s → 0.
+		next := map[int]int{0: 3000, 3000: 6000, 6000: 12000, 12000: 0}[m.player.CrossfadeMS()]
+		m.player.SetCrossfadeMS(next)
+		_ = SaveCrossfadeMS(next)
+		if next == 0 {
+			m.status = "Crossfade off"
+		} else {
+			m.status = "Crossfade " + strconv.Itoa(next/1000) + "s"
+		}
+		return m, nil
+	case "ctrl+g":
+		on := !m.player.Gapless()
+		m.player.SetGapless(on)
+		_ = SaveGapless(on)
+		if on {
+			m.status = "Gapless on"
+		} else {
+			m.status = "Gapless off"
+		}
+		return m, nil
 	case "l":
 		// Show synced lyrics for the current track.
 		if t, ok := m.q.Current(); ok {
@@ -402,7 +450,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "esc", "backspace":
 		switch m.screen {
-		case screenNowPlaying, screenCredits, screenQueue, screenLyrics, screenHelp:
+		case screenNowPlaying, screenCredits, screenQueue, screenLyrics, screenHelp, screenDevices:
 			m.screen = m.prevScreen
 		case screenList:
 			m.screen = screenMenu
@@ -495,6 +543,15 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			m.q.SetIndex(m.findInQueue(it.episode.ID))
 		}
 		return m, m.playCurrent()
+	case rowDevice:
+		if err := m.player.SetDevice(it.deviceID); err != nil {
+			m.status = "Device error: " + err.Error()
+		} else {
+			_ = SaveAudioDevice(it.deviceID)
+			m.status = "Output: " + it.title
+		}
+		m.screen = m.prevScreen
+		return m, nil
 	case rowPlaylist:
 		m.status = "Loading playlist…"
 		m.loading = true
@@ -551,6 +608,22 @@ func (m *Model) advance() tea.Cmd {
 	}
 	m.playing = false
 	m.saveResume()
+	return nil
+}
+
+// onTrackChanged refreshes now-playing state (media, lyrics, cover) for a newly
+// active track and returns a cover-fetch command if applicable.
+func (m *Model) onTrackChanged(t deezer.Track) tea.Cmd {
+	m.status = ""
+	m.publishMedia()
+	m.lyrics = nil
+	m.lyricsTrack = ""
+	m.curImg = nil
+	m.curCover = ""
+	m.curImgTrack = t.ID
+	if artworkSupported() && t.ArtworkURL != "" {
+		return m.coverCmd(t.ID, t.ArtworkURL)
+	}
 	return nil
 }
 
