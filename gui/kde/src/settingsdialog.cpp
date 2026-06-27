@@ -11,8 +11,9 @@
 #include <QVBoxLayout>
 
 namespace {
-const char *kKeyQuality = "audio/qualityLevel"; // int: 0=128, 1=320, 2=FLAC
-const char *kKeyTray    = "behavior/closeToTray";
+const char *kKeyQuality    = "audio/qualityLevel"; // int: 0=128, 1=320, 2=FLAC
+const char *kKeyReplayGain = "audio/replayGain";   // bool: loudness normalization
+const char *kKeyTray       = "behavior/closeToTray";
 
 QSettings openIni(const QString &path) { return QSettings(path, QSettings::IniFormat); }
 } // namespace
@@ -21,6 +22,11 @@ int SettingsDialog::loadQuality(const QString &iniPath) {
     QSettings s = openIni(iniPath);
     int v = s.value(kKeyQuality, 0).toInt(); // default: Normal (MP3_128)
     return v < 0 ? 0 : (v > 2 ? 2 : v);
+}
+
+bool SettingsDialog::loadReplayGain(const QString &iniPath) {
+    QSettings s = openIni(iniPath);
+    return s.value(kKeyReplayGain, false).toBool(); // default: off
 }
 
 bool SettingsDialog::loadCloseToTray(const QString &iniPath) {
@@ -44,6 +50,9 @@ SettingsDialog::SettingsDialog(const QString &iniPath, QWidget *parent)
     m_quality->addItem(QStringLiteral("HiFi — FLAC lossless (falls back to MP3)"), 2);
     m_quality->setCurrentIndex(loadQuality(m_iniPath));
     audioForm->addRow(QStringLiteral("Streaming quality"), m_quality);
+    m_replayGain = new QCheckBox(QStringLiteral("Normalize loudness (ReplayGain)"));
+    m_replayGain->setChecked(loadReplayGain(m_iniPath));
+    audioForm->addRow(QString(), m_replayGain);
     root->addWidget(audioBox);
 
     // ---- Behaviour ----
@@ -76,13 +85,16 @@ SettingsDialog::SettingsDialog(const QString &iniPath, QWidget *parent)
 
 void SettingsDialog::save() {
     const int  level = m_quality->currentData().toInt();
+    const bool rg    = m_replayGain->isChecked();
     const bool tray  = m_tray->isChecked();
 
     QSettings s = openIni(m_iniPath);
     s.setValue(kKeyQuality, level);
+    s.setValue(kKeyReplayGain, rg);
     s.setValue(kKeyTray, tray);
     s.sync();
 
     emit qualityChanged(level);
+    emit replayGainChanged(rg);
     emit closeToTrayChanged(tray);
 }

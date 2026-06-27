@@ -54,6 +54,17 @@ extern "C" void DZSetQuality(int level); // 0=MP3_128, 1=MP3_320, 2=FLAC
 extern "C" char *DZFormat(void);         // human label of the current stream
 extern "C" int  DZHighQuality(void);
 
+// v0.3 additions. Redeclared here (like the quality controls above) so the GUI
+// still builds against an older generated header; identical redeclarations are
+// harmless. All *JSON results are malloc'd C strings — free them with DZFree.
+extern "C" char *DZAccountJSON(void);           // {userId,name,offer,canHq,canHifi,loggedIn}
+extern "C" char *DZChartsJSON(void);            // {tracks,albums,artists,playlists}
+extern "C" char *DZArtistTopJSON(char *id);     // {tracks}
+extern "C" char *DZArtistProfileJSON(char *id); // {artist,top,albums,related}
+extern "C" char *DZLyricsJSON(char *trackID);   // {plain,synced:[{timeMs,text}],isSynced}
+extern "C" void  DZSetReplayGain(int on);       // 1=on, 0=off
+extern "C" int   DZReplayGain(void);            // 1=on, 0=off
+
 namespace {
 
 const char *kAccent = "#A238FF"; // Deezer "Electric Violet"
@@ -309,17 +320,45 @@ void MainWindow::setupTray() {
 void MainWindow::openSettings() {
     SettingsDialog dlg(settingsPath(), this);
     connect(&dlg, &SettingsDialog::qualityChanged, this, &MainWindow::applyQuality);
+    connect(&dlg, &SettingsDialog::replayGainChanged, this, &MainWindow::applyReplayGain);
     connect(&dlg, &SettingsDialog::closeToTrayChanged, this,
             [this](bool on) { m_closeToTray = on; });
     dlg.exec();
+}
+
+// Parse DZAccountJSON {name,offer,canHq,canHifi,loggedIn} into the cached tier
+// fields used by the About box, status bar and the quality entitlement note.
+void MainWindow::applyAccount(const QByteArray &json) {
+    const QJsonObject o = QJsonDocument::fromJson(json).object();
+    m_accountName  = o.value("name").toString();
+    m_accountOffer = o.value("offer").toString();
+    m_canHq        = o.value("canHq").toBool();
+    m_canHifi      = o.value("canHifi").toBool();
+    m_haveAccount  = o.value("loggedIn").toBool() || !m_accountName.isEmpty();
 }
 
 void MainWindow::applyQuality(int level) {
     m_quality = level;
     DZSetQuality(level);
     const char *names[] = {"Normal (MP3 128)", "High (MP3 320)", "HiFi (FLAC)"};
-    statusBar()->showMessage(QStringLiteral("Quality: ") +
-                             names[level < 0 ? 0 : (level > 2 ? 2 : level)], 3000);
+    QString msg = QStringLiteral("Quality: ") +
+                  names[level < 0 ? 0 : (level > 2 ? 2 : level)];
+    // Note when the chosen tier exceeds the account's entitlement; the engine
+    // transparently falls back, so this is informational only.
+    if (m_haveAccount) {
+        if (level >= 2 && !m_canHifi)
+            msg += QStringLiteral(" — your plan has no HiFi; the engine will fall back");
+        else if (level >= 1 && !m_canHq)
+            msg += QStringLiteral(" — your plan has no High quality; the engine will fall back");
+    }
+    statusBar()->showMessage(msg, 4000);
+}
+
+void MainWindow::applyReplayGain(bool on) {
+    m_replayGain = on;
+    DZSetReplayGain(on ? 1 : 0);
+    statusBar()->showMessage(on ? QStringLiteral("ReplayGain: on")
+                                : QStringLiteral("ReplayGain: off"), 3000);
 }
 
 void MainWindow::quitApp() {
@@ -363,13 +402,18 @@ void MainWindow::buildMenu() {
     auto *help = menuBar()->addMenu("&Help");
     auto *about = help->addAction("&About OpenDeezer");
     connect(about, &QAction::triggered, this, [this] {
-        QMessageBox::about(
-            this, "About OpenDeezer",
+        QString text =
             "<h3>OpenDeezer 0.3.0</h3>"
             "<p>An open source reimplementation of Deezer.</p>"
             "<p>Native KDE / Qt6 client. The engine (login, browse, Blowfish"
-            " decrypt, MP3 decode, playback) is a Go core linked in-process.</p>"
-            "<p>By <b>Cycl0o0</b>.<br>Licensed under <b>AGPL-3.0</b>.</p>");
+            " decrypt, MP3 decode, playback) is a Go core linked in-process.</p>";
+        // Show the signed-in account tier (from DZAccountJSON) when available.
+        if (m_haveAccount && !m_accountName.isEmpty())
+            text += QStringLiteral("<p>Signed in as <b>%1</b> · %2</p>")
+                        .arg(m_accountName.toHtmlEscaped(),
+                             m_accountOffer.toHtmlEscaped());
+        text += "<p>By <b>Cycl0o0</b>.<br>Licensed under <b>AGPL-3.0</b>.</p>";
+        QMessageBox::about(this, "About OpenDeezer", text);
     });
 }
 
@@ -381,6 +425,7 @@ void MainWindow::buildSidebar() {
     m_sidebar->addItem(QStringLiteral("♥  Liked Songs"));
     m_sidebar->addItem(QStringLiteral("☰  Playlists"));
     m_sidebar->addItem(QStringLiteral("⌕  Search"));
+    m_sidebar->addItem(QStringLiteral("★  Charts"));
     connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainWindow::onSidebarChanged);
 }
 
@@ -398,6 +443,10 @@ void MainWindow::onSidebarChanged(int row) {
         m_stack->setCurrentIndex(2);
         if (m_searchEdit)
             m_searchEdit->setFocus();
+        break;
+    case 3:
+        m_stack->setCurrentIndex(0); // charts reuse the shared track table page
+        loadCharts();
         break;
     default:
         break;
@@ -613,15 +662,27 @@ void MainWindow::startLogin() {
     // DZInit blocks on the network — never on the GUI thread.
     QtConcurrent::run([this, ab] {
         const int ok = DZInit(cstr(ab));
-        QMetaObject::invokeMethod(this, [this, ok] {
+        // Plan + entitlements (cheap cached read once logged in).
+        QByteArray acct;
+        if (ok)
+            acct = takeJson(DZAccountJSON());
+        QMetaObject::invokeMethod(this, [this, ok, acct] {
             if (ok) {
                 m_loggedIn = true;
+                applyAccount(acct);          // tier + HiFi/HQ entitlements
                 m_lastFinished = DZFinishedCount();
                 m_vol->setValue(static_cast<int>(qRound(DZVolume() * 100)));
-                applyQuality(m_quality);   // apply persisted quality on startup
+                // ReplayGain: apply the persisted preference, then mirror back
+                // the engine's actual state from DZReplayGain.
+                DZSetReplayGain(SettingsDialog::loadReplayGain(settingsPath()) ? 1 : 0);
+                m_replayGain = (DZReplayGain() != 0);
+                applyQuality(m_quality);     // apply persisted quality (+ entitlement note)
                 m_poll->start();
                 m_sidebar->setCurrentRow(0); // triggers loadFavorites()
-                statusBar()->showMessage("Connected", 3000);
+                const QString conn = (m_haveAccount && !m_accountName.isEmpty())
+                    ? m_accountName + " · " + m_accountOffer
+                    : QStringLiteral("Connected");
+                statusBar()->showMessage(conn, 4000);
             } else {
                 statusBar()->showMessage("Login failed");
                 QMessageBox::critical(this, "OpenDeezer",
@@ -645,6 +706,24 @@ void MainWindow::loadFavorites() {
             m_tableTracks = tracks;
             fillTrackTable(m_trackTable, tracks, gen);
             statusBar()->showMessage(QString("Liked Songs — %1 tracks").arg(tracks.size()), 3000);
+        }, Qt::QueuedConnection);
+    });
+}
+
+// Global top tracks (DZChartsJSON also carries albums/artists/playlists; this
+// view shows the tracks in the shared track table, mirroring loadFavorites()).
+void MainWindow::loadCharts() {
+    if (!m_loggedIn)
+        return;
+    m_tracksHeader->setText("Charts");
+    statusBar()->showMessage("Loading charts…");
+    QtConcurrent::run([this] {
+        const QVector<Track> tracks = parseTracks(takeJson(DZChartsJSON()));
+        QMetaObject::invokeMethod(this, [this, tracks] {
+            const int gen = ++m_artGen;
+            m_tableTracks = tracks;
+            fillTrackTable(m_trackTable, tracks, gen);
+            statusBar()->showMessage(QString("Charts — %1 tracks").arg(tracks.size()), 3000);
         }, Qt::QueuedConnection);
     });
 }

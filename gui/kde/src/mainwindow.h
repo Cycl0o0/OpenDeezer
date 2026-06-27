@@ -25,6 +25,7 @@ class QToolButton;
 class QLineEdit;
 class QTimer;
 class QImage;
+class QByteArray;
 class QCloseEvent;
 class QSystemTrayIcon;
 QT_END_NAMESPACE
@@ -66,6 +67,7 @@ private:
     void startLogin();
     void onSidebarChanged(int row);
     void loadFavorites();
+    void loadCharts();
     void loadPlaylists();
     void openPlaylist(const Playlist &p);
     void openAlbum(const Album &a);
@@ -89,7 +91,9 @@ private:
     void setupMpris();
     void setupTray();
     void openSettings();
+    void applyAccount(const QByteArray &json);
     void applyQuality(int level);
+    void applyReplayGain(bool on);
     void quitApp();
     QString settingsPath() const;
 
@@ -135,7 +139,14 @@ private:
     QSystemTrayIcon *m_tray        = nullptr;   // background / close-to-tray
     QString          m_lastStatus;              // dedupe MPRIS PlaybackStatus
     int              m_quality     = 0;         // 0 Normal, 1 High, 2 HiFi
+    bool             m_replayGain  = false;     // loudness normalization (DZReplayGain)
     bool             m_closeToTray = true;      // honour close-to-tray setting
+
+    // ---- account tier (DZAccountJSON) ----
+    QString m_accountName, m_accountOffer;      // shown in About / status bar
+    bool    m_canHq       = false;              // plan allows MP3 320
+    bool    m_canHifi     = false;              // plan allows FLAC
+    bool    m_haveAccount = false;              // DZAccountJSON parsed OK
     bool             m_forceQuit   = false;     // set by an explicit Quit
     bool             m_trayHintShown = false;   // first hide-to-tray notice
 

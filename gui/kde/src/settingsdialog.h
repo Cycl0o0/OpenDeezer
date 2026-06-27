@@ -23,16 +23,19 @@ public:
 
     // Read persisted values (used by MainWindow at startup, without a dialog).
     static int  loadQuality(const QString &iniPath); // 0=Normal,1=High,2=HiFi
+    static bool loadReplayGain(const QString &iniPath);
     static bool loadCloseToTray(const QString &iniPath);
 
 signals:
     void qualityChanged(int level);       // 0=MP3_128, 1=MP3_320, 2=FLAC
+    void replayGainChanged(bool on);      // loudness normalization toggle
     void closeToTrayChanged(bool on);
 
 private:
     void save();
 
     QString    m_iniPath;
-    QComboBox *m_quality = nullptr;
-    QCheckBox *m_tray    = nullptr;
+    QComboBox *m_quality    = nullptr;
+    QCheckBox *m_replayGain = nullptr;
+    QCheckBox *m_tray       = nullptr;
 };
