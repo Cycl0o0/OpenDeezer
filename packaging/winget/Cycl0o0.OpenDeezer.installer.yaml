@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: Cycl0o0.OpenDeezer
-PackageVersion: 0.4.0
+PackageVersion: 0.4.1
 InstallerType: portable
 Commands:
   - opendeezer
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/Cycl0o0/OpenDeezer/releases/download/v0.4.0/opendeezer-tui-windows-amd64.exe
+    InstallerUrl: https://github.com/Cycl0o0/OpenDeezer/releases/download/v0.4.1/opendeezer-tui-windows-amd64.exe
     InstallerSha256: REPLACE_WITH_SHA256_AFTER_RELEASE
 ManifestType: installer
 ManifestVersion: 1.6.0

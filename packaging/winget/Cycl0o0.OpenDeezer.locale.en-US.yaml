@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 PackageIdentifier: Cycl0o0.OpenDeezer
-PackageVersion: 0.4.0
+PackageVersion: 0.4.1
 PackageLocale: en-US
 Publisher: Cycl0o0
 PublisherUrl: https://github.com/Cycl0o0

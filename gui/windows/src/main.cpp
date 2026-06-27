@@ -2302,7 +2302,7 @@ private:
         dlg.XamlRoot(m_win.Content().XamlRoot());
         dlg.Title(box_value(L"About OpenDeezer"));
         muxc::StackPanel sp; sp.Spacing(8);
-        muxc::TextBlock h; h.Text(L"OpenDeezer 0.4.0"); h.FontSize(22); h.FontWeight(wut::FontWeights::SemiBold());
+        muxc::TextBlock h; h.Text(L"OpenDeezer 0.4.1"); h.FontSize(22); h.FontWeight(wut::FontWeights::SemiBold());
         h.Foreground(m_accent);
         muxc::TextBlock tag; tag.Text(L"An open source reimplementation of Deezer."); tag.TextWrapping(mux::TextWrapping::Wrap);
         muxc::TextBlock body; body.TextWrapping(mux::TextWrapping::Wrap);

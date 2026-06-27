@@ -1,6 +1,6 @@
 pkgbase = opendeezer
 	pkgdesc = Terminal Deezer client — browse and stream in HiFi with your Premium ARL
-	pkgver = 0.4.0
+	pkgver = 0.4.1
 	pkgrel = 1
 	url = https://github.com/Cycl0o0/OpenDeezer
 	arch = x86_64
@@ -9,7 +9,7 @@ pkgbase = opendeezer
 	makedepends = go
 	makedepends = git
 	depends = alsa-lib
-	source = opendeezer-0.4.0.tar.gz::https://github.com/Cycl0o0/OpenDeezer/archive/refs/tags/v0.4.0.tar.gz
+	source = opendeezer-0.4.1.tar.gz::https://github.com/Cycl0o0/OpenDeezer/archive/refs/tags/v0.4.1.tar.gz
 	sha256sums = SKIP
 
 pkgname = opendeezer

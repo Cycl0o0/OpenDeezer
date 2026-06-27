@@ -51,7 +51,7 @@ const (
 	channels    = 2
 	frameBytes  = channels * 2 // s16 stereo
 	bytesPerSec = sampleRate * frameBytes
-	ringMax     = bytesPerSec // ~1s of decoded PCM buffered
+	ringMax     = 4 * bytesPerSec // ~4s of decoded PCM buffered (headroom vs underrun)
 	decodeChunk = 16 * 1024
 )
 
@@ -92,11 +92,12 @@ func (s *source) lastErr() string {
 type Player struct {
 	ctx *malgo.AllocatedContext
 
-	mu         sync.Mutex
+	mu         sync.Mutex // guards device + selectedID only
 	device     *malgo.Device
 	selectedID *malgo.DeviceID
-	cur        *source
-	next       *source
+	// cur/next are accessed lock-free from the realtime audio callback.
+	cur  atomic.Pointer[source]
+	next atomic.Pointer[source]
 
 	state       atomic.Int32
 	played      atomic.Int64 // PCM bytes the callback has consumed from cur (position)
@@ -220,11 +221,9 @@ func (p *Player) onSamples(out, _ []byte, _ uint32) {
 	if State(p.state.Load()) != Playing {
 		return
 	}
-	p.mu.Lock()
-	cur := p.cur
-	next := p.next
+	cur := p.cur.Load()
+	next := p.next.Load()
 	xfadeMS := p.crossfadeMS.Load()
-	p.mu.Unlock()
 	if cur == nil {
 		return
 	}
@@ -303,10 +302,14 @@ func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
 	go src.download()
 	go src.decode()
 
-	p.mu.Lock()
-	p.cur = src
-	p.next = nil
-	p.mu.Unlock()
+	old := p.cur.Swap(src)
+	oldNext := p.next.Swap(nil)
+	if old != nil {
+		old.kill()
+	}
+	if oldNext != nil {
+		oldNext.kill()
+	}
 	p.state.Store(int32(Playing))
 	return nil
 }
@@ -320,12 +323,9 @@ func (p *Player) Preload(plan *deezer.StreamPlan, durationMS int64) {
 	src := newSource(plan, durationMS)
 	go src.download()
 	go src.decode()
-	p.mu.Lock()
-	if p.next != nil {
-		p.next.kill()
+	if old := p.next.Swap(src); old != nil {
+		old.kill()
 	}
-	p.next = src
-	p.mu.Unlock()
 }
 
 // manage advances to the preloaded next source when the current one is drained.
@@ -340,10 +340,8 @@ func (p *Player) manage() {
 			if State(p.state.Load()) != Playing {
 				continue
 			}
-			p.mu.Lock()
-			cur := p.cur
-			next := p.next
-			p.mu.Unlock()
+			cur := p.cur.Load()
+			next := p.next.Load()
 			if cur == nil {
 				continue
 			}
@@ -353,11 +351,9 @@ func (p *Player) manage() {
 				}
 				if next != nil {
 					// Seamless swap to the preloaded next track.
-					p.mu.Lock()
+					p.cur.Store(next)
+					p.next.Store(nil)
 					cur.kill()
-					p.cur = next
-					p.next = nil
-					p.mu.Unlock()
 					p.played.Store(0)
 					p.totalMS.Store(next.durMS)
 					p.format.Store(next.format)
@@ -377,9 +373,7 @@ func (p *Player) manage() {
 
 // SeekMS jumps to an absolute position in the current track.
 func (p *Player) SeekMS(ms int64) {
-	p.mu.Lock()
-	cur := p.cur
-	p.mu.Unlock()
+	cur := p.cur.Load()
 	if cur == nil {
 		return
 	}
@@ -421,14 +415,10 @@ func (p *Player) Stop() {
 }
 
 func (p *Player) stopSources() {
-	p.mu.Lock()
-	cur, next := p.cur, p.next
-	p.cur, p.next = nil, nil
-	p.mu.Unlock()
-	if cur != nil {
+	if cur := p.cur.Swap(nil); cur != nil {
 		cur.kill()
 	}
-	if next != nil {
+	if next := p.next.Swap(nil); next != nil {
 		next.kill()
 	}
 }

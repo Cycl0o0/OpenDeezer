@@ -4,6 +4,17 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1]
+
+### Fixed
+- **Choppy audio** (reported on macOS): the PCM ring did a full-buffer memmove
+  under its lock on every audio callback, starving the decoder and underrunning
+  the buffer. Replaced with a true circular buffer + a lock-free (atomic) audio
+  callback, with ~4s of buffer headroom.
+- **KDE login window never appeared**: `startLogin()` ran inside the MainWindow
+  constructor and exec'd the modal login dialog (a nested event loop) before the
+  window was shown, blocking construction. It now runs after the event loop starts.
+
 ## [0.4.0]
 
 ### Added
