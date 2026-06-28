@@ -41,6 +41,7 @@ modules:
       - cc -O2 -o opendeezer gui/linux/launcher.c -ldl -Wl,-rpath,'$ORIGIN'
       - install -Dm755 opendeezer /app/bin/opendeezer
       - install -Dm755 gui/kde/build/libopendeezer-qt.so /app/bin/libopendeezer-qt.so
+      - install -Dm755 gui/kde/opendeezer-login /app/bin/opendeezer-login
       - install -Dm644 gui/linux/org.opendeezer.OpenDeezer.desktop /app/share/applications/org.opendeezer.OpenDeezer.unified.desktop
       - install -Dm644 assets/icon.png /app/share/icons/hicolor/256x256/apps/org.opendeezer.OpenDeezer.unified.png
     sources:

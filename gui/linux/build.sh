@@ -28,8 +28,11 @@ cp "$ROOT/gui/gnome/build/libopendeezer-gtk.so" "$DIST/"
 echo "==> [3/5] Qt backend (libopendeezer-qt.so)"
 ( cd "$ROOT/gui/kde"
   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release >/dev/null
-  cmake --build build -j "$(nproc 2>/dev/null || echo 2)" --target opendeezer-qt )
+  cmake --build build -j "$(nproc 2>/dev/null || echo 2)" --target opendeezer-qt opendeezer-login )
 cp "$ROOT/gui/kde/build/libopendeezer-qt.so" "$DIST/"
+# Standalone login webview helper — the launcher/app spawns it (QtWebEngine
+# out-of-process so it works despite the backend being dlopen'd).
+cp "$ROOT/gui/kde/build/opendeezer-login" "$DIST/"
 
 echo "==> [4/5] launcher"
 cc -O2 -o "$DIST/opendeezer" "$HERE/launcher.c" -ldl -Wl,-rpath,'$ORIGIN'

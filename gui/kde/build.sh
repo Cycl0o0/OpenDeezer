@@ -24,4 +24,5 @@ echo "==> compiling (cmake --build)"
 cmake --build "$HERE/build" -j "$(nproc 2>/dev/null || echo 2)"
 
 cp "$HERE/build/opendeezer-kde" "$HERE/opendeezer-kde"
-echo "==> done -> $HERE/opendeezer-kde"
+cp "$HERE/build/opendeezer-login" "$HERE/opendeezer-login"   # standalone login webview helper
+echo "==> done -> $HERE/opendeezer-kde (+ opendeezer-login)"

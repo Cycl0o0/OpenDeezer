@@ -35,6 +35,7 @@ modules:
     build-commands:
       - cd gui/kde && chmod +x build.sh && ./build.sh
       - install -Dm755 gui/kde/opendeezer-kde /app/bin/opendeezer-kde
+      - install -Dm755 gui/kde/opendeezer-login /app/bin/opendeezer-login
       - install -Dm644 gui/linux/org.opendeezer.OpenDeezer.desktop /app/share/applications/org.opendeezer.OpenDeezer.kde.desktop
       - install -Dm644 gui/kde/opendeezer.png /app/share/icons/hicolor/256x256/apps/org.opendeezer.OpenDeezer.kde.png
     sources:
