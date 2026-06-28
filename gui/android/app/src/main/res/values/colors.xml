@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deezer brand purple -->
+    <color name="deezer_purple">#A238FF</color>
+    <color name="black">#000000</color>
+    <color name="ic_launcher_background">#121216</color>
+</resources>

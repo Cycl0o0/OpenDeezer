@@ -1,0 +1,11 @@
+# Android / Gradle build artefacts
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+
+# The gomobile-bound engine is produced by build.sh / CI, not committed.
+app/libs/*.aar
