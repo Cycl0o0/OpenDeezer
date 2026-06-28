@@ -24,6 +24,21 @@ func TestIsLAN(t *testing.T) {
 	}
 }
 
+func TestTwoRespondersShareThePort(t *testing.T) {
+	// Two instances on one host must both bind UDP :Port (SO_REUSEPORT), so each
+	// is discoverable — this is the same-machine GNOME+KDE case.
+	r1, err := Advertise(func() Info { return Info{Name: "A", Client: "gnome"} }, 7001)
+	if err != nil {
+		t.Skipf("cannot bind discovery port: %v", err)
+	}
+	defer r1.Close()
+	r2, err := Advertise(func() Info { return Info{Name: "B", Client: "kde"} }, 7002)
+	if err != nil {
+		t.Fatalf("second responder failed to bind the shared port: %v", err)
+	}
+	defer r2.Close()
+}
+
 func TestResponderRepliesToProbeOnly(t *testing.T) {
 	r, err := Advertise(func() Info {
 		return Info{Name: "Test Device", Client: "tui", Version: "1.2.3"}

@@ -56,6 +56,28 @@ func DZSetClientInfo(client, device *C.char) {
 	mu.Unlock()
 }
 
+// DZNowPlayingJSON returns the track actually playing right now as a jTrack:
+// when routed to a device it is the remote's current track (so the controller's
+// now-playing stays in sync); otherwise the local current track (which also
+// reflects tracks started via the control API). "{}" when nothing is playing.
+//
+//export DZNowPlayingJSON
+func DZNowPlayingJSON() *C.char {
+	if routedRemote() != nil {
+		if t := remoteSnapshot().Track; t != nil {
+			return jsonStr(jTrack{
+				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, AlbumName: t.Album,
+				Explicit: t.Explicit, DurationMS: t.DurationMS,
+			}, nil)
+		}
+		return jsonStr(map[string]any{}, nil)
+	}
+	if cur := currentTrack(); cur.ID != "" {
+		return jsonStr(toJTrack(cur), nil)
+	}
+	return jsonStr(map[string]any{}, nil)
+}
+
 // DZDiscoverDevices broadcasts a LAN probe and returns the OpenDeezer devices
 // found, as a JSON array of {name, addr}. timeoutMS bounds the wait (~600ms is a
 // good default).

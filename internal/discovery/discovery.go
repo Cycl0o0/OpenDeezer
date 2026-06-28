@@ -1,21 +1,29 @@
-// Package discovery provides minimal LAN discovery of OpenDeezer instances so a
-// client can offer a "play on another device" picker (OpenDeezer Connect). Each
+// Package discovery provides LAN discovery of OpenDeezer instances so a client
+// can offer a "play on another device" picker (OpenDeezer Connect). Each
 // instance with the control API enabled runs a small UDP responder advertising
-// its display name + control port; a client broadcasts a probe and collects
+// its display name + control port; a client multicasts a probe and collects
 // replies.
 //
-// Security: the responder only answers the exact probe magic, replies with a
-// tiny fixed payload (no amplification), only to private/loopback/link-local
-// sources (no internet reflection), and never carries the same-account
-// credential (the Deezer user id) — only the display name. Discovery reveals
-// "an OpenDeezer named X is at ip:port"; actually controlling it still requires
-// passing the control API's auth.
+// Transport: IPv4 UDP multicast (group 239.255.42.99, port 7655) with a limited
+// broadcast as a fallback for networks that filter multicast. The responder
+// binds with SO_REUSEADDR/SO_REUSEPORT so several instances on ONE machine can
+// all listen + answer.
+//
+// Security: the responder answers only the exact probe magic, only to
+// private/loopback/link-local sources (no internet reflection), with a tiny
+// fixed payload (no amplification), and never carries the same-account
+// credential (the Deezer user id) — only the display name + client + version.
 package discovery
 
 import (
+	"context"
 	"encoding/json"
 	"net"
+	"strconv"
+	"syscall"
 	"time"
+
+	"golang.org/x/net/ipv4"
 )
 
 const (
@@ -26,6 +34,9 @@ const (
 	replyMagic = "OPENDEEZER_DEVICE_v1"
 	maxPacket  = 512
 )
+
+// groupIP is the admin-scoped IPv4 multicast group used for probes.
+var groupIP = net.IPv4(239, 255, 42, 99)
 
 // Device is a discovered OpenDeezer instance.
 type Device struct {
@@ -56,13 +67,20 @@ type Responder struct {
 	conn *net.UDPConn
 }
 
-// Advertise starts the discovery responder. info supplies the current identity
-// (read per request, so re-login is reflected); controlPort is the control API's
-// TCP port that controllers should connect to.
+// Advertise starts the discovery responder on UDP :Port (reuse-port so multiple
+// instances on one host coexist) and joins the multicast group on every capable
+// interface. info supplies the current identity; controlPort is the control API
+// TCP port controllers should connect to.
 func Advertise(info func() Info, controlPort int) (*Responder, error) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: Port})
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error { return setReusePort(c) }}
+	pc, err := lc.ListenPacket(context.Background(), "udp4", ":"+strconv.Itoa(Port))
 	if err != nil {
 		return nil, err
+	}
+	conn := pc.(*net.UDPConn)
+	p := ipv4.NewPacketConn(conn)
+	for _, ifi := range multicastInterfaces() {
+		_ = p.JoinGroup(&ifi, &net.UDPAddr{IP: groupIP})
 	}
 	r := &Responder{conn: conn}
 	go r.serve(info, controlPort)
@@ -85,7 +103,7 @@ func (r *Responder) serve(info func() Info, controlPort int) {
 			Magic: replyMagic, Name: in.Name, Port: controlPort,
 			Client: in.Client, Version: in.Version,
 		})
-		_, _ = r.conn.WriteToUDP(b, src)
+		_, _ = r.conn.WriteToUDP(b, src) // unicast reply to the prober
 	}
 }
 
@@ -96,20 +114,36 @@ func (r *Responder) Close() {
 	}
 }
 
-// Discover broadcasts a probe and collects replies for the given timeout.
+// Discover multicasts a probe (with a broadcast fallback) and collects replies
+// for the given timeout.
 func Discover(timeout time.Duration) ([]Device, error) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error { return setBroadcast(c) }}
+	pc, err := lc.ListenPacket(context.Background(), "udp4", ":0") // ephemeral
 	if err != nil {
 		return nil, err
 	}
+	conn := pc.(*net.UDPConn)
 	defer func() { _ = conn.Close() }()
 
-	dst := &net.UDPAddr{IP: net.IPv4bcast, Port: Port}
-	if _, err := conn.WriteToUDP([]byte(probeMagic), dst); err != nil {
-		return nil, err
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(timeout))
+	probe := []byte(probeMagic)
+	group := &net.UDPAddr{IP: groupIP, Port: Port}
+	p := ipv4.NewPacketConn(conn)
+	_ = p.SetMulticastTTL(4)
 
+	// Multicast the probe out of each capable interface.
+	ifaces := multicastInterfaces()
+	for i := range ifaces {
+		if p.SetMulticastInterface(&ifaces[i]) == nil {
+			_, _ = conn.WriteToUDP(probe, group)
+		}
+	}
+	if len(ifaces) == 0 {
+		_, _ = conn.WriteToUDP(probe, group)
+	}
+	// Fallback: limited broadcast (helps where multicast is filtered).
+	_, _ = conn.WriteToUDP(probe, &net.UDPAddr{IP: net.IPv4bcast, Port: Port})
+
+	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	seen := map[string]bool{}
 	var out []Device
 	buf := make([]byte, maxPacket)
@@ -119,12 +153,11 @@ func Discover(timeout time.Duration) ([]Device, error) {
 			break // deadline
 		}
 		var rep reply
-		// Bound the port to a valid range: a forged reply must not reach itoa with
-		// an out-of-range value (which would overflow its fixed buffer).
+		// Bound the port so a forged reply can't produce a bad address.
 		if json.Unmarshal(buf[:n], &rep) != nil || rep.Magic != replyMagic || rep.Port <= 0 || rep.Port > 65535 {
 			continue
 		}
-		addr := net.JoinHostPort(src.IP.String(), itoa(rep.Port))
+		addr := net.JoinHostPort(src.IP.String(), strconv.Itoa(rep.Port))
 		if seen[addr] {
 			continue
 		}
@@ -138,22 +171,23 @@ func Discover(timeout time.Duration) ([]Device, error) {
 	return out, nil
 }
 
+// multicastInterfaces returns up, multicast-capable interfaces.
+func multicastInterfaces() []net.Interface {
+	all, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []net.Interface
+	for _, ifi := range all {
+		if ifi.Flags&net.FlagUp != 0 && ifi.Flags&net.FlagMulticast != 0 {
+			out = append(out, ifi)
+		}
+	}
+	return out
+}
+
 // isLAN reports whether ip is a private/loopback/link-local address (safe to
 // answer; refuses public sources to avoid being a reflection amplifier).
 func isLAN(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [6]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
 }
