@@ -175,6 +175,9 @@ func DZInit(arl *C.char) C.int {
 		return 0
 	}
 	odlog.Info("logged in: %s (%s)", client.Account().Name, client.Account().Offer)
+	// Start engine-hosted services (Discord RP + control API) once. Pass the
+	// just-created client so startServices doesn't re-lock mu (we hold it here).
+	startServices(client)
 	return 1
 }
 
@@ -344,13 +347,18 @@ func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
 	if c == nil || p == nil {
 		return 0
 	}
-	plan, err := c.PrepareStream(C.GoString(trackID))
+	id := C.GoString(trackID)
+	plan, err := c.PrepareStream(id)
 	if err != nil {
 		return 0
 	}
 	if err := p.Play(plan, int64(durationMS)); err != nil {
 		return 0
 	}
+	// Track the now-playing for Discord RP + remote status; fill in full
+	// metadata (title/artist/album) asynchronously.
+	setCurrentTrack(deezer.Track{ID: id, DurationMS: int64(durationMS)})
+	go fetchTrackMeta(c, id)
 	return 1
 }
 

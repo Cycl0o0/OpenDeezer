@@ -125,6 +125,11 @@ Home screen entries: Liked Songs · My Playlists · ⚡ Flow · 📈 Charts ·
 OpenDeezer can expose a small HTTP/JSON API so another OpenDeezer client (remote
 control) or an AI agent (MCP) can drive playback. It is **off by default**.
 
+This is engine-hosted, so it works in **every client** — the TUI *and* all native
+GUIs (the same `OPENDEEZER_CONTROL` / Discord settings apply). From a GUI the
+engine exposes play/pause, stop, seek, volume, restart, play-track/playlist and
+status (next/prev/shuffle/repeat live in the GUI's own queue).
+
 Enable it with an env var or a config file:
 
 ```sh
