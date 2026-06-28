@@ -111,6 +111,8 @@ typedef struct {
   int                   current_index; /* index into track_store, -1 if none */
   int                   last_finished; /* DZFinishedCount snapshot */
   guint                 cover_gen;     /* drops stale async cover fetches */
+  char                 *np_id;         /* id shown in the now-playing bar (engine truth) */
+  char                 *np_art;        /* artwork URL last loaded into np_cover (refetch guard) */
 
   GtkButton            *like_btn;      /* heart toggle on the now-playing bar */
   gboolean              cur_liked;     /* local like state for the current track */
@@ -691,6 +693,8 @@ static void update_now_playing_ui(App *a, DzTrack *t, int idx) {
   gtk_range_set_value(GTK_RANGE(a->seek), 0);
   gtk_single_selection_set_selected(a->track_sel, idx);
   start_cover_fetch(a, t->artwork);
+  g_free(a->np_art);
+  a->np_art = g_strdup(t->artwork ? t->artwork : "");
   a->cur_liked = FALSE; /* no is-liked query — reset the heart on every track */
   update_like_button(a);
   mpris_notify_track(a);
@@ -2870,6 +2874,8 @@ static void play_episode(App *a, const char *id, const char *title, const char *
   gtk_range_set_range(GTK_RANGE(a->seek), 0, dur > 0 ? (double)dur : 1.0);
   gtk_range_set_value(GTK_RANGE(a->seek), 0);
   start_cover_fetch(a, art);
+  g_free(a->np_art);
+  a->np_art = g_strdup(art ? art : "");
 
   EpisodeCtx *e = g_new0(EpisodeCtx, 1);
   e->id = g_strdup(id);
@@ -3139,19 +3145,61 @@ static gboolean tick(gpointer data) {
   gtk_label_set_label(a->dur_label, dt);
   g_free(pt); g_free(dt);
 
-  /* show the actual output format (e.g. "FLAC · lossless") next to the artist */
+  /* Keep the now-playing bar in step with the engine truth: DZNowPlayingJSON
+   * reports the track ACTUALLY playing — a track started via the control API on
+   * this device, or the remote device's current track when routed via OpenDeezer
+   * Connect. Act only when the reported id is non-empty AND differs from what's
+   * shown, so we never clear the display on "{}" and never redundantly reload the
+   * artwork. */
+  char *npj = DZNowPlayingJSON(); /* malloc'd; free with DZFree */
+  if (npj) {
+    JsonParser *np = json_parser_new();
+    if (json_parser_load_from_data(np, npj, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(np);
+      if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+        JsonObject *o = json_node_get_object(root);
+        char *id = jstr(o, "id");
+        if (*id && g_strcmp0(id, a->np_id) != 0) {
+          char *name = jstr(o, "name"), *artist = jstr(o, "artistLine"),
+               *art = jstr(o, "artworkUrl");
+          gtk_label_set_label(a->np_title, name);
+          if (a->np_explicit) gtk_widget_set_visible(a->np_explicit, jbool(o, "explicit"));
+          gtk_label_set_label(a->np_subtitle, artist);
+          /* only reload artwork when it actually changes; remote tracks report no
+           * artworkUrl, so keep the last cover rather than clearing it */
+          if (*art && g_strcmp0(art, a->np_art) != 0) {
+            start_cover_fetch(a, art);
+            g_free(a->np_art);
+            a->np_art = g_strdup(art);
+          }
+          g_free(a->np_id);
+          a->np_id = g_strdup(id);
+          g_free(name); g_free(artist); g_free(art);
+        }
+        g_free(id);
+      }
+    }
+    g_object_unref(np);
+    DZFree(npj);
+  }
+
+  /* Append the actual output format (e.g. "FLAC · lossless") to the artist, but
+   * only while the LOCAL current track IS the one actually playing — when routed
+   * or driven by the control API the now-playing sync above owns the subtitle. */
   if (a->current_index >= 0) {
     DzTrack *ct = g_list_model_get_item(G_LIST_MODEL(a->track_store), a->current_index);
     if (ct) {
-      char *fmt = DZFormat(); /* labeled, malloc'd */
-      if (fmt && *fmt) {
-        char *sub = g_strconcat(ct->artist, "   ·   ", fmt, NULL);
-        gtk_label_set_label(a->np_subtitle, sub);
-        g_free(sub);
-      } else {
-        gtk_label_set_label(a->np_subtitle, ct->artist);
+      if (g_strcmp0(ct->id, a->np_id) == 0) {
+        char *fmt = DZFormat(); /* labeled, malloc'd */
+        if (fmt && *fmt) {
+          char *sub = g_strconcat(ct->artist, "   ·   ", fmt, NULL);
+          gtk_label_set_label(a->np_subtitle, sub);
+          g_free(sub);
+        } else {
+          gtk_label_set_label(a->np_subtitle, ct->artist);
+        }
+        if (fmt) DZFree(fmt);
       }
-      if (fmt) DZFree(fmt);
       g_object_unref(ct);
     }
   }

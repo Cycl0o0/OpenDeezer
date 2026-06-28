@@ -139,6 +139,7 @@ extern "C" {
     int            DZConnectDevice(char* addr);                 // 1 ok / 0 fail; addr is host:port
     void           DZDisconnectDevice();                        // return playback to this computer
     char*          DZConnectedDevice(void);                     // connected host:port ("" = local); free with DZFree
+    char*          DZNowPlayingJSON(void);                      // track actually playing now (jTrack shape); local control-API plays AND remote device when routed; "{}" if none; free with DZFree
 }
 
 // ---- namespace aliases ------------------------------------------------------
@@ -2083,6 +2084,7 @@ private:
             DispatchPreload(m_queue[n2].id, m_queue[n2].durationMs);
     }
     void SetNowPlaying(Track const& t) {
+        m_nowId = t.id; // anchor for the engine-truth poll in OnTick (avoids redundant re-adopt)
         // Prefix the now-playing title with the enclosed-E glyph for explicit tracks.
         m_nowTitle.Text(t.isExplicit ? hstring(L"\U0001F174 " + t.name) : t.name);
         m_curArtist = t.artistLine;
@@ -2203,6 +2205,26 @@ private:
                 AdvanceUiToPreloaded(n);
             } else {
                 Next();                                           // normal advance / restart
+            }
+        }
+
+        // Keep the now-playing bar in sync with the engine's actual track: tracks
+        // started here via the control API AND, when routed over OpenDeezer Connect,
+        // the REMOTE device's current track. Adopt only on a genuine engine-side
+        // transition (the reported id changed) to a real track not already shown --
+        // so a local play whose engine state is still catching up never reverts the
+        // bar, "{}" never clears it (keep last), and SetNowPlaying (run only here on
+        // an id change) refetches artwork only when the track actually changes.
+        {
+            hstring json = TakeJson(DZNowPlayingJSON());
+            wdj::JsonObject obj{ nullptr };
+            if (wdj::JsonObject::TryParse(json, obj)) {
+                hstring npid = obj.GetNamedString(L"id", L"");
+                if (!npid.empty()) {
+                    bool changed = (npid != m_engineNowId);
+                    m_engineNowId = npid;
+                    if (changed && npid != m_nowId) SetNowPlaying(TrackFromObj(obj));
+                }
             }
         }
     }
@@ -2626,7 +2648,9 @@ private:
 
     muxc::Image     m_cover{ nullptr };
     muxc::TextBlock m_nowTitle{ nullptr }, m_nowArtist{ nullptr }, m_posText{ nullptr }, m_durText{ nullptr };
-    hstring m_curArtist; // base artist line; format badge is appended each tick
+    hstring m_curArtist;   // base artist line; format badge is appended each tick
+    hstring m_nowId;       // id of the track shown in the now-playing bar (engine-truth sync anchor)
+    hstring m_engineNowId; // last id DZNowPlayingJSON reported; a change marks an engine-side track transition
     muxc::Slider    m_seek{ nullptr }, m_volume{ nullptr };
     muxc::Button    m_playBtn{ nullptr }, m_repeatBtn{ nullptr }, m_addBtn{ nullptr };
     muxc::FontIcon  m_playIcon{ nullptr };

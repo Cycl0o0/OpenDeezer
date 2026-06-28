@@ -20,15 +20,20 @@ func Dir() (string, error) {
 }
 
 func readFile(name string) string {
-	dir, err := Dir()
-	if err != nil {
-		return ""
+	// Primary: the platform config dir (macOS: ~/Library/Application Support).
+	if dir, err := Dir(); err == nil {
+		if b, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			return strings.TrimSpace(string(b))
+		}
 	}
-	b, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		return ""
+	// Fallback: ~/.config/opendeezer (Linux-style), so a file placed there still
+	// works on macOS where UserConfigDir differs.
+	if home, err := os.UserHomeDir(); err == nil {
+		if b, err := os.ReadFile(filepath.Join(home, ".config", "opendeezer", name)); err == nil {
+			return strings.TrimSpace(string(b))
+		}
 	}
-	return strings.TrimSpace(string(b))
+	return ""
 }
 
 // Control holds the control-API settings (remote control + MCP).

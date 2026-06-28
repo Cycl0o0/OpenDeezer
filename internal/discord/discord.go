@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 )
 
 // State is a now-playing snapshot pushed by the UI.
@@ -64,11 +66,12 @@ type richPresence struct {
 	appID string
 	pid   int
 
-	mu      sync.Mutex
-	conn    net.Conn
-	nonce   int
-	lastKey string
-	closed  bool
+	mu          sync.Mutex
+	conn        net.Conn
+	nonce       int
+	lastKey     string
+	closed      bool
+	warnedNoIPC bool
 }
 
 // Update pushes the state to Discord, (re)connecting if needed. Errors are
@@ -111,6 +114,11 @@ func (r *richPresence) Update(s State) {
 func (r *richPresence) connect() error {
 	conn, err := dialIPC()
 	if err != nil {
+		// Common case: Discord isn't running. Log once at debug to avoid spam.
+		if !r.warnedNoIPC {
+			r.warnedNoIPC = true
+			odlog.Debug("discord: no IPC socket (is Discord running?): %v", err)
+		}
 		return err
 	}
 	hs, _ := json.Marshal(map[string]any{"v": 1, "client_id": r.appID})
@@ -125,6 +133,8 @@ func (r *richPresence) connect() error {
 	}
 	r.conn = conn
 	r.lastKey = ""
+	r.warnedNoIPC = false
+	odlog.Info("discord: rich presence connected (app %s)", r.appID)
 	return nil
 }
 

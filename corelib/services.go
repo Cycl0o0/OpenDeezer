@@ -72,7 +72,13 @@ func fetchTrackMeta(c *deezer.Client, id string) {
 // login. The just-logged-in client is passed in; closures read globals lazily.
 func startServices(c *deezer.Client) {
 	servicesOnce.Do(func() {
-		dp = discord.New(config.LoadDiscordAppID())
+		appID := config.LoadDiscordAppID()
+		dp = discord.New(appID)
+		if appID == "" {
+			odlog.Info("discord: rich presence disabled (no app id; set discord-app-id.txt)")
+		} else {
+			odlog.Info("discord: rich presence enabled (app %s)", appID)
+		}
 
 		if cfg := config.LoadControl(); cfg.Enabled {
 			id, dev := clientInfo()

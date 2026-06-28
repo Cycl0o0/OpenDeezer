@@ -105,6 +105,36 @@ enum Core {
     static var durationMs: Int64 { DZDurationMS() }
     static var finishedCount: Int { Int(DZFinishedCount()) }
 
+    // MARK: now playing (engine truth)
+
+    // DZNowPlayingJSON returns a jTrack-shaped object for the track the engine is
+    // ACTUALLY playing. The remote (OpenDeezer Connect) variant carries no
+    // per-artist ids (artists is null), so decode a tolerant shape and map it to a
+    // Track — Track.artists is non-optional and would otherwise fail to decode.
+    private struct NowPlayingTrack: Decodable {
+        let id: String
+        let name: String
+        let durationMs: Int64
+        let artists: [Artist]?
+        let artistLine: String
+        let albumName: String
+        let artworkUrl: String
+        let explicit: Bool
+    }
+
+    /// The track the engine is ACTUALLY playing — started on this device via the
+    /// control API, or the REMOTE device's current track when routed through
+    /// OpenDeezer Connect. Returns nil when the engine reports nothing (empty
+    /// object / no id) so callers keep their last display.
+    static func nowPlaying() -> Track? {
+        guard let np = decode(NowPlayingTrack.self, takeJSON(DZNowPlayingJSON())),
+              !np.id.isEmpty else { return nil }
+        return Track(id: np.id, name: np.name, durationMs: np.durationMs,
+                     artists: np.artists ?? [], artistLine: np.artistLine,
+                     albumName: np.albumName, artworkUrl: np.artworkUrl,
+                     explicit: np.explicit)
+    }
+
     // MARK: audio quality
 
     /// Quality level: 0 = Normal (MP3 128), 1 = High (MP3 320), 2 = HiFi (FLAC).

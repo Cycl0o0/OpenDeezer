@@ -216,13 +216,22 @@ Portal](https://discord.com/developers/applications); optionally upload an art
 asset named `opendeezer`):
 
 ```sh
-export OPENDEEZER_DISCORD_APP_ID=your-application-id
-# or: echo your-application-id > ~/.config/opendeezer/discord-app-id.txt
+# Linux:  ~/.config/opendeezer/discord-app-id.txt
+# macOS:  ~/Library/Application Support/opendeezer/discord-app-id.txt
+echo your-application-id > ~/.config/opendeezer/discord-app-id.txt
+# (env var also works for the TUI: export OPENDEEZER_DISCORD_APP_ID=...)
 ```
 
 With Discord running, your now-playing track appears as "Listening to …" with a
 live progress bar. macOS/Linux only (Windows pending). If Discord isn't running
 it's silently skipped.
+
+> **GUI users (esp. macOS):** apps launched from Finder/Activities do **not**
+> inherit your shell environment, so set the id via the **file** above, not the
+> env var. The config file is read from the platform config dir *and*
+> `~/.config/opendeezer/` (so either path works). Check
+> `~/Library/Application Support/opendeezer/opendeezer.log` (macOS) — it logs
+> `rich presence enabled (app …)` / `connected` once it's working.
 
 ## How it works
 

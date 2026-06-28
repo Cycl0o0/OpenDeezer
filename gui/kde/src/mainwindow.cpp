@@ -104,6 +104,11 @@ extern "C" int   DZConnectDevice(char *addr);      // 1 ok, 0 fail; addr = host:
 extern "C" void  DZDisconnectDevice(void);         // return playback to this computer
 extern "C" char *DZConnectedDevice(void);          // host:port ("" if local)
 extern "C" void  DZSetClientInfo(char *client, char *device); // call BEFORE DZInit
+// The track ACTUALLY playing, as the usual track JSON shape
+// ({id,name,artistLine,albumName,artworkUrl,durationMs,explicit}); "{}" when
+// nothing plays. Reflects tracks started on this device AND, when routed via
+// OpenDeezer Connect, the remote device's current track. Free with DZFree.
+extern "C" char *DZNowPlayingJSON(void);
 
 namespace {
 
@@ -2341,6 +2346,15 @@ void MainWindow::setVolume(int percent) {
 void MainWindow::openConnectPicker() {
     if (!m_loggedIn)
         return;
+    // Re-entrancy guard: ignore extra clicks while a scan is already in flight so
+    // a burst of clicks can't stack worker scans (and, in turn, stacked dialogs).
+    if (m_connectScanning)
+        return;
+    m_connectScanning = true;
+    // Loading state: disable the button and announce the scan. Discovery ALWAYS
+    // re-runs here, so every open reflects the current LAN — never a stale list.
+    if (m_connectBtn)
+        m_connectBtn->setEnabled(false);
     statusBar()->showMessage(QStringLiteral("Scanning for devices…"));
     QtConcurrent::run([this] {
         const QVector<ConnectDevice> devs = parseDevices(takeJson(DZDiscoverDevices(700)));
@@ -2351,6 +2365,11 @@ void MainWindow::openConnectPicker() {
         }
         QMetaObject::invokeMethod(this, [this, devs, connected] {
             statusBar()->clearMessage();
+            if (m_connectBtn)
+                m_connectBtn->setEnabled(true);
+            m_connectScanning = false;
+            // A brand-new dialog + QListWidget is built from these fresh results
+            // every time, so no stale device state can survive between opens.
             showConnectPicker(devs, connected);
         }, Qt::QueuedConnection);
     });
@@ -2497,6 +2516,23 @@ void MainWindow::tick() {
             m_lastStatus = status;
         }
         m_mpris->updatePosition(pos);
+    }
+
+    // Keep the now-playing display in sync with the engine's truth: tracks started
+    // on this device AND, when routed via OpenDeezer Connect, the remote device's
+    // current track. Act only on a real track whose id differs from what's shown;
+    // an empty object ("{}", no id) leaves the display untouched (keep last). The
+    // id guard means setNowPlaying — and so the artwork refetch — runs only on an
+    // actual change, avoiding flicker and redundant cover downloads.
+    const QByteArray npJson = takeJson(DZNowPlayingJSON());
+    if (!npJson.isEmpty()) {
+        const Track nt = parseTrack(QJsonDocument::fromJson(npJson).object());
+        if (!nt.id.isEmpty() && nt.id != m_current.id) {
+            m_current = nt;
+            m_hasCurrent = true;
+            m_currentIsEpisode = false;
+            setNowPlaying(nt);
+        }
     }
 
     // Show the actual output format next to the now-playing title.

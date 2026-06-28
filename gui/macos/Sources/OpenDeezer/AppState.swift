@@ -778,6 +778,21 @@ final class AppState: ObservableObject {
         }
         state = s
         outputFormat = Core.format
+        // Engine-truth now-playing sync. DZNowPlayingJSON reports the track the
+        // engine is ACTUALLY playing — started here via the control API, or, when
+        // routed through OpenDeezer Connect, the REMOTE device's current track.
+        // Adopt it only when it names a different track than what's shown; keep the
+        // last display when it reports nothing (nil). Gating on the id means the
+        // artwork only reloads on a real track change, so there's no flicker /
+        // redundant art fetch. Runs before the finished-count advance so a local
+        // queue advance (which sets `current` itself) wins this tick and the engine
+        // truth reconciles on the next one.
+        if let np = Core.nowPlaying(), np.id != current?.id {
+            current = np
+            durationMs = np.durationMs
+            lastState = s
+            nowPlaying.update(track: np, state: s, positionMs: positionMs, durationMs: np.durationMs)
+        }
         let f = Core.finishedCount
         if f != lastFinished {
             lastFinished = f

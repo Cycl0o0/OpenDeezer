@@ -302,6 +302,7 @@ private:
     QSystemTrayIcon *m_tray        = nullptr;   // background / close-to-tray
     QString          m_lastStatus;              // dedupe MPRIS PlaybackStatus
     QString          m_connectName;             // friendly name of the connected device
+    bool             m_connectScanning = false; // a Connect discovery scan is in flight
     int              m_quality     = 0;         // 0 Normal, 1 High, 2 HiFi
     bool             m_replayGain  = false;     // loudness normalization (DZReplayGain)
     bool             m_closeToTray = true;      // honour close-to-tray setting
