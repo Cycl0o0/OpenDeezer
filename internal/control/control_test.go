@@ -30,7 +30,10 @@ func TestStatusAndCommandDispatch(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	var got State
-	if json.NewDecoder(resp.Body).Decode(&got); got.State != "playing" || got.Volume != 0.5 {
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "playing" || got.Volume != 0.5 {
 		t.Fatalf("status = %+v", got)
 	}
 
