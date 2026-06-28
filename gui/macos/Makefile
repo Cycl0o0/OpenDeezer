@@ -13,10 +13,14 @@ all: app
 
 # Compile the Go engine to a universal (arm64 + x86_64) C static archive so the
 # app runs on both Apple Silicon and Intel Macs.
+# -tags otosink: use the oto audio backend instead of malgo. malgo's CoreAudio
+# callback runs unreliably inside this c-archive GUI (choppy playback); oto's
+# pull model is smooth here. Trade-off: no output-device selection in the macOS
+# GUI (the TUI keeps malgo + device selection).
 corelib:
-	cd $(ROOT) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive \
+	cd $(ROOT) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -tags otosink -buildmode=c-archive \
 		-o gui/macos/Clib/libdeezercore-arm64.a ./corelib
-	cd $(ROOT) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive \
+	cd $(ROOT) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -tags otosink -buildmode=c-archive \
 		-o gui/macos/Clib/libdeezercore-amd64.a ./corelib
 	lipo -create Clib/libdeezercore-arm64.a Clib/libdeezercore-amd64.a \
 		-output Clib/libdeezercore.a

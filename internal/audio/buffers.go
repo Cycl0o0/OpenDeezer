@@ -49,6 +49,19 @@ func (b *streamBuffer) close() {
 	b.mu.Unlock()
 }
 
+// waitDone blocks until the producer has finished downloading the whole stream
+// (or the buffer is closed). Decoding only after the track is fully buffered
+// keeps playback smooth: streaming-while-decoding made MP3 choppy because the
+// decoder outran the network — FLAC was unaffected only because flac.NewSeek
+// seeks to the end, which already forced a full download.
+func (b *streamBuffer) waitDone() {
+	b.mu.Lock()
+	for !b.done && !b.closed {
+		b.cond.Wait()
+	}
+	b.mu.Unlock()
+}
+
 func (b *streamBuffer) Read(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

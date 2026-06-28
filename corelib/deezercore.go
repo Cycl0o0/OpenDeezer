@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 	"unsafe"
@@ -145,6 +146,12 @@ func DZFreeBytes(p *C.uchar) { C.free(unsafe.Pointer(p)) }
 func DZInit(arl *C.char) C.int {
 	mu.Lock()
 	defer mu.Unlock()
+	// This (the c-archive) is embedded in the native GUI processes. The realtime
+	// audio callback re-enters Go from CoreAudio's thread; frequent GC there can
+	// delay it and cause choppy playback (the standalone TUI doesn't show this).
+	// The engine's heap is small, so collect far less often to keep the callback
+	// timely. Set once.
+	debug.SetGCPercent(400)
 	if base, err := os.UserConfigDir(); err == nil {
 		_, _ = odlog.OpenFile(filepath.Join(base, "opendeezer"))
 	}

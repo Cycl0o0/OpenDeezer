@@ -1,8 +1,12 @@
-// Package audio is the malgo (miniaudio) playback engine: it streams, decrypts
-// and decodes Deezer audio (MP3 + FLAC) into a PCM ring that a single output
-// device drains. Supports seek, per-track ReplayGain, output-device selection,
-// gapless transitions and (experimental) crossfade. In-memory only — nothing is
-// written to disk.
+// Package audio is the playback engine: it streams, decrypts and decodes Deezer
+// audio (MP3 + FLAC) into a PCM ring that an output device drains. Supports seek,
+// per-track ReplayGain, gapless transitions and (experimental) crossfade.
+// In-memory only — nothing is written to disk.
+//
+// The output device is abstracted behind the `output` interface so the backend
+// is build-tag-selected: malgo/miniaudio by default (adds output-device
+// selection), or oto under the `otosink` tag — used for the macOS GUI, where
+// malgo's CoreAudio callback runs unreliably inside the c-archive.
 package audio
 
 import (
@@ -16,9 +20,28 @@ import (
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/gen2brain/malgo"
+	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/hajimehoshi/go-mp3"
 )
+
+// output is the platform audio sink. start() begins pulling PCM via read, which
+// fills the given buffer (zeroing any tail it doesn't produce) and returns the
+// number of bytes it actually wrote (for diagnostics). The backend is selected
+// by build tag (output_malgo.go / output_oto.go).
+type output interface {
+	start(read func(out []byte) int) error
+	devices() ([]Device, error)
+	setDevice(id string) error
+	currentDevice() string
+	close()
+}
+
+// Device is an output device the user can pick (empty ID = system default).
+type Device struct {
+	ID        string
+	Name      string
+	IsDefault bool
+}
 
 // State is the player's lifecycle state.
 type State int
@@ -52,6 +75,7 @@ const (
 	frameBytes  = channels * 2 // s16 stereo
 	bytesPerSec = sampleRate * frameBytes
 	ringMax     = 4 * bytesPerSec // ~4s of decoded PCM buffered (headroom vs underrun)
+	prebufferB  = 2 * bytesPerSec // fill ~2s before starting (clean intro, no underrun burst)
 	decodeChunk = 16 * 1024
 )
 
@@ -90,11 +114,8 @@ func (s *source) lastErr() string {
 // Player owns the malgo context + one output device and plays a current source,
 // optionally with a preloaded next source for gapless/crossfade.
 type Player struct {
-	ctx *malgo.AllocatedContext
+	out output
 
-	mu         sync.Mutex // guards device + selectedID only
-	device     *malgo.Device
-	selectedID *malgo.DeviceID
 	// cur/next are accessed lock-free from the realtime audio callback.
 	cur  atomic.Pointer[source]
 	next atomic.Pointer[source]
@@ -109,6 +130,8 @@ type Player struct {
 	rgOn        atomic.Bool
 	gapless     atomic.Bool
 	crossfadeMS atomic.Int64
+	cbCount     atomic.Int64 // audio callbacks served (diagnostics)
+	cbUnderrun  atomic.Int64 // callbacks with a short read (ring starvation)
 	onFinish    func()
 
 	stopMgr chan struct{}
@@ -162,78 +185,42 @@ func (p *Player) CrossfadeMS() int { return int(p.crossfadeMS.Load()) }
 
 // ---- construction ----
 
-// NewPlayer initializes the audio context + default output device.
+// NewPlayer initializes the audio output (backend chosen by build tag).
 func NewPlayer() (*Player, error) {
-	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
+	out, err := newOutput()
 	if err != nil {
-		return nil, fmt.Errorf("audio init: %w", err)
+		return nil, err
 	}
-	p := &Player{ctx: ctx, stopMgr: make(chan struct{})}
+	p := &Player{out: out, stopMgr: make(chan struct{})}
 	p.state.Store(int32(Stopped))
 	p.lastErr.Store("")
 	p.format.Store("")
 	p.gainFac.Store(math.Float64bits(1))
 	p.gapless.Store(true)
 	p.setVolume(1.0)
-	if err := p.initDevice(nil); err != nil {
-		_ = ctx.Uninit()
-		ctx.Free()
+	if err := p.out.start(p.readPCM); err != nil {
+		p.out.close()
 		return nil, err
 	}
 	go p.manage()
 	return p, nil
 }
 
-// initDevice (re)creates the playback device, optionally bound to deviceID.
-func (p *Player) initDevice(deviceID *malgo.DeviceID) error {
-	cfg := malgo.DefaultDeviceConfig(malgo.Playback)
-	cfg.Playback.Format = malgo.FormatS16
-	cfg.Playback.Channels = channels
-	cfg.SampleRate = sampleRate
-	// Use a large hardware period (~100ms × 4 ≈ 400ms total). The default period
-	// is tiny (~10ms on CoreAudio), so a Go GC pause longer than that delays the
-	// realtime callback and underruns the device — audible as choppy playback,
-	// especially in the GUI/c-archive process where GC pressure is higher (the
-	// idle TUI doesn't show it). A larger buffer coasts through GC pauses. The
-	// extra output latency is irrelevant for a music player.
-	cfg.Periods = 4
-	cfg.PeriodSizeInMilliseconds = 100
-	if deviceID != nil {
-		cfg.Playback.DeviceID = deviceID.Pointer()
-	}
-	dev, err := malgo.InitDevice(p.ctx.Context, cfg, malgo.DeviceCallbacks{Data: p.onSamples})
-	if err != nil {
-		return fmt.Errorf("audio device: %w", err)
-	}
-	if err := dev.Start(); err != nil {
-		dev.Uninit()
-		return fmt.Errorf("audio device start: %w", err)
-	}
-	p.mu.Lock()
-	old := p.device
-	p.device = dev
-	p.selectedID = deviceID
-	p.mu.Unlock()
-	if old != nil {
-		old.Uninit()
-	}
-	return nil
-}
-
-// ---- the audio callback (runs on miniaudio's thread; must be fast) ----
-
-func (p *Player) onSamples(out, _ []byte, _ uint32) {
+// readPCM fills out with the next PCM for the device (zeroing any tail it can't
+// produce) and returns the bytes actually written. Called from the backend's
+// realtime pull (malgo callback / oto reader); must be fast + lock-free.
+func (p *Player) readPCM(out []byte) int {
 	for i := range out {
 		out[i] = 0
 	}
 	if State(p.state.Load()) != Playing {
-		return
+		return 0
 	}
 	cur := p.cur.Load()
 	next := p.next.Load()
 	xfadeMS := p.crossfadeMS.Load()
 	if cur == nil {
-		return
+		return 0
 	}
 
 	n := cur.ring.read(out)
@@ -263,6 +250,15 @@ func (p *Player) onSamples(out, _ []byte, _ uint32) {
 
 	applyGain(out[:n], p.effectiveVolume())
 	p.played.Add(int64(n))
+
+	// Diagnostics: a short read means the ring didn't have a full callback's
+	// worth of PCM ready (decode/producer starvation). Counted so we can tell
+	// ring-underrun glitches from device/callback-jitter glitches.
+	p.cbCount.Add(1)
+	if n < len(out) {
+		p.cbUnderrun.Add(1)
+	}
+	return n
 }
 
 // ---- volume ----
@@ -318,7 +314,9 @@ func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
 	if oldNext != nil {
 		oldNext.kill()
 	}
-	p.state.Store(int32(Playing))
+	// Stay Loading; the manager flips to Playing once the ring is prebuffered, so
+	// the callback never pulls from a half-filled ring (which caused a burst of
+	// underruns — a choppy intro — at the start of every track).
 	return nil
 }
 
@@ -340,11 +338,32 @@ func (p *Player) Preload(plan *deezer.StreamPlan, durationMS int64) {
 func (p *Player) manage() {
 	ticker := time.NewTicker(40 * time.Millisecond)
 	defer ticker.Stop()
+	ticks := 0
 	for {
 		select {
 		case <-p.stopMgr:
 			return
 		case <-ticker.C:
+			// Diagnostics: log callback/underrun counts every ~5s while playing.
+			if ticks++; ticks%125 == 0 {
+				if c := p.cbCount.Load(); c > 0 {
+					var rb int
+					if cur := p.cur.Load(); cur != nil {
+						rb = cur.ring.buffered()
+					}
+					odlog.Debug("audio: callbacks=%d underruns=%d ringBuf=%dKB state=%v",
+						c, p.cbUnderrun.Load(), rb/1024, p.State())
+				}
+			}
+			// Prebuffer: promote Loading -> Playing once the ring has filled (or
+			// the track is short/decoded), so the callback starts from a healthy
+			// ring instead of underrunning while it fills.
+			if State(p.state.Load()) == Loading {
+				if cur := p.cur.Load(); cur != nil &&
+					(cur.ring.buffered() >= prebufferB || cur.eof.Load()) {
+					p.state.Store(int32(Playing))
+				}
+			}
 			if State(p.state.Load()) != Playing {
 				continue
 			}
@@ -431,22 +450,25 @@ func (p *Player) stopSources() {
 	}
 }
 
-// Close tears down the device + context.
+// Close tears down sources and the output device.
 func (p *Player) Close() {
 	p.mgrOnce.Do(func() { close(p.stopMgr) })
 	p.stopSources()
-	p.mu.Lock()
-	dev := p.device
-	p.device = nil
-	p.mu.Unlock()
-	if dev != nil {
-		dev.Uninit()
-	}
-	if p.ctx != nil {
-		_ = p.ctx.Uninit()
-		p.ctx.Free()
+	if p.out != nil {
+		p.out.close()
 	}
 }
+
+// ---- output device selection (delegates to the backend) ----
+
+// Devices lists available output devices.
+func (p *Player) Devices() ([]Device, error) { return p.out.devices() }
+
+// SetDevice switches output to the given device id ("" = system default).
+func (p *Player) SetDevice(id string) error { return p.out.setDevice(id) }
+
+// CurrentDevice returns the selected device id ("" = default).
+func (p *Player) CurrentDevice() string { return p.out.currentDevice() }
 
 // ---- source pipeline ----
 
@@ -540,12 +562,30 @@ func eofToNil(err error) error {
 // decode builds the decoder from the streamBuffer and pumps PCM into the ring,
 // honoring seek requests.
 func (s *source) decode() {
+	// Buffer the whole track before decoding. Decoding while still downloading
+	// made MP3 playback choppy (the decoder outran the network); this matches
+	// what the pre-malgo player did and what FLAC already did implicitly. The
+	// download runs in parallel and is far faster than realtime, so the startup
+	// wait is small; gapless preload still downloads the next track in advance.
+	s.sb.waitDone()
+	if s.dead.Load() {
+		return
+	}
 	var dec pcmStream
 	var err error
 	if strings.Contains(strings.ToUpper(s.format), "FLAC") {
 		dec, err = newFLACStream(s.sb)
 	} else {
-		dec, err = mp3.NewDecoder(s.sb)
+		var md *mp3.Decoder
+		md, err = mp3.NewDecoder(s.sb)
+		if err == nil {
+			// Diagnostics: the device runs at 44100 stereo and the pipeline
+			// assumes the decoder matches. A mismatch here (rate != 44100, or a
+			// mono source) would make MP3 playback sound choppy/wrong while FLAC
+			// (always 44100, mono duplicated to stereo) stays fine.
+			odlog.Debug("mp3 decode: sampleRate=%d deviceRate=%d format=%s", md.SampleRate(), sampleRate, s.format)
+			dec = md
+		}
 	}
 	if err != nil {
 		if s.lastErr() == "" {
