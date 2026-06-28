@@ -4,6 +4,28 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0]
+
+### Added
+- **Premium-only enforcement**: Free accounts are now blocked behind a clear
+  "account not supported — subscribe to Deezer Premium" message (TUI + all GUIs).
+- **Explicit "E" badge** on tracks across every list (TUI + all GUIs), parsed
+  from Deezer's explicit-content flag.
+- **Re-login / switch account** on demand in all four GUIs.
+
+### Changed
+- **macOS GUI audio backend → oto**: malgo's CoreAudio callback was unreliable
+  inside the c-archive GUI (choppy MP3/FLAC); the macOS GUI now uses oto (smooth).
+  Output-device selection is malgo-only, so it's unavailable in the macOS GUI;
+  the TUI and GNOME/KDE/Windows keep it.
+- Playback now buffers the full track + prebuffers ~2s before starting, fixing
+  the choppy intro / streaming glitches.
+
+### Fixed
+- **KDE login**: the Deezer web login runs in a separate `opendeezer-login`
+  helper process (QtWebEngine out-of-process), so it works in the dlopen'd
+  unified launcher and can't crash the app (manual ARL remains a fallback).
+
 ## [0.5.0]
 
 ### Fixed

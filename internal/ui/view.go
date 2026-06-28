@@ -85,7 +85,7 @@ func (m *Model) searchView() string {
 const creditsAuthor = "Cycl0o0"
 
 // Version is the app version, set from main at startup.
-var Version = "0.5.0"
+var Version = "0.6.0"
 
 func (m *Model) creditsView() string {
 	lines := []string{

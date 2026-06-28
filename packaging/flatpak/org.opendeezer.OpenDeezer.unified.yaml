@@ -47,4 +47,4 @@ modules:
     sources:
       - type: git
         url: https://github.com/Cycl0o0/OpenDeezer.git
-        tag: v0.5.0
+        tag: v0.6.0

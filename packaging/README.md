@@ -38,7 +38,7 @@ remove the `--share=network` build-arg — generate a sources manifest with
 ## winget (`winget/Cycl0o0.OpenDeezer.*.yaml`)
 Portable TUI exe. After release, set `InstallerSha256`, then submit the three
 manifests to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs)
-under `manifests/c/Cycl0o0/OpenDeezer/0.5.0/` (e.g. via `wingetcreate submit`).
+under `manifests/c/Cycl0o0/OpenDeezer/0.6.0/` (e.g. via `wingetcreate submit`).
 ```sh
 winget install Cycl0o0.OpenDeezer
 ```

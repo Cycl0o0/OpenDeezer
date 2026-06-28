@@ -570,7 +570,7 @@ void MainWindow::buildMenu() {
     auto *about = help->addAction("&About OpenDeezer");
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            "<h3>OpenDeezer 0.5.0</h3>"
+            "<h3>OpenDeezer 0.6.0</h3>"
             "<p>An open source reimplementation of Deezer.</p>"
             "<p>Native KDE / Qt6 client. The engine (login, browse, Blowfish"
             " decrypt, MP3 decode, playback) is a Go core linked in-process.</p>";
