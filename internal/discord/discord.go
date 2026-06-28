@@ -115,12 +115,12 @@ func (r *richPresence) connect() error {
 	}
 	hs, _ := json.Marshal(map[string]any{"v": 1, "client_id": r.appID})
 	if err := writeFrame(conn, opHandshake, hs); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return err
 	}
 	// Expect a READY dispatch; ignore the contents.
 	if _, _, err := readFrame(conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return err
 	}
 	r.conn = conn
@@ -130,7 +130,7 @@ func (r *richPresence) connect() error {
 
 func (r *richPresence) drop() {
 	if r.conn != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 	}
 	r.lastKey = ""
@@ -143,7 +143,7 @@ func (r *richPresence) Close() {
 	if r.conn != nil {
 		_ = writeFrame(r.conn, opFrame, r.clearFrame())
 		_ = writeFrame(r.conn, opClose, []byte("{}"))
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 	}
 	r.closed = true
