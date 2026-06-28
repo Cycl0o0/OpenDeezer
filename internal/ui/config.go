@@ -270,6 +270,21 @@ func LoadAudioDevice() string {
 }
 func SaveAudioDevice(id string) error { return saveStringFile("device.txt", id) }
 
+// LoadLastPeer / SaveLastPeer remember the last remote-control peer address so
+// the connect screen can prefill it.
+func LoadLastPeer() string {
+	dir, err := configDir()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "remote-peer.txt"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+func SaveLastPeer(addr string) error { return saveStringFile("remote-peer.txt", addr) }
+
 // LoadTheme returns the saved theme name ("" if none).
 func LoadTheme() string {
 	dir, err := configDir()

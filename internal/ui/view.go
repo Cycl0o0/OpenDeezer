@@ -39,6 +39,10 @@ func (m *Model) View() string {
 		body = m.lyricsView()
 	case screenHelp:
 		body = m.helpView()
+	case screenRemote:
+		body = m.remoteEntryView()
+	case screenRemoteCtl:
+		body = m.remoteCtlView()
 	case screenBlocked:
 		return m.blockedView() // full screen, no playback footer
 	default:

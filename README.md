@@ -161,6 +161,14 @@ Endpoints (reads are `GET`, mutations are `POST`):
 Mutations require `POST` and reject requests carrying a browser `Origin` header,
 so a web page you happen to visit can't drive your playback.
 
+### Remote control (one client drives another)
+
+Enable the Control API on the target (`OPENDEEZER_CONTROL=:7654`), then on
+another OpenDeezer client open **📡 Remote control** from the menu, enter the
+target's `host:port`, and connect. Transport keys (space/n/p/s, ←/→ seek, +/-
+volume, r/z) drive the remote; the screen shows its live now-playing. Same
+Deezer account auto-authenticates (or share a token).
+
 ### MCP server (AI agent control)
 
 `opendeezer-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)

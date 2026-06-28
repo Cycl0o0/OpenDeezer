@@ -31,6 +31,7 @@ func (m *Model) menuRows() []list.Item {
 		row{kind: rowMenu, title: "📈 Charts", desc: "top tracks, albums & artists", action: actCharts},
 		row{kind: rowMenu, title: "🎙 Podcasts", desc: "search shows & episodes", action: actPodcasts},
 		row{kind: rowMenu, title: "🔍 Search", desc: "tracks, albums, artists, playlists", action: actSearch},
+		row{kind: rowMenu, title: "📡 Remote control", desc: "drive another OpenDeezer client", action: actRemote},
 	)
 	return rows
 }
@@ -244,7 +245,37 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.publishMedia()
 		m.publishControl()
+		if m.remote != nil && m.screen == screenRemoteCtl {
+			return m, tea.Batch(tickCmd(), remotePollCmd(m.remote))
+		}
 		return m, tickCmd()
+
+	case remoteConnMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.status = "Remote: " + msg.err.Error()
+			return m, nil
+		}
+		m.remote = msg.client
+		m.remoteAddr = msg.addr
+		m.remoteName = msg.name
+		m.remoteState = msg.state
+		m.screen = screenRemoteCtl
+		name := msg.name
+		if name == "" {
+			name = msg.addr
+		}
+		m.status = "Connected to " + name
+		_ = SaveLastPeer(msg.addr)
+		return m, nil
+
+	case remoteStateMsg:
+		if msg.err != nil {
+			m.status = "Remote: " + msg.err.Error()
+			return m, nil
+		}
+		m.remoteState = msg.state
+		return m, nil
 
 	case mediaCmdMsg:
 		switch msg.kind {
@@ -353,6 +384,29 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, nil
+	}
+
+	// Remote-control screens own their keys.
+	if m.screen == screenRemoteCtl {
+		return m.handleRemoteKey(msg)
+	}
+	if m.screen == screenRemote {
+		switch msg.String() {
+		case "esc":
+			m.screen = screenMenu
+			m.status = ""
+			return m, nil
+		case "enter":
+			if m.search.Value() == "" {
+				return m, nil
+			}
+			m.loading = true
+			m.status = "Connecting…"
+			return m, m.remoteConnectCmd(m.search.Value())
+		}
+		var cmd tea.Cmd
+		m.search, cmd = m.search.Update(msg)
+		return m, cmd
 	}
 
 	// Search input captures most keys; handle it first.
@@ -585,6 +639,12 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			m.search.SetValue("")
 			m.search.Focus()
 			m.screen = screenSearch
+			return m, nil
+		case actRemote:
+			m.search.SetValue(LoadLastPeer())
+			m.search.Focus()
+			m.screen = screenRemote
+			m.status = ""
 			return m, nil
 		case actResume:
 			if r := LoadResume(); r != nil {

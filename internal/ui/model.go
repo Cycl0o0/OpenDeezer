@@ -35,7 +35,9 @@ const (
 	screenLyrics
 	screenHelp
 	screenDevices
-	screenBlocked // Free account — playback not available
+	screenRemote    // remote-control: enter/select a peer address
+	screenRemoteCtl // remote-control: driving a connected peer
+	screenBlocked   // Free account — playback not available
 )
 
 // Model is the root Bubble Tea model.
@@ -79,7 +81,28 @@ type Model struct {
 	ctrlState atomic.Pointer[control.State]   // playback snapshot read by the control HTTP goroutine
 	acctSnap  atomic.Pointer[control.Account] // identity snapshot read by the control HTTP goroutine
 
+	// remote control: drive another OpenDeezer client over its control API.
+	remote      *control.Client
+	remoteState control.State
+	remoteName  string // peer's account name (from /whoami)
+	remoteAddr  string // peer host:port currently connected/connecting
+
 	finished chan struct{} // signalled by player onFinish
+}
+
+// remoteConnMsg is the result of connecting to a peer (whoami + initial status).
+type remoteConnMsg struct {
+	client *control.Client
+	addr   string
+	name   string
+	state  control.State
+	err    error
+}
+
+// remoteStateMsg carries a polled/post-command status from the connected peer.
+type remoteStateMsg struct {
+	state control.State
+	err   error
 }
 
 // controlCmdMsg is a command from the control API, delivered onto the update

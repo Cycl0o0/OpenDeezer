@@ -27,6 +27,7 @@ const (
 	actResume
 	actFlow
 	actPodcasts
+	actRemote
 )
 
 // row is a single list entry. It implements bubbles/list.Item.
