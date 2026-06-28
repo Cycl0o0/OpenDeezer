@@ -15,6 +15,7 @@ struct Track: Codable, Hashable, Identifiable {
     let artistLine: String
     let albumName: String
     let artworkUrl: String
+    let explicit: Bool   // explicit lyrics/content — shows an "E" badge
 
     var durationText: String { Self.timeText(durationMs) }
 
@@ -93,6 +94,7 @@ struct Account: Codable {
     let offer: String
     let canHq: Bool
     let canHifi: Bool
+    let premium: Bool   // a paid plan that can stream on-demand; false = Deezer Free
     let loggedIn: Bool
 }
 

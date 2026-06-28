@@ -11,6 +11,10 @@ enum RepeatMode: Int { case off, all, one }
 @MainActor
 final class AppState: ObservableObject {
     @Published var loggedIn = false
+    // Free-account gate: OpenDeezer needs on-demand streaming (Premium). When a
+    // Deezer Free account logs in (account.premium == false) the whole app is
+    // replaced by FreeAccountBlockedView; no browsing or playback is wired up.
+    @Published var accountBlocked = false
     @Published var loginError: String?
     @Published var busy = false
     @Published var userID = ""
@@ -175,9 +179,19 @@ final class AppState: ObservableObject {
     // Post-login wiring shared by auto / web / manual login. Runs on the main
     // actor after a successful DZInit.
     private func finishLogin(account acct: Account?) {
-        loggedIn = true
         userID = Core.userID
         account = acct
+        // Free-account gate: a Deezer Free plan (premium == false) can't stream
+        // on-demand, so block the app here — skip all session/playback wiring so
+        // browsing and playback are never reachable. Reached by auto, web and
+        // manual-ARL login alike (they all funnel through finishLogin).
+        if let a = acct, !a.premium {
+            accountBlocked = true
+            loggedIn = true   // leave LoginGate; FreeAccountBlockedView takes over
+            return
+        }
+        accountBlocked = false
+        loggedIn = true
         volume = Core.volume
         replayGain = Core.replayGain
         // Apply persisted audio quality + gapless/crossfade, claim the OS Now
@@ -550,7 +564,8 @@ final class AppState: ObservableObject {
         playingEpisode = true
         let t = Track(id: e.id, name: e.title, durationMs: e.durationMs,
                       artists: [], artistLine: openedPodcast?.name ?? "Podcast",
-                      albumName: openedPodcast?.name ?? "", artworkUrl: e.artworkUrl)
+                      albumName: openedPodcast?.name ?? "", artworkUrl: e.artworkUrl,
+                      explicit: false)
         current = t
         durationMs = e.durationMs
         positionMs = 0
