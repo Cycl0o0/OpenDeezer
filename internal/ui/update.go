@@ -259,6 +259,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.remote = msg.client
 		m.remoteAddr = msg.addr
 		m.remoteName = msg.name
+		m.remoteClient = msg.clientType
+		m.remoteVersion = msg.version
 		m.remoteState = msg.state
 		m.screen = screenRemoteCtl
 		name := msg.name
@@ -275,6 +277,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.remoteState = msg.state
+		return m, nil
+
+	case devicesDiscoveredMsg:
+		m.loading = false
+		items := []list.Item{row{
+			kind: rowMenu, action: actRemoteManual,
+			title: "✎  Enter address…", desc: "type a host:port manually",
+		}}
+		for _, p := range msg.peers {
+			items = append(items, peerRow(p))
+		}
+		m.list.Title = "Connect to a device"
+		m.list.SetItems(items)
+		m.list.ResetSelected()
+		m.screen = screenRemote
+		if len(msg.peers) == 0 {
+			m.status = "No devices found — enable OPENDEEZER_CONTROL=:7654 on the target."
+		} else {
+			m.status = ""
+		}
 		return m, nil
 
 	case mediaCmdMsg:
@@ -381,6 +403,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.ctrl != nil {
 				m.ctrl.Close()
 			}
+			if m.advertiser != nil {
+				m.advertiser.Close()
+			}
 			return m, tea.Quit
 		}
 		return m, nil
@@ -390,10 +415,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenRemoteCtl {
 		return m.handleRemoteKey(msg)
 	}
-	if m.screen == screenRemote {
+	if m.screen == screenRemoteInput {
 		switch msg.String() {
 		case "esc":
 			m.screen = screenMenu
+			m.list.Title = "OpenDeezer"
+			m.list.SetItems(m.menuRows())
+			m.list.ResetSelected()
 			m.status = ""
 			return m, nil
 		case "enter":
@@ -402,7 +430,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.loading = true
 			m.status = "Connecting…"
-			return m, m.remoteConnectCmd(m.search.Value())
+			return m, m.remoteConnectCmd(m.search.Value(), true) // manual: trusted, may use token
 		}
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Update(msg)
@@ -452,6 +480,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.ctrl != nil {
 			m.ctrl.Close()
+		}
+		if m.advertiser != nil {
+			m.advertiser.Close()
 		}
 		return m, tea.Quit
 	case " ":
@@ -587,7 +618,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.screen {
 		case screenNowPlaying, screenCredits, screenQueue, screenLyrics, screenHelp, screenDevices:
 			m.screen = m.prevScreen
-		case screenList:
+		case screenList, screenRemote:
 			m.screen = screenMenu
 			m.list.Title = "OpenDeezer"
 			m.list.SetItems(m.menuRows())
@@ -641,9 +672,13 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			m.screen = screenSearch
 			return m, nil
 		case actRemote:
+			m.loading = true
+			m.status = "Scanning for devices…"
+			return m, m.discoverDevicesCmd()
+		case actRemoteManual:
 			m.search.SetValue(LoadLastPeer())
 			m.search.Focus()
-			m.screen = screenRemote
+			m.screen = screenRemoteInput
 			m.status = ""
 			return m, nil
 		case actResume:
@@ -701,6 +736,10 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 		m.status = "Loading album…"
 		m.loading = true
 		return m, m.albumTracksCmd(it.album)
+	case rowPeer:
+		m.loading = true
+		m.status = "Connecting to " + it.title + "…"
+		return m, m.remoteConnectCmd(it.peerAddr, false) // discovered: account-only
 	}
 	return m, nil
 }

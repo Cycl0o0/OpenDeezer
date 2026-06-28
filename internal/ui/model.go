@@ -5,13 +5,18 @@ package ui
 import (
 	"fmt"
 	"image"
+	"net"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/internal/discord"
+	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
+	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/mpris"
 	"github.com/Cycl0o0/OpenDeezer/internal/queue"
 
@@ -35,9 +40,10 @@ const (
 	screenLyrics
 	screenHelp
 	screenDevices
-	screenRemote    // remote-control: enter/select a peer address
-	screenRemoteCtl // remote-control: driving a connected peer
-	screenBlocked   // Free account — playback not available
+	screenRemote      // remote-control: device picker (discovered peers)
+	screenRemoteInput // remote-control: type a peer address by hand
+	screenRemoteCtl   // remote-control: driving a connected peer
+	screenBlocked     // Free account — playback not available
 )
 
 // Model is the root Bubble Tea model.
@@ -82,21 +88,35 @@ type Model struct {
 	acctSnap  atomic.Pointer[control.Account] // identity snapshot read by the control HTTP goroutine
 
 	// remote control: drive another OpenDeezer client over its control API.
-	remote      *control.Client
-	remoteState control.State
-	remoteName  string // peer's account name (from /whoami)
-	remoteAddr  string // peer host:port currently connected/connecting
+	remote        *control.Client
+	remoteState   control.State
+	remoteName    string               // peer's account name (from /whoami)
+	remoteAddr    string               // peer host:port currently connected/connecting
+	remoteClient  string               // peer device type/client (from /whoami)
+	remoteVersion string               // peer OpenDeezer version (from /whoami)
+	advertiser    *discovery.Responder // LAN advertisement (when our control API is LAN-bound)
 
 	finished chan struct{} // signalled by player onFinish
 }
 
+// peerDevice is a discovered Connect device + what it's currently playing.
+type peerDevice struct {
+	dev        discovery.Device
+	nowPlaying string
+}
+
+// devicesDiscoveredMsg carries the result of a LAN device scan.
+type devicesDiscoveredMsg struct{ peers []peerDevice }
+
 // remoteConnMsg is the result of connecting to a peer (whoami + initial status).
 type remoteConnMsg struct {
-	client *control.Client
-	addr   string
-	name   string
-	state  control.State
-	err    error
+	client     *control.Client
+	addr       string
+	name       string
+	clientType string
+	version    string
+	state      control.State
+	err        error
 }
 
 // remoteStateMsg carries a polled/post-command status from the connected peer.
@@ -202,6 +222,10 @@ func (m *Model) StartControl(send func(tea.Msg)) error {
 	if !cfg.Enabled {
 		return nil
 	}
+	if cfg.SameAccount && cfg.Token == "" {
+		odlog.Warn("control api: LAN-exposed with same-account auth only; the Deezer user id " +
+			"is not a strong secret. Set OPENDEEZER_CONTROL_TOKEN for a real credential.")
+	}
 	cmds := control.Commands{
 		PlayPause:     func() { send(controlCmdMsg{kind: "playpause"}) },
 		Next:          func() { send(controlCmdMsg{kind: "next"}) },
@@ -232,9 +256,27 @@ func (m *Model) StartControl(send func(tea.Msg)) error {
 		status, account, cmds, m.client,
 	)
 	m.ctrl.SetVersion(Version)
+	m.ctrl.SetClientInfo("tui", "OpenDeezer TUI")
 	if err := m.ctrl.Start(); err != nil {
 		m.ctrl = nil
 		return err
+	}
+	// Advertise on the LAN (OpenDeezer Connect) when reachable (non-loopback).
+	if !config.IsLoopbackAddr(cfg.Addr) {
+		if _, port, err := net.SplitHostPort(m.ctrl.Addr()); err == nil {
+			if p, e := strconv.Atoi(port); e == nil {
+				info := func() discovery.Info {
+					name := ""
+					if a := m.acctSnap.Load(); a != nil {
+						name = a.Name
+					}
+					return discovery.Info{Name: name, Client: "tui", Version: Version}
+				}
+				if resp, e := discovery.Advertise(info, p); e == nil {
+					m.advertiser = resp
+				}
+			}
+		}
 	}
 	return nil
 }

@@ -25,6 +25,7 @@ package control
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strconv"
@@ -94,8 +95,10 @@ type Account struct {
 type Whoami struct {
 	Name    string `json:"name"`
 	Offer   string `json:"offer,omitempty"`
-	Auth    string `json:"auth"` // token | account | none
-	Version string `json:"version,omitempty"`
+	Auth    string `json:"auth"`              // token | account | none
+	Version string `json:"version,omitempty"` // OpenDeezer version
+	Client  string `json:"client,omitempty"`  // client/platform id (tui, macos, gnome…)
+	Device  string `json:"device,omitempty"`  // human device label ("OpenDeezer TUI")
 }
 
 // Server serves the control API.
@@ -108,6 +111,8 @@ type Server struct {
 	sameAccount bool
 	addr        string
 	version     string
+	clientID    string // client/platform id (tui, macos, …)
+	device      string // human device label
 	srv         *http.Server
 	ln          net.Listener
 }
@@ -125,6 +130,9 @@ func New(cfg Config, status func() State, account func() Account, cmds Commands,
 // SetVersion records the app version reported by /whoami.
 func (s *Server) SetVersion(v string) { s.version = v }
 
+// SetClientInfo records the client/platform id + device label for /whoami.
+func (s *Server) SetClientInfo(client, device string) { s.clientID, s.device = client, device }
+
 // Addr returns the actual listen address (valid after Start).
 func (s *Server) Addr() string {
 	if s.ln != nil {
@@ -135,6 +143,13 @@ func (s *Server) Addr() string {
 
 // Start binds the port and serves in a background goroutine.
 func (s *Server) Start() error {
+	// Fail closed: never serve unauthenticated ("none" mode) on a non-loopback
+	// address — a config mistake (e.g. OPENDEEZER_CONTROL_SAMEACCOUNT=0 on a LAN
+	// bind) must not silently expose playback + private playlists to the LAN.
+	if s.token == "" && !s.sameAccount && !isLoopbackAddr(s.addr) {
+		return errors.New("control: refusing to serve unauthenticated on a non-loopback address; " +
+			"set OPENDEEZER_CONTROL_TOKEN or keep same-account auth enabled")
+	}
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return err
@@ -142,7 +157,16 @@ func (s *Server) Start() error {
 	s.ln = ln
 	mux := http.NewServeMux()
 	s.routes(mux)
-	s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	// Conservative timeouts + a small header cap: this can be LAN-exposed, so
+	// bound every phase of a request to resist slowloris / resource exhaustion.
+	s.srv = &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10, // 16 KiB
+	}
 	go func() { _ = s.srv.Serve(ln) }()
 	return nil
 }
@@ -232,13 +256,32 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 		case s.sameAccount:
 			want := s.accountID()
 			got := r.Header.Get("X-OpenDeezer-Account")
-			if want == "" || got != want {
+			// Constant-time compare (defense-in-depth; the id is only semi-secret).
+			if want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
 				http.Error(w, `{"error":"account mismatch"}`, http.StatusUnauthorized)
 				return
 			}
 		}
 		h(w, r)
 	}
+}
+
+// isLoopbackAddr reports whether a host:port binds only the loopback interface.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		return false // wildcard = all interfaces
+	case "localhost":
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // accountID is our logged-in Deezer user id ("" if unknown / not logged in).
@@ -262,7 +305,7 @@ func (s *Server) authMode() string {
 }
 
 func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
-	who := Whoami{Auth: s.authMode(), Version: s.version}
+	who := Whoami{Auth: s.authMode(), Version: s.version, Client: s.clientID, Device: s.device}
 	if s.account != nil {
 		a := s.account()
 		who.Name, who.Offer = a.Name, a.Offer // never the user id (it's the credential)

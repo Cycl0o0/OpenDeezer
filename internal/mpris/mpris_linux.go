@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	busName  = "org.mpris.MediaPlayer2.opendeezer"
-	objPath  = "/org/mpris/MediaPlayer2"
-	rootIff  = "org.mpris.MediaPlayer2"
-	playIff  = "org.mpris.MediaPlayer2.Player"
+	busName = "org.mpris.MediaPlayer2.opendeezer"
+	objPath = "/org/mpris/MediaPlayer2"
+	rootIff = "org.mpris.MediaPlayer2"
+	playIff = "org.mpris.MediaPlayer2.Player"
 )
 
 // New connects to the session bus and exports the MPRIS interfaces. On any
@@ -149,6 +149,7 @@ func (o playerObj) SetPosition(_ dbus.ObjectPath, posUS int64) *dbus.Error {
 	}
 	return nil
 }
+
 // OpenUri must keep this exact name: it maps to the MPRIS D-Bus method
 // org.mpris.MediaPlayer2.Player.OpenUri via godbus reflection.
 func (playerObj) OpenUri(string) *dbus.Error { return nil } //nolint:staticcheck // ST1003: D-Bus method name fixed by MPRIS spec

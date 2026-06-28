@@ -40,6 +40,8 @@ func (m *Model) View() string {
 	case screenHelp:
 		body = m.helpView()
 	case screenRemote:
+		body = m.list.View() // device picker
+	case screenRemoteInput:
 		body = m.remoteEntryView()
 	case screenRemoteCtl:
 		body = m.remoteCtlView()

@@ -14,6 +14,7 @@ const (
 	rowPodcast
 	rowEpisode
 	rowDevice
+	rowPeer // a discovered OpenDeezer Connect device
 )
 
 // menuAction is the action a rowMenu triggers.
@@ -28,6 +29,7 @@ const (
 	actFlow
 	actPodcasts
 	actRemote
+	actRemoteManual // enter a device address by hand
 )
 
 // row is a single list entry. It implements bubbles/list.Item.
@@ -43,6 +45,7 @@ type row struct {
 	podcast  deezer.Podcast    // for rowPodcast
 	episode  deezer.Episode    // for rowEpisode
 	deviceID string            // for rowDevice ("" = system default)
+	peerAddr string            // for rowPeer (host:port)
 }
 
 func (r row) Title() string       { return r.title }
@@ -97,4 +100,36 @@ func deviceRow(id, name string, current bool) row {
 		desc = "current"
 	}
 	return row{kind: rowDevice, title: title, desc: desc, deviceID: id}
+}
+
+// peerRow renders a discovered Connect device, with its client/version and (if
+// known) what it's currently playing.
+func peerRow(p peerDevice) row {
+	desc := deviceTypeLabel(p.dev.Client)
+	if p.dev.Version != "" {
+		desc += " · v" + p.dev.Version
+	}
+	if p.nowPlaying != "" {
+		desc += " · ▶ " + p.nowPlaying
+	}
+	desc += " · " + p.dev.Addr
+	return row{kind: rowPeer, title: "🔊 " + p.dev.Name, desc: desc, peerAddr: p.dev.Addr}
+}
+
+// deviceTypeLabel maps a client id to a friendly device type.
+func deviceTypeLabel(client string) string {
+	switch client {
+	case "tui":
+		return "Terminal"
+	case "darwin", "macos":
+		return "macOS"
+	case "windows":
+		return "Windows"
+	case "linux", "gnome", "kde":
+		return "Linux"
+	case "":
+		return "OpenDeezer"
+	default:
+		return client
+	}
 }

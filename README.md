@@ -164,7 +164,16 @@ Endpoints (reads are `GET`, mutations are `POST`):
 - **None.** Localhost binds with no token are open (loopback only).
 
 Mutations require `POST` and reject requests carrying a browser `Origin` header,
-so a web page you happen to visit can't drive your playback.
+so a web page you happen to visit can't drive your playback. The server also caps
+request/response sizes + sets timeouts (slowloris/DoS), and **refuses to start
+unauthenticated on a non-loopback address** — a LAN bind always requires
+same-account or token auth, failing closed on a misconfiguration.
+
+> **Security note.** A Deezer user id is only *semi-private* (it appears in
+> profile URLs), so same-account auth is LAN-trust grade — fine for a home
+> network. On an untrusted network, set `OPENDEEZER_CONTROL_TOKEN` for a real
+> secret. OpenDeezer Connect authenticates to *discovered* devices with the
+> account id only (never the token), since a discovery reply is unauthenticated.
 
 ### Remote control (one client drives another)
 

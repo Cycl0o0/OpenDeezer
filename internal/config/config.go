@@ -72,6 +72,9 @@ func LoadControl() Control {
 	return c
 }
 
+// IsLoopbackAddr reports whether a host:port binds only the loopback interface.
+func IsLoopbackAddr(addr string) bool { return isLoopbackAddr(addr) }
+
 // isLoopbackAddr reports whether a host:port binds only the loopback interface.
 func isLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)

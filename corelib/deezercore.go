@@ -146,8 +146,8 @@ func DZFreeBytes(p *C.uchar) { C.free(unsafe.Pointer(p)) }
 
 //export DZInit
 func DZInit(arl *C.char) C.int {
+	// One-time, non-network setup under the lock.
 	mu.Lock()
-	defer mu.Unlock()
 	// This (the c-archive) is embedded in the native GUI processes. The realtime
 	// audio callback re-enters Go from CoreAudio's thread; frequent GC there can
 	// delay it and cause choppy playback (the standalone TUI doesn't show this).
@@ -160,6 +160,7 @@ func DZInit(arl *C.char) C.int {
 	if player == nil {
 		p, err := audio.NewPlayer()
 		if err != nil {
+			mu.Unlock()
 			return 0
 		}
 		player = p
@@ -169,15 +170,22 @@ func DZInit(arl *C.char) C.int {
 			mu.Unlock()
 		})
 	}
-	client = deezer.New(C.GoString(arl))
-	if err := client.Login(); err != nil {
+	mu.Unlock()
+
+	// Login is a network round-trip (up to 30s): do it WITHOUT holding mu, so it
+	// can't block every other engine call meanwhile.
+	c := deezer.New(C.GoString(arl))
+	if err := c.Login(); err != nil {
 		odlog.Warn("login failed: %v", err)
 		return 0
 	}
-	odlog.Info("logged in: %s (%s)", client.Account().Name, client.Account().Offer)
-	// Start engine-hosted services (Discord RP + control API) once. Pass the
-	// just-created client so startServices doesn't re-lock mu (we hold it here).
-	startServices(client)
+	mu.Lock()
+	client = c
+	mu.Unlock()
+
+	odlog.Info("logged in: %s (%s)", c.Account().Name, c.Account().Offer)
+	// Start engine-hosted services (Discord RP + control API) once.
+	startServices(c)
 	return 1
 }
 
@@ -237,6 +245,9 @@ func DZHighQuality() C.int {
 //
 //export DZFormat
 func DZFormat() *C.char {
+	if routedRemote() != nil {
+		return C.CString(deezer.FormatLabel(remoteSnapshot().Format))
+	}
 	mu.Lock()
 	p := player
 	mu.Unlock()
@@ -340,6 +351,16 @@ func DZSearchJSON(q *C.char) *C.char {
 
 //export DZPlay
 func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
+	id := C.GoString(trackID)
+	// OpenDeezer Connect: when a device is selected, play there instead.
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.PlayTrack(id)
+		if err != nil {
+			return 0
+		}
+		setRemoteState(st)
+		return 1
+	}
 	mu.Lock()
 	c := client
 	p := player
@@ -347,7 +368,6 @@ func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
 	if c == nil || p == nil {
 		return 0
 	}
-	id := C.GoString(trackID)
 	plan, err := c.PrepareStream(id)
 	if err != nil {
 		return 0
@@ -363,22 +383,69 @@ func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
 }
 
 //export DZPause
-func DZPause() { withPlayer(func(p *audio.Player) { p.Pause() }) }
+func DZPause() {
+	if rc := routedRemote(); rc != nil {
+		if remoteSnapshot().State == "playing" {
+			if st, err := rc.PlayPause(); err == nil {
+				setRemoteState(st)
+			}
+		}
+		return
+	}
+	withPlayer(func(p *audio.Player) { p.Pause() })
+}
 
 //export DZResume
-func DZResume() { withPlayer(func(p *audio.Player) { p.Resume() }) }
+func DZResume() {
+	if rc := routedRemote(); rc != nil {
+		if remoteSnapshot().State == "paused" {
+			if st, err := rc.PlayPause(); err == nil {
+				setRemoteState(st)
+			}
+		}
+		return
+	}
+	withPlayer(func(p *audio.Player) { p.Resume() })
+}
 
 //export DZTogglePause
-func DZTogglePause() { withPlayer(func(p *audio.Player) { p.TogglePause() }) }
+func DZTogglePause() {
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.PlayPause(); err == nil {
+			setRemoteState(st)
+		}
+		return
+	}
+	withPlayer(func(p *audio.Player) { p.TogglePause() })
+}
 
 //export DZStop
-func DZStop() { withPlayer(func(p *audio.Player) { p.Stop() }) }
+func DZStop() {
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.Stop(); err == nil {
+			setRemoteState(st)
+		}
+		return
+	}
+	withPlayer(func(p *audio.Player) { p.Stop() })
+}
 
 //export DZSeek
-func DZSeek(ms C.longlong) { withPlayer(func(p *audio.Player) { p.SeekMS(int64(ms)) }) }
+func DZSeek(ms C.longlong) {
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.Seek(int64(ms)); err == nil {
+			setRemoteState(st)
+		}
+		return
+	}
+	withPlayer(func(p *audio.Player) { p.SeekMS(int64(ms)) })
+}
 
 //export DZState
 func DZState() C.int {
+	if routedRemote() != nil {
+		return C.int(remoteStateInt(remoteSnapshot().State))
+	}
 	v := 0
 	withPlayer(func(p *audio.Player) { v = int(p.State()) })
 	return C.int(v)
@@ -386,6 +453,9 @@ func DZState() C.int {
 
 //export DZPositionMS
 func DZPositionMS() C.longlong {
+	if routedRemote() != nil {
+		return C.longlong(remoteSnapshot().PositionMS)
+	}
 	var v int64
 	withPlayer(func(p *audio.Player) { v = p.PositionMS() })
 	return C.longlong(v)
@@ -393,6 +463,9 @@ func DZPositionMS() C.longlong {
 
 //export DZDurationMS
 func DZDurationMS() C.longlong {
+	if routedRemote() != nil {
+		return C.longlong(remoteSnapshot().DurationMS)
+	}
 	var v int64
 	withPlayer(func(p *audio.Player) { v = p.DurationMS() })
 	return C.longlong(v)
@@ -400,6 +473,12 @@ func DZDurationMS() C.longlong {
 
 //export DZSetVolume
 func DZSetVolume(v C.double) {
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.SetVolume(float64(v)); err == nil {
+			setRemoteState(st)
+		}
+		return
+	}
 	withPlayer(func(p *audio.Player) {
 		cur := p.Volume()
 		p.AddVolume(float64(v) - cur)
@@ -408,6 +487,9 @@ func DZSetVolume(v C.double) {
 
 //export DZVolume
 func DZVolume() C.double {
+	if routedRemote() != nil {
+		return C.double(remoteSnapshot().Volume)
+	}
 	var v float64 = 1
 	withPlayer(func(p *audio.Player) { v = p.Volume() })
 	return C.double(v)

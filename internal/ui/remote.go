@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -26,14 +28,19 @@ func normalizePeer(addr string) (base, hostport string) {
 }
 
 // remoteConnectCmd connects to a peer's control API: verify with /whoami, grab
-// initial status. Auth uses the local token (if any) plus our own Deezer user id
-// for same-account auth.
-func (m *Model) remoteConnectCmd(addr string) tea.Cmd {
+// initial status. Auth always uses our own Deezer user id (same-account); the
+// local token is sent ONLY for a trusted (manually-typed) address — never to a
+// discovered device, whose advertisement is unauthenticated and spoofable, so we
+// must not leak the shared token to it.
+func (m *Model) remoteConnectCmd(addr string, trusted bool) tea.Cmd {
 	base, hostport := normalizePeer(addr)
 	if base == "" {
 		return func() tea.Msg { return remoteConnMsg{err: fmt.Errorf("enter a host or host:port")} }
 	}
-	token := LoadControl().Token
+	token := ""
+	if trusted {
+		token = LoadControl().Token
+	}
 	account := m.client.UserID()
 	return func() tea.Msg {
 		rc := control.NewClient(base, token, account)
@@ -42,7 +49,33 @@ func (m *Model) remoteConnectCmd(addr string) tea.Cmd {
 			return remoteConnMsg{err: err}
 		}
 		st, _ := rc.Status() // best-effort initial snapshot
-		return remoteConnMsg{client: rc, addr: hostport, name: who.Name, state: st}
+		return remoteConnMsg{
+			client: rc, addr: hostport, name: who.Name,
+			clientType: who.Client, version: who.Version, state: st,
+		}
+	}
+}
+
+// discoverDevicesCmd scans the LAN for OpenDeezer Connect devices and enriches
+// each with what it's currently playing (best-effort, needs same-account auth).
+func (m *Model) discoverDevicesCmd() tea.Cmd {
+	account := m.client.UserID()
+	return func() tea.Msg {
+		devs, _ := discovery.Discover(700 * time.Millisecond)
+		peers := make([]peerDevice, 0, len(devs))
+		for _, d := range devs {
+			np := ""
+			// account-only: never send the token to an unverified discovered peer.
+			rc := control.NewClient("http://"+d.Addr, "", account)
+			if st, err := rc.Status(); err == nil && st.Track != nil {
+				np = st.Track.Title
+				if st.Track.Artist != "" {
+					np += " — " + st.Track.Artist
+				}
+			}
+			peers = append(peers, peerDevice{dev: d, nowPlaying: np})
+		}
+		return devicesDiscoveredMsg{peers: peers}
 	}
 }
 
@@ -167,8 +200,13 @@ func (m *Model) remoteCtlView() string {
 	if repeat == "" {
 		repeat = "off"
 	}
+	device := deviceTypeLabel(m.remoteClient)
+	if m.remoteVersion != "" {
+		device += " · OpenDeezer v" + m.remoteVersion
+	}
 	lines := []string{
-		"📡 Remote: " + name + "  (" + m.remoteAddr + ")",
+		"📡 Connected to " + name + "  (" + m.remoteAddr + ")",
+		"Device: " + device,
 		"",
 		"State:  " + state,
 		"Track:  " + track,

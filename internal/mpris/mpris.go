@@ -22,7 +22,7 @@ type Commands struct {
 	Next        func()
 	Prev        func()
 	Stop        func()
-	Seek        func(offsetUS int64)        // relative
+	Seek        func(offsetUS int64)              // relative
 	SetPosition func(trackID string, posUS int64) // absolute
 }
 

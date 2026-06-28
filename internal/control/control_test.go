@@ -149,6 +149,21 @@ func TestMutationRequiresPostAndNoOrigin(t *testing.T) {
 	}
 }
 
+func TestStartRefusesOpenModeOnLAN(t *testing.T) {
+	// No token + no same-account on a non-loopback bind must fail closed.
+	s := New(Config{Addr: "0.0.0.0:0"}, func() State { return State{} }, nil, Commands{}, nil)
+	if err := s.Start(); err == nil {
+		s.Close()
+		t.Fatal("Start should refuse unauthenticated none-mode on a non-loopback address")
+	}
+	// Same config but loopback is allowed (localhost-only use).
+	s2 := New(Config{Addr: "127.0.0.1:0"}, func() State { return State{} }, nil, Commands{}, nil)
+	if err := s2.Start(); err != nil {
+		t.Fatalf("loopback none-mode should be allowed: %v", err)
+	}
+	s2.Close()
+}
+
 func TestWhoamiIsUnauthenticated(t *testing.T) {
 	s, base := newTestServer(t, Config{Token: "secret"},
 		func() State { return State{} }, Commands{})

@@ -269,6 +269,9 @@ func (p *Player) readPCM(out []byte) int {
 // ---- volume ----
 
 func (p *Player) setVolume(v float64) {
+	if math.IsNaN(v) {
+		return // ignore NaN (would corrupt every sample)
+	}
 	if v < 0 {
 		v = 0
 	} else if v > 1 {

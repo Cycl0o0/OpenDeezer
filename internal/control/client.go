@@ -54,7 +54,8 @@ func (c *Client) raw(method, path string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
+	// Cap the response so a malicious/compromised peer can't exhaust memory.
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("control %s %s: %s: %s", method, path, resp.Status, string(b))
 	}
