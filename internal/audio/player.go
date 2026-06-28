@@ -272,6 +272,9 @@ func (p *Player) setVolume(v float64) {
 	p.volume.Store(math.Float64bits(v))
 }
 func (p *Player) Volume() float64 { return math.Float64frombits(p.volume.Load()) }
+
+// SetVolume sets the absolute volume (clamped to 0..1).
+func (p *Player) SetVolume(v float64) { p.setVolume(v) }
 func (p *Player) AddVolume(delta float64) float64 {
 	p.setVolume(p.Volume() + delta)
 	return p.Volume()

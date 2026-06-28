@@ -120,6 +120,47 @@ access to your account.
 Home screen entries: Liked Songs · My Playlists · ⚡ Flow · 📈 Charts ·
 🎙 Podcasts · 🔍 Search (and ▶ Resume when a saved position exists).
 
+## Remote control & automation (Control API)
+
+OpenDeezer can expose a small HTTP/JSON API so another OpenDeezer client (remote
+control) or an AI agent (MCP) can drive playback. It is **off by default**.
+
+Enable it with an env var or a config file:
+
+```sh
+export OPENDEEZER_CONTROL=1                 # localhost only (127.0.0.1:7654)
+export OPENDEEZER_CONTROL=:7654             # bind all interfaces (LAN remote)
+# or: echo 1 > ~/.config/opendeezer/control.txt
+```
+
+Endpoints (reads are `GET`, mutations are `POST`):
+
+| Method | Path | Action |
+|--------|------|--------|
+| GET  | `/whoami` | account name + auth mode (unauthenticated) |
+| GET  | `/status` | playback snapshot (state, track, position, volume, queue…) |
+| GET  | `/playlists`, `/search?q=` | browse |
+| POST | `/playpause` `/next` `/prev` `/stop` `/restart` | transport |
+| POST | `/repeat` `/shuffle` | cycle repeat / toggle shuffle |
+| POST | `/seek?ms=` `/volume?v=` | position / volume (0..1) |
+| POST | `/play/track?id=` `/play/playlist?id=` | play by id |
+
+**Auth.** Credentials are sent via request **headers only**:
+
+- **Account-based (default on LAN).** When bound to a non-loopback address with no
+  token, a controller must prove it is logged into the **same Deezer account** by
+  sending its own user id in `X-OpenDeezer-Account`. Your own devices connect with
+  no token to copy; other accounts are rejected. `/whoami` deliberately does *not*
+  reveal the user id (it's the credential), only the account name. This is
+  LAN-trust grade — a Deezer user id is only semi-private. Disable with
+  `OPENDEEZER_CONTROL_SAMEACCOUNT=0`.
+- **Token (strongest).** Set `OPENDEEZER_CONTROL_TOKEN` (or
+  `~/.config/opendeezer/control-token.txt`); send it in `X-OpenDeezer-Token`.
+- **None.** Localhost binds with no token are open (loopback only).
+
+Mutations require `POST` and reject requests carrying a browser `Origin` header,
+so a web page you happen to visit can't drive your playback.
+
 ## How it works
 
 ```

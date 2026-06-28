@@ -5,9 +5,11 @@ package ui
 import (
 	"fmt"
 	"image"
+	"sync/atomic"
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/control"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/internal/mpris"
 	"github.com/Cycl0o0/OpenDeezer/internal/queue"
@@ -71,7 +73,27 @@ type Model struct {
 
 	media mpris.Controller // OS media controls (MPRIS on Linux, no-op elsewhere)
 
+	ctrl      *control.Server                 // control API (remote + MCP); nil if disabled
+	ctrlState atomic.Pointer[control.State]   // playback snapshot read by the control HTTP goroutine
+	acctSnap  atomic.Pointer[control.Account] // identity snapshot read by the control HTTP goroutine
+
 	finished chan struct{} // signalled by player onFinish
+}
+
+// controlCmdMsg is a command from the control API, delivered onto the update
+// loop so it runs single-threaded with the rest of the model.
+type controlCmdMsg struct {
+	kind string // playpause|next|prev|stop|restart|repeat|shuffle|seek|volume|playtrack|playplaylist
+	id   string // track/playlist id (playtrack/playplaylist)
+	ms   int64  // absolute position for seek
+	vol  float64
+}
+
+// playNowMsg replaces the queue with tracks and starts playing the first one.
+// Used by control "play track/playlist <id>".
+type playNowMsg struct {
+	tracks   []deezer.Track
+	episodes bool
 }
 
 // mediaCmdMsg is a media-key/overlay command received from the desktop.
@@ -118,6 +140,115 @@ func (m *Model) publishMedia() {
 	}
 	s.PositionUS = m.player.PositionMS() * 1000
 	m.media.Update(s)
+}
+
+// StartControl starts the control API (remote control + MCP) if enabled in the
+// config. Commands arrive as controlCmdMsg via send so they run on the update
+// loop; status is served from an atomic snapshot refreshed by publishControl.
+// Returns nil (no error) when the API is disabled. Call after tea.NewProgram.
+func (m *Model) StartControl(send func(tea.Msg)) error {
+	cfg := LoadControl()
+	if !cfg.Enabled {
+		return nil
+	}
+	cmds := control.Commands{
+		PlayPause:     func() { send(controlCmdMsg{kind: "playpause"}) },
+		Next:          func() { send(controlCmdMsg{kind: "next"}) },
+		Prev:          func() { send(controlCmdMsg{kind: "prev"}) },
+		Stop:          func() { send(controlCmdMsg{kind: "stop"}) },
+		Restart:       func() { send(controlCmdMsg{kind: "restart"}) },
+		CycleRepeat:   func() { send(controlCmdMsg{kind: "repeat"}) },
+		ToggleShuffle: func() { send(controlCmdMsg{kind: "shuffle"}) },
+		Seek:          func(ms int64) { send(controlCmdMsg{kind: "seek", ms: ms}) },
+		SetVolume:     func(v float64) { send(controlCmdMsg{kind: "volume", vol: v}) },
+		PlayTrack:     func(id string) { send(controlCmdMsg{kind: "playtrack", id: id}) },
+		PlayPlaylist:  func(id string) { send(controlCmdMsg{kind: "playplaylist", id: id}) },
+	}
+	status := func() control.State {
+		if p := m.ctrlState.Load(); p != nil {
+			return *p
+		}
+		return control.State{State: "stopped"}
+	}
+	account := func() control.Account {
+		if p := m.acctSnap.Load(); p != nil {
+			return *p
+		}
+		return control.Account{}
+	}
+	m.ctrl = control.New(
+		control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount},
+		status, account, cmds, m.client,
+	)
+	m.ctrl.SetVersion(Version)
+	if err := m.ctrl.Start(); err != nil {
+		m.ctrl = nil
+		return err
+	}
+	return nil
+}
+
+// publishControl refreshes the atomic snapshot the control HTTP goroutine reads.
+// Called on every tick + track change (mirrors publishMedia), so the snapshot is
+// always built on the update loop — the HTTP side only ever reads it.
+func (m *Model) publishControl() {
+	if m.ctrl == nil {
+		return
+	}
+	var st control.State
+	switch m.player.State() {
+	case audio.Playing:
+		st.State = "playing"
+	case audio.Paused:
+		st.State = "paused"
+	case audio.Loading:
+		st.State = "loading"
+	case audio.Errored:
+		st.State = "error"
+	default:
+		st.State = "stopped"
+	}
+	if t, ok := m.q.Current(); ok {
+		st.Track = ctrlTrack(t)
+	}
+	st.PositionMS = m.player.PositionMS()
+	st.DurationMS = m.player.DurationMS()
+	st.Volume = m.player.Volume()
+	switch m.q.Repeat() {
+	case queue.RepeatAll:
+		st.Repeat = "all"
+	case queue.RepeatOne:
+		st.Repeat = "one"
+	default:
+		st.Repeat = "off"
+	}
+	st.Shuffle = m.q.Shuffle()
+	st.Format = m.player.Format()
+	tracks := m.q.Tracks()
+	if len(tracks) > 0 {
+		st.Queue = make([]control.Track, 0, len(tracks))
+		for _, t := range tracks {
+			st.Queue = append(st.Queue, *ctrlTrack(t))
+		}
+	}
+	m.ctrlState.Store(&st)
+}
+
+// publishAccount stores the identity snapshot the control HTTP goroutine reads
+// for auth + /whoami. Called on the update loop after login (m.acct is set there),
+// so the HTTP side never reads the deezer.Client's login fields directly.
+func (m *Model) publishAccount() {
+	m.acctSnap.Store(&control.Account{
+		UserID: m.acct.UserID, Name: m.acct.Name, Offer: m.acct.Offer,
+	})
+}
+
+// ctrlTrack maps a deezer.Track to the control-API Track.
+func ctrlTrack(t deezer.Track) *control.Track {
+	return &control.Track{
+		ID: t.ID, Title: t.Name, Artist: t.ArtistLine(), Album: t.AlbumName,
+		Explicit: t.Explicit, DurationMS: t.DurationMS,
+	}
 }
 
 // New builds the root model.

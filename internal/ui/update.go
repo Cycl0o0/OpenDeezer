@@ -57,6 +57,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.acct = m.client.Account()
+		m.publishAccount() // identity snapshot for the control API (race-free read)
 		// Free accounts can't stream on-demand — gate the whole app behind a
 		// message (Premium required).
 		if !m.acct.Premium {
@@ -242,6 +243,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.publishMedia()
+		m.publishControl()
 		return m, tickCmd()
 
 	case mediaCmdMsg:
@@ -262,6 +264,53 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.publishMedia()
 		return m, nil
+
+	case controlCmdMsg:
+		var cmd tea.Cmd
+		switch msg.kind {
+		case "playpause":
+			m.player.TogglePause()
+		case "next":
+			cmd = m.next()
+		case "prev":
+			cmd = m.prev()
+		case "stop":
+			m.player.Stop()
+			m.playing = false
+		case "restart":
+			m.player.SeekMS(0)
+		case "repeat":
+			m.q.CycleRepeat()
+		case "shuffle":
+			m.q.ToggleShuffle()
+		case "seek":
+			m.player.SeekMS(msg.ms)
+		case "volume":
+			m.player.SetVolume(msg.vol)
+		case "playtrack":
+			cmd = m.playTrackByIDCmd(msg.id)
+		case "playplaylist":
+			cmd = m.playPlaylistByIDCmd(msg.id)
+		}
+		m.publishMedia()
+		m.publishControl()
+		return m, cmd
+
+	case playNowMsg:
+		if len(msg.tracks) == 0 {
+			return m, nil
+		}
+		items := make([]list.Item, len(msg.tracks))
+		for i, t := range msg.tracks {
+			items[i] = trackRow(t)
+		}
+		m.q.Set(msg.tracks, 0)
+		m.episodeMode = msg.episodes
+		m.list.Title = "Now Playing"
+		m.list.SetItems(items)
+		m.list.ResetSelected()
+		m.screen = screenList
+		return m, m.playCurrent()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -294,6 +343,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.player.Stop()
 			if m.media != nil {
 				m.media.Close()
+			}
+			if m.ctrl != nil {
+				m.ctrl.Close()
 			}
 			return m, tea.Quit
 		}
@@ -337,6 +389,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.player.Stop()
 		if m.media != nil {
 			m.media.Close()
+		}
+		if m.ctrl != nil {
+			m.ctrl.Close()
 		}
 		return m, tea.Quit
 	case " ":
@@ -607,6 +662,28 @@ func (m *Model) playCurrent() tea.Cmd {
 	return m.streamCmd(t)
 }
 
+// playTrackByIDCmd fetches a track by id and plays it (control API).
+func (m *Model) playTrackByIDCmd(id string) tea.Cmd {
+	return func() tea.Msg {
+		t, err := m.client.Track(id)
+		if err != nil {
+			return errMsg{err}
+		}
+		return playNowMsg{tracks: []deezer.Track{t}}
+	}
+}
+
+// playPlaylistByIDCmd loads a playlist by id and plays it from the top.
+func (m *Model) playPlaylistByIDCmd(id string) tea.Cmd {
+	return func() tea.Msg {
+		ts, err := m.client.PlaylistTracks(id)
+		if err != nil {
+			return errMsg{err}
+		}
+		return playNowMsg{tracks: ts}
+	}
+}
+
 func (m *Model) next() tea.Cmd {
 	if m.q.Next() {
 		return m.playCurrent()
@@ -636,6 +713,7 @@ func (m *Model) advance() tea.Cmd {
 func (m *Model) onTrackChanged(t deezer.Track) tea.Cmd {
 	m.status = ""
 	m.publishMedia()
+	m.publishControl()
 	m.lyrics = nil
 	m.lyricsTrack = ""
 	m.curImg = nil

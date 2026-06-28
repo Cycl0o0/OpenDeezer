@@ -12,7 +12,7 @@ func (c *Client) Flow() ([]Track, error) {
 	if !c.LoggedIn() {
 		return nil, fmt.Errorf("not logged in")
 	}
-	b, err := c.gw("radio.getUserRadio", fmt.Sprintf(`{"user_id":"%s"}`, c.userID))
+	b, err := c.gw("radio.getUserRadio", fmt.Sprintf(`{"user_id":"%s"}`, c.uid()))
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -32,19 +33,23 @@ const (
 
 // Client holds an authenticated Deezer session.
 type Client struct {
-	arl          string
+	arl     string // immutable after New
+	quality int32  // 0=MP3_128, 1=MP3_320, 2=FLAC (lossless) — set atomically
+	http    *http.Client
+
+	// mu guards every session/identity field below: they are (re)written by
+	// Login, which can now run concurrently with reads from the control-API HTTP
+	// goroutine (browse) and Bubble Tea command goroutines. All writes happen in
+	// one locked block at the end of Login; reads go through the locked accessors.
+	mu           sync.RWMutex
 	apiToken     string
 	licenseToken string
 	sid          string
 	userID       string
-	quality      int32 // 0=MP3_128, 1=MP3_320, 2=FLAC (lossless) — set atomically
-	http         *http.Client
-
-	// Account info, populated by Login.
-	userName  string
-	offerName string // e.g. "Deezer Premium", "Deezer Free"
-	canHiFi   bool   // account entitled to lossless
-	canHQ     bool   // account entitled to MP3_320
+	userName     string
+	offerName    string // e.g. "Deezer Premium", "Deezer Free"
+	canHiFi      bool   // account entitled to lossless
+	canHQ        bool   // account entitled to MP3_320
 }
 
 // Account summarizes the logged-in user's plan and entitlements.
@@ -52,9 +57,9 @@ type Account struct {
 	UserID   string `json:"userId"`
 	Name     string `json:"name"`
 	Offer    string `json:"offer"`
-	CanHQ    bool   `json:"canHq"`    // entitled to MP3 320
-	CanHiFi  bool   `json:"canHifi"`  // entitled to lossless FLAC
-	Premium  bool   `json:"premium"`  // a paid plan that can stream on-demand
+	CanHQ    bool   `json:"canHq"`   // entitled to MP3 320
+	CanHiFi  bool   `json:"canHifi"` // entitled to lossless FLAC
+	Premium  bool   `json:"premium"` // a paid plan that can stream on-demand
 	LoggedIn bool   `json:"loggedIn"`
 }
 
@@ -105,15 +110,35 @@ func New(arl string) *Client {
 }
 
 // LoggedIn reports whether Login succeeded.
-func (c *Client) LoggedIn() bool { return c.apiToken != "" }
+func (c *Client) LoggedIn() bool { return c.apiTok() != "" }
 
 // UserID returns the numeric Deezer user id (after Login).
-func (c *Client) UserID() string { return c.userID }
+func (c *Client) UserID() string { return c.uid() }
+
+// Locked accessors for the session fields (safe under concurrent Login).
+func (c *Client) apiTok() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.apiToken
+}
+func (c *Client) uid() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.userID
+}
+func (c *Client) licTok() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.licenseToken
+}
 
 func (c *Client) cookie() string {
-	ck := "arl=" + c.arl
-	if c.sid != "" {
-		ck += "; sid=" + c.sid
+	c.mu.RLock()
+	sid := c.sid
+	c.mu.RUnlock()
+	ck := "arl=" + c.arl // arl is immutable after New
+	if sid != "" {
+		ck += "; sid=" + sid
 	}
 	return ck
 }
@@ -136,9 +161,10 @@ func (c *Client) Login() error {
 	defer resp.Body.Close()
 
 	// Pull sid from Set-Cookie.
+	var sid string
 	for _, ck := range resp.Cookies() {
 		if strings.EqualFold(ck.Name, "sid") {
-			c.sid = ck.Value
+			sid = ck.Value
 		}
 	}
 
@@ -169,57 +195,75 @@ func (c *Client) Login() error {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return fmt.Errorf("parse getUserData: %w", err)
 	}
-	c.apiToken = parsed.Results.CheckForm
-	c.userID = parsed.Results.User.UserID.String()
-	c.licenseToken = parsed.Results.User.Options.LicenseToken
-	if c.apiToken == "" || c.userID == "" || c.userID == "0" {
+	apiToken := parsed.Results.CheckForm
+	userID := parsed.Results.User.UserID.String()
+	licenseToken := parsed.Results.User.Options.LicenseToken
+	if apiToken == "" || userID == "" || userID == "0" {
 		// A blank checkForm / user 0 is exactly what Deezer returns for an
 		// anonymous (= expired/invalid ARL) session.
 		return ErrARLExpired
 	}
-	c.userName = parsed.Results.User.BlogName
-	if c.userName == "" {
-		c.userName = parsed.Results.User.Firstname
+	userName := parsed.Results.User.BlogName
+	if userName == "" {
+		userName = parsed.Results.User.Firstname
 	}
 	opt := parsed.Results.User.Options
-	c.canHQ = opt.WebHQ || opt.MobileHQ
-	c.canHiFi = opt.WebLossless || opt.MobileLossless
+	canHQ := opt.WebHQ || opt.MobileHQ
+	canHiFi := opt.WebLossless || opt.MobileLossless
+	offerName := ""
 	if len(parsed.Results.Offers) > 0 {
-		c.offerName = parsed.Results.Offers[0].Title
+		offerName = parsed.Results.Offers[0].Title
 	}
-	if c.offerName == "" {
-		if c.canHiFi {
-			c.offerName = "Deezer (HiFi)"
-		} else if c.canHQ {
-			c.offerName = "Deezer Premium"
-		} else {
-			c.offerName = "Deezer Free"
+	if offerName == "" {
+		switch {
+		case canHiFi:
+			offerName = "Deezer (HiFi)"
+		case canHQ:
+			offerName = "Deezer Premium"
+		default:
+			offerName = "Deezer Free"
 		}
 	}
+
+	// Commit all session fields atomically so concurrent readers never observe a
+	// half-updated session (and concurrent re-logins don't tear each other's writes).
+	c.mu.Lock()
+	c.sid = sid
+	c.apiToken = apiToken
+	c.userID = userID
+	c.licenseToken = licenseToken
+	c.userName = userName
+	c.canHQ = canHQ
+	c.canHiFi = canHiFi
+	c.offerName = offerName
+	c.mu.Unlock()
 	return nil
 }
 
 // Account returns the logged-in user's plan + entitlement summary.
 func (c *Client) Account() Account {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return Account{
-		UserID:   c.userID,
-		Name:     c.userName,
-		Offer:    c.offerName,
-		CanHQ:    c.canHQ,
-		CanHiFi:  c.canHiFi,
+		UserID:  c.userID,
+		Name:    c.userName,
+		Offer:   c.offerName,
+		CanHQ:   c.canHQ,
+		CanHiFi: c.canHiFi,
 		// Premium = entitled to on-demand HQ/lossless streaming. Deezer Free has
 		// neither, so it can't actually stream tracks in this client.
 		Premium:  c.canHQ || c.canHiFi,
-		LoggedIn: c.LoggedIn(),
+		LoggedIn: c.apiToken != "",
 	}
 }
 
 // gwRaw performs one gw-light call and returns the raw response body.
 func (c *Client) gwRaw(method, jsonBody string) ([]byte, error) {
-	if c.apiToken == "" {
+	apiToken := c.apiTok()
+	if apiToken == "" {
 		return nil, fmt.Errorf("not logged in")
 	}
-	u := gwURL + "?method=" + method + "&input=3&api_version=1.0&api_token=" + url.QueryEscape(c.apiToken)
+	u := gwURL + "?method=" + method + "&input=3&api_version=1.0&api_token=" + url.QueryEscape(apiToken)
 	req, err := http.NewRequest(http.MethodPost, u, strings.NewReader(jsonBody))
 	if err != nil {
 		return nil, err
@@ -510,14 +554,34 @@ func (c *Client) PlaylistTracks(id string) ([]Track, error) {
 	return c.gwTrackAll("playlist.getSongs", fmt.Sprintf(`"playlist_id":"%s"`, id))
 }
 
+// Track fetches a single track's metadata by id (gw song.getData). Used by the
+// control API / MCP to "play track <id>".
+func (c *Client) Track(id string) (Track, error) {
+	b, err := c.gw("song.getData", fmt.Sprintf(`{"sng_id":"%s"}`, id))
+	if err != nil {
+		return Track{}, err
+	}
+	var r struct {
+		Results gwTrackDTO `json:"results"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return Track{}, err
+	}
+	t := r.Results.toTrack()
+	if t.ID == "" {
+		return Track{}, fmt.Errorf("track %s: not found", id)
+	}
+	return t, nil
+}
+
 // Favorites lists the user's liked songs (gw).
 func (c *Client) Favorites() ([]Track, error) {
-	return c.gwTrackAll("favorite_song.getList", fmt.Sprintf(`"user_id":"%s"`, c.userID))
+	return c.gwTrackAll("favorite_song.getList", fmt.Sprintf(`"user_id":"%s"`, c.uid()))
 }
 
 // Playlists lists the user's own playlists (gw pageProfile).
 func (c *Client) Playlists() ([]Playlist, error) {
-	body := fmt.Sprintf(`{"user_id":"%s","tab":"playlists","nb":100}`, c.userID)
+	body := fmt.Sprintf(`{"user_id":"%s","tab":"playlists","nb":100}`, c.uid())
 	b, err := c.gw("deezer.pageProfile", body)
 	if err != nil {
 		return nil, err
@@ -584,7 +648,8 @@ type StreamPlan struct {
 
 // resolveMediaURL turns a track token into an encrypted CDN URL.
 func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err error) {
-	if c.licenseToken == "" || trackToken == "" {
+	licenseToken := c.licTok()
+	if licenseToken == "" || trackToken == "" {
 		return "", "", fmt.Errorf("missing license or track token")
 	}
 	// Format order is preference order — Deezer serves the first format the
@@ -600,7 +665,7 @@ func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err 
 		formats = fflac + "," + f320 + "," + f128 // HiFi, fall back to MP3
 	}
 	body := fmt.Sprintf(`{"license_token":"%s","media":[{"type":"FULL","formats":[%s]}],`+
-		`"track_tokens":["%s"]}`, c.licenseToken, formats, trackToken)
+		`"track_tokens":["%s"]}`, licenseToken, formats, trackToken)
 
 	req, err := http.NewRequest(http.MethodPost, mediaURL, bytes.NewReader([]byte(body)))
 	if err != nil {

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -165,6 +166,76 @@ func saveStringFile(name, v string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, name), []byte(v+"\n"), 0600)
+}
+
+// ControlConfig holds the control-API settings (remote control + MCP).
+type ControlConfig struct {
+	Enabled     bool
+	Addr        string // host:port; "" -> 127.0.0.1:7654
+	Token       string // bearer token ("" = no auth, localhost only)
+	SameAccount bool   // require a matching Deezer account when no token (LAN)
+}
+
+// LoadControl reads the control-API config: $OPENDEEZER_CONTROL ("1"/addr) +
+// $OPENDEEZER_CONTROL_TOKEN, else ~/.config/opendeezer/{control.txt,control-token.txt}.
+func LoadControl() ControlConfig {
+	c := ControlConfig{Addr: "127.0.0.1:7654"}
+	v := strings.TrimSpace(os.Getenv("OPENDEEZER_CONTROL"))
+	if v == "" {
+		if dir, err := configDir(); err == nil {
+			if b, e := os.ReadFile(filepath.Join(dir, "control.txt")); e == nil {
+				v = strings.TrimSpace(string(b))
+			}
+		}
+	}
+	switch {
+	case v == "":
+		return c
+	case v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true"):
+		c.Enabled = true
+	case v == "0" || strings.EqualFold(v, "off"):
+		c.Enabled = false
+	default:
+		c.Enabled = true
+		c.Addr = v // an explicit host:port
+	}
+	c.Token = strings.TrimSpace(os.Getenv("OPENDEEZER_CONTROL_TOKEN"))
+	if c.Token == "" {
+		if dir, err := configDir(); err == nil {
+			if b, e := os.ReadFile(filepath.Join(dir, "control-token.txt")); e == nil {
+				c.Token = strings.TrimSpace(string(b))
+			}
+		}
+	}
+	// When bound to a non-loopback address (LAN remote) with no token, default
+	// to same-account auth: the user's own devices (same Deezer login) connect
+	// without copying a token; foreign accounts are rejected. Override with
+	// $OPENDEEZER_CONTROL_SAMEACCOUNT=0.
+	if c.Enabled && c.Token == "" && !isLoopbackAddr(c.Addr) {
+		c.SameAccount = true
+	}
+	if v := strings.TrimSpace(os.Getenv("OPENDEEZER_CONTROL_SAMEACCOUNT")); v != "" {
+		c.SameAccount = v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true")
+	}
+	return c
+}
+
+// isLoopbackAddr reports whether a host:port binds only the loopback interface.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		return false // wildcard = all interfaces
+	case "localhost":
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // LoadAudioDevice / SaveAudioDevice persist the selected output device id.
