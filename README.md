@@ -161,6 +161,31 @@ Endpoints (reads are `GET`, mutations are `POST`):
 Mutations require `POST` and reject requests carrying a browser `Origin` header,
 so a web page you happen to visit can't drive your playback.
 
+### MCP server (AI agent control)
+
+`opendeezer-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+server that lets an AI assistant control playback through the Control API. Build
+it with `go build ./cmd/opendeezer-mcp` (or `make` builds it alongside the TUI),
+enable the Control API (above), then register it with your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "opendeezer": {
+      "command": "/path/to/opendeezer-mcp",
+      "env": {
+        "OPENDEEZER_CONTROL_URL": "http://127.0.0.1:7654",
+        "OPENDEEZER_CONTROL_TOKEN": "your-token-if-set"
+      }
+    }
+  }
+}
+```
+
+Tools: `get_status`, `play_pause`, `next`, `prev`, `stop`, `restart`,
+`cycle_repeat`, `toggle_shuffle`, `set_volume`, `seek`, `search`,
+`list_playlists`, `play_track`, `play_playlist`.
+
 ## How it works
 
 ```
