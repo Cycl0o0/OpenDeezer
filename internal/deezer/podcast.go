@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 )
 
 // SearchPodcasts finds shows via the public REST /search/podcast endpoint.
@@ -82,20 +84,79 @@ func (c *Client) PodcastEpisodeStream(episodeID string) (*StreamPlan, error) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, err
 	}
-	// The direct (DRM-free) MP3 URL field name has varied; try the known ones.
-	for _, k := range []string{"EPISODE_DIRECT_STREAM_URL", "DIRECT_STREAM_URL", "EPISODE_STREAM_URL", "MEDIA_URL"} {
-		if raw, ok := r.Results[k]; ok {
-			var u string
-			if json.Unmarshal(raw, &u) == nil && u != "" {
-				return &StreamPlan{CDNURL: u, TrackID: episodeID, Format: "MP3", Encrypted: false}, nil
-			}
-		}
-	}
-	// Diagnostic: report the keys gw returned so the right field can be wired.
+
+	// Diagnostics: log every key + a value preview so the real stream-url field can
+	// be identified from a single playback attempt ($OPENDEEZER_LOG=debug).
 	keys := make([]string, 0, len(r.Results))
 	for k := range r.Results {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	odlog.Debug("episode %s gw keys: %s", episodeID, strings.Join(keys, ","))
+	for _, k := range keys {
+		odlog.Debug("episode %s field %s = %s", episodeID, k, preview(r.Results[k]))
+	}
+
+	// Fast path: the direct (DRM-free) MP3 URL field name has varied across the
+	// API; try the known ones first.
+	for _, k := range []string{"EPISODE_DIRECT_STREAM_URL", "DIRECT_STREAM_URL", "EPISODE_STREAM_URL", "MEDIA_URL"} {
+		if raw, ok := r.Results[k]; ok {
+			var u string
+			if json.Unmarshal(raw, &u) == nil && strings.HasPrefix(u, "http") {
+				odlog.Info("episode %s: stream url from field %s", episodeID, k)
+				return &StreamPlan{CDNURL: u, TrackID: episodeID, Format: "MP3", Encrypted: false}, nil
+			}
+		}
+	}
+
+	// Generic fallback: scan all fields for an http(s) value that looks like a
+	// media stream (not artwork), so a renamed field still resolves. Prefer keys
+	// mentioning STREAM/MEDIA/URL; skip picture/image/cover fields.
+	if u, k := findStreamURL(r.Results); u != "" {
+		odlog.Info("episode %s: stream url detected from field %s", episodeID, k)
+		return &StreamPlan{CDNURL: u, TrackID: episodeID, Format: "MP3", Encrypted: false}, nil
+	}
+
 	return nil, fmt.Errorf("episode %s: no direct stream url (gw keys: %s)", episodeID, strings.Join(keys, ","))
+}
+
+// preview renders a raw JSON value as a short string for logging.
+func preview(raw json.RawMessage) string {
+	s := string(raw)
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
+}
+
+// findStreamURL scans gw results for the best http(s) URL that looks like an
+// audio stream (skipping artwork), returning the value and its field name.
+func findStreamURL(results map[string]json.RawMessage) (string, string) {
+	var bestURL, bestKey string
+	bestScore := 0
+	for k, raw := range results {
+		var v string
+		if json.Unmarshal(raw, &v) != nil || !strings.HasPrefix(v, "http") {
+			continue
+		}
+		ku := strings.ToUpper(k)
+		if strings.Contains(ku, "PICTURE") || strings.Contains(ku, "IMAGE") || strings.Contains(ku, "COVER") {
+			continue
+		}
+		lv := strings.ToLower(v)
+		if strings.HasSuffix(lv, ".jpg") || strings.HasSuffix(lv, ".jpeg") || strings.HasSuffix(lv, ".png") || strings.HasSuffix(lv, ".gif") {
+			continue
+		}
+		score := 1
+		switch {
+		case strings.Contains(ku, "STREAM"):
+			score = 3
+		case strings.Contains(ku, "MEDIA") || strings.Contains(ku, "URL"):
+			score = 2
+		}
+		if score > bestScore {
+			bestScore, bestURL, bestKey = score, v, k
+		}
+	}
+	return bestURL, bestKey
 }

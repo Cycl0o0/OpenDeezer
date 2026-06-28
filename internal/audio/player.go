@@ -79,6 +79,11 @@ const (
 	decodeChunk = 16 * 1024
 )
 
+// streamUserAgent is sent when fetching audio so third-party podcast hosts
+// (Acast etc.) don't reject the default Go agent with 403.
+const streamUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+	"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
 // pcmStream is a decoder yielding interleaved s16 PCM, seekable by PCM byte
 // offset. Both *mp3.Decoder and *flacStream satisfy it.
 type pcmStream interface {
@@ -490,13 +495,24 @@ func newSource(plan *deezer.StreamPlan, durMS int64) *source {
 // download fetches the CDN body, decrypting BF_CBC_STRIPE chunks (encrypted
 // streams) or passing through plain streams (podcasts), into the streamBuffer.
 func (s *source) download() {
-	resp, err := http.Get(s.plan.CDNURL)
+	req, err := http.NewRequest(http.MethodGet, s.plan.CDNURL, nil)
+	if err != nil {
+		s.setErr(err)
+		s.sb.finish(err)
+		return
+	}
+	// A browser User-Agent: Deezer's own CDN is permissive, but third-party
+	// podcast hosts (e.g. Acast for direct-stream episodes) reject the default Go
+	// agent with 403. http.DefaultClient follows the redirects those hosts use.
+	req.Header.Set("User-Agent", streamUserAgent)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		s.setErr(err)
 		s.sb.finish(err)
 		return
 	}
 	defer resp.Body.Close()
+	odlog.Debug("stream %s: HTTP %d %s (%s)", s.plan.TrackID, resp.StatusCode, resp.Header.Get("Content-Type"), s.format)
 	if resp.StatusCode != http.StatusOK {
 		e := fmt.Errorf("CDN returned %s", resp.Status)
 		s.setErr(e)
