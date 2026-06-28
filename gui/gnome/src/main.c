@@ -49,6 +49,7 @@ struct _DzTrack {
   char   *album;     /* albumName  */
   char   *artwork;   /* artworkUrl */
   gint64  duration_ms;
+  gboolean explicit; /* explicit content — show an "E" badge */
 };
 
 G_DEFINE_FINAL_TYPE(DzTrack, dz_track, G_TYPE_OBJECT)
@@ -68,7 +69,7 @@ static void dz_track_init(DzTrack *t) { (void)t; }
 
 static DzTrack *dz_track_new(const char *id, const char *name, const char *artist,
                              const char *album, const char *artwork, gint64 dur,
-                             const char *artist_id) {
+                             const char *artist_id, gboolean explicit) {
   DzTrack *t = g_object_new(DZ_TYPE_TRACK, NULL);
   t->id = g_strdup(id ? id : "");
   t->name = g_strdup(name ? name : "");
@@ -77,6 +78,7 @@ static DzTrack *dz_track_new(const char *id, const char *name, const char *artis
   t->album = g_strdup(album ? album : "");
   t->artwork = g_strdup(artwork ? artwork : "");
   t->duration_ms = dur;
+  t->explicit = explicit;
   return t;
 }
 
@@ -101,6 +103,7 @@ typedef struct {
   /* now-playing bar */
   GtkButton            *play_btn, *prev_btn, *next_btn;
   GtkLabel             *np_title, *np_subtitle, *pos_label, *dur_label;
+  GtkWidget            *np_explicit;  /* "E" badge beside the now-playing title */
   GtkPicture           *np_cover;
   GtkScale             *seek, *volume;
 
@@ -145,6 +148,7 @@ typedef struct {
   char                 *acct_offer;    /* subscription/offer label */
   gboolean              can_hq;        /* entitled to MP3 320 */
   gboolean              can_hifi;      /* entitled to FLAC */
+  gboolean              premium;       /* paid plan that can stream on-demand */
 
   /* MPRIS — OS media controls over the session bus (GDBus) */
   GDBusConnection      *bus;           /* set in on_bus_acquired */
@@ -155,6 +159,10 @@ typedef struct {
   char                 *mpris_status;  /* last published PlaybackStatus */
 
   gboolean              held;          /* g_application_hold is active */
+
+  /* main UI (the split view); swapped out for the Free-account block (we hold an
+   * extra ref so it survives while the block status page is shown instead). */
+  GtkWidget            *root_content;
 
   /* ---- lyrics view (an AdwDialog; synced highlight driven by the 300ms tick) ---- */
   AdwDialog            *lyrics_dialog;   /* non-NULL while open */
@@ -252,6 +260,10 @@ static void show_window(App *a);
 /* login + embedded webview (defined in the login section) */
 static void open_login_window(App *a);
 static void start_init(App *a, char *arl, gboolean persist);
+
+/* Free-account gate: swap the whole UI for a blocking message / restore it */
+static void show_free_block(App *a);
+static void show_main_content(App *a);
 static void save_arl(const char *arl);
 static void login_dismiss(App *a);
 static void login_show_choose(App *a);
@@ -344,7 +356,8 @@ static DzTrack *dz_track_from_json(JsonObject *o) {
       }
     }
   }
-  DzTrack *t = dz_track_new(id, name, artist, album, art, jint(o, "durationMs"), aid);
+  DzTrack *t = dz_track_new(id, name, artist, album, art, jint(o, "durationMs"), aid,
+                            jbool(o, "explicit"));
   g_free(id); g_free(name); g_free(artist); g_free(album); g_free(art); g_free(aid);
   return t;
 }
@@ -352,6 +365,16 @@ static DzTrack *dz_track_from_json(JsonObject *o) {
 /* ---------------------------------------------------------------------------
  * column view factories
  * ------------------------------------------------------------------------- */
+
+/* A small boxed "E" tag shown at the start of explicit tracks (styled via the
+ * .explicit-badge CSS class in load_css). Reused by every track list. */
+static GtkWidget *make_explicit_badge(void) {
+  GtkWidget *b = gtk_label_new("E");
+  gtk_widget_add_css_class(b, "explicit-badge");
+  gtk_widget_set_valign(b, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(b, "Explicit content");
+  return b;
+}
 
 static void setup_label(GtkSignalListItemFactory *f, GtkListItem *item, gpointer end) {
   (void)f;
@@ -362,10 +385,28 @@ static void setup_label(GtkSignalListItemFactory *f, GtkListItem *item, gpointer
   gtk_list_item_set_child(item, l);
 }
 
+/* Title cell: an "E" badge (hidden unless explicit) followed by the track name. */
+static void setup_title(GtkSignalListItemFactory *f, GtkListItem *item, gpointer u) {
+  (void)f; (void)u;
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  GtkWidget *badge = make_explicit_badge();
+  gtk_widget_set_visible(badge, FALSE);
+  GtkWidget *l = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(l), 0.0);
+  gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+  gtk_box_append(GTK_BOX(box), badge);
+  gtk_box_append(GTK_BOX(box), l);
+  g_object_set_data(G_OBJECT(box), "badge", badge);
+  g_object_set_data(G_OBJECT(box), "label", l);
+  gtk_list_item_set_child(item, box);
+}
+
 static void bind_title(GtkSignalListItemFactory *f, GtkListItem *item, gpointer u) {
   (void)f; (void)u;
   DzTrack *t = gtk_list_item_get_item(item);
-  gtk_label_set_label(GTK_LABEL(gtk_list_item_get_child(item)), t->name);
+  GtkWidget *box = gtk_list_item_get_child(item);
+  gtk_label_set_label(GTK_LABEL(g_object_get_data(G_OBJECT(box), "label")), t->name);
+  gtk_widget_set_visible(GTK_WIDGET(g_object_get_data(G_OBJECT(box), "badge")), t->explicit);
 }
 static void bind_artist(GtkSignalListItemFactory *f, GtkListItem *item, gpointer u) {
   (void)f; (void)u;
@@ -404,6 +445,17 @@ static GtkColumnViewColumn *make_column(const char *title, gboolean expand, gboo
   g_signal_connect(f, "bind", bind_cb, NULL);
   GtkColumnViewColumn *col = gtk_column_view_column_new(title, f);
   gtk_column_view_column_set_expand(col, expand);
+  return col;
+}
+
+/* The title column needs a custom setup (badge + label box), so it can't reuse
+ * make_column's plain-label factory. */
+static GtkColumnViewColumn *make_title_column(void) {
+  GtkListItemFactory *f = gtk_signal_list_item_factory_new();
+  g_signal_connect(f, "setup", G_CALLBACK(setup_title), NULL);
+  g_signal_connect(f, "bind", G_CALLBACK(bind_title), NULL);
+  GtkColumnViewColumn *col = gtk_column_view_column_new("Title", f);
+  gtk_column_view_column_set_expand(col, TRUE);
   return col;
 }
 
@@ -627,6 +679,7 @@ static void play_done(GObject *src, GAsyncResult *res, gpointer data) {
 static void update_now_playing_ui(App *a, DzTrack *t, int idx) {
   a->playing_episode = FALSE;
   gtk_label_set_label(a->np_title, t->name);
+  if (a->np_explicit) gtk_widget_set_visible(a->np_explicit, t->explicit);
   gtk_label_set_label(a->np_subtitle, t->artist);
   gtk_range_set_range(GTK_RANGE(a->seek), 0, t->duration_ms > 0 ? (double)t->duration_ms : 1.0);
   gtk_range_set_value(GTK_RANGE(a->seek), 0);
@@ -2333,6 +2386,8 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
       adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), t->name);
       if (t->album && *t->album)
         adw_action_row_set_subtitle(ADW_ACTION_ROW(row), t->album);
+      if (t->explicit) /* leading "E" tag */
+        adw_action_row_add_prefix(ADW_ACTION_ROW(row), make_explicit_badge());
       char *dt = ms_to_text(t->duration_ms);
       GtkWidget *dl = gtk_label_new(dt);
       gtk_widget_add_css_class(dl, "dim-label");
@@ -2645,6 +2700,8 @@ static void populate_browse(App *a, const char *json) {
       GtkWidget *cov = thumb_new(44, FALSE);
       fetch_picture(GTK_PICTURE(cov), t->artwork, &a->browse_gen, gen);
       adw_action_row_add_prefix(ADW_ACTION_ROW(row), cov);
+      if (t->explicit) /* leading "E" tag, just before the title */
+        adw_action_row_add_prefix(ADW_ACTION_ROW(row), make_explicit_badge());
       char *dt = ms_to_text(t->duration_ms);
       GtkWidget *dl = gtk_label_new(dt);
       gtk_widget_add_css_class(dl, "dim-label");
@@ -2802,6 +2859,7 @@ static void play_episode(App *a, const char *id, const char *title, const char *
   update_like_button(a);
   gtk_single_selection_set_selected(a->track_sel, GTK_INVALID_LIST_POSITION);
   gtk_label_set_label(a->np_title, title ? title : "");
+  if (a->np_explicit) gtk_widget_set_visible(a->np_explicit, FALSE); /* episodes have no E badge */
   gtk_label_set_label(a->np_subtitle, "Podcast");
   gtk_range_set_range(GTK_RANGE(a->seek), 0, dur > 0 ? (double)dur : 1.0);
   gtk_range_set_value(GTK_RANGE(a->seek), 0);
@@ -3372,12 +3430,68 @@ static void open_login_window(App *a) {
  * login
  * ------------------------------------------------------------------------- */
 
+/* Restore the normal split-view UI (used after a Premium account signs in from
+ * the blocked screen). No-op when it is already shown. */
+static void show_main_content(App *a) {
+  if (!a->root_content) return;
+  if (adw_application_window_get_content(a->win) != a->root_content)
+    adw_application_window_set_content(a->win, a->root_content); /* re-refs root_content */
+}
+
+/* Free-account gate. OpenDeezer streams on-demand, which a Deezer Free plan
+ * cannot do, so a Free account is blocked behind a full-window message that
+ * replaces the entire UI — there is no path back into the app except quitting
+ * (or signing in with a Premium account). Playback is stopped first. */
+static void on_free_block_quit(GtkButton *b, gpointer data) {
+  (void)b;
+  g_application_quit(G_APPLICATION(((App *)data)->app));
+}
+static void on_free_block_switch(GtkButton *b, gpointer data) {
+  (void)b;
+  open_login_window((App *)data); /* a Premium login from here unblocks the app */
+}
+static void show_free_block(App *a) {
+  DZStop(); /* never leave a previous (Premium) session playing under the gate */
+
+  AdwStatusPage *sp = ADW_STATUS_PAGE(adw_status_page_new());
+  adw_status_page_set_icon_name(sp, "dialog-warning-symbolic");
+  adw_status_page_set_title(sp, "Sorry — your account isn't supported");
+
+  char *body = g_strdup_printf(
+      "OpenDeezer needs a Deezer Premium subscription to stream. "
+      "Your account: %s. Subscribe at deezer.com, then restart OpenDeezer.",
+      (a->acct_offer && *a->acct_offer) ? a->acct_offer : "Deezer Free");
+  adw_status_page_set_description(sp, body);
+  g_free(body);
+
+  GtkWidget *btns = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_halign(btns, GTK_ALIGN_CENTER);
+
+  GtkWidget *switch_btn = gtk_button_new_with_label("Sign in with a different account");
+  gtk_widget_add_css_class(switch_btn, "pill");
+  g_signal_connect(switch_btn, "clicked", G_CALLBACK(on_free_block_switch), a);
+  gtk_box_append(GTK_BOX(btns), switch_btn);
+
+  GtkWidget *quit_btn = gtk_button_new_with_label("Quit OpenDeezer");
+  gtk_widget_add_css_class(quit_btn, "pill");
+  gtk_widget_add_css_class(quit_btn, "destructive-action");
+  g_signal_connect(quit_btn, "clicked", G_CALLBACK(on_free_block_quit), a);
+  gtk_box_append(GTK_BOX(btns), quit_btn);
+
+  adw_status_page_set_child(sp, btns);
+
+  /* replace the entire window content — the sidebar, search and queue are gone,
+   * so a Free user can neither browse nor play. (We hold our own ref on
+   * root_content, so it survives being swapped out and can be restored.) */
+  adw_application_window_set_content(a->win, GTK_WIDGET(sp));
+}
+
 /* DZAccountJSON is a cheap cached read (no network), so it is safe to call on
  * the main thread right after login. Stores tier + entitlements on APP. */
 static void load_account(App *a) {
   g_clear_pointer(&a->acct_name, g_free);
   g_clear_pointer(&a->acct_offer, g_free);
-  a->can_hq = a->can_hifi = FALSE;
+  a->can_hq = a->can_hifi = a->premium = FALSE;
 
   char *j = DZAccountJSON();
   if (!j) return;
@@ -3391,6 +3505,7 @@ static void load_account(App *a) {
         a->acct_offer = jstr(o, "offer");
         a->can_hq = jbool(o, "canHq");
         a->can_hifi = jbool(o, "canHifi");
+        a->premium = jbool(o, "premium");
       }
     }
   }
@@ -3429,6 +3544,14 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
     if (APP->audio_device && *APP->audio_device)
       DZSetAudioDevice(APP->audio_device);     /* restore the chosen output device */
     load_account(APP);                         /* tier + entitlements (toasts name · offer) */
+    /* Free accounts can't stream on-demand — gate the whole app behind a
+     * blocking message (Premium required). Reached by every login path,
+     * including manual-ARL / account switching. */
+    if (!APP->premium) {
+      show_free_block(APP);
+      return;
+    }
+    show_main_content(APP);                     /* restore UI if returning from the block */
     if (!(APP->acct_name && *APP->acct_name))
       toast(APP, "Connected to Deezer");       /* fallback when account info is unavailable */
     /* refresh (not just append) so switching accounts replaces the previous
@@ -3480,7 +3603,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "0.5.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "0.6.0");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -3491,7 +3614,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "0.5.0",
+      "version", "0.6.0",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -3538,7 +3661,15 @@ static void load_css(void) {
       ".dz-liked{color:" ACCENT ";}\n"
       ".lyrics-line{padding:5px 14px;opacity:0.45;}\n"
       ".lyrics-line.lyrics-active{opacity:1;font-weight:700;color:" ACCENT ";}\n"
-      ".lyrics-plain{padding:8px 14px;}\n";
+      ".lyrics-plain{padding:8px 14px;}\n"
+      /* explicit-content "E" tag: a small theme-aware boxed glyph */
+      ".explicit-badge{"
+      "  font-size:0.68em;"
+      "  font-weight:800;"
+      "  padding:0px 5px;"
+      "  border-radius:4px;"
+      "  background-color:alpha(currentColor,0.20);"
+      "}\n";
   GtkCssProvider *p = gtk_css_provider_new();
 #if GTK_CHECK_VERSION(4, 12, 0)
   gtk_css_provider_load_from_string(p, css);
@@ -3587,7 +3718,13 @@ static GtkWidget *build_now_playing(App *a) {
   }
   gtk_widget_add_css_class(GTK_WIDGET(a->np_title), "heading");
   gtk_widget_add_css_class(GTK_WIDGET(a->np_subtitle), "dim-label");
-  gtk_box_append(GTK_BOX(titles), GTK_WIDGET(a->np_title));
+  /* title row: an "E" badge (hidden unless explicit) + the track title */
+  GtkWidget *title_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  a->np_explicit = make_explicit_badge();
+  gtk_widget_set_visible(a->np_explicit, FALSE);
+  gtk_box_append(GTK_BOX(title_row), a->np_explicit);
+  gtk_box_append(GTK_BOX(title_row), GTK_WIDGET(a->np_title));
+  gtk_box_append(GTK_BOX(titles), title_row);
   gtk_box_append(GTK_BOX(titles), GTK_WIDGET(a->np_subtitle));
   gtk_box_append(GTK_BOX(bar), titles);
 
@@ -3698,7 +3835,7 @@ static GtkWidget *build_track_view(App *a) {
   g_signal_connect(a->track_view, "activate", G_CALLBACK(on_row_activate), a);
 
   GtkColumnViewColumn *cols[] = {
-      make_column("Title", TRUE, FALSE, G_CALLBACK(bind_title)),
+      make_title_column(),
       make_column("Artist", TRUE, FALSE, G_CALLBACK(bind_artist)),
       make_column("Album", TRUE, FALSE, G_CALLBACK(bind_album)),
       make_column("Time", FALSE, TRUE, G_CALLBACK(bind_time)),
@@ -3829,7 +3966,10 @@ static void on_activate(GApplication *app, gpointer data) {
   adw_navigation_split_view_set_sidebar(split, side_page);
   adw_navigation_split_view_set_content(split, a->content_page);
   adw_navigation_split_view_set_min_sidebar_width(split, 240);
-  adw_application_window_set_content(a->win, GTK_WIDGET(split));
+  /* keep an extra ref so the main UI survives being swapped out for the
+   * Free-account block (show_free_block / show_main_content). */
+  a->root_content = g_object_ref_sink(GTK_WIDGET(split));
+  adw_application_window_set_content(a->win, a->root_content);
 
   gtk_window_present(GTK_WINDOW(a->win));
 

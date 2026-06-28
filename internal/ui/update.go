@@ -56,8 +56,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.screen = screenMenu
 		m.acct = m.client.Account()
+		// Free accounts can't stream on-demand — gate the whole app behind a
+		// message (Premium required).
+		if !m.acct.Premium {
+			m.screen = screenBlocked
+			m.status = ""
+			return m, nil
+		}
+		m.screen = screenMenu
 		if m.acct.Name != "" {
 			m.status = "Logged in as " + m.acct.Name + " · " + m.acct.Offer
 		} else {
@@ -280,6 +287,19 @@ func (m *Model) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Free-account block: only quit is allowed.
+	if m.screen == screenBlocked {
+		switch msg.String() {
+		case "q", "ctrl+c", "esc":
+			m.player.Stop()
+			if m.media != nil {
+				m.media.Close()
+			}
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+
 	// Search input captures most keys; handle it first.
 	if m.screen == screenSearch {
 		switch msg.String() {

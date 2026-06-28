@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct OpenDeezerApp: App {
@@ -41,7 +42,10 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if app.loggedIn {
+            if app.accountBlocked {
+                // Free account: gate the whole app (no browsing / playback).
+                FreeAccountBlockedView()
+            } else if app.loggedIn {
                 NavigationSplitView {
                     Sidebar()
                 } detail: {
@@ -108,6 +112,67 @@ struct LoginGate: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DZ.windowBG)
+    }
+}
+
+// FreeAccountBlockedView — shown when a Deezer Free account logs in. OpenDeezer
+// streams on-demand, which a Free plan can't do, so the app is gated behind this
+// message. The only ways out are to quit or to sign in with a Premium account.
+struct FreeAccountBlockedView: View {
+    @EnvironmentObject var app: AppState
+
+    private var offer: String {
+        let o = app.account?.offer ?? ""
+        return o.isEmpty ? "Deezer Free" : o
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 52)).foregroundStyle(DZ.accent)
+            Text("OpenDeezer").font(.system(size: 22, weight: .bold)).foregroundStyle(DZ.textPri)
+
+            Text("Sorry — your account isn't supported")
+                .font(.system(size: 26, weight: .bold)).foregroundStyle(DZ.textPri)
+                .multilineTextAlignment(.center)
+
+            Text("OpenDeezer needs a Deezer Premium subscription to stream. "
+                 + "Your account: \(offer). Subscribe at deezer.com, then restart OpenDeezer.")
+                .font(.title3).foregroundStyle(DZ.textSec)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 460)
+
+            HStack(spacing: 12) {
+                // Allow switching to a Premium account without leaving the block:
+                // a successful Premium login clears accountBlocked and opens the app.
+                Button { app.beginWebLogin() } label: {
+                    Label("Log in with a different account", systemImage: "person.crop.circle")
+                }
+                .buttonStyle(.glass).tint(DZ.accent).controlSize(.large)
+
+                Button { NSApplication.shared.terminate(nil) } label: {
+                    Label("Quit OpenDeezer", systemImage: "power").frame(minWidth: 140)
+                }
+                .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
+            }
+            .padding(.top, 6)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DZ.windowBG)
+    }
+}
+
+// ExplicitBadge — a small boxed "E" tag drawn before a track title when the
+// track carries explicit content (Track.explicit).
+struct ExplicitBadge: View {
+    var body: some View {
+        Text("E")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(DZ.textSec)
+            .frame(width: 14, height: 14)
+            .background(DZ.textSec.opacity(0.22), in: RoundedRectangle(cornerRadius: 3))
+            .accessibilityLabel("Explicit")
     }
 }
 
@@ -220,7 +285,7 @@ struct CreditsView: View {
     @EnvironmentObject var app: AppState
 
     private var version: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.5.0"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.6.0"
     }
 
     var body: some View {
@@ -430,9 +495,12 @@ struct TrackRowView: View {
 
             Artwork(url: track.artworkUrl, size: 36, radius: 4)
             VStack(alignment: .leading, spacing: 1) {
-                Text(track.name).lineLimit(1)
-                    .foregroundStyle(isCurrent ? DZ.accent : DZ.textPri)
-                    .fontWeight(isCurrent ? .semibold : .regular)
+                HStack(spacing: 5) {
+                    if track.explicit { ExplicitBadge() }
+                    Text(track.name).lineLimit(1)
+                        .foregroundStyle(isCurrent ? DZ.accent : DZ.textPri)
+                        .fontWeight(isCurrent ? .semibold : .regular)
+                }
                 Text(track.artistLine).font(.caption).foregroundStyle(DZ.textSec).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

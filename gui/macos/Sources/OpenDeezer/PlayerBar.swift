@@ -58,9 +58,12 @@ struct PlayerBar: View {
         HStack(spacing: 10) {
             Artwork(url: app.current?.artworkUrl ?? "", size: 40, radius: 5)
             VStack(spacing: 3) {
-                Text(app.current?.name ?? "Nothing playing")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(DZ.textPri)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    if app.current?.explicit == true { ExplicitBadge() }
+                    Text(app.current?.name ?? "Nothing playing")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(DZ.textPri)
+                        .lineLimit(1)
+                }
                 HStack(spacing: 6) {
                     Text(subtitleText)
                         .font(.system(size: 11)).foregroundStyle(DZ.textSec).lineLimit(1)

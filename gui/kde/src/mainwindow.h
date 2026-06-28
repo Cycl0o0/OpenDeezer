@@ -39,6 +39,7 @@ struct Track {
     QString id, name, artistLine, albumName, artworkUrl;
     QString artistId;            // jTrack.artists[0].id — drives the artist view
     qint64  durationMs = 0;
+    bool    isExplicit = false;  // jTrack.explicit — shows the "E" badge
 };
 struct Album {
     QString id, name, artistLine, artworkUrl;
@@ -172,6 +173,9 @@ private:
     void setupTray();
     void openSettings();
     void applyAccount(const QByteArray &json);
+    // Free (non-Premium) accounts can't stream on-demand — replace the whole UI
+    // with a blocking "Premium required" page (only Quit remains reachable).
+    void showFreeAccountBlock();
     void applyQuality(int level);
     void applyReplayGain(bool on);
     void applyAudioDevice(const QString &deviceId);
@@ -181,6 +185,10 @@ private:
     QString settingsPath() const;
 
     // ---- widgets ----
+    // Top-level stack: the full app UI (0) vs the Free-account block page (1).
+    QStackedWidget*m_rootStack     = nullptr;
+    QWidget       *m_blockPage     = nullptr;   // "Premium required" gate page
+    QLabel        *m_blockBody     = nullptr;   // its body line (carries the offer)
     QListWidget   *m_sidebar       = nullptr;
     QStackedWidget*m_stack         = nullptr;
     QLabel        *m_tracksHeader  = nullptr;
@@ -289,6 +297,7 @@ private:
     QString m_accountName, m_accountOffer;      // shown in About / status bar
     bool    m_canHq       = false;              // plan allows MP3 320
     bool    m_canHifi     = false;              // plan allows FLAC
+    bool    m_premium     = false;              // paid plan that can stream on-demand
     bool    m_haveAccount = false;              // DZAccountJSON parsed OK
     bool             m_forceQuit   = false;     // set by an explicit Quit
     bool             m_trayHintShown = false;   // first hide-to-tray notice

@@ -40,9 +40,12 @@ struct LyricsView: View {
         HStack(spacing: 12) {
             Artwork(url: app.current?.artworkUrl ?? "", size: 44, radius: 6)
             VStack(alignment: .leading, spacing: 2) {
-                Text(app.current?.name ?? "Lyrics")
-                    .font(.system(size: 16, weight: .bold)).foregroundStyle(DZ.textPri)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    if app.current?.explicit == true { ExplicitBadge() }
+                    Text(app.current?.name ?? "Lyrics")
+                        .font(.system(size: 16, weight: .bold)).foregroundStyle(DZ.textPri)
+                        .lineLimit(1)
+                }
                 Text(app.current?.artistLine ?? "")
                     .font(.system(size: 12)).foregroundStyle(DZ.textSec).lineLimit(1)
             }

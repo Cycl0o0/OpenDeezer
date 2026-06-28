@@ -64,7 +64,7 @@ extern "C" int  DZHighQuality(void);
 // v0.3 additions. Redeclared here (like the quality controls above) so the GUI
 // still builds against an older generated header; identical redeclarations are
 // harmless. All *JSON results are malloc'd C strings — free them with DZFree.
-extern "C" char *DZAccountJSON(void);           // {userId,name,offer,canHq,canHifi,loggedIn}
+extern "C" char *DZAccountJSON(void);           // {userId,name,offer,canHq,canHifi,premium,loggedIn}
 extern "C" char *DZChartsJSON(void);            // {tracks,albums,artists,playlists}
 extern "C" char *DZArtistTopJSON(char *id);     // {tracks}
 extern "C" char *DZArtistProfileJSON(char *id); // {artist,top,albums,related}
@@ -138,11 +138,18 @@ Track parseTrack(const QJsonObject &o) {
     t.artistLine = o.value("artistLine").toString();
     t.albumName  = o.value("albumName").toString();
     t.artworkUrl = o.value("artworkUrl").toString();
+    t.isExplicit = o.value("explicit").toBool();
     // First artist's id — used to open the artist view from a track.
     const QJsonArray as = o.value("artists").toArray();
     if (!as.isEmpty())
         t.artistId = as.first().toObject().value("id").toString();
     return t;
+}
+
+// Track title with a leading explicit-content "E" badge (the 🅴 glyph, matching
+// the other OpenDeezer front-ends) when the track is flagged explicit.
+QString badgedTitle(const Track &t) {
+    return t.isExplicit ? QString::fromUtf8("\xF0\x9F\x85\xB4 ") + t.name : t.name;
 }
 ArtistInfo parseArtistInfo(const QJsonObject &o) {
     ArtistInfo a;
@@ -310,7 +317,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     v->setSpacing(0);
     v->addWidget(split, 1);
     v->addWidget(buildTransport());
-    setCentralWidget(central);
+
+    // The whole app lives in a top-level stack so a Free account can be gated
+    // behind a blocking "Premium required" page without tearing down the live
+    // widgets (see showFreeAccountBlock).
+    m_rootStack = new QStackedWidget;
+    m_rootStack->addWidget(central);   // index 0: the app
+    setCentralWidget(m_rootStack);
 
     // One GUI-thread poll timer drives the seek bar, the play/pause icon and
     // auto-advance. Only cheap, non-blocking DZ* state reads happen here.
@@ -441,14 +454,16 @@ void MainWindow::openSettings() {
     dlg.exec();
 }
 
-// Parse DZAccountJSON {name,offer,canHq,canHifi,loggedIn} into the cached tier
-// fields used by the About box, status bar and the quality entitlement note.
+// Parse DZAccountJSON {name,offer,canHq,canHifi,premium,loggedIn} into the cached
+// tier fields used by the About box, status bar, the quality entitlement note and
+// the Free-account block (premium=false ⇒ can't stream on-demand).
 void MainWindow::applyAccount(const QByteArray &json) {
     const QJsonObject o = QJsonDocument::fromJson(json).object();
     m_accountName  = o.value("name").toString();
     m_accountOffer = o.value("offer").toString();
     m_canHq        = o.value("canHq").toBool();
     m_canHifi      = o.value("canHifi").toBool();
+    m_premium      = o.value("premium").toBool();
     m_haveAccount  = o.value("loggedIn").toBool() || !m_accountName.isEmpty();
 }
 
@@ -555,7 +570,7 @@ void MainWindow::buildMenu() {
     auto *about = help->addAction("&About OpenDeezer");
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            "<h3>OpenDeezer 0.5.0</h3>"
+            "<h3>OpenDeezer 0.6.0</h3>"
             "<p>An open source reimplementation of Deezer.</p>"
             "<p>Native KDE / Qt6 client. The engine (login, browse, Blowfish"
             " decrypt, MP3 decode, playback) is a Go core linked in-process.</p>";
@@ -909,6 +924,16 @@ void MainWindow::promptLogin() {
 void MainWindow::finishLogin(const QByteArray &acct) {
     m_loggedIn = true;
     applyAccount(acct);          // tier + HiFi/HQ entitlements
+    // Free accounts can't stream on-demand — gate the whole app behind a blocking
+    // "Premium required" page. Both auto-login (stored ARL) and the manual
+    // ARL/webview dialog land here, so a Free login can never reach the service.
+    if (!m_premium) {
+        showFreeAccountBlock();
+        return;
+    }
+    // A Premium account (re-)logged in: make sure the app UI is the visible page.
+    if (m_rootStack)
+        m_rootStack->setCurrentIndex(0);
     m_lastFinished = DZFinishedCount();
     m_vol->setValue(static_cast<int>(qRound(DZVolume() * 100)));
     // ReplayGain: apply the persisted preference, then mirror back the engine's
@@ -933,6 +958,73 @@ void MainWindow::finishLogin(const QByteArray &acct) {
         ? m_accountName + " · " + m_accountOffer
         : QStringLiteral("Connected");
     statusBar()->showMessage(conn, 4000);
+}
+
+// Gate a Free (non-Premium) account: OpenDeezer streams on-demand, which a Deezer
+// Free plan can't do, so swap the whole window to a hardcoded blocking page. The
+// live app widgets stay alive on stack page 0 but are unreachable; only the menu
+// bar (Quit / Log in to switch account) and the page's Quit button remain. No
+// browsing or playback is started.
+void MainWindow::showFreeAccountBlock() {
+    if (m_poll)
+        m_poll->stop();
+    DZStop();   // nothing should be playing on a Free account
+
+    const QString offer = m_accountOffer.isEmpty()
+        ? QStringLiteral("Deezer Free") : m_accountOffer;
+    const QString body =
+        QStringLiteral("OpenDeezer needs a Deezer Premium subscription to stream. "
+                       "Your account: %1. Subscribe at deezer.com, then restart "
+                       "OpenDeezer.").arg(offer);
+
+    // Build the page once; refresh the offer line on later (re-)logins.
+    if (!m_blockPage) {
+        m_blockPage = new QWidget;
+        auto *outer = new QVBoxLayout(m_blockPage);
+        outer->addStretch(1);
+
+        auto *title = new QLabel(QStringLiteral("Sorry — your account isn't supported"));
+        title->setAlignment(Qt::AlignCenter);
+        title->setWordWrap(true);
+        QFont tf = title->font();
+        tf.setPointSize(tf.pointSize() + 8);
+        tf.setBold(true);
+        title->setFont(tf);
+        title->setStyleSheet(QString("color:%1;").arg(kAccent));
+        outer->addWidget(title);
+
+        outer->addSpacing(12);
+
+        m_blockBody = new QLabel(body);
+        m_blockBody->setAlignment(Qt::AlignCenter);
+        m_blockBody->setWordWrap(true);
+        m_blockBody->setMaximumWidth(560);
+        // Centre the constrained body within the page.
+        auto *bodyRow = new QHBoxLayout;
+        bodyRow->addStretch(1);
+        bodyRow->addWidget(m_blockBody);
+        bodyRow->addStretch(1);
+        outer->addLayout(bodyRow);
+
+        outer->addSpacing(24);
+
+        auto *quitBtn = new QPushButton(QStringLiteral("Quit OpenDeezer"));
+        connect(quitBtn, &QPushButton::clicked, this, &MainWindow::quitApp);
+        auto *btnRow = new QHBoxLayout;
+        btnRow->addStretch(1);
+        btnRow->addWidget(quitBtn);
+        btnRow->addStretch(1);
+        outer->addLayout(btnRow);
+
+        outer->addStretch(1);
+        m_rootStack->addWidget(m_blockPage);   // index 1
+    } else if (m_blockBody) {
+        m_blockBody->setText(body);
+    }
+
+    m_rootStack->setCurrentWidget(m_blockPage);
+    statusBar()->showMessage(
+        QStringLiteral("Premium required — %1 can't stream on-demand").arg(offer));
 }
 
 // ---- browse ---------------------------------------------------------------
@@ -2029,7 +2121,7 @@ void MainWindow::fillTrackTable(QTableWidget *table, const QVector<Track> &track
     table->setRowCount(tracks.size());
     for (int i = 0; i < tracks.size(); ++i) {
         const Track &t = tracks[i];
-        auto *title = new QTableWidgetItem(t.name);
+        auto *title = new QTableWidgetItem(badgedTitle(t));
         title->setIcon(placeholderIcon());
         table->setItem(i, 0, title);
         table->setItem(i, 1, new QTableWidgetItem(t.artistLine));
@@ -2102,7 +2194,7 @@ void MainWindow::playCurrent() {
 }
 
 void MainWindow::setNowPlaying(const Track &t) {
-    m_nowPlaying->setText(t.name + "\n" + t.artistLine);
+    m_nowPlaying->setText(badgedTitle(t) + "\n" + t.artistLine);
     m_cover->setPixmap(placeholderPix(56));
     refreshLikeButton(); // reflect liked state for the new track
 
@@ -2228,7 +2320,7 @@ void MainWindow::tick() {
                 sub += QStringLiteral("   ·   ") + QString::fromUtf8(fp);
             DZFree(fp);
         }
-        m_nowPlaying->setText(m_current.name + "\n" + sub);
+        m_nowPlaying->setText(badgedTitle(m_current) + "\n" + sub);
     }
 
     // Lyrics page: follow the playing track and keep the synced line highlighted.

@@ -105,7 +105,7 @@ extern "C" {
     int            DZQuality(void);                   // current level 0..2
     char*          DZFormat(void);                    // human label of current stream
     // ---- v0.3 additions -----------------------------------------------------
-    char*          DZAccountJSON(void);               // {userId,name,offer,canHq,canHifi,loggedIn}
+    char*          DZAccountJSON(void);               // {userId,name,offer,canHq,canHifi,premium,loggedIn}; premium=false = Deezer Free (no on-demand)
     char*          DZChartsJSON(void);                // {tracks,albums,artists,playlists}
     char*          DZArtistTopJSON(char* id);         // {tracks:[...]}
     char*          DZArtistProfileJSON(char* id);     // {artist,top,albums,related}
@@ -176,10 +176,12 @@ inline auto resume_foreground(mud::DispatcherQueue const& dq) {
 // ---- wire models (mirror corelib jTrack/jAlbum/jPlaylist) -------------------
 // isEpisode flags a podcast episode: it shares the queue but plays through the
 // plain-stream path (DZPlayEpisode) and skips like / add-to-playlist / preload.
-struct Track    { hstring id, name, artistId, artistLine, albumName, artworkUrl; int64_t durationMs = 0; bool isEpisode = false; };
+struct Track    { hstring id, name, artistId, artistLine, albumName, artworkUrl; int64_t durationMs = 0; bool isEpisode = false; bool isExplicit = false; };
 struct Album    { hstring id, name, artistLine, artworkUrl; };
 struct Playlist { hstring id, name, owner, artworkUrl; int trackCount = 0; };
-struct Account  { hstring userId, name, offer; bool canHq = false, canHifi = false, loggedIn = false; };
+// premium=false is a Deezer Free account that CANNOT stream on-demand -> the app
+// gates itself behind a block message (see ShowBlocked / FinishLogin).
+struct Account  { hstring userId, name, offer; bool canHq = false, canHifi = false, loggedIn = false, premium = false; };
 // DZSearchPodcastsJSON / DZPodcastEpisodesJSON wire rows.
 struct Podcast  { hstring id, name, description, artworkUrl; int episodeCount = 0; };
 struct Episode  { hstring id, title, description, artworkUrl, releaseDate; int64_t durationMs = 0; };
@@ -240,6 +242,7 @@ static Track TrackFromObj(wdj::JsonObject const& o) {
     t.artistLine = o.GetNamedString(L"artistLine", L"");
     t.albumName  = o.GetNamedString(L"albumName", L"");
     t.artworkUrl = o.GetNamedString(L"artworkUrl", L"");
+    t.isExplicit = o.GetNamedBoolean(L"explicit", false); // explicit content -> "E" badge
     auto artists = o.GetNamedArray(L"artists", wdj::JsonArray{});
     if (artists.Size() > 0) t.artistId = artists.GetObjectAt(0).GetNamedString(L"id", L"");
     return t;
@@ -309,6 +312,7 @@ static Account ParseAccount(hstring const& json) {     // DZAccountJSON -> singl
     a.canHq    = o.GetNamedBoolean(L"canHq", false);
     a.canHifi  = o.GetNamedBoolean(L"canHifi", false);
     a.loggedIn = o.GetNamedBoolean(L"loggedIn", false);
+    a.premium  = o.GetNamedBoolean(L"premium", false); // false = Deezer Free (no on-demand)
     return a;
 }
 
@@ -875,6 +879,23 @@ private:
     }
 
     // ---- item factories -----------------------------------------------------
+    // A small boxed "E" tag shown at the start of an explicit track's title.
+    mux::FrameworkElement MakeExplicitBadge() {
+        muxc::Border b;
+        winrt::Windows::UI::Color bg{ 0xFF, 0x9A, 0x9A, 0x9A }; // neutral gray chip
+        b.Background(muxm::SolidColorBrush(bg));
+        b.CornerRadius(mux::CornerRadius{ 3, 3, 3, 3 });
+        b.Padding({ 4, 0, 4, 1 });
+        b.VerticalAlignment(mux::VerticalAlignment::Center);
+        muxc::TextBlock e; e.Text(L"E"); e.FontSize(10); e.FontWeight(wut::FontWeights::Bold());
+        e.LineHeight(12); e.VerticalAlignment(mux::VerticalAlignment::Center);
+        winrt::Windows::UI::Color fg{ 0xFF, 0xFF, 0xFF, 0xFF };
+        e.Foreground(muxm::SolidColorBrush(fg));
+        b.Child(e);
+        winrt::Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(b, box_value(L"Explicit content"));
+        return b;
+    }
+
     mux::UIElement MakeTrackRow(Track const& t, int index) {
         muxc::Grid g; g.Tag(box_value(index)); g.Height(56); g.Padding({ 6, 4, 6, 4 }); g.ColumnSpacing(12);
         g.ColumnDefinitions().Append(ColAuto());
@@ -887,7 +908,20 @@ private:
         title.TextWrapping(mux::TextWrapping::NoWrap); title.TextTrimming(mux::TextTrimming::CharacterEllipsis);
         muxc::TextBlock artist; artist.Text(t.artistLine); artist.Opacity(0.6); artist.FontSize(12);
         artist.TextWrapping(mux::TextWrapping::NoWrap); artist.TextTrimming(mux::TextTrimming::CharacterEllipsis);
-        sp.Children().Append(title); sp.Children().Append(artist);
+        // Explicit tracks get a leading "E" badge; a 2-col grid keeps the title's
+        // ellipsis trimming (a horizontal StackPanel would give the title infinite width).
+        if (t.isExplicit) {
+            muxc::Grid titleRow; titleRow.ColumnSpacing(6);
+            titleRow.ColumnDefinitions().Append(ColAuto());
+            titleRow.ColumnDefinitions().Append(ColStar());
+            auto badge = MakeExplicitBadge();
+            muxc::Grid::SetColumn(badge, 0); titleRow.Children().Append(badge);
+            muxc::Grid::SetColumn(title, 1); titleRow.Children().Append(title);
+            sp.Children().Append(titleRow);
+        } else {
+            sp.Children().Append(title);
+        }
+        sp.Children().Append(artist);
         muxc::Grid::SetColumn(sp, 1); g.Children().Append(sp);
         muxc::TextBlock dur; dur.Text(TimeText(t.durationMs)); dur.Opacity(0.6); dur.VerticalAlignment(mux::VerticalAlignment::Center);
         muxc::Grid::SetColumn(dur, 2); g.Children().Append(dur);
@@ -1024,8 +1058,13 @@ private:
         }
     }
 
-    // Shared success path: enable browsing, apply persisted prefs, show Liked.
-    void FinishLogin() {
+    // Shared success path: apply persisted prefs, then fetch the account tier
+    // up-front. OpenDeezer streams on-demand, which a Deezer Free plan cannot do,
+    // so a non-premium account is gated behind a block (ShowBlocked) BEFORE any
+    // browsing/playback starts. Every login path (auto-ARL, webview, manual ARL)
+    // funnels through here, so the block covers all of them.
+    fire_and_forget FinishLogin() {
+        auto strong = get_strong();
         m_loggedIn = true;
         DZSetQuality(m_settings.quality); // apply persisted quality on startup
         DZSetReplayGain(m_settings.replayGain ? 1 : 0); // apply persisted normalization
@@ -1035,7 +1074,14 @@ private:
             std::string dev = to_string(m_settings.audioDevice);
             DZSetAudioDevice(dev.data());
         }
-        LoadAccount(); // fetch tier (name / offer / hq-hifi caps) for About + Settings
+        // Fetch tier (name / offer / hq-hifi caps / premium) off-thread.
+        m_nowTitle.Text(L"Checking account…");
+        co_await winrt::resume_background();
+        auto acct = ParseAccount(TakeJson(DZAccountJSON()));
+        co_await resume_foreground(m_win.DispatcherQueue());
+        m_account = std::move(acct);
+        if (!m_account.premium) { ShowBlocked(); co_return; } // Free account -> gate the app
+
         m_lastFinished = DZFinishedCount();
         m_updatingVol = true; m_volume.Value(DZVolume() * 100.0); m_updatingVol = false;
         m_timer.Start();
@@ -1044,6 +1090,54 @@ private:
         m_suppressNav = false;
         m_nav.SelectedItem(m_likedItem); // -> OnNav -> LoadFavorites
     }
+
+    // Free-account block: replace the ENTIRE window content (no nav, no transport
+    // bar) with a non-dismissible message so a Deezer Free user can neither browse
+    // nor play. The only action is Quit. A Premium subscription is required.
+    void ShowBlocked() {
+        m_blocked = true;
+        if (m_timer)  { try { m_timer.Stop(); } catch (...) {} }
+        try { DZStop(); } catch (...) {}
+
+        muxc::Grid page;
+        winrt::Windows::UI::Color bg{ 0xFF, 0x14, 0x04, 0x1E }; // dark Deezer backdrop
+        page.Background(muxm::SolidColorBrush(bg));
+
+        muxc::StackPanel sp; sp.Spacing(14); sp.MaxWidth(560); sp.Padding({ 24, 24, 24, 24 });
+        sp.HorizontalAlignment(mux::HorizontalAlignment::Center);
+        sp.VerticalAlignment(mux::VerticalAlignment::Center);
+
+        muxc::TextBlock brand; brand.Text(L"OpenDeezer"); brand.FontSize(22);
+        brand.FontWeight(wut::FontWeights::SemiBold()); brand.Foreground(m_accent);
+        brand.HorizontalAlignment(mux::HorizontalAlignment::Center);
+
+        muxc::TextBlock title; title.Text(L"Sorry — your account isn't supported");
+        title.FontSize(26); title.FontWeight(wut::FontWeights::SemiBold());
+        title.TextWrapping(mux::TextWrapping::Wrap); title.TextAlignment(mux::TextAlignment::Center);
+        title.HorizontalAlignment(mux::HorizontalAlignment::Center);
+
+        hstring offer = m_account.offer.empty() ? hstring(L"Deezer Free") : m_account.offer;
+        muxc::TextBlock body; body.TextWrapping(mux::TextWrapping::Wrap);
+        body.TextAlignment(mux::TextAlignment::Center); body.Opacity(0.85);
+        body.HorizontalAlignment(mux::HorizontalAlignment::Center);
+        body.Text(L"OpenDeezer needs a Deezer Premium subscription to stream. "
+                  L"Your account: " + offer + L". "
+                  L"Subscribe at deezer.com, then restart OpenDeezer.");
+
+        muxc::Button quit; quit.Content(box_value(L"Quit"));
+        quit.HorizontalAlignment(mux::HorizontalAlignment::Center);
+        quit.Click({ get_weak(), &MainWindow::OnBlockedQuit });
+
+        sp.Children().Append(brand);
+        sp.Children().Append(title);
+        sp.Children().Append(body);
+        sp.Children().Append(quit);
+        page.Children().Append(sp);
+
+        m_win.Content(page); // wholesale replace -> the app can no longer be used
+    }
+
+    void OnBlockedQuit(wf::IInspectable const&, mux::RoutedEventArgs const&) { QuitApp(); }
 
     // Login chooser: "Log in with Deezer" opens the embedded webview, "Enter ARL"
     // is the manual fallback. Cancel leaves the app idle (relaunch to retry).
@@ -1322,16 +1416,6 @@ private:
         m_tracks = std::move(tracks);
         ++m_artGen;
         FillTrackList(m_trackList, m_tracks);
-    }
-
-    // Cache the signed-in account tier for the About / Settings surfaces.
-    fire_and_forget LoadAccount() {
-        auto strong = get_strong();
-        if (!m_loggedIn) co_return;
-        co_await winrt::resume_background();
-        auto acct = ParseAccount(TakeJson(DZAccountJSON()));
-        co_await resume_foreground(m_win.DispatcherQueue());
-        m_account = std::move(acct);
     }
 
     fire_and_forget LoadPlaylists() {
@@ -1756,6 +1840,7 @@ private:
 
     // ---- playback -----------------------------------------------------------
     void PlayFrom(std::vector<Track> const& list, int index) {
+        if (m_blocked) return; // Free account: playback gated
         m_queue = list; m_queueIndex = index; PlayCurrent();
     }
     void PlayCurrent() {
@@ -1826,7 +1911,8 @@ private:
             DispatchPreload(m_queue[n2].id, m_queue[n2].durationMs);
     }
     void SetNowPlaying(Track const& t) {
-        m_nowTitle.Text(t.name);
+        // Prefix the now-playing title with the enclosed-E glyph for explicit tracks.
+        m_nowTitle.Text(t.isExplicit ? hstring(L"\U0001F174 " + t.name) : t.name);
         m_curArtist = t.artistLine;
         m_nowArtist.Text(t.artistLine);
         m_cover.Source(nullptr);
@@ -2312,7 +2398,7 @@ private:
         dlg.XamlRoot(m_win.Content().XamlRoot());
         dlg.Title(box_value(L"About OpenDeezer"));
         muxc::StackPanel sp; sp.Spacing(8);
-        muxc::TextBlock h; h.Text(L"OpenDeezer 0.5.0"); h.FontSize(22); h.FontWeight(wut::FontWeights::SemiBold());
+        muxc::TextBlock h; h.Text(L"OpenDeezer 0.6.0"); h.FontSize(22); h.FontWeight(wut::FontWeights::SemiBold());
         h.Foreground(m_accent);
         muxc::TextBlock tag; tag.Text(L"An open source reimplementation of Deezer."); tag.TextWrapping(mux::TextWrapping::Wrap);
         muxc::TextBlock body; body.TextWrapping(mux::TextWrapping::Wrap);
@@ -2402,7 +2488,7 @@ private:
     std::vector<Album>    m_searchAlbums;
     std::vector<std::function<void()>> m_searchActions; // album/playlist tile -> open
 
-    bool m_loggedIn = false, m_shuffle = false, m_updatingSeek = false, m_updatingVol = false, m_suppressNav = false;
+    bool m_loggedIn = false, m_blocked = false, m_shuffle = false, m_updatingSeek = false, m_updatingVol = false, m_suppressNav = false;
     int  m_lastFinished = 0, m_artGen = 0, m_playGen = 0, m_queueIndex = -1, m_repeat = 0;
     std::chrono::steady_clock::time_point m_lastSeek{};
 
@@ -2415,7 +2501,7 @@ private:
 
     // OS integration state
     Settings m_settings{};
-    Account  m_account{};   // cached signed-in tier (filled by LoadAccount after login)
+    Account  m_account{};   // cached signed-in tier (filled by FinishLogin after login)
     HWND m_appHwnd{ nullptr }, m_msgHwnd{ nullptr };
     NOTIFYICONDATAW m_nid{};
     bool m_trayAdded = false, m_quitting = false;
