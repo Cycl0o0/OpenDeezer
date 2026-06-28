@@ -52,8 +52,9 @@ type Account struct {
 	UserID   string `json:"userId"`
 	Name     string `json:"name"`
 	Offer    string `json:"offer"`
-	CanHQ    bool   `json:"canHq"`   // entitled to MP3 320
-	CanHiFi  bool   `json:"canHifi"` // entitled to lossless FLAC
+	CanHQ    bool   `json:"canHq"`    // entitled to MP3 320
+	CanHiFi  bool   `json:"canHifi"`  // entitled to lossless FLAC
+	Premium  bool   `json:"premium"`  // a paid plan that can stream on-demand
 	LoggedIn bool   `json:"loggedIn"`
 }
 
@@ -206,6 +207,9 @@ func (c *Client) Account() Account {
 		Offer:    c.offerName,
 		CanHQ:    c.canHQ,
 		CanHiFi:  c.canHiFi,
+		// Premium = entitled to on-demand HQ/lossless streaming. Deezer Free has
+		// neither, so it can't actually stream tracks in this client.
+		Premium:  c.canHQ || c.canHiFi,
 		LoggedIn: c.LoggedIn(),
 	}
 }
@@ -303,11 +307,12 @@ type restArtist struct {
 	Name string      `json:"name"`
 }
 type restTrackDTO struct {
-	ID       json.Number `json:"id"`
-	Title    string      `json:"title"`
-	Duration json.Number `json:"duration"`
-	Artist   restArtist  `json:"artist"`
-	Album    struct {
+	ID            json.Number `json:"id"`
+	Title         string      `json:"title"`
+	Duration      json.Number `json:"duration"`
+	ExplicitLyric bool        `json:"explicit_lyrics"`
+	Artist        restArtist  `json:"artist"`
+	Album         struct {
 		Title       string `json:"title"`
 		CoverMedium string `json:"cover_medium"`
 	} `json:"album"`
@@ -322,6 +327,7 @@ func (r restTrackDTO) toTrack() Track {
 		Artists:    []Artist{{ID: r.Artist.ID.String(), Name: r.Artist.Name}},
 		AlbumName:  r.Album.Title,
 		ArtworkURL: r.Album.CoverMedium,
+		Explicit:   r.ExplicitLyric,
 	}
 }
 
@@ -335,10 +341,12 @@ type gwTrackDTO struct {
 	ArtName    string      `json:"ART_NAME"`
 	AlbTitle   string      `json:"ALB_TITLE"`
 	AlbPicture string      `json:"ALB_PICTURE"`
+	Explicit   json.Number `json:"EXPLICIT_LYRICS"` // "0"/"1" (or absent)
 }
 
 func (g gwTrackDTO) toTrack() Track {
 	durSec, _ := g.Duration.Int64()
+	exp, _ := g.Explicit.Int64()
 	return Track{
 		ID:         g.SngID.String(),
 		Name:       g.SngTitle,
@@ -346,6 +354,7 @@ func (g gwTrackDTO) toTrack() Track {
 		Artists:    []Artist{{ID: g.ArtID.String(), Name: g.ArtName}},
 		AlbumName:  g.AlbTitle,
 		ArtworkURL: gwCover(g.AlbPicture),
+		Explicit:   exp != 0,
 	}
 }
 

@@ -39,10 +39,31 @@ func (m *Model) View() string {
 		body = m.lyricsView()
 	case screenHelp:
 		body = m.helpView()
+	case screenBlocked:
+		return m.blockedView() // full screen, no playback footer
 	default:
 		body = m.list.View()
 	}
 	return body + "\n" + m.footer()
+}
+
+// blockedView is shown for Free accounts: OpenDeezer streams on-demand, which a
+// Deezer Free plan can't do, so the app is gated behind this message.
+func (m *Model) blockedView() string {
+	lines := []string{
+		"",
+		accent.Render("OpenDeezer"),
+		"",
+		statusSty.Render("Sorry — your account isn't supported."),
+		"",
+		"OpenDeezer needs a Deezer Premium subscription to stream.",
+		dim.Render("Your account: " + m.acct.Offer),
+		"",
+		dim.Render("Subscribe at deezer.com, then restart OpenDeezer."),
+		"",
+		dim.Render("q to quit"),
+	}
+	return padTo(lines, max(1, m.height))
 }
 
 func (m *Model) searchView() string {

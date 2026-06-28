@@ -58,6 +58,7 @@ type jTrack struct {
 	ArtistLine string    `json:"artistLine"`
 	AlbumName  string    `json:"albumName"`
 	ArtworkURL string    `json:"artworkUrl"`
+	Explicit   bool      `json:"explicit"`
 }
 type jAlbum struct {
 	ID         string    `json:"id"`
@@ -81,6 +82,7 @@ func toJTrack(t deezer.Track) jTrack {
 	return jTrack{
 		ID: t.ID, Name: t.Name, DurationMS: t.DurationMS, Artists: as,
 		ArtistLine: t.ArtistLine(), AlbumName: t.AlbumName, ArtworkURL: t.ArtworkURL,
+		Explicit: t.Explicit,
 	}
 }
 func toJTracks(ts []deezer.Track) []jTrack {

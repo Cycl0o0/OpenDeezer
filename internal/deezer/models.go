@@ -16,6 +16,7 @@ type Track struct {
 	Artists    []Artist
 	AlbumName  string
 	ArtworkURL string
+	Explicit   bool // explicit lyrics/content (show an "E" badge)
 }
 
 // ArtistLine joins artist names: "Artist A, Artist B".

@@ -32,6 +32,7 @@ const (
 	screenLyrics
 	screenHelp
 	screenDevices
+	screenBlocked // Free account — playback not available
 )
 
 // Model is the root Bubble Tea model.

@@ -49,7 +49,11 @@ func (r row) Description() string { return r.desc }
 func (r row) FilterValue() string { return r.title }
 
 func trackRow(t deezer.Track) row {
-	return row{kind: rowTrack, title: t.Name, desc: t.ArtistLine() + " · " + t.AlbumName, track: t}
+	title := t.Name
+	if t.Explicit {
+		title = "🅴 " + title // explicit-content badge
+	}
+	return row{kind: rowTrack, title: title, desc: t.ArtistLine() + " · " + t.AlbumName, track: t}
 }
 
 func playlistRow(p deezer.Playlist) row {
