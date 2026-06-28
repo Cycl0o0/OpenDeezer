@@ -12,6 +12,8 @@ package main
 import "C"
 
 import (
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
@@ -19,6 +21,20 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 )
+
+// selfControlPort is this instance's control API port (0 if disabled), used to
+// filter our own responder out of discovery results.
+func selfControlPort() int {
+	if ctrlSrv == nil {
+		return 0
+	}
+	_, port, err := net.SplitHostPort(ctrlSrv.Addr())
+	if err != nil {
+		return 0
+	}
+	p, _ := strconv.Atoi(port)
+	return p
+}
 
 var (
 	remoteCli  *control.Client // non-nil => playback routed to a remote device
@@ -88,7 +104,7 @@ func DZDiscoverDevices(timeoutMS C.int) *C.char {
 	if ms <= 0 {
 		ms = 600
 	}
-	devs, err := discovery.Discover(time.Duration(ms) * time.Millisecond)
+	devs, err := discovery.Discover(time.Duration(ms)*time.Millisecond, selfControlPort())
 	if devs == nil {
 		devs = []discovery.Device{}
 	}

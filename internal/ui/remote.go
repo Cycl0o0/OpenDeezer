@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -60,8 +61,14 @@ func (m *Model) remoteConnectCmd(addr string, trusted bool) tea.Cmd {
 // each with what it's currently playing (best-effort, needs same-account auth).
 func (m *Model) discoverDevicesCmd() tea.Cmd {
 	account := m.client.UserID()
+	selfPort := 0
+	if m.ctrl != nil {
+		if _, port, err := net.SplitHostPort(m.ctrl.Addr()); err == nil {
+			selfPort, _ = strconv.Atoi(port)
+		}
+	}
 	return func() tea.Msg {
-		devs, _ := discovery.Discover(700 * time.Millisecond)
+		devs, _ := discovery.Discover(700*time.Millisecond, selfPort)
 		peers := make([]peerDevice, 0, len(devs))
 		for _, d := range devs {
 			np := ""

@@ -115,8 +115,11 @@ func (r *Responder) Close() {
 }
 
 // Discover multicasts a probe (with a broadcast fallback) and collects replies
-// for the given timeout.
-func Discover(timeout time.Duration) ([]Device, error) {
+// for the given timeout. selfPort is this instance's own control port (0 if
+// none): replies from a local address with that port are our own responder and
+// are filtered out, so we never list ourselves. Other instances on the same host
+// use a different control port and are kept.
+func Discover(timeout time.Duration, selfPort int) ([]Device, error) {
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error { return setBroadcast(c) }}
 	pc, err := lc.ListenPacket(context.Background(), "udp4", ":0") // ephemeral
 	if err != nil {
@@ -144,6 +147,7 @@ func Discover(timeout time.Duration) ([]Device, error) {
 	_, _ = conn.WriteToUDP(probe, &net.UDPAddr{IP: net.IPv4bcast, Port: Port})
 
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
+	locals := localIPs()
 	seen := map[string]bool{}
 	var out []Device
 	buf := make([]byte, maxPacket)
@@ -155,6 +159,10 @@ func Discover(timeout time.Duration) ([]Device, error) {
 		var rep reply
 		// Bound the port so a forged reply can't produce a bad address.
 		if json.Unmarshal(buf[:n], &rep) != nil || rep.Magic != replyMagic || rep.Port <= 0 || rep.Port > 65535 {
+			continue
+		}
+		// Skip our own responder (same control port on one of our local addresses).
+		if selfPort != 0 && rep.Port == selfPort && (src.IP.IsLoopback() || locals[src.IP.String()]) {
 			continue
 		}
 		addr := net.JoinHostPort(src.IP.String(), strconv.Itoa(rep.Port))
@@ -169,6 +177,21 @@ func Discover(timeout time.Duration) ([]Device, error) {
 		out = append(out, Device{Name: name, Addr: addr, Client: rep.Client, Version: rep.Version})
 	}
 	return out, nil
+}
+
+// localIPs is the set of this machine's interface IPs (for self-filtering).
+func localIPs() map[string]bool {
+	m := map[string]bool{}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return m
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok {
+			m[ipnet.IP.String()] = true
+		}
+	}
+	return m
 }
 
 // multicastInterfaces returns up, multicast-capable interfaces.
