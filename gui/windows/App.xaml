@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App.xaml is the WHOLE POINT of the C# rewrite: it is compiled by the real
+     XAML markup compiler, so merging XamlControlsResources actually resolves the
+     WinUI theme resources (e.g. AcrylicBackgroundFillColorDefaultBrush). The old
+     code-only C++/WinRT build never merged the framework theme dictionary, so the
+     first theme-brush lookup threw 0x80004005 and the app failed to launch. -->
+<Application
+    x:Class="OpenDeezer.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- Deezer Electric Violet accent override (ARGB FF A238FF) -->
+            <SolidColorBrush x:Key="AccentBrush" Color="#FFA238FF" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

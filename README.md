@@ -19,7 +19,7 @@ playback). Seven native front-ends sit on top of it. By **Cycl0o0**.
 | **Linux (unified)** | auto-picks GTK4 or Qt6 by desktop | x86_64 · aarch64 `gui/linux` |
 | **GNOME** | GTK4 · libadwaita | x86_64 · aarch64 `gui/gnome` |
 | **KDE** | Qt6 Widgets · Breeze | x86_64 · aarch64 `gui/kde` |
-| **Windows** | WinUI 3 · C++/WinRT · Fluent | x64 `gui/windows` |
+| **Windows** | WinUI 3 · C# / .NET 8 · Fluent | x64 `gui/windows` |
 | **Android** | Kotlin · Jetpack Compose | arm64/arm/x86_64 (gomobile AAR) `gui/android` |
 
 The **unified Linux** client is a single `opendeezer` command that picks the
@@ -96,9 +96,9 @@ access to your account.
   web-login), and/or Qt6 **and `qt6-webengine-dev`** (KDE web-login).
 - **macOS GUI**: macOS 26 (Tahoe) + Xcode 26 for the Liquid Glass APIs (the login
   web view uses the system WebKit framework — no extra dependency).
-- **Windows GUI**: Windows 10 1809+/11, Visual Studio 2022 + Windows App SDK,
-  MinGW-w64 (Go cgo builds the engine DLL), and the Edge **WebView2** runtime
-  (preinstalled on Windows 11) for the login web view.
+- **Windows GUI**: Windows 10 1809+/11, the **.NET 8 SDK** + Windows App SDK
+  workload, MinGW-w64 (Go cgo builds the engine DLL), and the Edge **WebView2**
+  runtime (preinstalled on Windows 11) for the login web view.
 - **Android**: Android 7.0+ (API 24). Building needs JDK 17, the Android SDK +
   NDK, and gomobile.
 - TUI album art needs a 256-color or truecolor terminal.
@@ -307,10 +307,10 @@ cd gui/gnome && ./build.sh && ./opendeezer-gnome     # GTK4 / libadwaita
 cd gui/kde   && ./build.sh && ./opendeezer-kde       # Qt6 / Breeze
 ```
 
-**Windows app** — Windows 10/11, Visual Studio 2022 + Windows App SDK,
+**Windows app** — Windows 10/11, .NET 8 SDK + Windows App SDK,
 MinGW-w64 (Go cgo), Go:
 ```powershell
-cd gui\windows; .\build.ps1     # -> bin\x64\Release\OpenDeezer.exe
+cd gui\windows; .\build.ps1     # MinGW builds the engine DLL, then `dotnet publish`
 ```
 
 **Android app** — Go, JDK 17, Android SDK + NDK, and gomobile. `build.sh` binds

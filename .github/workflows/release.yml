@@ -194,7 +194,7 @@ jobs:
         with:
           files: OpenDeezer-linux-${{ matrix.arch }}.tar.gz
 
-  # ---- Windows GUI (WinUI 3 / C++/WinRT) — needs VS + WinApp SDK + MinGW (Go DLL) ----
+  # ---- Windows GUI (C# WinUI 3 / .NET 8) — needs .NET SDK + MinGW (Go DLL) ----
   windows-gui:
     needs: detect
     if: needs.detect.outputs.windows == 'true'
@@ -204,14 +204,21 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - uses: microsoft/setup-msbuild@v2
-      - name: Build (Go c-shared DLL + msbuild)
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build (Go c-shared DLL + dotnet publish)
         shell: pwsh
         run: cd gui/windows; ./build.ps1
       - name: Zip
         shell: pwsh
-        # build.ps1 / the vcxproj emit to bin\x64\Release (exe + WinAppSDK DLLs + libdeezercore.dll).
-        run: Compress-Archive -Path gui/windows/bin/x64/Release/* -DestinationPath OpenDeezer-windows-x64.zip
+        # build.ps1 publishes a self-contained win-x64 build (exe + WinAppSDK DLLs +
+        # libdeezercore.dll) under bin\...\win-x64\publish. Resolve that dir robustly.
+        run: |
+          $exe = Get-ChildItem -Path gui/windows/bin -Filter OpenDeezer.exe -Recurse -File |
+                 Where-Object { $_.FullName -match '\\publish\\' } | Select-Object -First 1
+          if (-not $exe) { throw 'publish dir not found' }
+          Compress-Archive -Path (Join-Path $exe.Directory.FullName '*') -DestinationPath OpenDeezer-windows-x64.zip
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2

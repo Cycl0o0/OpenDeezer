@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The window shell: Mica backdrop + an empty root Grid. The full UI tree
+     (NavigationView, the per-page lists/grids, the now-playing transport bar) is
+     built in code-behind, a 1:1 port of main.cpp's BuildUi/BuildNav/BuildPages/
+     BuildTransport. Keeping the dynamic, item-heavy UI in code-behind mirrors the
+     known-good C++ source exactly; the launch-fixing theme merge lives in App.xaml. -->
+<Window
+    x:Class="OpenDeezer.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:media="using:Microsoft.UI.Xaml.Media"
+    Title="OpenDeezer">
+    <Window.SystemBackdrop>
+        <media:MicaBackdrop />
+    </Window.SystemBackdrop>
+    <Grid x:Name="RootGrid" />
+</Window>
