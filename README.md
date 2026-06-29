@@ -1,14 +1,14 @@
 # OpenDeezer
 
-**An open source reimplementation of Deezer.** Log in once (the GUIs sign you in
-through an embedded Deezer web view — no ARL hunting), then browse your liked
-songs, playlists, charts, artists and search, and stream — each track is
-streamed, Blowfish stripe-decrypted, decoded and played **locally**, in memory
-(MP3, or FLAC on HiFi). Your ARL never leaves your machine except in the requests
-it makes to Deezer.
+**An open-source reimplementation of Deezer.** Log in once. The GUIs sign you in
+with an embedded Deezer web view, so there's no ARL to go hunting for. Then
+browse your liked songs, playlists, charts, artists, and search. Every track
+plays **locally**: it's streamed in, Blowfish-decrypted, decoded, and played
+from memory (MP3, or FLAC on HiFi). Your ARL stays on your machine and only goes
+to Deezer in the requests OpenDeezer makes for you.
 
-One Go engine does the whole streaming path (login, decrypt, decode, playback);
-seven native front-ends sit on top of it. By **Cycl0o0**.
+One Go engine handles the whole streaming path (login, decrypt, decode,
+playback). Seven native front-ends sit on top of it. By **Cycl0o0**.
 
 ## Clients
 
@@ -22,10 +22,10 @@ seven native front-ends sit on top of it. By **Cycl0o0**.
 | **Windows** | WinUI 3 · C++/WinRT · Fluent | x64 `gui/windows` |
 | **Android** | Kotlin · Jetpack Compose | arm64/arm/x86_64 (gomobile AAR) `gui/android` |
 
-The **unified Linux** client is one `opendeezer` command that auto-selects the
+The **unified Linux** client is a single `opendeezer` command that picks the
 native toolkit for your desktop (Qt/Breeze on KDE-family, GTK4/libadwaita
-elsewhere) — LibreOffice-style. The standalone `gui/gnome` / `gui/kde` binaries
-are also available if you prefer one toolkit.
+elsewhere), the way LibreOffice does. If you'd rather have one toolkit, the
+standalone `gui/gnome` and `gui/kde` binaries are there too.
 
 Prebuilt binaries for everything are on the [Releases](../../releases) page.
 
@@ -65,9 +65,9 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
 
 Download a binary from [Releases](../../releases).
 
-**GUIs** — just launch and click **Log in with Deezer**: an embedded web view
-opens the Deezer login, and once you're in, your session (ARL) is captured
-automatically and saved locally for next time. No manual token needed.
+**GUIs** — launch one and click **Log in with Deezer**. An embedded web view
+opens the Deezer login; once you're in, your session (ARL) is saved locally for
+next time. No token to paste.
 
 **Terminal (TUI)** — build it and provide your ARL:
 
@@ -278,9 +278,9 @@ ARL ─login (gw-light)→ browse (gw + public REST): search, charts, artists,
 
 ## Build from source
 
-Clone the repo, then build whichever client you want — they all build the same
-Go engine (`corelib`) underneath. Each `build.sh` / `build.ps1` compiles the
-engine first, then the native app.
+Clone the repo and build whichever client you want. They all use the same Go
+engine (`corelib`) underneath; each `build.sh` / `build.ps1` compiles the engine
+first, then the native app.
 
 **Terminal (any OS)** — Go 1.25+ and a C compiler (the malgo audio backend needs
 cgo on every platform; Linux also needs `libasound2-dev`, Windows needs
@@ -356,10 +356,10 @@ account can't stream full tracks the way OpenDeezer plays them. OpenDeezer only
 plays content your own account is already entitled to.
 
 **Why can't I download / save tracks?**
-OpenDeezer is a *player*, not a ripper. It decrypts and decodes each track **in
-memory** to play it — it never writes tracks to disk. Saving decrypted files
-would be piracy; that's deliberately not what this does. Stream your own
-entitled music, like the official app.
+OpenDeezer plays music, it doesn't rip it. Each track is decrypted and decoded
+**in memory** to play, and never written to disk. Saving decrypted files would
+be piracy, so it doesn't. Play your own entitled music, the same as the official
+app.
 
 **Does my ARL get uploaded anywhere?**
 No. Login, decrypt and decode all run on your machine; the only requests that
@@ -379,8 +379,8 @@ isn't entitled.
 
 **Why not just use the official app?**
 Mostly because it's a reverse-engineering project and a learning exercise. You
-also get lightweight, local-first native clients (including a terminal one), no
-telemetry, on platforms the official app may not serve.
+also get lightweight native clients (including a terminal one) with no telemetry,
+on platforms the official app doesn't always cover.
 
 **Is it open source?**
 Yes, AGPL-3.0. Read it, build it, audit exactly what it does.
