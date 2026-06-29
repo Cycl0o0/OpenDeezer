@@ -19,6 +19,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 )
@@ -83,8 +84,8 @@ func DZNowPlayingJSON() *C.char {
 	if routedRemote() != nil {
 		if t := remoteSnapshot().Track; t != nil {
 			return jsonStr(jTrack{
-				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, AlbumName: t.Album,
-				Explicit: t.Explicit, DurationMS: t.DurationMS,
+				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, ArtistID: t.ArtistID,
+				AlbumName: t.Album, Explicit: t.Explicit, DurationMS: t.DurationMS,
 			}, nil)
 		}
 		return jsonStr(map[string]any{}, nil)
@@ -171,6 +172,16 @@ func DZConnectDevice(addr *C.char) C.int {
 	withPlayer(func(p *audio.Player) { p.Stop() })
 	st, _ := rc.Status()
 
+	// Sync the engine's current-track with what's actually playing on the remote,
+	// so now-playing / Discord RP / lyrics reflect the remote immediately.
+	if st.Track != nil {
+		setCurrentTrack(deezer.Track{
+			ID: st.Track.ID, Name: st.Track.Title, DurationMS: st.Track.DurationMS,
+			Artists:   []deezer.Artist{{ID: st.Track.ArtistID, Name: st.Track.Artist}},
+			AlbumName: st.Track.Album, Explicit: st.Track.Explicit,
+		})
+	}
+
 	mu.Lock()
 	if remoteStop != nil {
 		close(remoteStop)
@@ -187,11 +198,13 @@ func DZConnectDevice(addr *C.char) C.int {
 	return 1
 }
 
-// DZDisconnectDevice returns control to local playback.
+// DZDisconnectDevice returns control to local playback. It stops the remote
+// device (so it doesn't keep playing unattended) before clearing the connection.
 //
 //export DZDisconnectDevice
 func DZDisconnectDevice() {
 	mu.Lock()
+	rc := remoteCli // capture before clearing (rc.Stop is a network call — done outside lock)
 	if remoteStop != nil {
 		close(remoteStop)
 		remoteStop = nil
@@ -200,6 +213,9 @@ func DZDisconnectDevice() {
 	remoteSt = control.State{}
 	remoteAddr = ""
 	mu.Unlock()
+	if rc != nil {
+		_, _ = rc.Stop() // halt the remote; ignore error (fire-and-forget)
+	}
 }
 
 // DZConnectedDevice returns the connected device's address ("" if local).
@@ -213,6 +229,8 @@ func DZConnectedDevice() *C.char {
 }
 
 // remotePoller refreshes the cached remote status once a second until stopped.
+// Each poll also syncs the engine's current-track so now-playing / Discord RP /
+// lyrics reflect what the remote is actually playing as it changes.
 func remotePoller(rc *control.Client, stop chan struct{}) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -226,10 +244,19 @@ func remotePoller(rc *control.Client, stop chan struct{}) {
 				continue
 			}
 			mu.Lock()
-			if remoteCli == rc { // still the active device
+			active := remoteCli == rc // still the active device?
+			if active {
 				remoteSt = st
 			}
 			mu.Unlock()
+			// Sync current-track outside the lock (setCurrentTrack uses its own mutex).
+			if active && st.Track != nil {
+				setCurrentTrack(deezer.Track{
+					ID: st.Track.ID, Name: st.Track.Title, DurationMS: st.Track.DurationMS,
+					Artists:   []deezer.Artist{{ID: st.Track.ArtistID, Name: st.Track.Artist}},
+					AlbumName: st.Track.Album, Explicit: st.Track.Explicit,
+				})
+			}
 		}
 	}
 }

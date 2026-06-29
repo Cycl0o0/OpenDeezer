@@ -338,9 +338,30 @@ func (m *Model) publishAccount() {
 
 // ctrlTrack maps a deezer.Track to the control-API Track.
 func ctrlTrack(t deezer.Track) *control.Track {
-	return &control.Track{
+	ct := &control.Track{
 		ID: t.ID, Title: t.Name, Artist: t.ArtistLine(), Album: t.AlbumName,
 		Explicit: t.Explicit, DurationMS: t.DurationMS,
+	}
+	if len(t.Artists) > 0 {
+		ct.ArtistID = t.Artists[0].ID
+	}
+	return ct
+}
+
+// remoteTrack converts a control API track pointer to a deezer.Track for local
+// use (e.g. lyrics fetch, artist browse). ArtistID is preserved so the artist
+// view can open directly by id.
+func remoteTrack(t *control.Track) deezer.Track {
+	if t == nil {
+		return deezer.Track{}
+	}
+	var artists []deezer.Artist
+	if t.Artist != "" {
+		artists = []deezer.Artist{{ID: t.ArtistID, Name: t.Artist}}
+	}
+	return deezer.Track{
+		ID: t.ID, Name: t.Title, DurationMS: t.DurationMS,
+		Artists: artists, AlbumName: t.Album, Explicit: t.Explicit,
 	}
 }
 

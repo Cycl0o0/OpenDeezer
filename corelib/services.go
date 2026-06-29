@@ -174,10 +174,14 @@ func engineState() control.State {
 		st.State = "stopped"
 	}
 	if cur.ID != "" {
-		st.Track = &control.Track{
+		ct := &control.Track{
 			ID: cur.ID, Title: cur.Name, Artist: cur.ArtistLine(),
 			Album: cur.AlbumName, Explicit: cur.Explicit, DurationMS: cur.DurationMS,
 		}
+		if len(cur.Artists) > 0 {
+			ct.ArtistID = cur.Artists[0].ID
+		}
+		st.Track = ct
 	}
 	return st
 }
@@ -225,8 +229,9 @@ func engineAccount() control.Account {
 	return control.Account{UserID: a.UserID, Name: a.Name, Offer: a.Offer}
 }
 
-// engineCommands maps control commands to player-level actions. next/prev,
-// shuffle and repeat depend on the GUI's queue and are intentionally omitted.
+// engineCommands maps control commands to player-level actions. next/prev live
+// in the GUI's queue; shuffle/repeat are no-ops locally but forward to the
+// connected remote (if any) so a controller can drive the remote's queue.
 func engineCommands() control.Commands {
 	return control.Commands{
 		PlayPause:    func() { withPlayer(func(p *audio.Player) { p.TogglePause() }) },
@@ -236,6 +241,37 @@ func engineCommands() control.Commands {
 		SetVolume:    func(v float64) { withPlayer(func(p *audio.Player) { p.SetVolume(v) }) },
 		PlayTrack:    enginePlayTrack,
 		PlayPlaylist: enginePlayPlaylist,
+		SetRepeat: func(mode string) {
+			if rc := routedRemote(); rc != nil {
+				if st, err := rc.SetRepeat(mode); err == nil {
+					setRemoteState(st)
+				}
+			}
+		},
+		SetShuffle: func(on bool) {
+			if rc := routedRemote(); rc != nil {
+				if st, err := rc.SetShuffle(on); err == nil {
+					setRemoteState(st)
+				}
+			}
+		},
+	}
+}
+
+// fetchEpisodeMeta enriches the current episode with title/podcast name/artwork
+// by calling the REST /episode/{id} endpoint. Best-effort; matches DZPlay's
+// fetchTrackMeta pattern. The episode's "artist line" is the podcast/show name.
+func fetchEpisodeMeta(c *deezer.Client, id string) {
+	if c == nil || id == "" {
+		return
+	}
+	ep, err := c.EpisodeMeta(id)
+	if err != nil || ep.ID == "" {
+		return
+	}
+	// Only keep it if the user hasn't moved on to another episode meanwhile.
+	if currentTrack().ID == id {
+		setCurrentTrack(ep.AsTrack())
 	}
 }
 

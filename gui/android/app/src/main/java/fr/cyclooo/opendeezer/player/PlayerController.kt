@@ -21,6 +21,8 @@ data class PlayerState(
     val queue: List<Track> = emptyList(),
     val index: Int = -1,
     val connectedDevice: String = "",
+    val repeatMode: Int = 0,   // 0=off, 1=all, 2=one
+    val shuffle: Boolean = false,
 ) {
     val isPlaying: Boolean get() = state == Engine.PLAYING
     val hasNext: Boolean get() = index in 0 until queue.lastIndex
@@ -41,6 +43,8 @@ class PlayerController(private val scope: CoroutineScope) {
     private var index: Int = -1
     private var lastFinished: Int = Engine.finishedCount()
     private var pollJob: Job? = null
+    private var repeatMode: Int = 0       // 0=off, 1=all, 2=one
+    private var shuffleEnabled: Boolean = false
 
     fun start() {
         if (pollJob?.isActive == true) return
@@ -129,6 +133,21 @@ class PlayerController(private val scope: CoroutineScope) {
         pushImmediate()
     }
 
+    // B4: set repeat mode locally and forward to any connected remote.
+    // mode: 0=off, 1=all, 2=one
+    fun setRepeat(mode: Int) {
+        repeatMode = mode.coerceIn(0, 2)
+        Engine.setRepeat(repeatMode)
+        pushImmediate()
+    }
+
+    // B4: toggle shuffle locally and forward to any connected remote.
+    fun setShuffle(on: Boolean) {
+        shuffleEnabled = on
+        Engine.setShuffle(if (on) 1 else 0)
+        pushImmediate()
+    }
+
     private fun startCurrent() {
         val t = queue.getOrNull(index) ?: return
         // Take a baseline so the resulting finish doesn't trigger a spurious advance.
@@ -144,9 +163,25 @@ class PlayerController(private val scope: CoroutineScope) {
         val finished = Engine.finishedCount()
         if (finished > lastFinished) {
             lastFinished = finished
-            // The current track ended on its own; advance if there's more queue.
-            if (index in 0 until queue.lastIndex) {
+            if (repeatMode == 2) {
+                // Repeat-one: re-start the same track.
+                startCurrent()
+                return
+            }
+            if (shuffleEnabled && queue.size > 1) {
+                index = queue.indices.filter { it != index }.random()
+                startCurrent()
+                return
+            }
+            if (index < queue.lastIndex) {
+                // Advance to the next track in the queue.
                 index++
+                startCurrent()
+                return
+            }
+            if (repeatMode == 1 && queue.isNotEmpty()) {
+                // Repeat-all: wrap to the beginning.
+                index = 0
                 startCurrent()
                 return
             }
@@ -155,7 +190,17 @@ class PlayerController(private val scope: CoroutineScope) {
     }
 
     private fun push() {
-        val current = queue.getOrNull(index) ?: Engine.nowPlaying()
+        val connectedDevice = Engine.connectedDevice()
+        val queueTrack = queue.getOrNull(index)
+        // B3: when routed to a remote device, always reflect the remote's now-playing
+        //     track (Engine.nowPlaying() carries the correct artistId and title).
+        // B1: for local podcast episodes the engine enriches metadata asynchronously
+        //     via fetchEpisodeMeta; prefer Engine.nowPlaying() so we get the updated info.
+        val current = when {
+            connectedDevice.isNotBlank() -> Engine.nowPlaying()
+            queueTrack?.isEpisode == true -> Engine.nowPlaying() ?: queueTrack
+            else -> queueTrack ?: Engine.nowPlaying()
+        }
         _state.value = PlayerState(
             current = current,
             state = Engine.state(),
@@ -165,7 +210,9 @@ class PlayerController(private val scope: CoroutineScope) {
             format = Engine.format(),
             queue = queue,
             index = index,
-            connectedDevice = Engine.connectedDevice(),
+            connectedDevice = connectedDevice,
+            repeatMode = repeatMode,
+            shuffle = shuffleEnabled,
         )
     }
 

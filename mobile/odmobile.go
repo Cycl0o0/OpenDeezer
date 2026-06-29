@@ -54,6 +54,7 @@ type jTrack struct {
 	DurationMS int64     `json:"durationMs"`
 	Artists    []jArtist `json:"artists"`
 	ArtistLine string    `json:"artistLine"`
+	ArtistID   string    `json:"artistId,omitempty"` // primary artist id (convenience field)
 	AlbumName  string    `json:"albumName"`
 	ArtworkURL string    `json:"artworkUrl"`
 	Explicit   bool      `json:"explicit"`
@@ -83,10 +84,14 @@ func toJTrack(t deezer.Track) jTrack {
 	for i, a := range t.Artists {
 		as[i] = jArtist{ID: a.ID, Name: a.Name}
 	}
+	artistID := ""
+	if len(t.Artists) > 0 {
+		artistID = t.Artists[0].ID
+	}
 	return jTrack{
 		ID: t.ID, Name: t.Name, DurationMS: t.DurationMS, Artists: as,
-		ArtistLine: t.ArtistLine(), AlbumName: t.AlbumName, ArtworkURL: t.ArtworkURL,
-		Explicit: t.Explicit,
+		ArtistLine: t.ArtistLine(), ArtistID: artistID, AlbumName: t.AlbumName,
+		ArtworkURL: t.ArtworkURL, Explicit: t.Explicit,
 	}
 }
 func toJTracks(ts []deezer.Track) []jTrack {
@@ -331,7 +336,9 @@ func PodcastEpisodes(id string) string {
 	})
 }
 
-// PlayEpisode resolves + plays a podcast episode (plain stream).
+// PlayEpisode resolves + plays a podcast episode (plain stream). Sets the
+// episode as the current track immediately (id only), then asynchronously
+// enriches title / podcast name / artwork via the REST /episode endpoint.
 func PlayEpisode(id string) bool {
 	c, p := curClient(), curPlayer()
 	if c == nil || p == nil {
@@ -345,7 +352,19 @@ func PlayEpisode(id string) bool {
 	if err := p.Play(plan, 0); err != nil {
 		return false
 	}
+	setCurrentTrack(deezer.Track{ID: id})
+	go fetchEpisodeMeta(c, id)
 	return true
+}
+
+func fetchEpisodeMeta(c *deezer.Client, id string) {
+	ep, err := c.EpisodeMeta(id)
+	if err != nil || ep.ID == "" {
+		return
+	}
+	if currentTrack().ID == id {
+		setCurrentTrack(ep.AsTrack())
+	}
 }
 
 // ---- library writes ----
@@ -544,8 +563,8 @@ func NowPlaying() string {
 	if routedRemote() != nil {
 		if t := remoteSnapshot().Track; t != nil {
 			return jstr(jTrack{
-				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, AlbumName: t.Album,
-				Explicit: t.Explicit, DurationMS: t.DurationMS,
+				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, ArtistID: t.ArtistID,
+				AlbumName: t.Album, Explicit: t.Explicit, DurationMS: t.DurationMS,
 			}, nil)
 		}
 		return jstr(map[string]any{}, nil)
@@ -640,10 +659,14 @@ func engineState() control.State {
 		st.State = "stopped"
 	}
 	if cur.ID != "" {
-		st.Track = &control.Track{
+		ct := &control.Track{
 			ID: cur.ID, Title: cur.Name, Artist: cur.ArtistLine(),
 			Album: cur.AlbumName, Explicit: cur.Explicit, DurationMS: cur.DurationMS,
 		}
+		if len(cur.Artists) > 0 {
+			ct.ArtistID = cur.Artists[0].ID
+		}
+		st.Track = ct
 	}
 	return st
 }
@@ -785,6 +808,17 @@ func ConnectDevice(addr string) bool {
 		p.Stop()
 	}
 	st, _ := rc.Status()
+
+	// Sync the engine's current-track with what's playing on the remote,
+	// so now-playing / lyrics reflect the remote immediately.
+	if st.Track != nil {
+		setCurrentTrack(deezer.Track{
+			ID: st.Track.ID, Name: st.Track.Title, DurationMS: st.Track.DurationMS,
+			Artists:   []deezer.Artist{{ID: st.Track.ArtistID, Name: st.Track.Artist}},
+			AlbumName: st.Track.Album, Explicit: st.Track.Explicit,
+		})
+	}
+
 	mu.Lock()
 	if remoteStop != nil {
 		close(remoteStop)
@@ -799,9 +833,11 @@ func ConnectDevice(addr string) bool {
 	return true
 }
 
-// DisconnectDevice returns control to local playback.
+// DisconnectDevice returns control to local playback. Stops the remote device
+// (so it doesn't keep playing unattended) before clearing the connection.
 func DisconnectDevice() {
 	mu.Lock()
+	rc := remoteCli // capture before clearing; Stop is a network call — done outside lock
 	if remoteStop != nil {
 		close(remoteStop)
 		remoteStop = nil
@@ -810,6 +846,40 @@ func DisconnectDevice() {
 	remoteSt = control.State{}
 	remoteAddr = ""
 	mu.Unlock()
+	if rc != nil {
+		_, _ = rc.Stop() // halt the remote; ignore error (fire-and-forget)
+	}
+}
+
+// SetRepeat sets the repeat mode on the connected remote device
+// (mode: 0=off, 1=all, 2=one). No-op when playing locally — GUIs own their queue.
+func SetRepeat(mode int) {
+	rc := routedRemote()
+	if rc == nil {
+		return
+	}
+	m := "off"
+	switch mode {
+	case 1:
+		m = "all"
+	case 2:
+		m = "one"
+	}
+	if st, err := rc.SetRepeat(m); err == nil {
+		setRemoteState(st)
+	}
+}
+
+// SetShuffle sets shuffle on (non-zero) or off (0) on the connected remote device.
+// No-op when playing locally — GUIs own their queue.
+func SetShuffle(on int) {
+	rc := routedRemote()
+	if rc == nil {
+		return
+	}
+	if st, err := rc.SetShuffle(on != 0); err == nil {
+		setRemoteState(st)
+	}
 }
 
 // ConnectedDevice returns the connected device address ("" if local).
@@ -827,12 +897,23 @@ func remotePoller(rc *control.Client, stop chan struct{}) {
 		case <-stop:
 			return
 		case <-t.C:
-			if st, err := rc.Status(); err == nil {
-				mu.Lock()
-				if remoteCli == rc {
-					remoteSt = st
-				}
-				mu.Unlock()
+			st, err := rc.Status()
+			if err != nil {
+				continue
+			}
+			mu.Lock()
+			active := remoteCli == rc
+			if active {
+				remoteSt = st
+			}
+			mu.Unlock()
+			// Sync current-track outside the lock (setCurrentTrack uses its own mutex).
+			if active && st.Track != nil {
+				setCurrentTrack(deezer.Track{
+					ID: st.Track.ID, Name: st.Track.Title, DurationMS: st.Track.DurationMS,
+					Artists:   []deezer.Artist{{ID: st.Track.ArtistID, Name: st.Track.Artist}},
+					AlbumName: st.Track.Album, Explicit: st.Track.Explicit,
+				})
 			}
 		}
 	}

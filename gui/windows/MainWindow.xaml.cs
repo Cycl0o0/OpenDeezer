@@ -1158,8 +1158,16 @@ public sealed partial class MainWindow : Window
     }
 
     // The now-playing track (head of the active queue), used by both views.
-    private string CurrentTrackId() => (_queueIndex >= 0 && _queueIndex < _queue.Count) ? _queue[_queueIndex].Id : "";
-    private string CurrentArtistId() => (_queueIndex >= 0 && _queueIndex < _queue.Count) ? _queue[_queueIndex].ArtistId : "";
+    // When routed over Connect the engine's DZNowPlayingJSON is the authoritative
+    // source; the local queue may be on a different track entirely.
+    private string CurrentTrackId() =>
+        !string.IsNullOrEmpty(_connectedAddr)
+            ? _engineNowId
+            : (_queueIndex >= 0 && _queueIndex < _queue.Count) ? _queue[_queueIndex].Id : "";
+    private string CurrentArtistId() =>
+        !string.IsNullOrEmpty(_connectedAddr)
+            ? _engineNowArtistId
+            : (_queueIndex >= 0 && _queueIndex < _queue.Count) ? _queue[_queueIndex].ArtistId : "";
 
     // ---- search --------------------------------------------------------------
     private void OnSearchKey(object s, KeyRoutedEventArgs e) { if (e.Key == VirtualKey.Enter) RunSearch(); }
@@ -1514,11 +1522,12 @@ public sealed partial class MainWindow : Window
         if (_queueIndex > 0) --_queueIndex;
         PlayCurrent();
     }
-    private void OnShuffle(object s, RoutedEventArgs e) { _shuffle = _shuffleBtn.IsChecked == true; }
+    private void OnShuffle(object s, RoutedEventArgs e) { _shuffle = _shuffleBtn.IsChecked == true; DeezerCore.DZSetShuffle(_shuffle ? 1 : 0); }
     private void OnRepeat(object s, RoutedEventArgs e)
     {
         _repeat = (_repeat + 1) % 3;
         _repeatBtn.Content = _repeat == 0 ? "Repeat: Off" : _repeat == 1 ? "Repeat: All" : "Repeat: One";
+        DeezerCore.DZSetRepeat(_repeat);
     }
     private void OnSeekChanged(object s, RangeBaseValueChangedEventArgs e)
     {
@@ -1621,6 +1630,7 @@ public sealed partial class MainWindow : Window
                     {
                         bool changed = npid != _engineNowId;
                         _engineNowId = npid;
+                        _engineNowArtistId = obj.Str("artistId");
                         if (changed && npid != _nowId) SetNowPlaying(Wire.TrackFromObj(obj));
                     }
                 }
@@ -2064,8 +2074,9 @@ public sealed partial class MainWindow : Window
     private Image _cover = null!;
     private TextBlock _nowTitle = null!, _nowArtist = null!, _posText = null!, _durText = null!;
     private string _curArtist = "";   // base artist line; format badge appended each tick
-    private string _nowId = "";       // id shown in the now-playing bar (engine-truth anchor)
-    private string _engineNowId = ""; // last id DZNowPlayingJSON reported
+    private string _nowId = "";             // id shown in the now-playing bar (engine-truth anchor)
+    private string _engineNowId = "";       // last id DZNowPlayingJSON reported
+    private string _engineNowArtistId = ""; // last artistId DZNowPlayingJSON reported (B3: Connect artist nav)
     private Slider _seek = null!, _volume = null!;
     private Button _playBtn = null!, _repeatBtn = null!, _addBtn = null!;
     private FontIcon _playIcon = null!;

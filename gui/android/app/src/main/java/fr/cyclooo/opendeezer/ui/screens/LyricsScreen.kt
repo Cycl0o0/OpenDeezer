@@ -39,7 +39,16 @@ import androidx.compose.runtime.collectAsState
 @Composable
 fun LyricsScreen(player: PlayerController, onBack: () -> Unit) {
     val playerState by player.state.collectAsState()
-    val trackId = playerState.current?.id
+    // B3: when routed to a Connect device, the local queue track may differ from
+    //     what is actually playing on the remote. Use Engine.nowPlaying() (which
+    //     carries the correct track id from DZNowPlayingJSON) in that case.
+    //     If nothing is playing on the remote, nowPlaying() returns null and
+    //     the LaunchedEffect below will show "No lyrics available." gracefully.
+    val trackId = if (playerState.connectedDevice.isNotBlank()) {
+        Engine.nowPlaying()?.id
+    } else {
+        playerState.current?.id
+    }
     val position = playerState.positionMs
 
     var lyrics by remember(trackId) { mutableStateOf<Lyrics?>(null) }

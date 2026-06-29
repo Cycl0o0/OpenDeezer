@@ -109,13 +109,14 @@ enum Core {
 
     // DZNowPlayingJSON returns a jTrack-shaped object for the track the engine is
     // ACTUALLY playing. The remote (OpenDeezer Connect) variant carries no
-    // per-artist ids (artists is null), so decode a tolerant shape and map it to a
-    // Track — Track.artists is non-optional and would otherwise fail to decode.
+    // per-artist ids (artists is null) but does supply artistId (the primary
+    // artist's id) so the Artist button can navigate even when routed remotely.
     private struct NowPlayingTrack: Decodable {
         let id: String
         let name: String
         let durationMs: Int64
         let artists: [Artist]?
+        let artistId: String?   // primary artist id; set by engine when routed via Connect
         let artistLine: String
         let albumName: String
         let artworkUrl: String
@@ -129,11 +130,31 @@ enum Core {
     static func nowPlaying() -> Track? {
         guard let np = decode(NowPlayingTrack.self, takeJSON(DZNowPlayingJSON())),
               !np.id.isEmpty else { return nil }
+        // When routed through OpenDeezer Connect the artists list is absent but
+        // the engine now supplies artistId. Synthesise a single Artist entry so
+        // the Artist button in PlayerBar stays enabled and openArtistForCurrent()
+        // can navigate correctly.
+        let artists: [Artist]
+        if let a = np.artists, !a.isEmpty {
+            artists = a
+        } else if let aid = np.artistId, !aid.isEmpty {
+            artists = [Artist(id: aid, name: np.artistLine)]
+        } else {
+            artists = []
+        }
         return Track(id: np.id, name: np.name, durationMs: np.durationMs,
-                     artists: np.artists ?? [], artistLine: np.artistLine,
+                     artists: artists, artistLine: np.artistLine,
                      albumName: np.albumName, artworkUrl: np.artworkUrl,
                      explicit: np.explicit)
     }
+
+    // MARK: repeat / shuffle (engine forwarding for OpenDeezer Connect)
+
+    /// Forwards the repeat-mode change to the connected remote device when routed.
+    /// mode: 0 = off, 1 = all, 2 = one — matches RepeatMode.rawValue.
+    static func setRepeat(_ mode: Int) { DZSetRepeat(Int32(mode)) }
+    /// Forwards the shuffle change to the connected remote device when routed.
+    static func setShuffle(_ on: Bool) { DZSetShuffle(on ? 1 : 0) }
 
     // MARK: audio quality
 

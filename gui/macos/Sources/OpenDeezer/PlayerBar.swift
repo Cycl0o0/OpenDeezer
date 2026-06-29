@@ -35,7 +35,7 @@ struct PlayerBar: View {
     private var transport: some View {
         HStack(spacing: 18) {
             iconButton(app.shuffle ? "shuffle.circle.fill" : "shuffle",
-                       tint: app.shuffle ? DZ.accent : DZ.textSec) { app.shuffle.toggle() }
+                       tint: app.shuffle ? DZ.accent : DZ.textSec) { app.setShuffle(!app.shuffle) }
             iconButton("backward.fill", size: 16, tint: DZ.textPri) { app.prev() }
             Button { app.togglePause() } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -48,7 +48,7 @@ struct PlayerBar: View {
             iconButton("forward.fill", size: 16, tint: DZ.textPri) { app.next() }
             iconButton(app.repeatMode == .one ? "repeat.1" : "repeat",
                        tint: app.repeatMode == .off ? DZ.textSec : DZ.accent) {
-                app.repeatMode = RepeatMode(rawValue: (app.repeatMode.rawValue + 1) % 3) ?? .off
+                app.cycleRepeat()
             }
         }
         .frame(width: 230, alignment: .leading)

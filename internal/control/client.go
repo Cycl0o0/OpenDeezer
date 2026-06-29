@@ -103,6 +103,20 @@ func (c *Client) CycleRepeat() (State, error) {
 func (c *Client) ToggleShuffle() (State, error) {
 	return c.state(http.MethodPost, "/shuffle")
 }
+
+// SetRepeat sets the repeat mode on the peer to mode ("off", "all", or "one").
+func (c *Client) SetRepeat(mode string) (State, error) {
+	return c.state(http.MethodPost, "/repeat?mode="+url.QueryEscape(mode))
+}
+
+// SetShuffle sets shuffle on (true) or off (false) on the peer.
+func (c *Client) SetShuffle(on bool) (State, error) {
+	v := "false"
+	if on {
+		v = "true"
+	}
+	return c.state(http.MethodPost, "/shuffle?on="+v)
+}
 func (c *Client) Seek(ms int64) (State, error) {
 	return c.state(http.MethodPost, "/seek?ms="+strconv.FormatInt(ms, 10))
 }

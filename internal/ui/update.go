@@ -333,8 +333,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "restart":
 			m.player.SeekMS(0)
 		case "repeat":
+			if m.remote != nil {
+				m.publishMedia()
+				m.publishControl()
+				return m, remoteCmd(m.remote.CycleRepeat)
+			}
 			m.q.CycleRepeat()
 		case "shuffle":
+			if m.remote != nil {
+				m.publishMedia()
+				m.publishControl()
+				return m, remoteCmd(m.remote.ToggleShuffle)
+			}
 			m.q.ToggleShuffle()
 		case "seek":
 			m.player.SeekMS(msg.ms)
@@ -501,12 +511,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "r":
 		m.status = "Repeat: " + m.q.CycleRepeat().String()
+		m.publishControl()
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.CycleRepeat)
+		}
 		return m, nil
 	case "z":
 		if m.q.ToggleShuffle() {
 			m.status = "Shuffle on"
 		} else {
 			m.status = "Shuffle off"
+		}
+		m.publishControl()
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.ToggleShuffle)
 		}
 		return m, nil
 	case "g":
@@ -560,15 +578,22 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "l":
-		// Show synced lyrics for the current track.
-		if t, ok := m.q.Current(); ok {
-			m.toggleScreen(screenLyrics)
-			if m.screen == screenLyrics && (m.lyrics == nil || m.lyricsTrack != t.ID) {
-				m.lyricsTrack = t.ID
-				m.loading = true
-				m.status = "Loading lyrics…"
-				return m, m.lyricsCmd(t)
-			}
+		// Show synced lyrics for the current track. When a remote device is
+		// connected, use the remote's now-playing track instead of the local queue.
+		var t deezer.Track
+		if m.remote != nil && m.remoteState.Track != nil {
+			t = remoteTrack(m.remoteState.Track)
+		} else if ct, ok := m.q.Current(); ok {
+			t = ct
+		} else {
+			return m, nil
+		}
+		m.toggleScreen(screenLyrics)
+		if m.screen == screenLyrics && (m.lyrics == nil || m.lyricsTrack != t.ID) {
+			m.lyricsTrack = t.ID
+			m.loading = true
+			m.status = "Loading lyrics…"
+			return m, m.lyricsCmd(t)
 		}
 		return m, nil
 	case "+", "=":

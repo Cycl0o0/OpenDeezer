@@ -111,6 +111,13 @@ object Engine {
     fun disconnectDevice() = runCatching { Odmobile.disconnectDevice() }.let {}
     fun connectedDevice(): String = runCatching { Odmobile.connectedDevice() }.getOrDefault("")
 
+    // ---- repeat / shuffle (forwarded to remote when a Connect device is active) ----
+
+    // mode: 0=off, 1=all, 2=one
+    fun setRepeat(mode: Int) = runCatching { Odmobile.setRepeat(mode.toLong()) }.let {}
+    // on: 0=off, 1=on
+    fun setShuffle(on: Int) = runCatching { Odmobile.setShuffle(on.toLong()) }.let {}
+
     private suspend inline fun <T> io(crossinline block: () -> T): T =
         withContext(Dispatchers.IO) { block() }
 }

@@ -757,6 +757,18 @@ final class AppState: ObservableObject {
         Core.setReplayGain(on)
     }
 
+    // Toggle shuffle and forward the change to the connected remote (if any).
+    func setShuffle(_ on: Bool) {
+        shuffle = on
+        Core.setShuffle(on)
+    }
+
+    // Advance the repeat cycle (off → all → one → off) and forward to remote.
+    func cycleRepeat() {
+        repeatMode = RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off
+        Core.setRepeat(repeatMode.rawValue)
+    }
+
     // MARK: polling
 
     private func startTimer() {

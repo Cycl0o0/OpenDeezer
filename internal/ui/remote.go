@@ -131,10 +131,14 @@ func (m *Model) handleRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc", "backspace":
+		rc := m.remote
 		m.remote = nil
 		m.remoteState = control.State{}
 		m.screen = screenMenu
 		m.status = "Disconnected from remote"
+		if rc != nil {
+			_, _ = rc.Stop() // halt the remote device; fire-and-forget
+		}
 		return m, nil
 	case "ctrl+c", "Q":
 		m.player.Stop()

@@ -56,6 +56,7 @@ type jTrack struct {
 	DurationMS int64     `json:"durationMs"`
 	Artists    []jArtist `json:"artists"`
 	ArtistLine string    `json:"artistLine"`
+	ArtistID   string    `json:"artistId,omitempty"` // primary artist id (convenience field)
 	AlbumName  string    `json:"albumName"`
 	ArtworkURL string    `json:"artworkUrl"`
 	Explicit   bool      `json:"explicit"`
@@ -79,10 +80,14 @@ func toJTrack(t deezer.Track) jTrack {
 	for i, a := range t.Artists {
 		as[i] = jArtist{ID: a.ID, Name: a.Name}
 	}
+	artistID := ""
+	if len(t.Artists) > 0 {
+		artistID = t.Artists[0].ID
+	}
 	return jTrack{
 		ID: t.ID, Name: t.Name, DurationMS: t.DurationMS, Artists: as,
-		ArtistLine: t.ArtistLine(), AlbumName: t.AlbumName, ArtworkURL: t.ArtworkURL,
-		Explicit: t.Explicit,
+		ArtistLine: t.ArtistLine(), ArtistID: artistID, AlbumName: t.AlbumName,
+		ArtworkURL: t.ArtworkURL, Explicit: t.Explicit,
 	}
 }
 func toJTracks(ts []deezer.Track) []jTrack {
@@ -439,6 +444,41 @@ func DZSeek(ms C.longlong) {
 		return
 	}
 	withPlayer(func(p *audio.Player) { p.SeekMS(int64(ms)) })
+}
+
+// DZSetRepeat sets the repeat mode on the connected remote device
+// (mode: 0=off, 1=all, 2=one). No-op when playing locally — GUIs own their queue.
+//
+//export DZSetRepeat
+func DZSetRepeat(mode C.int) {
+	rc := routedRemote()
+	if rc == nil {
+		return
+	}
+	m := "off"
+	switch int(mode) {
+	case 1:
+		m = "all"
+	case 2:
+		m = "one"
+	}
+	if st, err := rc.SetRepeat(m); err == nil {
+		setRemoteState(st)
+	}
+}
+
+// DZSetShuffle sets shuffle on (1) or off (0) on the connected remote device.
+// No-op when playing locally — GUIs own their queue.
+//
+//export DZSetShuffle
+func DZSetShuffle(on C.int) {
+	rc := routedRemote()
+	if rc == nil {
+		return
+	}
+	if st, err := rc.SetShuffle(on != 0); err == nil {
+		setRemoteState(st)
+	}
 }
 
 //export DZState
@@ -924,6 +964,9 @@ func DZPreload(trackID *C.char, durationMS C.longlong) {
 }
 
 // DZPlayEpisode resolves + plays a podcast episode (plain, unencrypted stream).
+// Mirrors DZPlay's now-playing pattern: sets the episode as the current track
+// immediately (with id + duration), then asynchronously enriches title / podcast
+// name / artwork via the REST /episode endpoint.
 //
 //export DZPlayEpisode
 func DZPlayEpisode(episodeID *C.char, durationMS C.longlong) C.int {
@@ -934,12 +977,17 @@ func DZPlayEpisode(episodeID *C.char, durationMS C.longlong) C.int {
 	if c == nil || p == nil {
 		return 0
 	}
-	plan, err := c.PodcastEpisodeStream(C.GoString(episodeID))
+	id := C.GoString(episodeID)
+	plan, err := c.PodcastEpisodeStream(id)
 	if err != nil {
 		return 0
 	}
 	if err := p.Play(plan, int64(durationMS)); err != nil {
 		return 0
 	}
+	// Track the now-playing so DZNowPlayingJSON reflects this episode;
+	// enrich with title / podcast name / artwork asynchronously.
+	setCurrentTrack(deezer.Track{ID: id, DurationMS: int64(durationMS)})
+	go fetchEpisodeMeta(c, id)
 	return 1
 }

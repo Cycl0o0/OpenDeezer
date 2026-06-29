@@ -105,10 +105,16 @@ extern "C" void  DZDisconnectDevice(void);         // return playback to this co
 extern "C" char *DZConnectedDevice(void);          // host:port ("" if local)
 extern "C" void  DZSetClientInfo(char *client, char *device); // call BEFORE DZInit
 // The track ACTUALLY playing, as the usual track JSON shape
-// ({id,name,artistLine,albumName,artworkUrl,durationMs,explicit}); "{}" when
-// nothing plays. Reflects tracks started on this device AND, when routed via
+// ({id,name,artistLine,albumName,artworkUrl,artistId,durationMs,explicit}); "{}"
+// when nothing plays. Reflects tracks started on this device AND, when routed via
 // OpenDeezer Connect, the remote device's current track. Free with DZFree.
 extern "C" char *DZNowPlayingJSON(void);
+
+// v1.0 additions. Redeclared here (like the blocks above) so the GUI still
+// builds against an older generated header; identical redeclarations are harmless.
+// Both forward to the connected remote via the control API when routed.
+extern "C" void DZSetRepeat(int mode);   // 0=off, 1=all, 2=one
+extern "C" void DZSetShuffle(int on);    // 1=on, 0=off
 
 namespace {
 
@@ -154,9 +160,15 @@ Track parseTrack(const QJsonObject &o) {
     t.artworkUrl = o.value("artworkUrl").toString();
     t.isExplicit = o.value("explicit").toBool();
     // First artist's id — used to open the artist view from a track.
-    const QJsonArray as = o.value("artists").toArray();
-    if (!as.isEmpty())
-        t.artistId = as.first().toObject().value("id").toString();
+    // DZNowPlayingJSON now exposes "artistId" directly (covers both local and
+    // remote/Connect tracks); fall back to artists[0].id for full track objects
+    // that carry the nested artists array (browse, search, playlist results).
+    t.artistId = o.value("artistId").toString();
+    if (t.artistId.isEmpty()) {
+        const QJsonArray as = o.value("artists").toArray();
+        if (!as.isEmpty())
+            t.artistId = as.first().toObject().value("id").toString();
+    }
     return t;
 }
 
@@ -890,7 +902,10 @@ QWidget *MainWindow::buildTransport() {
     m_shuffleBtn->setText("Shuffle");
     m_shuffleBtn->setCheckable(true);
     m_shuffleBtn->setAutoRaise(true);
-    connect(m_shuffleBtn, &QToolButton::toggled, this, [this](bool on) { m_shuffle = on; });
+    connect(m_shuffleBtn, &QToolButton::toggled, this, [this](bool on) {
+        m_shuffle = on;
+        DZSetShuffle(on ? 1 : 0);
+    });
     h->addWidget(m_shuffleBtn);
 
     m_repeatBtn = new QToolButton;
@@ -901,6 +916,7 @@ QWidget *MainWindow::buildTransport() {
         m_repeatBtn->setText(m_repeat == 0 ? "Repeat: Off"
                              : m_repeat == 1 ? "Repeat: All"
                                              : "Repeat: One");
+        DZSetRepeat(m_repeat);
     });
     h->addWidget(m_repeatBtn);
 
@@ -1939,6 +1955,31 @@ void MainWindow::playEpisode(const Episode &e) {
 
 // Transport "Lyrics" button: the lyrics follow whatever is playing.
 void MainWindow::openLyrics() {
+    // When routed via Connect, the remote device owns the queue — ask the engine
+    // for the authoritative now-playing rather than relying on m_current, which
+    // might lag behind or reflect the last local track.
+    if (char *c = DZConnectedDevice()) {
+        const bool remote = (*c != '\0');
+        DZFree(c);
+        if (remote) {
+            const QByteArray npJson = takeJson(DZNowPlayingJSON());
+            Track np;
+            if (!npJson.isEmpty())
+                np = parseTrack(QJsonDocument::fromJson(npJson).object());
+            if (np.id.isEmpty()) {
+                statusBar()->showMessage(
+                    QStringLiteral("Nothing is playing on the remote device"), 3000);
+                return;
+            }
+            m_lyricsFollowsPlayback = true;
+            rememberReturnPage();
+            m_stack->setCurrentIndex(3);
+            loadLyrics(np.id,
+                       np.name + QStringLiteral("   ·   ") + np.artistLine);
+            return;
+        }
+    }
+    // Local path: use the known current track.
     if (!m_hasCurrent) {
         statusBar()->showMessage(QStringLiteral("Nothing is playing"), 3000);
         return;
@@ -2064,6 +2105,32 @@ void MainWindow::updateLyricsHighlight(qint64 posMs) {
 // ---- artist flow ----------------------------------------------------------
 
 void MainWindow::openArtistForCurrent() {
+    // When routed via Connect, the remote device owns the queue — ask the engine
+    // for the authoritative now-playing (which now carries "artistId") rather than
+    // relying on m_current, which might lag or reflect the last local track.
+    if (char *c = DZConnectedDevice()) {
+        const bool remote = (*c != '\0');
+        DZFree(c);
+        if (remote) {
+            const QByteArray npJson = takeJson(DZNowPlayingJSON());
+            Track np;
+            if (!npJson.isEmpty())
+                np = parseTrack(QJsonDocument::fromJson(npJson).object());
+            if (np.id.isEmpty()) {
+                statusBar()->showMessage(
+                    QStringLiteral("Nothing is playing on the remote device"), 3000);
+                return;
+            }
+            if (np.artistId.isEmpty()) {
+                statusBar()->showMessage(
+                    QStringLiteral("Artist unavailable for this track"), 3000);
+                return;
+            }
+            openArtist(np.artistId);
+            return;
+        }
+    }
+    // Local path: use the known current track.
     if (!m_hasCurrent) {
         statusBar()->showMessage(QStringLiteral("Nothing is playing"), 3000);
         return;

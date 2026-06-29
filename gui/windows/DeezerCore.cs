@@ -91,6 +91,10 @@ internal static class DeezerCore
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZConnectedDevice();
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZNowPlayingJSON();
 
+    // ---- v1.0 additions (repeat/shuffle forwarding to connected remote) -----
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZSetRepeat(int mode);   // 0=off,1=all,2=one
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZSetShuffle(int on);    // 0/1
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).

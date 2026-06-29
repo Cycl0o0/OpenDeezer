@@ -39,6 +39,7 @@ type Track struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
 	Artist     string `json:"artist"`
+	ArtistID   string `json:"artistId,omitempty"`
 	Album      string `json:"album"`
 	Explicit   bool   `json:"explicit"`
 	DurationMS int64  `json:"durationMs"`
@@ -66,6 +67,8 @@ type Commands struct {
 	Restart       func() // seek to 0
 	CycleRepeat   func()
 	ToggleShuffle func()
+	SetRepeat     func(mode string) // mode: "off"|"all"|"one" (SET variant)
+	SetShuffle    func(on bool)     // on: true/false (SET variant)
 	Seek          func(ms int64)
 	SetVolume     func(v float64)
 	PlayTrack     func(id string)
@@ -191,8 +194,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/prev", s.post(s.act(func() { call(s.cmds.Prev) })))
 	mux.HandleFunc("/stop", s.post(s.act(func() { call(s.cmds.Stop) })))
 	mux.HandleFunc("/restart", s.post(s.act(func() { call(s.cmds.Restart) })))
-	mux.HandleFunc("/repeat", s.post(s.act(func() { call(s.cmds.CycleRepeat) })))
-	mux.HandleFunc("/shuffle", s.post(s.act(func() { call(s.cmds.ToggleShuffle) })))
+	mux.HandleFunc("/repeat", s.post(s.handleRepeat))
+	mux.HandleFunc("/shuffle", s.post(s.handleShuffle))
 	mux.HandleFunc("/seek", s.post(s.handleSeek))
 	mux.HandleFunc("/volume", s.post(s.handleVolume))
 	mux.HandleFunc("/play/track", s.post(s.handlePlayTrack))
@@ -403,6 +406,32 @@ func (s *Server) handlePlayPlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.cmds.PlayPlaylist != nil {
 		s.cmds.PlayPlaylist(id)
+	}
+	writeJSON(w, s.status())
+}
+
+// handleRepeat handles POST /repeat. With ?mode=off|all|one it SETS repeat
+// (via SetRepeat); with no param it cycles via CycleRepeat (legacy behaviour).
+func (s *Server) handleRepeat(w http.ResponseWriter, r *http.Request) {
+	if mode := r.URL.Query().Get("mode"); mode != "" {
+		if s.cmds.SetRepeat != nil {
+			s.cmds.SetRepeat(mode)
+		}
+	} else {
+		call(s.cmds.CycleRepeat)
+	}
+	writeJSON(w, s.status())
+}
+
+// handleShuffle handles POST /shuffle. With ?on=true|false it SETS shuffle
+// (via SetShuffle); with no param it toggles via ToggleShuffle (legacy behaviour).
+func (s *Server) handleShuffle(w http.ResponseWriter, r *http.Request) {
+	if on := r.URL.Query().Get("on"); on != "" {
+		if s.cmds.SetShuffle != nil {
+			s.cmds.SetShuffle(on == "true")
+		}
+	} else {
+		call(s.cmds.ToggleShuffle)
 	}
 	writeJSON(w, s.status())
 }

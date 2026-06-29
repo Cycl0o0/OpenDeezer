@@ -68,6 +68,36 @@ func (c *Client) PodcastEpisodes(podcastID string) ([]Episode, error) {
 	return out, nil
 }
 
+// EpisodeMeta fetches a single episode's metadata (title, podcast name, artwork)
+// via the public REST /episode/{id} endpoint. Used to enrich now-playing after
+// DZPlayEpisode (which only receives the id + duration from the caller).
+func (c *Client) EpisodeMeta(id string) (Episode, error) {
+	b, err := c.restGet("/episode/" + id)
+	if err != nil {
+		return Episode{}, err
+	}
+	var r struct {
+		ID            json.Number `json:"id"`
+		Title         string      `json:"title"`
+		Description   string      `json:"description"`
+		Duration      json.Number `json:"duration"`
+		ReleaseDate   string      `json:"release_date"`
+		PictureMedium string      `json:"picture_medium"`
+		Podcast       struct {
+			Title string `json:"title"`
+		} `json:"podcast"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return Episode{}, err
+	}
+	dur, _ := r.Duration.Int64()
+	return Episode{
+		ID: r.ID.String(), Title: r.Title, Description: r.Description,
+		ReleaseDate: r.ReleaseDate, DurationMS: dur * 1000,
+		ArtworkURL: r.PictureMedium, PodcastName: r.Podcast.Title,
+	}, nil
+}
+
 // PodcastEpisodeStream resolves an episode to a plain (unencrypted) MP3 stream
 // via gw episode.getData. The player decodes it directly (no Blowfish).
 func (c *Client) PodcastEpisodeStream(episodeID string) (*StreamPlan, error) {

@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.VolumeUp
@@ -195,6 +198,34 @@ fun NowPlayingScreen(
                 }
                 IconButton(onClick = onLyrics, enabled = !track.isEpisode) {
                     Icon(Icons.Filled.Lyrics, contentDescription = "Lyrics")
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // B4: Shuffle and Repeat controls. Clicking them updates local queue
+            //     behaviour and forwards the new mode to any connected remote device
+            //     via Engine.setRepeat / Engine.setShuffle.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { player.setShuffle(!state.shuffle) }) {
+                    Icon(
+                        Icons.Filled.Shuffle,
+                        contentDescription = "Shuffle",
+                        tint = if (state.shuffle) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(onClick = { player.setRepeat((state.repeatMode + 1) % 3) }) {
+                    Icon(
+                        if (state.repeatMode == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                        contentDescription = "Repeat",
+                        tint = if (state.repeatMode != 0) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
 
