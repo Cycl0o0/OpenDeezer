@@ -2730,13 +2730,33 @@ private:
 //  XamlControlsResources supplies the default Fluent styles.
 // =============================================================================
 struct App : mux::ApplicationT<App> {
+    App() {
+        // Surface any unhandled XAML/dispatcher exception (coroutines, timers,
+        // event handlers) as a dialog instead of a silent stowed-exception crash.
+        UnhandledException([](wf::IInspectable const&, mux::UnhandledExceptionEventArgs const& e) {
+            std::wstring m = L"OpenDeezer hit an unhandled error:\n\n" + std::wstring(e.Message());
+            MessageBoxW(nullptr, m.c_str(), L"OpenDeezer", MB_OK | MB_ICONERROR);
+        });
+    }
+
     void OnLaunched(mux::LaunchActivatedEventArgs const&) {
-        Resources().MergedDictionaries().Append(muxc::XamlControlsResources{}); // theme styles
-        // Deezer-purple accent override before any UI is built.
-        winrt::Windows::UI::Color accent{ 0xFF, 0xA2, 0x38, 0xFF };
-        Resources().Insert(box_value(hstring(L"SystemAccentColor")), box_value(accent));
-        m_window = winrt::make_self<MainWindow>();
-        m_window->Activate();
+        // OnLaunched runs on the UI thread, so a throw here would otherwise become
+        // a silent stowed-exception crash (exit 0xC000027B). Catch + show it.
+        try {
+            Resources().MergedDictionaries().Append(muxc::XamlControlsResources{}); // theme styles
+            // Deezer-purple accent override before any UI is built.
+            winrt::Windows::UI::Color accent{ 0xFF, 0xA2, 0x38, 0xFF };
+            Resources().Insert(box_value(hstring(L"SystemAccentColor")), box_value(accent));
+            m_window = winrt::make_self<MainWindow>();
+            m_window->Activate();
+        } catch (winrt::hresult_error const& ex) {
+            wchar_t buf[600];
+            swprintf_s(buf, L"OpenDeezer failed during startup.\n\nError 0x%08X: %s",
+                       static_cast<unsigned>(ex.code()), ex.message().c_str());
+            MessageBoxW(nullptr, buf, L"OpenDeezer", MB_OK | MB_ICONERROR);
+        } catch (std::exception const& ex) {
+            MessageBoxA(nullptr, ex.what(), "OpenDeezer startup error", MB_OK | MB_ICONERROR);
+        }
     }
 
 private:
