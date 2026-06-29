@@ -7,6 +7,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QBrush>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QColor>
 #include <QDialog>
@@ -115,6 +116,13 @@ extern "C" char *DZNowPlayingJSON(void);
 // Both forward to the connected remote via the control API when routed.
 extern "C" void DZSetRepeat(int mode);   // 0=off, 1=all, 2=one
 extern "C" void DZSetShuffle(int on);    // 1=on, 0=off
+
+// Phone Web Remote. Redeclared here (like the blocks above) so the GUI still
+// builds against an older generated header; identical redeclarations are harmless.
+// DZWebRemoteQRPNG returns raw PNG bytes — free with DZFreeBytes; NULL/0 when off.
+extern "C" void           DZWebRemoteSetEnabled(int on);    // 1=enable (start LAN server), 0=disable
+extern "C" char          *DZWebRemoteInfoJSON(void);        // {"enabled":bool,"code":"...","url":"...","port":N}
+extern "C" unsigned char *DZWebRemoteQRPNG(int *outLen);    // PNG blob encoding the URL; free with DZFreeBytes
 
 namespace {
 
@@ -516,6 +524,110 @@ void MainWindow::openSettings() {
     dlg.exec();
 }
 
+// Phone Remote: a modal dialog with an enable toggle. When on, shows a 512×512
+// QR PNG (from DZWebRemoteQRPNG — rendered via QPixmap::loadFromData, the same
+// path used for cover-art bytes), the 6-digit pairing code (large, monospace,
+// accent colour) and the URL (selectable text). All values come from
+// DZWebRemoteInfoJSON, which is re-read on every toggle so the display is always
+// current. Disabled by default; LAN-only; no data leaves the local network.
+void MainWindow::openPhoneRemote() {
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Phone Remote"));
+    dlg.setMinimumWidth(360);
+    auto *v = new QVBoxLayout(&dlg);
+    v->setSpacing(10);
+
+    auto *toggle = new QCheckBox(QStringLiteral("Enable Phone Remote"));
+    v->addWidget(toggle);
+
+    // Container for QR / code / URL — shown only when the remote is enabled.
+    auto *remoteBox = new QWidget;
+    auto *rv = new QVBoxLayout(remoteBox);
+    rv->setContentsMargins(0, 8, 0, 0);
+    rv->setSpacing(8);
+
+    // QR image: 200×200 display of the 512×512 PNG from DZWebRemoteQRPNG.
+    auto *qrLabel = new QLabel;
+    qrLabel->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+    qrLabel->setFixedSize(200, 200);
+    rv->addWidget(qrLabel, 0, Qt::AlignHCenter);
+
+    // Six-digit pairing code: large, monospace, Deezer accent.
+    auto *codeLabel = new QLabel;
+    codeLabel->setAlignment(Qt::AlignHCenter);
+    {
+        QFont f = codeLabel->font();
+        f.setFamily(QStringLiteral("Monospace"));
+        f.setStyleHint(QFont::Monospace);
+        f.setFixedPitch(true);
+        f.setPointSize(f.pointSize() + 10);
+        f.setBold(true);
+        codeLabel->setFont(f);
+    }
+    codeLabel->setStyleSheet(QString("color:%1;").arg(kAccent));
+    rv->addWidget(codeLabel, 0, Qt::AlignHCenter);
+
+    // URL text: selectable so the user can copy it manually.
+    auto *urlLabel = new QLabel;
+    urlLabel->setAlignment(Qt::AlignHCenter);
+    urlLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    urlLabel->setWordWrap(true);
+    rv->addWidget(urlLabel, 0, Qt::AlignHCenter);
+
+    auto *hint = new QLabel(
+        QStringLiteral("Scan with your phone (same Wi-Fi), then enter the code."));
+    hint->setAlignment(Qt::AlignHCenter);
+    hint->setWordWrap(true);
+    rv->addWidget(hint, 0, Qt::AlignHCenter);
+
+    v->addWidget(remoteBox);
+
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Close);
+    v->addWidget(bb);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    // Read DZWebRemoteInfoJSON + DZWebRemoteQRPNG and update all widgets.
+    // Called on open (to reflect the engine's current state) and on every toggle.
+    auto refreshInfo = [&]() {
+        const QByteArray infoJson = takeJson(DZWebRemoteInfoJSON());
+        const QJsonObject info = QJsonDocument::fromJson(infoJson).object();
+        const bool on = info.value("enabled").toBool();
+        remoteBox->setVisible(on);
+        if (on) {
+            codeLabel->setText(info.value("code").toString());
+            urlLabel->setText(info.value("url").toString());
+            // Load the QR PNG directly from raw bytes — same path as cover-art
+            // loading (DZFetch → QImage::fromData), just without the network fetch.
+            int qrLen = 0;
+            unsigned char *qrData = DZWebRemoteQRPNG(&qrLen);
+            if (qrData && qrLen > 0) {
+                const QByteArray pngBytes(reinterpret_cast<const char *>(qrData), qrLen);
+                QPixmap qrPix;
+                if (qrPix.loadFromData(pngBytes, "PNG") && !qrPix.isNull())
+                    qrLabel->setPixmap(qrPix.scaled(
+                        200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                DZFreeBytes(qrData);
+            }
+        }
+        dlg.adjustSize();
+    };
+
+    // Seed the toggle from the engine's current state. Connect the signal only
+    // after seeding so the handler doesn't fire on the programmatic setChecked.
+    {
+        const QByteArray j = takeJson(DZWebRemoteInfoJSON());
+        toggle->setChecked(
+            QJsonDocument::fromJson(j).object().value("enabled").toBool());
+    }
+    connect(toggle, &QCheckBox::toggled, &dlg, [&](bool on) {
+        DZWebRemoteSetEnabled(on ? 1 : 0);
+        refreshInfo();
+    });
+    refreshInfo(); // initial render (seeds QR/code/URL or hides the box)
+
+    dlg.exec();
+}
+
 // Parse DZAccountJSON {name,offer,canHq,canHifi,premium,loggedIn} into the cached
 // tier fields used by the About box, status bar, the quality entitlement note and
 // the Free-account block (premium=false ⇒ can't stream on-demand).
@@ -623,6 +735,8 @@ void MainWindow::buildMenu() {
     auto *settings = file->addAction("&Settings…");
     settings->setShortcut(QKeySequence::Preferences);
     connect(settings, &QAction::triggered, this, &MainWindow::openSettings);
+    auto *phoneRemote = file->addAction("Phone &Remote…");
+    connect(phoneRemote, &QAction::triggered, this, &MainWindow::openPhoneRemote);
     file->addSeparator();
     auto *quit = file->addAction("&Quit");
     quit->setShortcut(QKeySequence::Quit);

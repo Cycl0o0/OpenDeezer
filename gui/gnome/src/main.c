@@ -36,6 +36,12 @@
 extern void DZSetRepeat(int mode); /* 0=off 1=all 2=one; forwards to remote if connected */
 extern void DZSetShuffle(int on);  /* 0=off 1=on;        forwards to remote if connected */
 
+/* Phone web remote — off by default; toggled from the Phone Remote dialog.
+ * DZWebRemoteQRPNG returns PNG bytes (free with DZFreeBytes); NULL when disabled. */
+extern void           DZWebRemoteSetEnabled(int on);
+extern char          *DZWebRemoteInfoJSON(void);
+extern unsigned char *DZWebRemoteQRPNG(int *outLen);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -1091,6 +1097,206 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   gtk_window_set_modal(GTK_WINDOW(win), TRUE);
   gtk_window_present(GTK_WINDOW(win));
 #endif
+}
+
+/* ---------------------------------------------------------------------------
+ * Phone Remote: a browser-based LAN remote served by the engine (OFF by default).
+ *
+ * An AdwDialog (matching the lyrics / artist / podcasts dialogs) opened from
+ * the hamburger menu shows:
+ *   • an AdwSwitchRow (enable toggle → DZWebRemoteSetEnabled)
+ *   • when on: the QR code PNG (via the same GdkPixbufLoader path used for
+ *     cover art), the 6-digit pairing code in large monospace, the LAN URL
+ *     (selectable), and a short helper blurb.
+ * All values come from DZWebRemoteInfoJSON / DZWebRemoteQRPNG — cheap
+ * in-process reads, called on the main thread (same as DZSetReplayGain etc.).
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+  GtkWidget *qr_sect; /* shown only when enabled */
+  GtkPicture *qr_pic;
+  GtkLabel   *code_lbl;
+  GtkLabel   *url_lbl;
+} WrWidgets;
+
+/* Refresh the QR section from current engine state.  Called once on dialog
+ * open (to populate an already-enabled remote) and again on every toggle. */
+static void wr_refresh(WrWidgets *w) {
+  char *j = DZWebRemoteInfoJSON();
+  gboolean enabled = FALSE;
+  char *code_str = g_strdup("------");
+  char *url_str  = g_strdup("");
+  if (j) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, j, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+        JsonObject *o = json_node_get_object(root);
+        enabled = jbool(o, "enabled");
+        char *c = jstr(o, "code"); g_free(code_str); code_str = c;
+        char *u = jstr(o, "url");  g_free(url_str);  url_str  = u;
+      }
+    }
+    g_object_unref(p);
+    DZFree(j);
+  }
+
+  gtk_widget_set_visible(w->qr_sect, enabled);
+
+  if (enabled) {
+    /* render QR PNG — same GdkPixbufLoader path as fetch_texture() */
+    int qr_len = 0;
+    unsigned char *qr_bytes = DZWebRemoteQRPNG(&qr_len);
+    if (qr_bytes && qr_len > 0) {
+      GdkPixbufLoader *loader = gdk_pixbuf_loader_new();
+      if (gdk_pixbuf_loader_write(loader, qr_bytes, qr_len, NULL) &&
+          gdk_pixbuf_loader_close(loader, NULL)) {
+        GdkPixbuf *pix = gdk_pixbuf_loader_get_pixbuf(loader); /* borrowed */
+        if (pix) {
+          g_object_ref(pix);
+          GdkTexture *tex = gdk_texture_new_for_pixbuf(pix);
+          gtk_picture_set_paintable(w->qr_pic, GDK_PAINTABLE(tex));
+          g_object_unref(tex);
+          g_object_unref(pix);
+        }
+      }
+      g_object_unref(loader);
+      DZFreeBytes(qr_bytes);
+    }
+
+    /* 6-digit code: large monospace */
+    char *markup = g_strdup_printf(
+        "<span font_family=\"monospace\" weight=\"bold\" size=\"xx-large\">%s</span>",
+        (code_str && *code_str) ? code_str : "------");
+    gtk_label_set_markup(w->code_lbl, markup);
+    g_free(markup);
+
+    gtk_label_set_label(w->url_lbl, url_str ? url_str : "");
+  }
+
+  g_free(code_str);
+  g_free(url_str);
+}
+
+static void on_wr_toggled(GObject *row, GParamSpec *ps, gpointer data) {
+  (void)ps;
+  WrWidgets *w = data;
+  DZWebRemoteSetEnabled(adw_switch_row_get_active(ADW_SWITCH_ROW(row)) ? 1 : 0);
+  wr_refresh(w);
+}
+
+static void on_phone_remote(GSimpleAction *action, GVariant *param, gpointer data) {
+  (void)action; (void)param; (void)data;
+  App *a = APP;
+
+  /* read current enabled state so the switch initialises correctly */
+  gboolean cur_enabled = FALSE;
+  char *j0 = DZWebRemoteInfoJSON();
+  if (j0) {
+    JsonParser *p0 = json_parser_new();
+    if (json_parser_load_from_data(p0, j0, -1, NULL)) {
+      JsonNode *r0 = json_parser_get_root(p0);
+      if (r0 && JSON_NODE_HOLDS_OBJECT(r0))
+        cur_enabled = jbool(json_node_get_object(r0), "enabled");
+    }
+    g_object_unref(p0);
+    DZFree(j0);
+  }
+
+  /* ---- dialog chrome ---- */
+  AdwToolbarView *tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
+  GtkWidget *hb = adw_header_bar_new();
+  adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb),
+                                  adw_window_title_new("Phone Remote", NULL));
+  adw_toolbar_view_add_top_bar(tv, hb);
+
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_vexpand(scroll, TRUE);
+
+  GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+  gtk_widget_set_margin_top(outer, 16);
+  gtk_widget_set_margin_bottom(outer, 24);
+  gtk_widget_set_margin_start(outer, 16);
+  gtk_widget_set_margin_end(outer, 16);
+
+  /* ---- enable toggle (boxed list, matching Audio / Behaviour groups) ---- */
+  GtkWidget *lb = gtk_list_box_new();
+  gtk_list_box_set_selection_mode(GTK_LIST_BOX(lb), GTK_SELECTION_NONE);
+  gtk_widget_add_css_class(lb, "boxed-list");
+
+  GtkWidget *sw_row = adw_switch_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(sw_row), "Enable Phone Remote");
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(sw_row),
+                              "Serve a browser-based remote on your local network");
+  gtk_list_box_append(GTK_LIST_BOX(lb), sw_row);
+  gtk_box_append(GTK_BOX(outer), lb);
+
+  /* ---- QR section (centred; hidden when disabled) ---- */
+  WrWidgets *w = g_new0(WrWidgets, 1);
+
+  GtkWidget *qr_sect = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+  gtk_widget_set_halign(qr_sect, GTK_ALIGN_CENTER);
+  gtk_widget_set_margin_top(qr_sect, 8);
+  w->qr_sect = qr_sect;
+
+  /* QR image: 200×200, contain fit (same GtkPicture pattern as thumb_new) */
+  GtkPicture *qr_pic = GTK_PICTURE(gtk_picture_new());
+  gtk_widget_set_size_request(GTK_WIDGET(qr_pic), 200, 200);
+  gtk_picture_set_content_fit(qr_pic, GTK_CONTENT_FIT_CONTAIN);
+  gtk_widget_add_css_class(GTK_WIDGET(qr_pic), "np-cover"); /* rounded corners */
+  w->qr_pic = qr_pic;
+  gtk_box_append(GTK_BOX(qr_sect), GTK_WIDGET(qr_pic));
+
+  /* 6-digit pairing code — markup is set by wr_refresh */
+  GtkWidget *code_lbl = gtk_label_new("");
+  gtk_label_set_use_markup(GTK_LABEL(code_lbl), TRUE);
+  gtk_label_set_selectable(GTK_LABEL(code_lbl), TRUE);
+  w->code_lbl = GTK_LABEL(code_lbl);
+  gtk_box_append(GTK_BOX(qr_sect), code_lbl);
+
+  /* LAN URL — selectable so the user can tap/copy it */
+  GtkWidget *url_lbl = gtk_label_new("");
+  gtk_widget_add_css_class(url_lbl, "dim-label");
+  gtk_label_set_selectable(GTK_LABEL(url_lbl), TRUE);
+  gtk_label_set_wrap(GTK_LABEL(url_lbl), TRUE);
+  gtk_label_set_justify(GTK_LABEL(url_lbl), GTK_JUSTIFY_CENTER);
+  w->url_lbl = GTK_LABEL(url_lbl);
+  gtk_box_append(GTK_BOX(qr_sect), url_lbl);
+
+  /* helper blurb */
+  GtkWidget *hint = gtk_label_new(
+      "Scan with your phone (same Wi-Fi), then enter the code.");
+  gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+  gtk_label_set_justify(GTK_LABEL(hint), GTK_JUSTIFY_CENTER);
+  gtk_widget_add_css_class(hint, "dim-label");
+  gtk_widget_add_css_class(hint, "caption");
+  gtk_box_append(GTK_BOX(qr_sect), hint);
+
+  gtk_box_append(GTK_BOX(outer), qr_sect);
+
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), outer);
+  adw_toolbar_view_set_content(tv, scroll);
+
+  /* set switch state BEFORE connecting the signal (avoids a spurious callback
+   * during construction, consistent with on_replaygain_toggled / on_gapless_toggled) */
+  adw_switch_row_set_active(ADW_SWITCH_ROW(sw_row), cur_enabled);
+
+  /* attach w to sw_row so it is freed when the widget is destroyed */
+  g_object_set_data_full(G_OBJECT(sw_row), "wr", w, g_free);
+  g_signal_connect(sw_row, "notify::active", G_CALLBACK(on_wr_toggled), w);
+
+  AdwDialog *remote_dlg = ADW_DIALOG(adw_dialog_new());
+  adw_dialog_set_title(remote_dlg, "Phone Remote");
+  adw_dialog_set_content_width(remote_dlg, 420);
+  adw_dialog_set_content_height(remote_dlg, 520);
+  adw_dialog_set_child(remote_dlg, GTK_WIDGET(tv));
+
+  /* populate the QR section if the remote is already on */
+  wr_refresh(w);
+
+  adw_dialog_present(remote_dlg, GTK_WIDGET(a->win));
 }
 
 /* ---------------------------------------------------------------------------
@@ -4337,10 +4543,15 @@ static void on_activate(GApplication *app, gpointer data) {
   g_signal_connect(login_act, "activate", G_CALLBACK(on_login), NULL);
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(login_act));
   g_object_unref(login_act);
+  GSimpleAction *wr_act = g_simple_action_new("phone_remote", NULL);
+  g_signal_connect(wr_act, "activate", G_CALLBACK(on_phone_remote), NULL);
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(wr_act));
+  g_object_unref(wr_act);
 
   GMenu *menu = g_menu_new();
   g_menu_append(menu, "Log in / Switch account…", "app.login");
   g_menu_append(menu, "Settings", "app.settings");
+  g_menu_append(menu, "Phone Remote…", "app.phone_remote");
   g_menu_append(menu, "About OpenDeezer", "app.about");
   g_menu_append(menu, "Quit", "app.quit");
 

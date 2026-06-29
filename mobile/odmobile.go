@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	qrcode "github.com/skip2/go-qrcode"
+
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
@@ -662,6 +664,7 @@ func engineState() control.State {
 		ct := &control.Track{
 			ID: cur.ID, Title: cur.Name, Artist: cur.ArtistLine(),
 			Album: cur.AlbumName, Explicit: cur.Explicit, DurationMS: cur.DurationMS,
+			ArtworkURL: cur.ArtworkURL,
 		}
 		if len(cur.Artists) > 0 {
 			ct.ArtistID = cur.Artists[0].ID
@@ -917,4 +920,170 @@ func remotePoller(rc *control.Client, stop chan struct{}) {
 			}
 		}
 	}
+}
+
+// ---- Web remote (pairing-based phone remote) ----
+
+// WebRemoteSetEnabled enables (on!=0) or disables (on==0) the web remote. When
+// enabling, the control server is started on a LAN-reachable address if it is
+// not already, and pairing is activated so a phone can scan the QR and connect.
+func WebRemoteSetEnabled(on int) {
+	if on != 0 {
+		mobileEnsureWebRemoteServer()
+	} else {
+		mu.Lock()
+		srv := ctrlSrv
+		mu.Unlock()
+		if srv != nil {
+			srv.DisablePairing()
+		}
+	}
+}
+
+// WebRemoteInfo returns a JSON string:
+// {"enabled":bool,"code":"123456","url":"http://<lanip>:<port>/remote","port":<int>}.
+// code and url are empty when the remote is disabled.
+func WebRemoteInfo() string {
+	mu.Lock()
+	srv := ctrlSrv
+	mu.Unlock()
+	if srv == nil || !srv.PairingActive() {
+		b, _ := json.Marshal(map[string]any{"enabled": false, "code": "", "url": "", "port": 0})
+		return string(b)
+	}
+	port := mobileSrvPort(srv)
+	url := fmt.Sprintf("http://%s:%d/remote", mobileLANIPv4(), port)
+	b, _ := json.Marshal(map[string]any{
+		"enabled": true,
+		"code":    srv.PairingCode(),
+		"url":     url,
+		"port":    port,
+	})
+	return string(b)
+}
+
+// WebRemoteQRPNG returns a PNG-encoded QR code for the web remote URL, or nil
+// when the remote is disabled. Free-able by the caller (Go GC manages it).
+func WebRemoteQRPNG() []byte {
+	mu.Lock()
+	srv := ctrlSrv
+	mu.Unlock()
+	if srv == nil || !srv.PairingActive() {
+		return nil
+	}
+	port := mobileSrvPort(srv)
+	url := fmt.Sprintf("http://%s:%d/remote", mobileLANIPv4(), port)
+	png, err := qrcode.Encode(url, qrcode.Medium, 512)
+	if err != nil {
+		return nil
+	}
+	return png
+}
+
+// mobileEnsureWebRemoteServer ensures the control server is running on a
+// LAN-reachable address and has pairing active.
+func mobileEnsureWebRemoteServer() {
+	mu.Lock()
+	srv := ctrlSrv
+	mu.Unlock()
+
+	c := curClient()
+	startNew := func(addr string) *control.Server {
+		s := control.New(
+			control.Config{Addr: addr, WebRemote: true},
+			engineState, engineAccount, engineCommands(), c,
+		)
+		s.SetVersion(Version)
+		s.SetClientInfo(clientID, deviceLabel)
+		if err := s.Start(); err != nil {
+			return nil
+		}
+		return s
+	}
+
+	if srv != nil {
+		// Already running; check if LAN-reachable.
+		if !mobileIsLoopback(srv.Addr()) {
+			srv.EnablePairing()
+			return
+		}
+		// Loopback-only: close and rebind on all interfaces.
+		_, portStr, _ := net.SplitHostPort(srv.Addr())
+		srv.Close()
+		newSrv := startNew("0.0.0.0:" + portStr)
+		if newSrv == nil {
+			newSrv = startNew("0.0.0.0:0")
+		}
+		if newSrv == nil {
+			return
+		}
+		mu.Lock()
+		ctrlSrv = newSrv
+		mu.Unlock()
+		newSrv.EnablePairing()
+		return
+	}
+
+	// No server yet; start one on the default control port.
+	newSrv := startNew("0.0.0.0:7654")
+	if newSrv == nil {
+		newSrv = startNew("0.0.0.0:0")
+	}
+	if newSrv == nil {
+		return
+	}
+	mu.Lock()
+	ctrlSrv = newSrv
+	mu.Unlock()
+	newSrv.EnablePairing()
+}
+
+func mobileSrvPort(srv *control.Server) int {
+	_, port, err := net.SplitHostPort(srv.Addr())
+	if err != nil {
+		return 7654
+	}
+	p, _ := strconv.Atoi(port)
+	return p
+}
+
+// mobileLANIPv4 returns the primary non-loopback IPv4 of this device.
+func mobileLANIPv4() string {
+	ifaces, _ := net.Interfaces()
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip4 := ip.To4(); ip4 != nil {
+				return ip4.String()
+			}
+		}
+	}
+	return "127.0.0.1"
+}
+
+func mobileIsLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		return false
+	case "localhost":
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }

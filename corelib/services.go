@@ -177,6 +177,7 @@ func engineState() control.State {
 		ct := &control.Track{
 			ID: cur.ID, Title: cur.Name, Artist: cur.ArtistLine(),
 			Album: cur.AlbumName, Explicit: cur.Explicit, DurationMS: cur.DurationMS,
+			ArtworkURL: cur.ArtworkURL,
 		}
 		if len(cur.Artists) > 0 {
 			ct.ArtistID = cur.Artists[0].ID

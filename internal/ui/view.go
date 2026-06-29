@@ -45,6 +45,8 @@ func (m *Model) View() string {
 		body = m.remoteEntryView()
 	case screenRemoteCtl:
 		body = m.remoteCtlView()
+	case screenWebRemote:
+		body = m.webRemoteView()
 	case screenBlocked:
 		return m.blockedView() // full screen, no playback footer
 	default:

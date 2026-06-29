@@ -118,6 +118,17 @@ object Engine {
     // on: 0=off, 1=on
     fun setShuffle(on: Int) = runCatching { Odmobile.setShuffle(on.toLong()) }.let {}
 
+    // ---- phone web remote ----
+
+    fun setWebRemoteEnabled(on: Boolean) =
+        runCatching { Odmobile.webRemoteSetEnabled(if (on) 1L else 0L) }.let {}
+
+    fun webRemoteInfo(): WebRemoteInfo? =
+        Json.webRemoteInfo(runCatching { Odmobile.webRemoteInfo() }.getOrNull())
+
+    suspend fun webRemoteQRPng(): ByteArray =
+        io { runCatching { Odmobile.webRemoteQRPNG() ?: ByteArray(0) }.getOrDefault(ByteArray(0)) }
+
     private suspend inline fun <T> io(crossinline block: () -> T): T =
         withContext(Dispatchers.IO) { block() }
 }

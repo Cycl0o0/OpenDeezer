@@ -1,6 +1,9 @@
 package fr.cyclooo.opendeezer.ui.screens
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,10 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -27,6 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -35,9 +41,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.engine.WebRemoteInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +56,19 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
     var replayGain by remember { mutableStateOf(Engine.replayGain()) }
     var gapless by remember { mutableStateOf(Engine.gapless()) }
     var crossfadeSec by remember { mutableFloatStateOf((Engine.crossfadeMs() / 1000f)) }
+    var webRemoteEnabled by remember { mutableStateOf(Engine.webRemoteInfo()?.enabled ?: false) }
+    var remoteInfo by remember { mutableStateOf<WebRemoteInfo?>(null) }
+    var remoteQR by remember { mutableStateOf<ByteArray?>(null) }
+
+    LaunchedEffect(webRemoteEnabled) {
+        if (webRemoteEnabled) {
+            remoteInfo = Engine.webRemoteInfo()
+            remoteQR = Engine.webRemoteQRPng()
+        } else {
+            remoteInfo = null
+            remoteQR = null
+        }
+    }
 
     val qualityLabels = listOf("Normal", "High", "HiFi")
 
@@ -112,6 +135,64 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
                     valueRange = 0f..12f,
                     steps = 11,
                 )
+            }
+
+            HorizontalDivider()
+
+            Text("Phone Remote", style = MaterialTheme.typography.titleMedium)
+            SettingSwitch(
+                "Enable",
+                "Serve a remote control page on your local Wi-Fi",
+                webRemoteEnabled,
+            ) {
+                webRemoteEnabled = it
+                Engine.setWebRemoteEnabled(it)
+            }
+            if (webRemoteEnabled) {
+                val info = remoteInfo
+                if (info == null) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            "Scan with your phone (same Wi-Fi), then enter the code.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        val imageBitmap = remember(remoteQR) {
+                            remoteQR?.let { bytes ->
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                            }
+                        }
+                        if (imageBitmap != null) {
+                            Image(
+                                bitmap = imageBitmap,
+                                contentDescription = "QR code",
+                                modifier = Modifier.size(200.dp),
+                            )
+                        }
+                        Text(
+                            info.code,
+                            style = MaterialTheme.typography.displaySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            info.url,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
             }
 
             HorizontalDivider()

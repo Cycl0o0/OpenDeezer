@@ -95,6 +95,11 @@ internal static class DeezerCore
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZSetRepeat(int mode);   // 0=off,1=all,2=one
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZSetShuffle(int on);    // 0/1
 
+    // ---- web remote (phone pairing) ------------------------------------------
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZWebRemoteSetEnabled(int on);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZWebRemoteInfoJSON();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZWebRemoteQRPNG(out int outLen);
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -135,4 +140,14 @@ internal static class DeezerCore
     internal static string ConnectedDevice() => TakeJson(DZConnectedDevice());
     internal static string CurrentAudioDevice() => TakeJson(DZCurrentAudioDevice());
     internal static string NowPlaying() => TakeJson(DZNowPlayingJSON());
+    internal static string WebRemoteInfo() => TakeJson(DZWebRemoteInfoJSON());
+    internal static byte[] WebRemoteQRPng()
+    {
+        IntPtr p = DZWebRemoteQRPNG(out int len);
+        if (p == IntPtr.Zero) return Array.Empty<byte>();
+        byte[] data = len > 0 ? new byte[len] : Array.Empty<byte>();
+        if (len > 0) Marshal.Copy(p, data, 0, len);
+        DZFreeBytes(p);
+        return data;
+    }
 }

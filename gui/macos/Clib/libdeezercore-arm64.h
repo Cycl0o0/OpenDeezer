@@ -115,6 +115,9 @@ extern long long DZDurationMS(void);
 extern void DZSetVolume(double v);
 extern double DZVolume(void);
 extern int DZFinishedCount(void);
+extern void DZWebRemoteSetEnabled(int on);
+extern char* DZWebRemoteInfoJSON(void);
+extern unsigned char* DZWebRemoteQRPNG(int* outLen);
 
 #ifdef __cplusplus
 }

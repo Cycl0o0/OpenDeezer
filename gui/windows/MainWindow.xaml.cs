@@ -138,9 +138,11 @@ public sealed partial class MainWindow : Window
         // like Settings/About in OnNav (a modal action, not a page).
         _accountItem = NavItem("Log in / Switch account…", Symbol.Contact, "account");
         _settingsItem = NavItem("Settings", Symbol.Setting, "settings");
+        _phoneRemoteItem = NavItem("Phone Remote", Symbol.Phone, "phoneremote");
         _aboutItem = NavItem("About", Symbol.Help, "about");
         _nav.FooterMenuItems.Add(_accountItem);
         _nav.FooterMenuItems.Add(_settingsItem);
+        _nav.FooterMenuItems.Add(_phoneRemoteItem);
         _nav.FooterMenuItems.Add(_aboutItem);
 
         _nav.SelectionChanged += OnNav;
@@ -850,11 +852,12 @@ public sealed partial class MainWindow : Window
         if (_suppressNav) return;
         if (args.SelectedItem is not NavigationViewItem item) return;
         string tag = item.Tag as string ?? "";
-        // About / Settings / Account are modal actions, not pages: open then revert.
-        if (tag is "about" or "settings" or "account")
+        // About / Settings / Account / Phone Remote are modal actions, not pages: open then revert.
+        if (tag is "about" or "settings" or "account" or "phoneremote")
         {
             if (tag == "about") ShowAbout();
             else if (tag == "settings") ShowSettings();
+            else if (tag == "phoneremote") ShowPhoneRemote();
             else ShowLoginChoice();
             _suppressNav = true;
             nav.SelectedItem = _lastContentItem ?? _likedItem;
@@ -2014,6 +2017,132 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void ShowPhoneRemote()
+    {
+        // Read current enabled state off-thread so the dialog opens without blocking.
+        string initInfo = await Task.Run(() => DeezerCore.WebRemoteInfo());
+        bool initOn = false;
+        try
+        {
+            using var initDoc = JsonDocument.Parse(string.IsNullOrEmpty(initInfo) ? "{}" : initInfo);
+            initOn = initDoc.RootElement.Bool("enabled");
+        }
+        catch { }
+
+        var sp = new StackPanel { Spacing = 16, MinWidth = 360 };
+
+        sp.Children.Add(new TextBlock
+        {
+            Text = "Scan with your phone (same Wi-Fi), then enter the code.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.8,
+        });
+
+        var tog = new ToggleSwitch
+        {
+            IsOn = initOn,
+            OnContent = "Phone Remote active",
+            OffContent = "Phone Remote off",
+        };
+        sp.Children.Add(tog);
+
+        // QR code image (512x512 PNG from the engine, displayed at 220x220).
+        var qrImg = new Image
+        {
+            Width = 220,
+            Height = 220,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        // 6-digit pairing code: large, monospace, spaced for legibility.
+        var codeBlock = new TextBlock
+        {
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 40,
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CharacterSpacing = 400,
+        };
+        var urlBlock = new TextBlock
+        {
+            FontSize = 12,
+            Opacity = 0.7,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+        };
+        var infoPanel = new StackPanel
+        {
+            Spacing = 6,
+            Visibility = initOn ? Visibility.Visible : Visibility.Collapsed,
+        };
+        infoPanel.Children.Add(qrImg);
+        infoPanel.Children.Add(codeBlock);
+        infoPanel.Children.Add(urlBlock);
+        sp.Children.Add(infoPanel);
+
+        // Populate immediately when the server is already running.
+        if (initOn) await LoadPhoneRemoteInfo(qrImg, codeBlock, urlBlock);
+
+        tog.Toggled += async (_, _) =>
+        {
+            bool on = tog.IsOn;
+            await Task.Run(() => DeezerCore.DZWebRemoteSetEnabled(on ? 1 : 0));
+            if (on)
+            {
+                await LoadPhoneRemoteInfo(qrImg, codeBlock, urlBlock);
+                infoPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                infoPanel.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        var dlg = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Phone Remote",
+            Content = sp,
+            CloseButtonText = "Close",
+        };
+        await ShowDialog(dlg);
+    }
+
+    // Fetch QR PNG + info JSON off-thread, then populate the Phone Remote dialog
+    // controls on the UI thread. Mirrors the InMemoryRandomAccessStream path in LoadArt.
+    private async Task LoadPhoneRemoteInfo(Image qrImg, TextBlock codeBlock, TextBlock urlBlock)
+    {
+        var (info, qrBytes) = await Task.Run(() => (DeezerCore.WebRemoteInfo(), DeezerCore.WebRemoteQRPng()));
+        string code = "", url = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrEmpty(info) ? "{}" : info);
+            var o = doc.RootElement;
+            code = o.Str("code");
+            url = o.Str("url");
+        }
+        catch { }
+        codeBlock.Text = code;
+        urlBlock.Text = url;
+        if (qrBytes.Length > 0)
+        {
+            try
+            {
+                var stream = new InMemoryRandomAccessStream();
+                var writer = new DataWriter(stream);
+                writer.WriteBytes(qrBytes);
+                await writer.StoreAsync();
+                writer.DetachStream();
+                stream.Seek(0);
+                var bmp = new BitmapImage();
+                qrImg.Source = bmp;
+                await bmp.SetSourceAsync(stream);
+            }
+            catch { }
+        }
+    }
+
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
@@ -2047,7 +2176,7 @@ public sealed partial class MainWindow : Window
     private NavigationView _nav = null!;
     private NavigationViewItem _likedItem = null!, _flowItem = null!, _playlistsItem = null!, _chartsItem = null!,
                                _podcastsItem = null!, _searchItem = null!, _accountItem = null!, _settingsItem = null!,
-                               _aboutItem = null!;
+                               _phoneRemoteItem = null!, _aboutItem = null!;
     private NavigationViewItem? _lastContentItem; // null until the first content page is opened
 
     private UIElement _tracksPage = null!, _playlistsPage = null!, _searchPage = null!;

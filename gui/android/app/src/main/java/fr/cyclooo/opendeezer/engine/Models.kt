@@ -120,6 +120,13 @@ data class ConnectDevice(
         }
 }
 
+data class WebRemoteInfo(
+    val enabled: Boolean,
+    val code: String,
+    val url: String,
+    val port: Int,
+)
+
 // ---- parsing (org.json; tolerant of {"error":...} payloads) ----
 
 object Json {
@@ -297,5 +304,15 @@ object Json {
         val o = obj(s) ?: return null
         val id = o.optString("id")
         return id.ifBlank { null }
+    }
+
+    fun webRemoteInfo(s: String?): WebRemoteInfo? {
+        val o = obj(s) ?: return null
+        return WebRemoteInfo(
+            enabled = o.optBoolean("enabled"),
+            code = o.optString("code"),
+            url = o.optString("url"),
+            port = o.optInt("port"),
+        )
     }
 }

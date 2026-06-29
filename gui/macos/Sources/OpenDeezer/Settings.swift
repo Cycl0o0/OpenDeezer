@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // AppSettings is the small, JSON-persisted preferences blob, stored alongside
 // arl.txt in ~/.config/opendeezer/settings.json.
@@ -55,6 +56,12 @@ struct AppSettings: Codable {
 // behaviour. Reachable from the sidebar account row.
 struct SettingsView: View {
     @EnvironmentObject var app: AppState
+
+    // Phone Remote state (engine-owned, not persisted to settings.json).
+    @State private var webRemoteEnabled = false
+    @State private var webRemoteCode = ""
+    @State private var webRemoteURL = ""
+    @State private var webRemoteQRImage: NSImage? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -181,6 +188,53 @@ struct SettingsView: View {
                 .toggleStyle(.switch)
                 .tint(DZ.accent)
             }
+
+            // Phone Remote
+            settingsCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(isOn: Binding(
+                        get: { webRemoteEnabled },
+                        set: { on in
+                            webRemoteEnabled = on
+                            Core.setWebRemoteEnabled(on)
+                            if on {
+                                loadWebRemoteInfo()
+                            } else {
+                                webRemoteCode = ""
+                                webRemoteURL = ""
+                                webRemoteQRImage = nil
+                            }
+                        })) {
+                        Label("Phone Remote", systemImage: "iphone.radiowaves.left.and.right")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                    }
+                    .toggleStyle(.switch)
+                    .tint(DZ.accent)
+
+                    Text("Scan with your phone (same Wi-Fi), then enter the code.")
+                        .font(.caption).foregroundStyle(DZ.textSec)
+
+                    if webRemoteEnabled, !webRemoteCode.isEmpty {
+                        VStack(spacing: 8) {
+                            if let img = webRemoteQRImage {
+                                Image(nsImage: img)
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .frame(width: 160, height: 160)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            Text(webRemoteCode)
+                                .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                .foregroundStyle(DZ.textPri)
+                            Text(webRemoteURL)
+                                .font(.caption).foregroundStyle(DZ.textSec)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                    }
+                }
+            }
               }
             }
             .scrollContentBackground(.hidden)
@@ -197,7 +251,24 @@ struct SettingsView: View {
         .padding(24)
         .frame(width: 440, height: 620)
         .background(DZ.windowBG)
-        .onAppear { app.loadAudioDevices() }
+        .onAppear {
+            app.loadAudioDevices()
+            loadWebRemoteInfo()
+        }
+    }
+
+    private func loadWebRemoteInfo() {
+        Task.detached {
+            let info = Core.webRemoteInfo()
+            let qrData = (info?.enabled == true) ? Core.webRemoteQRPNG() : nil
+            let img: NSImage? = qrData.flatMap { NSImage(data: $0) }
+            await MainActor.run {
+                webRemoteEnabled = info?.enabled ?? false
+                webRemoteCode = info?.code ?? ""
+                webRemoteURL = info?.url ?? ""
+                webRemoteQRImage = img
+            }
+        }
     }
 
     @ViewBuilder

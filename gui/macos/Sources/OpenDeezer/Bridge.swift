@@ -259,4 +259,32 @@ enum Core {
     static func disconnectDevice() { DZDisconnectDevice() }
     /// Connected device's host:port ("" when playing on this computer).
     static var connectedDevice: String { takeString(DZConnectedDevice()) }
+
+    // MARK: phone web remote
+
+    struct WebRemoteInfo: Decodable {
+        let enabled: Bool
+        let code: String
+        let url: String
+        let port: Int
+    }
+
+    /// Enables (on=true) or disables the LAN web remote server.
+    static func setWebRemoteEnabled(_ on: Bool) {
+        DZWebRemoteSetEnabled(on ? 1 : 0)
+    }
+
+    /// Current web remote state: enabled flag, 6-digit pairing code, URL and port.
+    static func webRemoteInfo() -> WebRemoteInfo? {
+        decode(WebRemoteInfo.self, takeJSON(DZWebRemoteInfoJSON()))
+    }
+
+    /// PNG bytes of a QR code encoding the remote URL; nil when the remote is
+    /// disabled or the engine returns nothing. Caller owns nothing — freed here.
+    static func webRemoteQRPNG() -> Data? {
+        var length: Int32 = 0
+        guard let ptr = DZWebRemoteQRPNG(&length), length > 0 else { return nil }
+        defer { DZFreeBytes(ptr) }
+        return Data(bytes: ptr, count: Int(length))
+    }
 }

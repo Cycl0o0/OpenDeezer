@@ -185,6 +185,7 @@ private:
     void setupMpris();
     void setupTray();
     void openSettings();
+    void openPhoneRemote();
     void applyAccount(const QByteArray &json);
     // Free (non-Premium) accounts can't stream on-demand — replace the whole UI
     // with a blocking "Premium required" page (only Quit remains reachable).

@@ -32,6 +32,7 @@ func (m *Model) menuRows() []list.Item {
 		row{kind: rowMenu, title: "🎙 Podcasts", desc: "search shows & episodes", action: actPodcasts},
 		row{kind: rowMenu, title: "🔍 Search", desc: "tracks, albums, artists, playlists", action: actSearch},
 		row{kind: rowMenu, title: "📡 Remote control", desc: "drive another OpenDeezer client", action: actRemote},
+		row{kind: rowMenu, title: "📱 Web Remote", desc: "control from your phone over Wi-Fi", action: actWebRemote},
 	)
 	return rows
 }
@@ -279,6 +280,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.remoteState = msg.state
 		return m, nil
 
+	case webRemoteMsg:
+		m.loading = false
+		if msg.errStr != "" {
+			m.status = "Web Remote: " + msg.errStr
+			return m, nil
+		}
+		// When the cmd had to close the old loopback server and rebind on LAN,
+		// replace m.ctrl with the new server so publishControl etc. reach it.
+		if msg.replacedCtrl && msg.srv != nil {
+			m.ctrl = msg.srv
+		}
+		if msg.srv != nil {
+			m.webRemoteSrv = msg.srv
+		}
+		m.webRemoteActive = msg.enabled
+		m.webRemoteCode = msg.code
+		m.webRemoteURL = msg.url
+		m.webRemoteQR = msg.qr
+		if msg.enabled {
+			m.status = ""
+		} else {
+			m.status = "Web remote disabled"
+		}
+		return m, nil
+
 	case devicesDiscoveredMsg:
 		m.loading = false
 		items := []list.Item{row{
@@ -445,6 +471,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Update(msg)
 		return m, cmd
+	}
+
+	if m.screen == screenWebRemote {
+		return m.handleWebRemoteKey(msg)
 	}
 
 	// Search input captures most keys; handle it first.
@@ -700,6 +730,10 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.status = "Scanning for devices…"
 			return m, m.discoverDevicesCmd()
+		case actWebRemote:
+			m.screen = screenWebRemote
+			m.status = ""
+			return m, nil
 		case actRemoteManual:
 			m.search.SetValue(LoadLastPeer())
 			m.search.Focus()

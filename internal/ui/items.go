@@ -30,6 +30,7 @@ const (
 	actPodcasts
 	actRemote
 	actRemoteManual // enter a device address by hand
+	actWebRemote    // phone web remote (QR + pairing code)
 )
 
 // row is a single list entry. It implements bubbles/list.Item.

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>OpenDeezer Remote</title>
+<style>
+:root {
+  --accent: #A238FF;
+  --accent-dim: #7a1fd4;
+  --bg: #0e0e0e;
+  --surface: #1c1c1e;
+  --surface2: #2c2c2e;
+  --text: #ffffff;
+  --text-muted: #8e8e93;
+  --radius: 14px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  overscroll-behavior: none;
+}
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 1.5rem 1.5rem calc(1.5rem + var(--safe-bottom));
+}
+
+/* ---- Pair view ---- */
+#pair-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+.logo {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -1px;
+}
+.logo span { color: var(--text); font-weight: 300; }
+#pair-view p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+#code-input {
+  width: 100%;
+  padding: 1rem;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.5rem;
+  text-align: center;
+  background: var(--surface);
+  border: 2px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+#code-input:focus { border-color: var(--accent); }
+#pair-btn {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+#pair-btn:active { background: var(--accent-dim); }
+#pair-error {
+  color: #ff6b6b;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
+
+/* ---- Controls view ---- */
+#ctrl-view {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  width: 100%;
+  max-width: 380px;
+}
+
+/* Artwork */
+#artwork-wrap {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+#artwork {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.artwork-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3.5rem;
+  color: var(--text-muted);
+}
+
+/* Track info */
+.track-info {
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+}
+#track-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 0.25rem;
+}
+#track-artist {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Progress */
+.progress-section {
+  width: 100%;
+}
+#progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  margin-bottom: 0.4rem;
+}
+#progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0%;
+  pointer-events: none;
+  transition: width 0.2s linear;
+}
+.time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Transport */
+.transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+}
+.transport button {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.transport button:active { opacity: 0.5; }
+.btn-sm { font-size: 1.4rem; }
+.btn-lg {
+  font-size: 2.2rem;
+  background: var(--surface) !important;
+  width: 68px;
+  height: 68px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+#playpause-btn { color: var(--accent); }
+
+/* Volume */
+.volume-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.vol-icon { font-size: 1.1rem; color: var(--text-muted); flex-shrink: 0; }
+#volume-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--pct, 80%), var(--surface2) var(--pct, 80%));
+  outline: none;
+  cursor: pointer;
+}
+#volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+}
+#volume-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  border: none;
+  cursor: pointer;
+}
+
+/* Extra controls */
+.extra-controls {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  justify-content: center;
+}
+.ctrl-btn {
+  flex: 1;
+  max-width: 140px;
+  padding: 0.65rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 2px solid var(--surface2);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: color 0.15s, border-color 0.15s;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.ctrl-btn:active { opacity: 0.6; }
+.ctrl-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* State badge */
+#state-badge {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+</style>
+</head>
+<body>
+
+<!-- Pairing view -->
+<div id="pair-view">
+  <div class="logo">Open<span>Deezer</span></div>
+  <p>Enter the 6-digit code shown on your device to pair your phone as a remote.</p>
+  <input id="code-input" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="off">
+  <button id="pair-btn">Pair</button>
+  <div id="pair-error"></div>
+</div>
+
+<!-- Controls view -->
+<div id="ctrl-view">
+  <div id="artwork-wrap">
+    <div class="artwork-placeholder" id="artwork-placeholder">&#9834;</div>
+    <img id="artwork" src="" alt="" style="display:none" onerror="this.style.display='none';document.getElementById('artwork-placeholder').style.display='flex'">
+  </div>
+
+  <div class="track-info">
+    <div id="track-title">Not playing</div>
+    <div id="track-artist"></div>
+  </div>
+
+  <div class="progress-section">
+    <div id="progress-bar-wrap">
+      <div id="progress-fill"></div>
+    </div>
+    <div class="time-row">
+      <span id="time-pos">0:00</span>
+      <span id="time-dur">0:00</span>
+    </div>
+  </div>
+
+  <div class="transport">
+    <button id="prev-btn" class="btn-sm" title="Previous">&#9664;&#9664;</button>
+    <button id="playpause-btn" class="btn-lg" title="Play / Pause">&#9654;</button>
+    <button id="next-btn" class="btn-sm" title="Next">&#9654;&#9654;</button>
+  </div>
+
+  <div class="volume-row">
+    <span class="vol-icon">&#128266;</span>
+    <input id="volume-slider" type="range" min="0" max="100" value="80">
+    <span class="vol-icon">&#128266;</span>
+  </div>
+
+  <div class="extra-controls">
+    <button id="repeat-btn" class="ctrl-btn" title="Repeat">&#8635; Repeat: off</button>
+    <button id="shuffle-btn" class="ctrl-btn" title="Shuffle">&#8652; Shuffle</button>
+  </div>
+
+  <div id="state-badge"></div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+var SESSION_KEY = 'opendeezer_session_v1';
+
+// ---- State ----
+var token = localStorage.getItem(SESSION_KEY);
+var currentState = {};
+var pollTimer = null;
+var volumeActive = false; // don't update slider while user is dragging
+
+// ---- Elements ----
+var pairView    = document.getElementById('pair-view');
+var ctrlView    = document.getElementById('ctrl-view');
+var codeInput   = document.getElementById('code-input');
+var pairBtn     = document.getElementById('pair-btn');
+var pairError   = document.getElementById('pair-error');
+var artworkImg  = document.getElementById('artwork');
+var artworkPlh  = document.getElementById('artwork-placeholder');
+var trackTitle  = document.getElementById('track-title');
+var trackArtist = document.getElementById('track-artist');
+var progressFill= document.getElementById('progress-fill');
+var progressWrap= document.getElementById('progress-bar-wrap');
+var timePos     = document.getElementById('time-pos');
+var timeDur     = document.getElementById('time-dur');
+var playpauseBtn= document.getElementById('playpause-btn');
+var prevBtn     = document.getElementById('prev-btn');
+var nextBtn     = document.getElementById('next-btn');
+var volSlider   = document.getElementById('volume-slider');
+var repeatBtn   = document.getElementById('repeat-btn');
+var shuffleBtn  = document.getElementById('shuffle-btn');
+var stateBadge  = document.getElementById('state-badge');
+
+// ---- View switching ----
+function showPair() {
+  pairView.style.display = 'flex';
+  ctrlView.style.display = 'none';
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function showControls() {
+  pairView.style.display = 'none';
+  ctrlView.style.display = 'flex';
+  startPolling();
+}
+
+// ---- Pairing ----
+function setPairError(msg) { pairError.textContent = msg; }
+
+pairBtn.addEventListener('click', doPair);
+codeInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doPair();
+});
+
+function doPair() {
+  var code = codeInput.value.trim();
+  if (code.length === 0) { setPairError('Enter the 6-digit code.'); return; }
+  setPairError('');
+  pairBtn.disabled = true;
+  pairBtn.textContent = 'Pairing…';
+
+  fetch('/pair', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: code })
+  }).then(function(r) {
+    if (r.status === 429) {
+      setPairError('Too many attempts — wait a minute and try again.');
+      pairBtn.disabled = false;
+      pairBtn.textContent = 'Pair';
+      return null;
+    }
+    if (r.status === 401 || r.status === 404) {
+      setPairError('Invalid code. Check the display and try again.');
+      pairBtn.disabled = false;
+      pairBtn.textContent = 'Pair';
+      return null;
+    }
+    if (!r.ok) {
+      setPairError('Error ' + r.status + '. Try again.');
+      pairBtn.disabled = false;
+      pairBtn.textContent = 'Pair';
+      return null;
+    }
+    return r.json();
+  }).then(function(data) {
+    if (!data) return;
+    token = data.token;
+    localStorage.setItem(SESSION_KEY, token);
+    pairBtn.disabled = false;
+    pairBtn.textContent = 'Pair';
+    codeInput.value = '';
+    showControls();
+  }).catch(function() {
+    setPairError('Network error. Make sure you are on the same Wi-Fi.');
+    pairBtn.disabled = false;
+    pairBtn.textContent = 'Pair';
+  });
+}
+
+// ---- API helpers ----
+function api(method, path) {
+  return fetch(path, {
+    method: method,
+    headers: { 'X-OpenDeezer-Session': token }
+  }).then(function(r) {
+    if (r.status === 401) {
+      localStorage.removeItem(SESSION_KEY);
+      token = null;
+      showPair();
+      setPairError('Session expired — please pair again.');
+      return Promise.reject(new Error('unauthorized'));
+    }
+    if (!r.ok) return Promise.reject(new Error('http ' + r.status));
+    return r.json();
+  });
+}
+
+// ---- Polling ----
+function startPolling() {
+  poll();
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(poll, 1000);
+}
+
+function poll() {
+  api('GET', '/status').then(applyState).catch(function() {});
+}
+
+// ---- UI update ----
+function fmtTime(ms) {
+  var s = Math.floor(ms / 1000);
+  var m = Math.floor(s / 60);
+  s = s % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function applyState(st) {
+  currentState = st;
+
+  // Track info
+  var t = st.track;
+  if (t && t.title) {
+    trackTitle.textContent  = t.title;
+    trackArtist.textContent = t.artist || '';
+    if (t.artworkUrl) {
+      artworkImg.src = t.artworkUrl;
+      artworkImg.style.display = 'block';
+      artworkPlh.style.display = 'none';
+    } else {
+      artworkImg.style.display = 'none';
+      artworkPlh.style.display = 'flex';
+    }
+  } else {
+    trackTitle.textContent  = 'Not playing';
+    trackArtist.textContent = '';
+    artworkImg.style.display = 'none';
+    artworkPlh.style.display = 'flex';
+  }
+
+  // Progress
+  var pos = st.positionMs || 0;
+  var dur = st.durationMs || (t && t.durationMs) || 0;
+  if (dur > 0) {
+    progressFill.style.width = Math.min(100, (pos / dur) * 100) + '%';
+    timePos.textContent = fmtTime(pos);
+    timeDur.textContent = fmtTime(dur);
+  } else {
+    progressFill.style.width = '0%';
+    timePos.textContent = '0:00';
+    timeDur.textContent = '0:00';
+  }
+
+  // Play/pause button
+  if (st.state === 'playing') {
+    playpauseBtn.innerHTML = '&#9646;&#9646;'; // pause icon
+  } else {
+    playpauseBtn.innerHTML = '&#9654;'; // play icon
+  }
+
+  // State badge
+  stateBadge.textContent = st.state || '';
+
+  // Volume (don't update while user is dragging)
+  if (!volumeActive) {
+    var vPct = Math.round((st.volume || 0) * 100);
+    volSlider.value = vPct;
+    volSlider.style.setProperty('--pct', vPct + '%');
+  }
+
+  // Repeat button
+  var rep = st.repeat || 'off';
+  repeatBtn.className = 'ctrl-btn' + (rep !== 'off' ? ' active' : '');
+  repeatBtn.innerHTML = (rep === 'one')
+    ? '&#8635; Repeat: one'
+    : (rep === 'all' ? '&#8635; Repeat: all' : '&#8635; Repeat: off');
+
+  // Shuffle button
+  shuffleBtn.className = 'ctrl-btn' + (st.shuffle ? ' active' : '');
+  shuffleBtn.innerHTML = '&#8652; Shuffle' + (st.shuffle ? ': on' : '');
+}
+
+// ---- Transport controls ----
+playpauseBtn.addEventListener('click', function() {
+  api('POST', '/playpause').then(applyState).catch(function() {});
+});
+prevBtn.addEventListener('click', function() {
+  api('POST', '/prev').then(applyState).catch(function() {});
+});
+nextBtn.addEventListener('click', function() {
+  api('POST', '/next').then(applyState).catch(function() {});
+});
+
+// ---- Progress bar (seek on tap/click) ----
+progressWrap.addEventListener('click', function(e) {
+  var rect = progressWrap.getBoundingClientRect();
+  var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  var dur = currentState.durationMs || (currentState.track && currentState.track.durationMs) || 0;
+  if (dur <= 0) return;
+  var ms = Math.round(ratio * dur);
+  api('POST', '/seek?ms=' + ms).then(applyState).catch(function() {});
+});
+
+// ---- Volume slider ----
+volSlider.addEventListener('input', function() {
+  volumeActive = true;
+  var pct = parseInt(this.value, 10);
+  this.style.setProperty('--pct', pct + '%');
+});
+volSlider.addEventListener('change', function() {
+  var v = parseInt(this.value, 10) / 100;
+  api('POST', '/volume?v=' + v.toFixed(4)).then(function(st) {
+    applyState(st);
+    volumeActive = false;
+  }).catch(function() { volumeActive = false; });
+});
+
+// ---- Repeat (cycle: off → all → one → off) ----
+var repeatCycle = ['off', 'all', 'one'];
+repeatBtn.addEventListener('click', function() {
+  var cur = currentState.repeat || 'off';
+  var next = repeatCycle[(repeatCycle.indexOf(cur) + 1) % repeatCycle.length];
+  api('POST', '/repeat?mode=' + next).then(applyState).catch(function() {});
+});
+
+// ---- Shuffle toggle ----
+shuffleBtn.addEventListener('click', function() {
+  var on = currentState.shuffle ? 'false' : 'true';
+  api('POST', '/shuffle?on=' + on).then(applyState).catch(function() {});
+});
+
+// ---- Init ----
+if (token) {
+  showControls();
+} else {
+  showPair();
+}
+
+})();
+</script>
+</body>
+</html>

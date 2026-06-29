@@ -44,6 +44,7 @@ const (
 	screenRemoteInput // remote-control: type a peer address by hand
 	screenRemoteCtl   // remote-control: driving a connected peer
 	screenBlocked     // Free account — playback not available
+	screenWebRemote   // phone web remote: QR + pairing code
 )
 
 // Model is the root Bubble Tea model.
@@ -86,6 +87,14 @@ type Model struct {
 	ctrl      *control.Server                 // control API (remote + MCP); nil if disabled
 	ctrlState atomic.Pointer[control.State]   // playback snapshot read by the control HTTP goroutine
 	acctSnap  atomic.Pointer[control.Account] // identity snapshot read by the control HTTP goroutine
+	ctrlSend  func(tea.Msg)                   // saved from StartControl; used to wire a web-remote server
+
+	// phone web remote: LAN-bound server + current pairing state.
+	webRemoteSrv    *control.Server // server used for web remote (may equal ctrl)
+	webRemoteActive bool
+	webRemoteCode   string // 6-digit pairing code
+	webRemoteURL    string
+	webRemoteQR     string // terminal QR block
 
 	// remote control: drive another OpenDeezer client over its control API.
 	remote        *control.Client
@@ -218,6 +227,7 @@ func (m *Model) publishDiscord() {
 // loop; status is served from an atomic snapshot refreshed by publishControl.
 // Returns nil (no error) when the API is disabled. Call after tea.NewProgram.
 func (m *Model) StartControl(send func(tea.Msg)) error {
+	m.ctrlSend = send // saved for web remote server creation
 	cfg := LoadControl()
 	if !cfg.Enabled {
 		return nil
@@ -340,7 +350,7 @@ func (m *Model) publishAccount() {
 func ctrlTrack(t deezer.Track) *control.Track {
 	ct := &control.Track{
 		ID: t.ID, Title: t.Name, Artist: t.ArtistLine(), Album: t.AlbumName,
-		Explicit: t.Explicit, DurationMS: t.DurationMS,
+		Explicit: t.Explicit, DurationMS: t.DurationMS, ArtworkURL: t.ArtworkURL,
 	}
 	if len(t.Artists) > 0 {
 		ct.ArtistID = t.Artists[0].ID
