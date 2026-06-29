@@ -4,6 +4,24 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1]
+
+### Added
+- **Phone web remote**: control playback from your phone's browser on the same
+  Wi-Fi, paired with a QR + 6-digit code. Opt-in, LAN-only; transport +
+  now-playing (play/pause, prev/next, seek, volume, repeat, shuffle). On every
+  client (TUI + all GUIs).
+
+### Fixed
+- **OpenDeezer Connect — disconnect**: disconnecting a device now stops playback
+  on it instead of leaving it playing unattended.
+- **OpenDeezer Connect — Artist/Lyrics**: now resolve to the track actually
+  playing on the connected device (previously showed the wrong track, or nothing).
+- **OpenDeezer Connect — repeat/shuffle**: changes are now forwarded to the
+  connected device.
+- **Podcasts**: playing an episode after a song now shows the episode's
+  now-playing info (title / show / artwork) instead of the previous track's.
+
 ## [0.6.0]
 
 ### Added
