@@ -123,6 +123,33 @@ access to your account.
 Home screen entries: Liked Songs · My Playlists · ⚡ Flow · 📈 Charts ·
 🎙 Podcasts · 🔍 Search (and ▶ Resume when a saved position exists).
 
+## Use it as a Go library (SDK)
+
+The engine is also a public Go SDK, so you can build your own tools on top of it —
+the Deezer API, track decode/download, OpenDeezer Connect, and the remote control.
+
+```sh
+go get github.com/Cycl0o0/OpenDeezer
+```
+
+```go
+import dz "github.com/Cycl0o0/OpenDeezer/sdk/deezer"
+
+client := dz.New(os.Getenv("DEEZER_ARL"))
+client.Login()
+client.SetQuality(dz.QualityHigh)
+
+plan, _ := client.PrepareStream("3135556")   // resolve + key the stream
+f, _ := os.Create("track.mp3")
+dz.DownloadTrack(plan, f)                     // fetch CDN, Blowfish-decrypt, write
+```
+
+Packages: `sdk/deezer` (API + decode/download), `sdk/connect` (LAN discovery +
+drive or host a device — `RemoteClient` out, `Host` in), `sdk/control` (host/drive
+the control API + phone web remote), `sdk/player` (in-process playback, cgo).
+Runnable examples in [`examples/`](examples); full docs in
+[`sdk/README.md`](sdk/README.md).
+
 ## Remote control & automation (Control API)
 
 OpenDeezer can expose a small HTTP/JSON API so another OpenDeezer client (remote
