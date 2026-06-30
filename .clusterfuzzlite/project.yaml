@@ -1,0 +1,12 @@
+# ClusterFuzzLite / OSS-Fuzz project metadata for OpenDeezer.
+# These same files (project.yaml, Dockerfile, build.sh) are what OSS-Fuzz proper
+# expects under projects/opendeezer/ if/when the project is submitted there.
+language: go
+main_repo: "https://github.com/Cycl0o0/OpenDeezer"
+primary_contact: "security@cyclooo.fr"
+auto_ccs:
+  - "security@cyclooo.fr"
+fuzzing_engines:
+  - libfuzzer
+sanitizers:
+  - address

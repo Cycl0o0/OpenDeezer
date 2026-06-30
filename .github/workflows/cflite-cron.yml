@@ -1,0 +1,28 @@
+name: ClusterFuzzLite (batch)
+# Longer, scheduled fuzzing of the whole corpus — builds coverage over time and
+# surfaces deeper bugs than the per-PR run. Crashes appear as workflow failures
+# + downloadable testcases.
+on:
+  schedule:
+    - cron: "0 3 * * *" # nightly 03:00 UTC
+  workflow_dispatch: {}
+permissions: read-all
+jobs:
+  Batch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: go
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+      - name: Run Fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: batch
+          sanitizer: address
