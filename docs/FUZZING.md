@@ -8,17 +8,7 @@ next to the code they exercise:
 |---|---|---|
 | `FuzzDecryptTrack` | `internal/deezer` | BF_CBC_STRIPE whole-buffer decrypt; asserts length is preserved |
 | `FuzzStripeChunking` | `internal/deezer` | the stripe decryptor is independent of how input is split across `Feed()` calls |
-| `FuzzFLACDecode` | `internal/audio` | the FLAC decode path on a malformed stream (must not panic). **Local-only for now** — see Findings below. |
-
-## Findings
-
-- **FLAC decode OOM** (found by `FuzzFLACDecode` on its first CI run): a malformed
-  FLAC stream drives an unbounded allocation inside the `mewkiz/flac` decoder
-  (~6.6 GB), i.e. a denial-of-service for anything decoding untrusted FLAC (e.g.
-  a podcast on an off-Deezer host). `FuzzFLACDecode` is therefore kept out of the
-  continuous CI run until the allocation is bounded (a size-limited reader around
-  the stream and/or an upstream fix); the harness stays runnable locally so the
-  fix can be verified against it.
+| `FuzzFLACDecode` | `internal/audio` | the FLAC decode path on a malformed stream (must not panic) |
 
 ## Run locally
 
@@ -34,9 +24,8 @@ replays deterministically — commit it as a regression seed once fixed.
 
 ## Continuous fuzzing (CI)
 
-[ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) runs the same
-harnesses in GitHub Actions — it's OSS-Fuzz's engine, self-hosted (no acceptance
-into the OSS-Fuzz program required):
+[ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) fuzzes these paths in
+GitHub Actions — it's OSS-Fuzz's engine, self-hosted:
 
 - **`.github/workflows/cflite-pr.yml`** — a short (3 min) run on each PR, focused
   on the changed code.
@@ -44,14 +33,4 @@ into the OSS-Fuzz program required):
   corpus over time.
 
 The build is defined by `.clusterfuzzlite/` (`Dockerfile`, `build.sh`,
-`project.yaml`). `build.sh` compiles each `Fuzz*` with `compile_native_go_fuzzer`.
-
-## Graduating to OSS-Fuzz proper
-
-OSS-Fuzz (Google-hosted) gives free continuous fuzzing + a dedicated
-infrastructure, but it only accepts projects with "a significant user base and/or
-[that] are critical to global IT infrastructure." If OpenDeezer reaches that bar,
-submission is small: the `.clusterfuzzlite/` files (`project.yaml`, `Dockerfile`,
-`build.sh`) are already in the format OSS-Fuzz expects — copy them to
-`projects/opendeezer/` in [google/oss-fuzz](https://github.com/google/oss-fuzz)
-and open a PR. `project.yaml` already lists `security@cyclooo.fr` as the contact.
+`project.yaml`); `build.sh` compiles each target with `compile_native_go_fuzzer`.
