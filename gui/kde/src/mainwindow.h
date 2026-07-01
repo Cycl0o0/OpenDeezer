@@ -30,6 +30,8 @@ class QImage;
 class QByteArray;
 class QCloseEvent;
 class QSystemTrayIcon;
+class QFrame;
+class QVBoxLayout;
 QT_END_NAMESPACE
 
 class MprisController;
@@ -188,6 +190,13 @@ private:
     void setupTray();
     void openSettings();
     void openPhoneRemote();
+
+    // ---- update check (v1.5.1): once per launch, background, non-intrusive.
+    // Never blocks startup and never downloads/installs anything — it only
+    // offers a link to the GitHub release page.
+    void checkForUpdates();
+    void showUpdateBanner(const QString &latest, const QString &url,
+                          const QString &notes);
     void applyAccount(const QByteArray &json);
     // Free (non-Premium) accounts can't stream on-demand — replace the whole UI
     // with a blocking "Premium required" page (only Quit remains reachable).
@@ -207,6 +216,11 @@ private:
     QLabel        *m_blockBody     = nullptr;   // its body line (carries the offer)
     QListWidget   *m_sidebar       = nullptr;
     QStackedWidget*m_stack         = nullptr;
+
+    // Central widget's top-level layout — the update banner inserts itself at
+    // row 0 above the sidebar/content splitter, and removes itself on dismiss.
+    QVBoxLayout   *m_centralLayout = nullptr;
+    QFrame        *m_updateBanner  = nullptr;   // non-null while the banner is shown
 
     // home page (stack index 0)
     QLabel        *m_homeGreeting      = nullptr;

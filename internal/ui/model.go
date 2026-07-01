@@ -19,6 +19,7 @@ import (
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/mpris"
 	"github.com/Cycl0o0/OpenDeezer/internal/queue"
+	"github.com/Cycl0o0/OpenDeezer/internal/update"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -80,6 +81,14 @@ type Model struct {
 	pendingSeek   int64          // ms to seek to once the next stream is ready (resume)
 	searchPodcast bool           // search screen is in podcast mode
 	episodeMode   bool           // current queue is podcast episodes (plain streams)
+
+	// GitHub release check (see updatecheck.go / internal/update). The
+	// startup check is silent unless a newer version is found; a manual
+	// re-check (About screen) surfaces feedback via m.status.
+	updateInfo      update.Info
+	updateChecking  bool // manual re-check in flight
+	updateChecked   bool // at least one check (startup or manual) has completed
+	updateDismissed bool // user closed the footer notice for this session
 
 	media   mpris.Controller // OS media controls (MPRIS on Linux, no-op elsewhere)
 	discord discord.Presence // Discord Rich Presence (no-op if no app id)
@@ -461,9 +470,10 @@ type artMsg struct {
 	img     image.Image
 }
 
-// Init kicks off login + the UI tick.
+// Init kicks off login + the UI tick. The update check runs alongside them in
+// the background (see updatecheck.go) and never delays startup.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.loginCmd(), tickCmd(), m.waitFinish(), m.spinner.Tick)
+	return tea.Batch(m.loginCmd(), tickCmd(), m.waitFinish(), m.spinner.Tick, m.updateCheckCmd())
 }
 
 func tickCmd() tea.Cmd {

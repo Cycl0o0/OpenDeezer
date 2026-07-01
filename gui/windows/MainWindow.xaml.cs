@@ -81,6 +81,7 @@ public sealed partial class MainWindow : Window
         SetupTray();
         AppWindow.Closing += OnClosing;
         StartLogin();
+        StartBackgroundUpdateCheck(); // fire-and-forget: never blocks startup
     }
 
     // ---- grid helpers --------------------------------------------------------
@@ -92,21 +93,68 @@ public sealed partial class MainWindow : Window
     // ---- UI construction -----------------------------------------------------
     private void BuildUi()
     {
-        // RootGrid is the window content (from MainWindow.xaml): row0 content, row1 bar.
+        // RootGrid is the window content (from MainWindow.xaml): row0 the (normally
+        // collapsed) update banner, row1 content, row2 the transport bar.
+        RootGrid.RowDefinitions.Add(RowAuto());
         RootGrid.RowDefinitions.Add(RowStar());
         RootGrid.RowDefinitions.Add(RowAuto());
 
+        var updateBar = BuildUpdateBar();
+        Grid.SetRow(updateBar, 0);
+        RootGrid.Children.Add(updateBar);
+
         BuildNav();
         BuildPages();
-        Grid.SetRow(_nav, 0);
+        Grid.SetRow(_nav, 1);
         RootGrid.Children.Add(_nav);
 
         var bar = BuildTransport();
-        Grid.SetRow(bar, 1);
+        Grid.SetRow(bar, 2);
         RootGrid.Children.Add(bar);
 
         _nav.Content = _homePage; // show the (empty) Home page until login fills it
         _nav.Header = "Home";
+    }
+
+    // Small dismissible "a newer version is available" banner above the nav.
+    // IsOpen starts false, which collapses the Auto row to zero height, so it
+    // never reserves space (and never blocks startup) unless an update is found.
+    private InfoBar BuildUpdateBar()
+    {
+        var downloadBtn = new Button { Content = "Download" };
+        downloadBtn.Click += async (_, _) =>
+        {
+            if (string.IsNullOrEmpty(_updateUrl)) return;
+            try { await Launcher.LaunchUriAsync(new Uri(_updateUrl)); } catch { }
+        };
+        _updateBar = new InfoBar
+        {
+            Severity = InfoBarSeverity.Informational,
+            IsOpen = false,
+            IsClosable = true,
+            ActionButton = downloadBtn,
+        };
+        return _updateBar;
+    }
+
+    // Best-effort, silent, off-thread GitHub release check. Never blocks startup
+    // and never surfaces a network/parse failure to the user.
+    private async void StartBackgroundUpdateCheck()
+    {
+        UpdateInfo info;
+        try { info = await Task.Run(() => DeezerCore.CheckUpdate()); }
+        catch { return; }
+        if (info.HasUpdate) ShowUpdateNotice(info);
+    }
+
+    private void ShowUpdateNotice(UpdateInfo info)
+    {
+        _updateUrl = info.Url;
+        _updateBar.Title = "OpenDeezer " + info.Latest + " available";
+        _updateBar.Message = string.IsNullOrEmpty(info.Notes)
+            ? "A newer version is available for download."
+            : (info.Notes.Length > 240 ? info.Notes[..240] + "…" : info.Notes);
+        _updateBar.IsOpen = true;
     }
 
     private NavigationViewItem NavItem(string text, Symbol sym, string tag) =>
@@ -2150,6 +2198,47 @@ public sealed partial class MainWindow : Window
         rcsec.Children.Add(ctrlLanSwitch);
         rcsec.Children.Add(ctrlTokenBox);
 
+        // Updates: on-demand GitHub release check (never downloads/installs anything).
+        var updStatus = new TextBlock { Text = "Check GitHub for a newer release.", Opacity = 0.8, TextWrapping = TextWrapping.Wrap };
+        var updBtn = new Button { Content = "Check for updates" };
+        var updDownloadBtn = new Button { Content = "Download", Visibility = Visibility.Collapsed };
+        string updCheckUrl = "";
+        updBtn.Click += async (_, _) =>
+        {
+            updBtn.IsEnabled = false;
+            updStatus.Text = "Checking…";
+            UpdateInfo info;
+            try { info = await Task.Run(() => DeezerCore.CheckUpdate()); }
+            catch { info = new UpdateInfo(); }
+            if (info.HasUpdate)
+            {
+                updStatus.Text = "v" + info.Latest + " available (you have v" + info.Current + ").";
+                updCheckUrl = info.Url;
+                updDownloadBtn.Visibility = Visibility.Visible;
+                ShowUpdateNotice(info); // also surface the dismissible banner for after the dialog closes
+            }
+            else
+            {
+                updStatus.Text = string.IsNullOrEmpty(info.Latest)
+                    ? "Could not check for updates. Try again later."
+                    : "You're up to date (v" + info.Current + ").";
+                updDownloadBtn.Visibility = Visibility.Collapsed;
+            }
+            updBtn.IsEnabled = true;
+        };
+        updDownloadBtn.Click += async (_, _) =>
+        {
+            if (string.IsNullOrEmpty(updCheckUrl)) return;
+            try { await Launcher.LaunchUriAsync(new Uri(updCheckUrl)); } catch { }
+        };
+        var updRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        updRow.Children.Add(updBtn);
+        updRow.Children.Add(updDownloadBtn);
+        var usec = new StackPanel { Spacing = 4 };
+        usec.Children.Add(new TextBlock { Text = "Updates", FontWeight = FontWeights.SemiBold });
+        usec.Children.Add(updStatus);
+        usec.Children.Add(updRow);
+
         sp.Children.Add(qsec);
         sp.Children.Add(asec);
         sp.Children.Add(gsec);
@@ -2157,6 +2246,7 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(rsec);
         sp.Children.Add(tsec);
         sp.Children.Add(rcsec);
+        sp.Children.Add(usec);
 
         var dlg = new ContentDialog
         {
@@ -2347,6 +2437,10 @@ public sealed partial class MainWindow : Window
     private readonly SolidColorBrush _accent;
     private readonly Random _rng = new();
     private DispatcherQueueTimer _timer = null!;
+
+    // Update check (see BuildUpdateBar / StartBackgroundUpdateCheck / ShowSettings).
+    private InfoBar _updateBar = null!;
+    private string _updateUrl = "";
 
     private NavigationView _nav = null!;
     private NavigationViewItem _homeItem = null!, _likedItem = null!, _flowItem = null!, _playlistsItem = null!, _chartsItem = null!,

@@ -41,6 +41,10 @@ object Engine {
         runCatching { Odmobile.setClientInfo(client, device) }
     }
 
+    // Checks GitHub for a newer release. Network-bound and best-effort — a
+    // failure (offline, rate-limited, etc.) just yields null, never a crash.
+    suspend fun checkUpdate(): UpdateInfo? = io { Json.updateInfo(runCatching { Odmobile.checkUpdate() }.getOrNull()) }
+
     // ---- browse (all network; return parsed models) ----
 
     suspend fun favorites(): List<Track> = io { Json.tracks(Odmobile.favorites()) }

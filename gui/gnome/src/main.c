@@ -55,6 +55,13 @@ extern unsigned char *DZWebRemoteQRPNG(int *outLen);
 extern char *DZControlConfigJSON(void);
 extern void  DZSetControlConfig(int enabled, char *addr, char *token);
 
+/* Update check — GitHub releases; declared explicitly (see DZSetRepeat above)
+ * so this file compiles against an older libdeezercore.h. Best-effort and
+ * never blocks: returns {"current","latest","hasUpdate","url","notes"} JSON;
+ * free the result with DZFree. Checked once per launch in the background
+ * (see check_update_async), plus on demand from Settings > Updates. */
+extern char *DZCheckUpdateJSON(void);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -245,6 +252,11 @@ typedef struct {
   GPtrArray            *home_tracks;    /* DzTrack* owned — play queue source for the top-tracks
                                          * horizontal rail (mirrored into track_store on play) */
   guint                 home_gen;       /* drops stale async cover fetches on the home rail */
+
+  /* ---- update check (GitHub releases; see check_update_async) ---- */
+  GtkWidget            *update_banner;  /* AdwBanner, top of the content pane; hidden until a
+                                         * newer release is found */
+  char                 *update_url;     /* release page opened by the banner's Download button */
 } App;
 
 static App *APP; /* single window — a global keeps GTask plumbing tidy */
@@ -307,6 +319,11 @@ static void mpris_setup(App *a);
 
 /* background window helpers */
 static void show_window(App *a);
+
+/* update check (defined just above on_settings) + URI-open helper it shares
+ * with the banner's Download button */
+static void open_uri(App *a, const char *uri);
+static void check_update_async(App *a, gboolean manual, GtkWidget *btn);
 
 /* login + embedded webview (defined in the login section) */
 static void open_login_window(App *a);
@@ -1099,6 +1116,136 @@ static AdwPreferencesGroup *build_remote_control_group(void) {
   return remote;
 }
 
+/* ---------------------------------------------------------------------------
+ * update check: GitHub releases, once per launch in the background (never
+ * blocks startup — see check_update_async called from on_activate) plus an
+ * on-demand "Check for updates" row here in Settings.
+ *
+ * AdwBanner has no built-in close button, so it stays quiet at the top of the
+ * content pane until either the user clicks Download (which dismisses it) or
+ * the app is relaunched — non-intrusive either way.
+ * ------------------------------------------------------------------------- */
+
+/* Open a URL in the user's default browser (GtkUriLauncher, GTK >= 4.10). */
+static void on_uri_launched(GObject *src, GAsyncResult *res, gpointer data) {
+  App *a = data;
+  GError *err = NULL;
+  gtk_uri_launcher_launch_finish(GTK_URI_LAUNCHER(src), res, &err);
+  if (err) {
+    toast(a, "Couldn't open the browser");
+    g_error_free(err);
+  }
+}
+static void open_uri(App *a, const char *uri) {
+  if (!uri || !*uri) return;
+  GtkUriLauncher *launcher = gtk_uri_launcher_new(uri);
+  gtk_uri_launcher_launch(launcher, GTK_WINDOW(a->win), NULL, on_uri_launched, a);
+  g_object_unref(launcher);
+}
+
+static void on_update_banner_clicked(AdwBanner *banner, gpointer data) {
+  App *a = data;
+  open_uri(a, a->update_url);
+  adw_banner_set_revealed(banner, FALSE); /* clicking Download dismisses it */
+}
+
+typedef struct {
+  gboolean   manual; /* TRUE: "Check for updates" in Settings -> always toasts */
+  GtkWidget *btn;    /* the Settings row's button; reffed so re-enabling it is
+                      * safe even if the dialog was closed meanwhile. NULL for
+                      * the silent startup check. */
+} UpdateCtx;
+static void update_ctx_free(gpointer p) {
+  UpdateCtx *x = p;
+  if (x->btn) g_object_unref(x->btn);
+  g_free(x);
+}
+static void update_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)data; (void)c;
+  char *j = DZCheckUpdateJSON();
+  char *dup = g_strdup((j && *j) ? j : "{}");
+  if (j) DZFree(j);
+  g_task_return_pointer(task, dup, g_free);
+}
+static void update_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)data;
+  UpdateCtx *x = g_task_get_task_data(G_TASK(res));
+  char *json = g_task_propagate_pointer(G_TASK(res), NULL);
+
+  gboolean has_update = FALSE;
+  char *latest = NULL, *url = NULL;
+  JsonParser *p = json_parser_new();
+  if (json && json_parser_load_from_data(p, json, -1, NULL)) {
+    JsonNode *root = json_parser_get_root(p);
+    if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+      JsonObject *o = json_node_get_object(root);
+      has_update = jbool(o, "hasUpdate");
+      latest = jstr(o, "latest");
+      url = jstr(o, "url");
+    }
+  }
+  g_object_unref(p);
+
+  /* "latest" is only populated once GitHub was reached successfully (see
+   * DZCheckUpdateJSON), so its presence — regardless of hasUpdate — is what
+   * distinguishes "checked, no update" from "the check itself failed". */
+  if (has_update && latest && *latest && url && *url) {
+    g_free(APP->update_url);
+    APP->update_url = g_strdup(url);
+    if (APP->update_banner) {
+      char *title = g_strdup_printf("OpenDeezer %s available", latest);
+      adw_banner_set_title(ADW_BANNER(APP->update_banner), title);
+      g_free(title);
+      adw_banner_set_revealed(ADW_BANNER(APP->update_banner), TRUE);
+    }
+    if (x->manual) toastf(APP, "OpenDeezer %s is available", latest);
+  } else if (x->manual) {
+    if (latest && *latest) toastf(APP, "You're up to date (%s)", latest);
+    else                   toast(APP, "Couldn't check for updates — try again later");
+  }
+  /* silent on failure/no-update for the background startup check */
+
+  if (x->btn) gtk_widget_set_sensitive(x->btn, TRUE);
+
+  g_free(latest); g_free(url);
+  g_free(json);
+}
+static void check_update_async(App *a, gboolean manual, GtkWidget *btn) {
+  (void)a;
+  UpdateCtx *x = g_new0(UpdateCtx, 1);
+  x->manual = manual;
+  x->btn = btn ? g_object_ref(btn) : NULL;
+  if (btn) gtk_widget_set_sensitive(btn, FALSE);
+  GTask *t = g_task_new(NULL, NULL, update_done, NULL);
+  g_task_set_task_data(t, x, update_ctx_free);
+  g_task_run_in_thread(t, update_worker);
+  g_object_unref(t);
+}
+
+static void on_check_update_clicked(GtkButton *btn, gpointer data) {
+  check_update_async(data, TRUE, GTK_WIDGET(btn));
+}
+
+/* Build the "Updates" group for Settings: a single on-demand check row. */
+static AdwPreferencesGroup *build_update_group(App *a) {
+  AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+  adw_preferences_group_set_title(grp, "Updates");
+
+  GtkWidget *row = adw_action_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), "Check for updates");
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(row), "Look for a newer OpenDeezer release on GitHub");
+
+  GtkWidget *btn = gtk_button_new_with_label("Check Now");
+  gtk_widget_set_valign(btn, GTK_ALIGN_CENTER);
+  gtk_widget_add_css_class(btn, "flat");
+  g_signal_connect(btn, "clicked", G_CALLBACK(on_check_update_clicked), a);
+  adw_action_row_add_suffix(ADW_ACTION_ROW(row), btn);
+  adw_action_row_set_activatable_widget(ADW_ACTION_ROW(row), btn);
+
+  adw_preferences_group_add(grp, row);
+  return grp;
+}
+
 static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   (void)action; (void)param; (void)data;
   App *a = APP;
@@ -1191,6 +1338,9 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
 
   /* ---- Remote control (control API used by the phone/MCP remotes) ---- */
   adw_preferences_page_add(page, build_remote_control_group());
+
+  /* ---- Updates (manual "Check for updates"; startup check is silent) ---- */
+  adw_preferences_page_add(page, build_update_group(a));
 
 #if ADW_CHECK_VERSION(1, 5, 0)
   AdwPreferencesDialog *dlg = ADW_PREFERENCES_DIALOG(adw_preferences_dialog_new());
@@ -4991,6 +5141,13 @@ static void on_activate(GApplication *app, gpointer data) {
   g_signal_connect(search_text, "activate", G_CALLBACK(on_search_activate), a);
   adw_header_bar_set_title_widget(ADW_HEADER_BAR(content_hb), search);
   adw_toolbar_view_add_top_bar(content_tv, content_hb);
+  /* update-available banner: hidden until check_update_async (below) finds a
+   * newer release; sits under the header, above the content stack */
+  GtkWidget *update_banner = adw_banner_new("");
+  adw_banner_set_button_label(ADW_BANNER(update_banner), "Download");
+  g_signal_connect(update_banner, "button-clicked", G_CALLBACK(on_update_banner_clicked), a);
+  a->update_banner = update_banner;
+  adw_toolbar_view_add_top_bar(content_tv, update_banner);
   /* content stack: home discovery page, track table (queue), or sectioned browse view */
   GtkWidget *stack = gtk_stack_new();
   a->content_stack = GTK_STACK(stack);
@@ -5026,6 +5183,10 @@ static void on_activate(GApplication *app, gpointer data) {
   } else {
     start_init(a, arl, FALSE); /* already persisted: just sign in (owns arl) */
   }
+
+  /* Non-intrusive update check: once per launch, in the background. Only
+   * surfaces anything (the banner above) if a newer release actually exists. */
+  check_update_async(a, FALSE, NULL);
 }
 
 /* Entry point. Exported so the unified Linux launcher (gui/linux) can dlopen

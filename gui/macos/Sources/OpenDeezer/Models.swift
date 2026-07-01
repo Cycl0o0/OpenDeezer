@@ -181,3 +181,14 @@ struct Lyrics: Codable {
 enum PlayerState: Int {
     case stopped = 0, loading, playing, paused, errored
 }
+
+// Update-check result (DZCheckUpdateJSON) — GitHub's latest OpenDeezer release
+// vs. the running version. hasUpdate is only true when latest is strictly
+// newer; a network failure comes back with hasUpdate == false.
+struct UpdateInfo: Codable {
+    let current: String
+    let latest: String
+    let hasUpdate: Bool
+    let url: String
+    let notes: String
+}

@@ -1,7 +1,10 @@
 package fr.cyclooo.opendeezer.ui.screens
 
+import android.content.Intent
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,10 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -30,6 +35,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,16 +44,20 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.engine.WebRemoteInfo
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +69,10 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
     var webRemoteEnabled by remember { mutableStateOf(Engine.webRemoteInfo()?.enabled ?: false) }
     var remoteInfo by remember { mutableStateOf<WebRemoteInfo?>(null) }
     var remoteQR by remember { mutableStateOf<ByteArray?>(null) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(webRemoteEnabled) {
         if (webRemoteEnabled) {
@@ -197,6 +211,32 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
 
             HorizontalDivider()
 
+            Text("About", style = MaterialTheme.typography.titleMedium)
+            SettingAction(
+                title = "Check for updates",
+                subtitle = if (checkingUpdate) "Checking…" else "Checks GitHub for a newer release",
+                enabled = !checkingUpdate,
+                trailing = {
+                    if (checkingUpdate) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                },
+                onClick = {
+                    checkingUpdate = true
+                    scope.launch {
+                        val info = Engine.checkUpdate()
+                        checkingUpdate = false
+                        updateResult = when {
+                            info == null -> UpdateCheckResult.Failed
+                            info.hasUpdate -> UpdateCheckResult.Available(info)
+                            else -> UpdateCheckResult.UpToDate(info.current)
+                        }
+                    }
+                },
+            )
+
+            HorizontalDivider()
+
             if (account != null) {
                 Text("Account", style = MaterialTheme.typography.titleMedium)
                 Text(account.name, style = MaterialTheme.typography.bodyLarge)
@@ -211,6 +251,76 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
                 Text("Sign out")
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    when (val result = updateResult) {
+        is UpdateCheckResult.UpToDate -> AlertDialog(
+            onDismissRequest = { updateResult = null },
+            confirmButton = { TextButton(onClick = { updateResult = null }) { Text("OK") } },
+            title = { Text("You're up to date") },
+            text = {
+                Text(
+                    if (result.current.isBlank()) "This is the latest version."
+                    else "OpenDeezer v${result.current} is the latest version.",
+                )
+            },
+        )
+
+        is UpdateCheckResult.Available -> AlertDialog(
+            onDismissRequest = { updateResult = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    updateResult = null
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.info.url))) }
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { updateResult = null }) { Text("Close") } },
+            title = { Text("OpenDeezer ${result.info.latest} available") },
+            text = {
+                Text(
+                    result.info.notes.ifBlank { "A new version is available on GitHub." },
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            },
+        )
+
+        UpdateCheckResult.Failed -> AlertDialog(
+            onDismissRequest = { updateResult = null },
+            confirmButton = { TextButton(onClick = { updateResult = null }) { Text("OK") } },
+            title = { Text("Couldn't check for updates") },
+            text = { Text("Check your connection and try again.") },
+        )
+
+        null -> {}
+    }
+}
+
+private sealed interface UpdateCheckResult {
+    data class UpToDate(val current: String) : UpdateCheckResult
+    data class Available(val info: UpdateInfo) : UpdateCheckResult
+    data object Failed : UpdateCheckResult
+}
+
+@Composable
+private fun SettingAction(
+    title: String,
+    subtitle: String,
+    enabled: Boolean = true,
+    trailing: @Composable (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            trailing()
         }
     }
 }

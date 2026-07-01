@@ -59,6 +59,9 @@ internal sealed class ConnectDevice { public string Name = "", Addr = "", Client
 // DZHomeJSON -> {"topTracks":[T],"topAlbums":[A],"playlists":[P]}
 internal sealed class HomeData { public List<Track> TopTracks = new(); public List<Playlist> Playlists = new(); }
 
+// DZCheckUpdateJSON -> {"current","latest","hasUpdate","url","notes"}.
+internal sealed class UpdateInfo { public string Current = "", Latest = "", Url = "", Notes = ""; public bool HasUpdate; }
+
 // Persisted settings. quality: 0 Normal,1 High,2 HiFi. audioDevice "" = default. crossfadeMs 0 = off.
 internal sealed class Settings
 {
@@ -358,6 +361,20 @@ internal static class Wire
                     Version = v.Str("version"),
                 });
         return outl;
+    }
+
+    public static UpdateInfo ParseUpdateInfo(string json)
+    {
+        var u = new UpdateInfo();
+        using var doc = TryParse(json);
+        if (doc == null) return u;
+        var o = doc.RootElement;
+        u.Current = o.Str("current");
+        u.Latest = o.Str("latest");
+        u.HasUpdate = o.Bool("hasUpdate");
+        u.Url = o.Str("url");
+        u.Notes = o.Str("notes");
+        return u;
     }
 
     public static HomeData ParseHome(string json)

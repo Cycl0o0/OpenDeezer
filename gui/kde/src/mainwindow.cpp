@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QColor>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -51,6 +52,7 @@
 #include <QTime>
 #include <QTimer>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QtConcurrent>
 
@@ -132,6 +134,12 @@ extern "C" char *DZHomeJSON(void);
 extern "C" void           DZWebRemoteSetEnabled(int on);    // 1=enable (start LAN server), 0=disable
 extern "C" char          *DZWebRemoteInfoJSON(void);        // {"enabled":bool,"code":"...","url":"...","port":N}
 extern "C" unsigned char *DZWebRemoteQRPNG(int *outLen);    // PNG blob encoding the URL; free with DZFreeBytes
+
+// v1.5.1 addition. Redeclared here (like the blocks above) so the GUI still
+// builds against an older generated header; identical redeclaration is
+// harmless. Checks GitHub for a newer release; never downloads/installs
+// anything. Result is a malloc'd JSON string — free with DZFree.
+extern "C" char *DZCheckUpdateJSON(void); // {"current","latest","hasUpdate","url","notes"}
 
 namespace {
 
@@ -397,6 +405,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     v->setSpacing(0);
     v->addWidget(split, 1);
     v->addWidget(buildTransport());
+    m_centralLayout = v; // update banner inserts itself at row 0, above the splitter
 
     // The whole app lives in a top-level stack so a Free account can be gated
     // behind a blocking "Premium required" page without tearing down the live
@@ -413,6 +422,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     setupMpris();   // session-bus media controls / now-playing
     setupTray();    // background playback + close-to-tray
+    checkForUpdates(); // once per launch, background, non-intrusive (no login needed)
 
     statusBar()->showMessage("Logging in…");
     // Defer to the event loop: startLogin() may exec() the modal login dialog,
@@ -636,6 +646,76 @@ void MainWindow::openPhoneRemote() {
     refreshInfo(); // initial render (seeds QR/code/URL or hides the box)
 
     dlg.exec();
+}
+
+// Once-per-launch GitHub release check. Called directly from the constructor —
+// safe because the actual work runs on a QtConcurrent worker thread, so this
+// returns immediately and never blocks startup. Never downloads or installs
+// anything. Silent on a network failure or when already up to date; only
+// surfaces a banner when a newer release actually exists. Doesn't need a
+// logged-in client.
+void MainWindow::checkForUpdates() {
+    QtConcurrent::run([this] {
+        const QByteArray j = takeJson(DZCheckUpdateJSON());
+        QMetaObject::invokeMethod(this, [this, j] {
+            const QJsonObject o = QJsonDocument::fromJson(j).object();
+            if (!o.value("hasUpdate").toBool())
+                return; // up to date, draft/prerelease, or the check failed
+            showUpdateBanner(o.value("latest").toString(),
+                            o.value("url").toString(),
+                            o.value("notes").toString());
+        });
+    });
+}
+
+// A small dismissible bar across the top of the window: "OpenDeezer <latest>
+// available" plus a Download button that opens the GitHub release page in the
+// user's browser (QDesktopServices — no in-app download/install). Inserted at
+// the top of the central layout, above the sidebar/content splitter.
+void MainWindow::showUpdateBanner(const QString &latest, const QString &url,
+                                  const QString &notes) {
+    if (m_updateBanner || !m_centralLayout)
+        return; // already showing, or the window isn't built yet
+
+    auto *bar = new QFrame;
+    bar->setStyleSheet(QString(
+        "QFrame{background:%1;} QLabel{color:white;} "
+        "QPushButton{background:white;color:%1;border-radius:3px;padding:3px 12px;} "
+        "QToolButton{color:white;border:none;font-weight:bold;padding:0 4px;}")
+        .arg(kAccent));
+    auto *h = new QHBoxLayout(bar);
+    h->setContentsMargins(14, 6, 8, 6);
+
+    auto *label = new QLabel(QStringLiteral("OpenDeezer %1 available").arg(latest));
+    h->addWidget(label);
+    h->addStretch(1);
+
+    if (!notes.isEmpty()) {
+        auto *notesBtn = new QPushButton(QStringLiteral("Release notes"));
+        connect(notesBtn, &QPushButton::clicked, this, [this, latest, notes] {
+            QMessageBox::information(this, QStringLiteral("OpenDeezer %1").arg(latest), notes);
+        });
+        h->addWidget(notesBtn);
+    }
+
+    auto *download = new QPushButton(QStringLiteral("Download"));
+    connect(download, &QPushButton::clicked, this,
+            [url] { QDesktopServices::openUrl(QUrl(url)); });
+    h->addWidget(download);
+
+    auto *dismiss = new QToolButton;
+    dismiss->setText(QString::fromUtf8("\xE2\x9C\x95")); // ✕
+    dismiss->setAutoRaise(true);
+    connect(dismiss, &QToolButton::clicked, this, [this] {
+        if (m_updateBanner) {
+            m_updateBanner->deleteLater();
+            m_updateBanner = nullptr;
+        }
+    });
+    h->addWidget(dismiss);
+
+    m_centralLayout->insertWidget(0, bar);
+    m_updateBanner = bar;
 }
 
 // Parse DZAccountJSON {name,offer,canHq,canHifi,premium,loggedIn} into the cached

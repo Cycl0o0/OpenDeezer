@@ -127,6 +127,15 @@ data class WebRemoteInfo(
     val port: Int,
 )
 
+// Mirrors the engine's update.Info JSON: {current, latest, hasUpdate, url, notes}.
+data class UpdateInfo(
+    val current: String,
+    val latest: String,
+    val hasUpdate: Boolean,
+    val url: String,
+    val notes: String,
+)
+
 data class HomeData(
     val topTracks: List<Track>,
     val topAlbums: List<Album>,
@@ -332,6 +341,18 @@ object Json {
             topTracks = tracksOf(o.optJSONArray("topTracks")),
             topAlbums = albumsOf(o.optJSONArray("topAlbums")),
             playlists = playlistsOf(o.optJSONArray("playlists")),
+        )
+    }
+
+    fun updateInfo(s: String?): UpdateInfo? {
+        val o = obj(s) ?: return null
+        if (o.has("error")) return null
+        return UpdateInfo(
+            current = o.optString("current"),
+            latest = o.optString("latest"),
+            hasUpdate = o.optBoolean("hasUpdate"),
+            url = o.optString("url"),
+            notes = o.optString("notes"),
         )
     }
 }

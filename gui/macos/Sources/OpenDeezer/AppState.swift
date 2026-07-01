@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 // Section is the sidebar selection.
 enum Section: Hashable {
@@ -22,6 +23,15 @@ final class AppState: ObservableObject {
     @Published var replayGain = false           // loudness normalization (engine-owned)
     @Published var showCredits = false
     @Published var showSettings = false
+
+    // Update check (GitHub releases) — silent + non-intrusive: checked once in
+    // the background on launch (see start()); a small dismissible banner
+    // appears only when a newer version exists. `updateCheckStatus` +
+    // `checkingUpdate` back the manual "Check for Updates" button in About.
+    @Published var updateInfo: UpdateInfo?
+    @Published var showUpdateBanner = false
+    @Published var updateCheckStatus: String?
+    @Published var checkingUpdate = false
 
     // Embedded Deezer login webview + manual-ARL fallback (LoginGate).
     @Published var showLoginWeb = false
@@ -126,6 +136,7 @@ final class AppState: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+        checkForUpdates() // silent, backgrounded — never blocks startup
         guard let arl = Self.loadARL(), !arl.isEmpty else {
             return // no saved ARL — LoginGate offers the login options
         }
@@ -239,6 +250,42 @@ final class AppState: ObservableObject {
         let url = dir.appendingPathComponent("arl.txt")
         try? arl.write(to: url, atomically: true, encoding: .utf8)
     }
+
+    // MARK: update check
+
+    // Checks GitHub for a newer OpenDeezer release off the main thread. Called
+    // once, silently, on launch (start()) — a dismissible banner then appears
+    // only when a newer version exists. `manual` additionally drives the
+    // About "Check for Updates" button, which reports "You're up to date."
+    // when there's nothing new. Never downloads or installs anything itself.
+    func checkForUpdates(manual: Bool = false) {
+        if manual {
+            checkingUpdate = true
+            updateCheckStatus = nil
+        }
+        Task.detached {
+            let info = Core.checkUpdate()
+            await MainActor.run {
+                self.checkingUpdate = false
+                if let info, info.hasUpdate {
+                    self.updateInfo = info
+                    self.showUpdateBanner = true
+                    if manual { self.updateCheckStatus = "OpenDeezer \(info.latest) is available." }
+                } else if manual {
+                    self.updateCheckStatus = "You're up to date."
+                }
+            }
+        }
+    }
+
+    // Opens the release page in the user's default browser. Download/install
+    // is intentionally out of scope — this just points the user at GitHub.
+    func openUpdateURL() {
+        guard let info = updateInfo, let url = URL(string: info.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func dismissUpdateBanner() { showUpdateBanner = false }
 
     // Sidebar/about label for the signed-in account, e.g. "Jane · Premium".
     var accountLabel: String {

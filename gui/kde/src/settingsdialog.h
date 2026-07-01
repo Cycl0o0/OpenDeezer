@@ -20,6 +20,8 @@ QT_BEGIN_NAMESPACE
 class QComboBox;
 class QCheckBox;
 class QLineEdit;
+class QLabel;
+class QPushButton;
 QT_END_NAMESPACE
 
 // One output device row, parsed from DZAudioDevicesJSON by MainWindow and passed
@@ -60,6 +62,7 @@ signals:
 private:
     void save();
     void applyControlConfig(); // pushes enable/LAN/token to the engine live
+    void checkForUpdates();    // on-demand DZCheckUpdateJSON; shows the result inline
 
     QString    m_iniPath;
     QString    m_initialDevice;            // to avoid re-applying an unchanged device
@@ -69,6 +72,12 @@ private:
     QComboBox *m_device      = nullptr;
     QCheckBox *m_gapless     = nullptr;
     QComboBox *m_crossfade   = nullptr;
+
+    // ---- About / manual update check (v1.5.1) ----
+    QPushButton *m_checkUpdatesBtn   = nullptr;
+    QLabel      *m_updateResult      = nullptr;
+    QPushButton *m_updateDownloadBtn = nullptr;
+    QString      m_updateUrl;                 // release page from the last successful check
 
     // Remote control (control API + phone remote) — read from / applied to the
     // engine directly, not persisted through m_iniPath.

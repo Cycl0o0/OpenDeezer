@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.player.PlayerController
 import kotlinx.coroutines.launch
 
@@ -27,6 +28,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var busy by mutableStateOf(false)
         private set
+    var updateInfo by mutableStateOf<UpdateInfo?>(null)
+        private set
 
     init {
         // Advertise this client to OpenDeezer Connect peers.
@@ -37,6 +40,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             login(saved, persist = false)
         }
+        // Non-intrusive: one background check per launch, never blocks startup.
+        checkForUpdate()
+    }
+
+    /** Silently checks GitHub for a newer release; surfaces it via [updateInfo] if found. */
+    fun checkForUpdate() {
+        viewModelScope.launch {
+            val info = Engine.checkUpdate()
+            if (info?.hasUpdate == true) updateInfo = info
+        }
+    }
+
+    fun dismissUpdate() {
+        updateInfo = null
     }
 
     fun login(arl: String, persist: Boolean = true) {

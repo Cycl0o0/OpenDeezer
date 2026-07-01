@@ -243,6 +243,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "Error: " + msg.err.Error()
 		return m, nil
 
+	case updateCheckMsg:
+		m.updateChecking = false
+		m.updateChecked = true
+		if msg.err == nil {
+			m.updateInfo = msg.info
+		}
+		// The silent startup check never touches m.status — the footer
+		// notice (see footer()) is enough when an update exists. Only a
+		// manual re-check (About screen) sets "Checking…" first, so only
+		// that path gets a status reply here.
+		if m.status == "Checking for updates…" {
+			switch {
+			case msg.err != nil:
+				m.status = "Update check failed (network?)"
+			case msg.info.HasUpdate:
+				m.status = ""
+			default:
+				m.status = "You're on the latest version."
+			}
+		}
+		return m, nil
+
 	case tickMsg:
 		m.publishMedia()
 		m.publishControl()
@@ -566,6 +588,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "u":
+		// On the About screen, "u" is a manual "check for updates" instead
+		// of the usual queue shortcut (pointless there anyway).
+		if m.screen == screenCredits {
+			if m.updateChecking {
+				return m, nil
+			}
+			m.updateChecking = true
+			m.status = "Checking for updates…"
+			return m, m.updateCheckCmd()
+		}
 		m.toggleScreen(screenQueue)
 		return m, nil
 	case "t":
@@ -668,6 +700,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "i":
 		m.toggleScreen(screenCredits)
+		return m, nil
+	case "U":
+		// Open the available update's release page. Never downloads or
+		// installs anything itself.
+		if m.updateInfo.HasUpdate && m.updateInfo.URL != "" {
+			openInBrowser(m.updateInfo.URL)
+			m.updateDismissed = true
+		}
+		return m, nil
+	case "X":
+		// Dismiss the footer's "update available" notice for this session.
+		m.updateDismissed = true
 		return m, nil
 	case "esc", "backspace":
 		switch m.screen {

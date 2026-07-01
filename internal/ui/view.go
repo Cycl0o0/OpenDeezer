@@ -110,8 +110,19 @@ func (m *Model) creditsView() string {
 		dim.Render("Audio decrypted + decoded locally. Your ARL never leaves your machine."),
 		dim.Render("AGPL-3.0. Not affiliated with Deezer."),
 		"",
-		dim.Render("? or esc to go back"),
 	}
+	switch {
+	case m.updateChecking:
+		lines = append(lines, statusSty.Render("Checking for updates…"))
+	case m.updateInfo.HasUpdate:
+		lines = append(lines, statusSty.Render(fmt.Sprintf(
+			"⬆ v%s available — U to open · u to re-check", m.updateInfo.Latest)))
+	case m.updateChecked:
+		lines = append(lines, dim.Render("You're on the latest version. (u to check again)"))
+	default:
+		lines = append(lines, dim.Render("u to check for updates"))
+	}
+	lines = append(lines, "", dim.Render("? or esc to go back"))
 	return padTo(lines, max(1, m.height-footerHeight))
 }
 
@@ -206,6 +217,11 @@ func (m *Model) footer() string {
 	content := now + "\n" + bar + "\n" + help
 	if status != "" {
 		content = status + "\n" + content
+	}
+	if m.updateInfo.HasUpdate && !m.updateDismissed {
+		notice := statusSty.Render(fmt.Sprintf(
+			"⬆ v%s available — U to open · X to dismiss", m.updateInfo.Latest))
+		content = notice + "\n" + content
 	}
 	return footerBox.Width(max(10, m.width)).Render(content)
 }
@@ -331,7 +347,8 @@ func (m *Model) helpView() string {
 		{"c", "now playing / cover"},
 		{"t", "cycle theme"},
 		{"s", "stop"},
-		{"i", "about / credits"},
+		{"i", "about / credits (u there: check for updates)"},
+		{"U", "open available update in browser · X dismiss notice"},
 		{"? ", "this help"},
 		{"esc", "back"},
 		{"q", "quit"},

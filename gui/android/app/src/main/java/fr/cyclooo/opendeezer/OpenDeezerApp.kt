@@ -1,8 +1,10 @@
 package fr.cyclooo.opendeezer
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
@@ -20,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.ui.components.PlayerBar
+import fr.cyclooo.opendeezer.ui.components.UpdateBanner
 import fr.cyclooo.opendeezer.ui.screens.ChartsScreen
 import fr.cyclooo.opendeezer.ui.screens.ConnectDialog
 import fr.cyclooo.opendeezer.ui.screens.EpisodesScreen
@@ -37,24 +40,32 @@ import fr.cyclooo.opendeezer.ui.screens.TrackListScreen
 
 @Composable
 fun OpenDeezerApp(vm: AppViewModel) {
-    when (vm.stage) {
-        AuthStage.LOADING -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+    Column(Modifier.fillMaxSize()) {
+        // Pinned above whatever screen is active; never blocks or gates startup.
+        vm.updateInfo?.let { info ->
+            UpdateBanner(info = info, onDismiss = vm::dismissUpdate, modifier = Modifier.fillMaxWidth())
         }
+        Box(Modifier.weight(1f)) {
+            when (vm.stage) {
+                AuthStage.LOADING -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
 
-        AuthStage.NEEDS_LOGIN -> LoginScreen(
-            busy = vm.busy,
-            error = vm.loginError,
-            onArl = { vm.login(it) },
-        )
+                AuthStage.NEEDS_LOGIN -> LoginScreen(
+                    busy = vm.busy,
+                    error = vm.loginError,
+                    onArl = { vm.login(it) },
+                )
 
-        AuthStage.NEEDS_PREMIUM -> PremiumGateScreen(
-            accountName = vm.account?.name.orEmpty(),
-            offer = vm.account?.offer.orEmpty(),
-            onLogout = vm::logout,
-        )
+                AuthStage.NEEDS_PREMIUM -> PremiumGateScreen(
+                    accountName = vm.account?.name.orEmpty(),
+                    offer = vm.account?.offer.orEmpty(),
+                    onLogout = vm::logout,
+                )
 
-        AuthStage.READY -> MainScaffold(vm)
+                AuthStage.READY -> MainScaffold(vm)
+            }
+        }
     }
 }
 

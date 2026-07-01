@@ -107,6 +107,9 @@ internal static class DeezerCore
     // ---- Home aggregator -------------------------------------------------------
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZHomeJSON();
 
+    // ---- update check (GitHub releases; never downloads/installs anything) ---
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZCheckUpdateJSON();
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -159,4 +162,7 @@ internal static class DeezerCore
     }
     internal static HomeData Home() => Wire.ParseHome(TakeJson(DZHomeJSON()));
     internal static string ControlConfig() => TakeJson(DZControlConfigJSON());
+
+    // {current,latest,hasUpdate,url,notes}; network failure -> HasUpdate=false.
+    internal static UpdateInfo CheckUpdate() => Wire.ParseUpdateInfo(TakeJson(DZCheckUpdateJSON()));
 }

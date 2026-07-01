@@ -312,4 +312,13 @@ enum Core {
     static func setControlConfig(enabled: Bool, addr: String, token: String) {
         withC2(addr, token) { a, t in DZSetControlConfig(enabled ? 1 : 0, a, t) }
     }
+
+    // MARK: update check
+
+    /// Checks GitHub for a newer OpenDeezer release. Never downloads or installs
+    /// anything — just reports whether one exists so the caller can point the
+    /// user at the release page. Network failure -> hasUpdate == false.
+    static func checkUpdate() -> UpdateInfo? {
+        decode(UpdateInfo.self, takeJSON(DZCheckUpdateJSON()))
+    }
 }

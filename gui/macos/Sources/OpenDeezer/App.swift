@@ -56,6 +56,15 @@ struct RootView: View {
             }
         }
         .background(DZ.windowBG)
+        // Update-available notice: small, dismissible, never blocks the UI
+        // underneath it. Shown only when checkForUpdates() found a newer release.
+        .overlay(alignment: .top) {
+            if app.showUpdateBanner, let info = app.updateInfo {
+                UpdateBanner(info: info)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: app.showUpdateBanner)
         .sheet(isPresented: $app.showLoginWeb) { DeezerLoginSheet() }
         .sheet(isPresented: $app.showCredits) { CreditsView() }
         .sheet(isPresented: $app.showSettings) { SettingsView() }
@@ -63,6 +72,49 @@ struct RootView: View {
         .sheet(isPresented: $app.showArtist) { ArtistView() }
         .sheet(isPresented: $app.showAddToPlaylist) { AddToPlaylistSheet() }
         .sheet(isPresented: $app.showDevicePicker) { DevicePickerView() }
+    }
+}
+
+// UpdateBanner — the non-intrusive "new version available" notice surfaced by
+// AppState.checkForUpdates() on launch. "Later" just dismisses it for this
+// session; "Download" opens the GitHub release page (no auto-download/install).
+struct UpdateBanner: View {
+    @EnvironmentObject var app: AppState
+    let info: UpdateInfo
+    @State private var showNotes = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 15)).foregroundStyle(DZ.accent)
+                Text("OpenDeezer \(info.latest) is available")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                Spacer()
+                if !info.notes.isEmpty {
+                    Button(showNotes ? "Hide notes" : "Release notes") {
+                        withAnimation { showNotes.toggle() }
+                    }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(DZ.textSec)
+                }
+                Button("Download") { app.openUpdateURL() }
+                    .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.small)
+                Button("Later") { app.dismissUpdateBanner() }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(DZ.textSec)
+            }
+            if showNotes {
+                ScrollView {
+                    Text(info.notes).font(.caption).foregroundStyle(DZ.textSec)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 120)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: 520)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(radius: 12, y: 4)
+        .padding(.top, 8)
     }
 }
 
@@ -315,6 +367,28 @@ struct CreditsView: View {
                 Text("AGPL-3.0 · Not affiliated with Deezer.").foregroundStyle(DZ.textSec)
             }
             .font(.caption).frame(maxWidth: 320)
+
+            // Manual update check — same engine call as the silent launch check,
+            // but always reports a result here (including "up to date").
+            VStack(spacing: 6) {
+                Button {
+                    app.checkForUpdates(manual: true)
+                } label: {
+                    Label(app.checkingUpdate ? "Checking…" : "Check for Updates",
+                          systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.glass).tint(DZ.accent)
+                .disabled(app.checkingUpdate)
+
+                if let status = app.updateCheckStatus {
+                    Text(status).font(.caption).foregroundStyle(DZ.textSec)
+                }
+                if let info = app.updateInfo, info.hasUpdate {
+                    Button("Download v\(info.latest)") { app.openUpdateURL() }
+                        .buttonStyle(.plain).font(.caption).foregroundStyle(DZ.accent)
+                }
+            }
+            .padding(.top, 2)
 
             Button("Done") { app.showCredits = false }
                 .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
