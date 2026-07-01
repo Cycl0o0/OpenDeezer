@@ -265,9 +265,52 @@ jobs:
         with:
           files: OpenDeezer-android.apk
 
+  # ---- iOS app (SwiftUI via gomobile xcframework) — unsigned .ipa for sideloading ----
+  # No Apple Developer account, so we ship an UNSIGNED device build: sideload with
+  # AltStore / Sideloadly (they re-sign with your own Apple ID), or open the Xcode
+  # project, set a Team, and run. Non-blocking: hosted-runner iOS toolchains vary.
+  ios:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Build Odmobile.xcframework (gomobile bind ios)
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go get golang.org/x/mobile/bind@latest
+          gomobile init
+          gomobile bind -target=ios -o gui/ios/Odmobile.xcframework ./mobile
+      - name: Generate Xcode project (xcodegen)
+        run: |
+          brew install xcodegen
+          cd gui/ios && xcodegen generate
+      - name: Build unsigned device app
+        run: |
+          cd gui/ios
+          xcodebuild -project OpenDeezer.xcodeproj -scheme OpenDeezer \
+            -sdk iphoneos -configuration Release -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package unsigned .ipa
+        run: |
+          cd gui/ios
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/OpenDeezer.app Payload/
+          zip -qry ../../OpenDeezer-ios-unsigned.ipa Payload
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OpenDeezer-ios-unsigned.ipa
+
   # ---- Checksums: gather every released asset and publish SHA256SUMS.txt ----
   checksums:
-    needs: [tui, macos-app, gnome, kde, linux-unified, windows-gui, android]
+    needs: [tui, macos-app, gnome, kde, linux-unified, windows-gui, android, ios]
     if: startsWith(github.ref, 'refs/tags/') && always()
     runs-on: ubuntu-latest
     permissions:
