@@ -1,5 +1,6 @@
 package fr.cyclooo.opendeezer.tv
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,16 +11,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,7 +32,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,7 +54,7 @@ import kotlinx.coroutines.launch
 private sealed interface TvScreen {
     data object Browse : TvScreen
     data object Search : TvScreen
-    data class Detail(val title: String, val tracks: List<Track>) : TvScreen
+    data class Detail(val title: String, val subtitle: String, val artworkUrl: String, val tracks: List<Track>) : TvScreen
 }
 
 @Composable
@@ -60,15 +66,15 @@ fun TvRootScreen(vm: AppViewModel) {
 
     fun openAlbum(a: Album) = scope.launch {
         val tracks = Engine.albumTracks(a.id)
-        if (tracks.isNotEmpty()) screen = TvScreen.Detail(a.name, tracks)
+        if (tracks.isNotEmpty()) screen = TvScreen.Detail(a.name, a.artistLine, a.artworkUrl, tracks)
     }
     fun openPlaylist(p: Playlist) = scope.launch {
         val tracks = Engine.playlistTracks(p.id)
-        if (tracks.isNotEmpty()) screen = TvScreen.Detail(p.name, tracks)
+        if (tracks.isNotEmpty()) screen = TvScreen.Detail(p.name, p.owner, p.artworkUrl, tracks)
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(bottom = if (playerState.current != null) 96.dp else 0.dp)) {
+    Box(Modifier.fillMaxSize().background(TvPalette.screen)) {
+        Column(Modifier.fillMaxSize().padding(bottom = if (playerState.current != null) 104.dp else 0.dp)) {
             when (val s = screen) {
                 TvScreen.Browse -> TvBrowse(
                     onOpenSearch = { screen = TvScreen.Search },
@@ -84,8 +90,11 @@ fun TvRootScreen(vm: AppViewModel) {
                 )
                 is TvScreen.Detail -> TvDetail(
                     title = s.title,
+                    subtitle = s.subtitle,
+                    artworkUrl = s.artworkUrl,
                     tracks = s.tracks,
                     onBack = { screen = TvScreen.Browse },
+                    onPlayAll = { player.playQueue(s.tracks, 0) },
                     onPlay = { i -> player.playQueue(s.tracks, i) },
                 )
             }
@@ -114,6 +123,7 @@ private fun TvBrowse(
     var home by remember { mutableStateOf<HomeData?>(null) }
     var charts by remember { mutableStateOf<SearchResults?>(null) }
     var flow by remember { mutableStateOf<List<Track>>(emptyList()) }
+    val playFocus = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         home = Engine.home()
@@ -121,33 +131,51 @@ private fun TvBrowse(
         flow = Engine.flow()
     }
 
-    if (home == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    val h = home
+    if (h == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = TvPalette.Purple)
+        }
         return
     }
-    val h = home!!
+
+    // Give the hero its Play button initial focus once content is in.
+    LaunchedEffect(h.topTracks.isNotEmpty()) {
+        if (h.topTracks.isNotEmpty()) runCatching { playFocus.requestFocus() }
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 40.dp, vertical = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(28.dp),
+        contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 36.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(34.dp),
     ) {
         item {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("OpenDeezer", style = MaterialTheme.typography.headlineMedium)
-                TvActionTile(label = "Search", onClick = onOpenSearch, modifier = Modifier.width(160.dp).height(64.dp))
+            Text(
+                "OpenDeezer",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Black,
+                color = TvPalette.Purple,
+            )
+        }
+        h.topTracks.firstOrNull()?.let { feat ->
+            item {
+                TvHero(
+                    title = feat.name,
+                    subtitle = feat.artistLine,
+                    artworkUrl = feat.artworkUrl,
+                    onPlay = { onPlayTracks(h.topTracks, 0) },
+                    onSearch = onOpenSearch,
+                    playFocus = playFocus,
+                )
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TvActionTile(
-                    label = "▶  Flow\nYour personal mix",
-                    onClick = { if (flow.isNotEmpty()) onPlayTracks(flow, 0) },
-                )
+        if (flow.isNotEmpty()) {
+            item {
+                TvRow("Flow · your mix", flow.take(20)) { t ->
+                    TvCard(t.name, t.artistLine, t.artworkUrl, onClick = {
+                        onPlayTracks(flow, flow.indexOf(t))
+                    })
+                }
             }
         }
         item {
@@ -192,8 +220,8 @@ private fun TvSearch(
     val scope = rememberCoroutineScope()
 
     Column(
-        Modifier.fillMaxSize().padding(40.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        Modifier.fillMaxSize().padding(48.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             androidx.compose.material3.OutlinedTextField(
@@ -201,11 +229,11 @@ private fun TvSearch(
                 onValueChange = { query = it },
                 singleLine = true,
                 label = { Text("Search tracks, albums, playlists") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                modifier = Modifier.width(560.dp),
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TvPalette.Purple) },
+                modifier = Modifier.width(600.dp),
             )
-            TvActionTile(
-                label = "Go",
+            TvPill(
+                "Go",
                 onClick = {
                     val q = query.trim()
                     if (q.isNotEmpty()) {
@@ -216,16 +244,17 @@ private fun TvSearch(
                         }
                     }
                 },
-                modifier = Modifier.width(120.dp).height(64.dp),
             )
-            TvActionTile(label = "Back", onClick = onBack, modifier = Modifier.width(120.dp).height(64.dp))
+            TvPill("Back", onClick = onBack)
         }
 
         if (searching) {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = TvPalette.Purple)
+            }
         }
         results?.let { r ->
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(30.dp)) {
                 item {
                     TvRow("Tracks", r.tracks) { t ->
                         TvCard(t.name, t.artistLine, t.artworkUrl, onClick = {
@@ -251,16 +280,41 @@ private fun TvSearch(
 @Composable
 private fun TvDetail(
     title: String,
+    subtitle: String,
+    artworkUrl: String,
     tracks: List<Track>,
     onBack: () -> Unit,
+    onPlayAll: () -> Unit,
     onPlay: (Int) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(40.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            TvActionTile(label = "Back", onClick = onBack, modifier = Modifier.width(120.dp).height(56.dp))
-            Text(title, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val playFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { playFocus.requestFocus() } }
+
+    Column(Modifier.fillMaxSize().padding(48.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(180.dp).clip(RoundedCornerShape(16.dp))) {
+                Artwork(artworkUrl, Modifier.fillMaxSize(), corner = 16)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, style = MaterialTheme.typography.titleMedium, color = TvPalette.TextDim)
+                }
+                Text("${tracks.size} tracks", style = MaterialTheme.typography.bodyMedium, color = TvPalette.TextDim)
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    TvPill("▶  Play all", onClick = onPlayAll, focusRequester = playFocus)
+                    TvPill("Back", onClick = onBack)
+                }
+            }
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(tracks) { t ->
                 TvTrackRow(t, onClick = { onPlay(tracks.indexOf(t)) })
             }
@@ -271,30 +325,39 @@ private fun TvDetail(
 @Composable
 private fun TvTrackRow(track: Track, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val bg = if (focused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-    Surface(color = bg, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .onFocusChanged { focused = it.isFocused }
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Artwork(track.artworkUrl, Modifier.width(48.dp).height(48.dp), corner = 6)
-            Column(Modifier.weight(1f)) {
-                Text(track.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    track.artistLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (focused) Icon(Icons.Filled.PlayArrow, contentDescription = "Play")
+    val bg = if (focused) TvPalette.Purple.copy(alpha = 0.18f) else Color.Transparent
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))) {
+            Artwork(track.artworkUrl, Modifier.fillMaxSize(), corner = 8)
         }
+        Column(Modifier.weight(1f)) {
+            Text(
+                track.name,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (focused) Color.White else TvPalette.TextDim,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                track.artistLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = TvPalette.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (focused) Icon(Icons.Filled.PlayArrow, contentDescription = "Play", tint = TvPalette.Purple)
     }
 }
 
@@ -307,29 +370,38 @@ private fun TvNowPlayingBar(
     onPrev: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = modifier.fillMaxWidth().height(88.dp),
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(96.dp)
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(TvPalette.CardIdle)
+            .padding(horizontal = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 40.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Artwork(track.artworkUrl, Modifier.width(56.dp).height(56.dp), corner = 6)
-            Column(Modifier.weight(1f)) {
-                Text(track.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    track.artistLine,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            TvActionTile(label = "◀◀", onClick = onPrev, modifier = Modifier.width(84.dp).height(56.dp))
-            TvActionTile(label = if (isPlaying) "❚❚" else "▶", onClick = onPlayPause, modifier = Modifier.width(84.dp).height(56.dp))
-            TvActionTile(label = "▶▶", onClick = onNext, modifier = Modifier.width(84.dp).height(56.dp))
+        Box(Modifier.size(60.dp).clip(RoundedCornerShape(10.dp))) {
+            Artwork(track.artworkUrl, Modifier.fillMaxSize(), corner = 10)
         }
+        Column(Modifier.weight(1f)) {
+            Text(
+                track.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                track.artistLine,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TvPalette.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TvPill("◀◀", onClick = onPrev)
+        TvPill(if (isPlaying) "❚❚" else "▶", onClick = onPlayPause)
+        TvPill("▶▶", onClick = onNext)
     }
 }

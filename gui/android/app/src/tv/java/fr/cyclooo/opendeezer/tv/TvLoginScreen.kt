@@ -99,10 +99,9 @@ fun TvLoginScreen(busy: Boolean, error: String?, onArl: (String) -> Unit) {
                     },
                 )
             }
-            TvActionTile(
+            TvPill(
                 label = "Paste ARL instead",
                 onClick = { manual = true },
-                modifier = Modifier.width(240.dp).height(56.dp),
             )
         }
     }
@@ -125,15 +124,13 @@ private fun TvManualArl(busy: Boolean, onArl: (String) -> Unit, onBack: () -> Un
             modifier = Modifier.width(720.dp),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            TvActionTile(
+            TvPill(
                 label = if (busy) "Signing in…" else "Log in",
                 onClick = { if (arl.isNotBlank()) onArl(arl.trim()) },
-                modifier = Modifier.width(200.dp).height(64.dp),
             )
-            TvActionTile(
+            TvPill(
                 label = "Use web sign-in",
                 onClick = onBack,
-                modifier = Modifier.width(220.dp).height(64.dp),
             )
         }
         Text(
