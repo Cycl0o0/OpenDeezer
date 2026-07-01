@@ -2248,11 +2248,20 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(rcsec);
         sp.Children.Add(usec);
 
+        // Wrap in a scroll viewer — the settings list (audio + remote control +
+        // updates) is taller than the dialog, so it must scroll.
+        var settingsScroll = new ScrollViewer
+        {
+            Content = sp,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            MaxHeight = 520,
+        };
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
             Title = "Settings",
-            Content = sp,
+            Content = settingsScroll,
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
