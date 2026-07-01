@@ -23,11 +23,14 @@ struct LyricsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                background
-                content
-            }
-            .navigationTitle(track.name)
+            // background as a .background (not a ZStack sibling) so the blurred,
+            // scaledToFill artwork can't inflate the content's width past the
+            // screen — that oversize was making the lyric GeometryReader wrap at
+            // a too-wide size, clipping lines off the left in portrait.
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background { background }
+                .navigationTitle(track.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
