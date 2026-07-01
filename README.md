@@ -20,7 +20,7 @@ playback). Eight native front-ends sit on top of it. By **Cycl0o0**.
 | **GNOME** | GTK4 · libadwaita | x86_64 · aarch64 `gui/gnome` |
 | **KDE** | Qt6 Widgets · Breeze | x86_64 · aarch64 `gui/kde` |
 | **Windows** | WinUI 3 · C# / .NET 8 · Fluent | x64 `gui/windows` |
-| **Android** | Kotlin · Jetpack Compose | arm64/arm/x86_64 (gomobile AAR) `gui/android` |
+| **Android** | Kotlin · Jetpack Compose (phone + **Android TV** D-pad flavor) | arm64/arm/x86_64 (gomobile AAR) `gui/android` |
 | **iOS** | SwiftUI · Liquid Glass (iOS 26) | iPhone (gomobile xcframework) `gui/ios` |
 
 The **unified Linux** client is a single `opendeezer` command that picks the
@@ -106,7 +106,9 @@ access to your account.
   workload, MinGW-w64 (Go cgo builds the engine DLL), and the Edge **WebView2**
   runtime (preinstalled on Windows 11) for the login web view.
 - **Android**: Android 7.0+ (API 24). Building needs JDK 17, the Android SDK +
-  NDK, and gomobile.
+  NDK, and gomobile. Two flavors ship from one codebase — `assembleMobileDebug`
+  for phones/tablets and `assembleTvDebug` for **Android TV** (a D-pad-driven,
+  10-foot UI on the leanback launcher).
 - **iOS**: iPhone on iOS 17+ (Liquid Glass on iOS 26). Building needs Xcode,
   gomobile and xcodegen (`gui/ios/build.sh`); Liquid Glass falls back to a
   material on iOS < 26. Releases ship an **unsigned** `.ipa` — sideload with

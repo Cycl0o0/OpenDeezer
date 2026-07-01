@@ -22,11 +22,30 @@ class Prefs(context: Context) {
             }.apply()
         }
 
+    /**
+     * Whether this device advertises itself as an OpenDeezer Connect host, so
+     * other same-account apps can discover and control it. Re-applied on launch.
+     */
+    var connectHostEnabled: Boolean
+        get() = sp.getBoolean(KEY_CONNECT_HOST, false)
+        set(value) {
+            sp.edit().putBoolean(KEY_CONNECT_HOST, value).apply()
+        }
+
+    /** Whether the browser-based phone remote is served. Re-applied on launch. */
+    var phoneRemoteEnabled: Boolean
+        get() = sp.getBoolean(KEY_PHONE_REMOTE, false)
+        set(value) {
+            sp.edit().putBoolean(KEY_PHONE_REMOTE, value).apply()
+        }
+
     fun clear() {
         sp.edit().remove(KEY_ARL).apply()
     }
 
     companion object {
         private const val KEY_ARL = "arl"
+        private const val KEY_CONNECT_HOST = "connect_host_enabled"
+        private const val KEY_PHONE_REMOTE = "phone_remote_enabled"
     }
 }

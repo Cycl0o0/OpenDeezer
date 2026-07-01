@@ -49,15 +49,15 @@ jobs:
           gomobile bind -target=android -androidapi 24 \
             -o gui/android/app/libs/odmobile.aar ./mobile
 
-      - name: Assemble debug APK
+      - name: Assemble debug APKs (phone + TV flavors)
         working-directory: gui/android
         run: |
           chmod +x ./gradlew || true
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleMobileDebug assembleTvDebug
 
-      - name: Upload APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: opendeezer-android-debug
-          path: gui/android/app/build/outputs/apk/debug/*.apk
+          path: gui/android/app/build/outputs/apk/**/debug/*.apk
           if-no-files-found: warn

@@ -53,7 +53,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
+import fr.cyclooo.opendeezer.engine.ConnectHostInfo
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.engine.WebRemoteInfo
@@ -69,10 +71,17 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
     var webRemoteEnabled by remember { mutableStateOf(Engine.webRemoteInfo()?.enabled ?: false) }
     var remoteInfo by remember { mutableStateOf<WebRemoteInfo?>(null) }
     var remoteQR by remember { mutableStateOf<ByteArray?>(null) }
+    var connectHostEnabled by remember { mutableStateOf(Engine.connectHostInfo()?.enabled ?: false) }
+    var connectHostInfo by remember { mutableStateOf<ConnectHostInfo?>(null) }
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val prefs = remember(context) { Prefs(context) }
+
+    LaunchedEffect(connectHostEnabled) {
+        connectHostInfo = if (connectHostEnabled) Engine.connectHostInfo() else null
+    }
 
     LaunchedEffect(webRemoteEnabled) {
         if (webRemoteEnabled) {
@@ -153,6 +162,26 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
 
             HorizontalDivider()
 
+            Text("OpenDeezer Connect", style = MaterialTheme.typography.titleMedium)
+            SettingSwitch(
+                "Make this device reachable",
+                "Let your other OpenDeezer apps find and control this device",
+                connectHostEnabled,
+            ) {
+                connectHostEnabled = it
+                prefs.connectHostEnabled = it
+                Engine.setConnectHostEnabled(it)
+            }
+            connectHostInfo?.takeIf { it.enabled && it.addr.isNotBlank() }?.let { info ->
+                Text(
+                    "Reachable at ${info.addr}" + (info.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            HorizontalDivider()
+
             Text("Phone Remote", style = MaterialTheme.typography.titleMedium)
             SettingSwitch(
                 "Enable",
@@ -160,6 +189,7 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
                 webRemoteEnabled,
             ) {
                 webRemoteEnabled = it
+                prefs.phoneRemoteEnabled = it
                 Engine.setWebRemoteEnabled(it)
             }
             if (webRemoteEnabled) {

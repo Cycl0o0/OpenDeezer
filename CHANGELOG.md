@@ -4,6 +4,19 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Android TV**: a second Gradle flavor (`tv`, app id `fr.cyclooo.opendeezer.tv`)
+  ships a D-pad-driven, 10-foot Compose UI on the leanback launcher — focusable
+  Flow / Made-for-you / Charts / Albums / Playlists shelves, search, album/playlist
+  detail lists and a now-playing bar. Reuses the same engine, `AppViewModel` and
+  `PlayerController` as the phone app; no `androidx.tv` dependency. Built with
+  `assembleTvDebug` (phone app is `assembleMobileDebug`).
+- **Android remote settings**: Settings now has an *OpenDeezer Connect — make this
+  device reachable* toggle (advertise as a Connect host) alongside the existing
+  phone remote. Both toggles persist and are re-applied after login.
+
 ## [1.5.1]
 
 ### Added

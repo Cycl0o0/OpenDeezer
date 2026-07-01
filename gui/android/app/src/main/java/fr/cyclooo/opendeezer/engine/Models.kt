@@ -127,6 +127,14 @@ data class WebRemoteInfo(
     val port: Int,
 )
 
+// Mirrors the engine's ConnectHostInfo JSON: {enabled, addr, port, name}.
+data class ConnectHostInfo(
+    val enabled: Boolean,
+    val addr: String,
+    val port: Int,
+    val name: String,
+)
+
 // Mirrors the engine's update.Info JSON: {current, latest, hasUpdate, url, notes}.
 data class UpdateInfo(
     val current: String,
@@ -332,6 +340,16 @@ object Json {
             code = o.optString("code"),
             url = o.optString("url"),
             port = o.optInt("port"),
+        )
+    }
+
+    fun connectHostInfo(s: String?): ConnectHostInfo? {
+        val o = obj(s) ?: return null
+        return ConnectHostInfo(
+            enabled = o.optBoolean("enabled"),
+            addr = o.optString("addr"),
+            port = o.optInt("port"),
+            name = o.optString("name"),
         )
     }
 

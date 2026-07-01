@@ -26,6 +26,21 @@ android {
         }
     }
 
+    // Two form factors from one engine: the touch phone/tablet app and a
+    // D-pad-driven Android TV app. Shared code lives in src/main; each flavor
+    // supplies its own launcher activity + manifest (src/mobile, src/tv).
+    flavorDimensions += "device"
+    productFlavors {
+        create("mobile") {
+            dimension = "device"
+        }
+        create("tv") {
+            dimension = "device"
+            applicationIdSuffix = ".tv"
+            versionNameSuffix = "-tv"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

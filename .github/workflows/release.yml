@@ -252,18 +252,22 @@ jobs:
           gomobile init
           mkdir -p gui/android/app/libs
           gomobile bind -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
-      - name: Assemble debug APK
+      - name: Assemble debug APKs (phone + TV)
         working-directory: gui/android
         run: |
           chmod +x ./gradlew || true
-          ./gradlew --no-daemon assembleDebug
-      - name: Stage artifact
-        run: cp gui/android/app/build/outputs/apk/debug/*.apk OpenDeezer-android.apk
+          ./gradlew --no-daemon assembleMobileDebug assembleTvDebug
+      - name: Stage artifacts
+        run: |
+          cp gui/android/app/build/outputs/apk/mobile/debug/*.apk OpenDeezer-android.apk
+          cp gui/android/app/build/outputs/apk/tv/debug/*.apk OpenDeezer-androidtv.apk
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: OpenDeezer-android.apk
+          files: |
+            OpenDeezer-android.apk
+            OpenDeezer-androidtv.apk
 
   # ---- iOS app (SwiftUI via gomobile xcframework) — unsigned .ipa for sideloading ----
   # No Apple Developer account, so we ship an UNSIGNED device build: sideload with

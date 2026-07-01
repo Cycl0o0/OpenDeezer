@@ -13,16 +13,8 @@
         android:theme="@style/Theme.OpenDeezer"
         android:usesCleartextTraffic="true">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.OpenDeezer">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+        <!-- The launcher activity is declared per-flavor:
+             src/mobile → .MainActivity (touch), src/tv → .tv.TvActivity (leanback). -->
+
     </application>
 </manifest>

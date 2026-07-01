@@ -30,22 +30,44 @@ in-process through the `odmobile.Odmobile` static API; this layer is UI only.
   the in-app queue on `finishedCount`.
 - **Synced lyrics** (current line highlighted by position), **Queue** view,
   **Search**, **Settings** (quality Normal/High/HiFi, ReplayGain, gapless,
-  crossfade).
+  crossfade, plus the remote toggles below and an update check).
 - **OpenDeezer Connect:** a cast button opens a device picker from
   `discoverDevices(700)` (name · type · version, plus a "This device" entry);
   `connectDevice` / `disconnectDevice` route playback to another OpenDeezer.
+- **Remote settings** (in Settings): *Make this device reachable* advertises the
+  phone as an OpenDeezer Connect host (`connectHostSetEnabled`), and *Phone
+  Remote* serves the browser remote page (QR + code). Both persist in
+  `SharedPreferences` and are re-applied after login (`AppViewModel.applyRemoteHosts`).
+
+## Android TV
+
+A second Gradle flavor (`tv`) reuses the same engine, `AppViewModel` and
+`PlayerController` behind a **D-pad-driven, 10-foot Compose UI** on the leanback
+launcher:
+
+- `src/tv/` holds `TvActivity` + a focusable browse UI (Flow / Made-for-you /
+  Charts / Albums / Playlists shelves), search, album/playlist detail lists and
+  a persistent now-playing bar with focusable transport buttons. Focus scales and
+  outlines the selected card so it reads from across the room.
+- No extra dependencies — plain Compose `foundation` + `material3` with
+  `clickable`/`onFocusChanged` for D-pad focus (no `androidx.tv`).
+- The `mobile` flavor keeps the touch app unchanged. Each flavor supplies its own
+  launcher manifest (`src/mobile/`, `src/tv/`); shared code lives in `src/main/`.
+- App id `fr.cyclooo.opendeezer.tv`, so it installs alongside the phone app.
 
 ## Build & run
 
 ```sh
 gui/android/build.sh
-# -> gui/android/app/build/outputs/apk/debug/app-debug.apk
+# -> app/build/outputs/apk/mobile/debug/app-mobile-debug.apk  (phone/tablet)
+# -> app/build/outputs/apk/tv/debug/app-tv-debug.apk          (Android TV)
 ```
 
 `build.sh` (1) installs gomobile/gobind, (2) binds the Go engine
 (`gomobile bind -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile`),
-and (3) runs `./gradlew --no-daemon assembleDebug`. CI (`.github/workflows/android.yml`)
-does the same.
+and (3) runs `./gradlew --no-daemon assembleMobileDebug assembleTvDebug`. CI
+(`.github/workflows/android.yml`) does the same. Build a single flavor with
+`assembleMobileDebug` or `assembleTvDebug`.
 
 ### Prerequisites
 
@@ -74,8 +96,11 @@ app/src/main/java/fr/cyclooo/opendeezer/
   engine/Engine.kt       suspend facade over the gomobile Odmobile static API
   engine/Models.kt       data models + org.json parsers (match the wire shapes)
   player/PlayerController.kt  in-app queue, 500 ms poll, finishedCount auto-advance
-  data/Prefs.kt          ARL persistence
+  data/Prefs.kt          ARL + remote-host toggle persistence
   ui/                    theme, components (Artwork/TrackRow/PlayerBar) and screens
+
+app/src/mobile/          phone launcher manifest (.MainActivity)
+app/src/tv/              Android TV: TvActivity + D-pad Compose UI, leanback manifest, banner
 ```
 
-Package id `fr.cyclooo.opendeezer`. Author: Cycl0o0.
+Package id `fr.cyclooo.opendeezer` (`.tv` suffix for the TV flavor). Author: Cycl0o0.

@@ -26,8 +26,9 @@ mkdir -p "$SCRIPT_DIR/app/libs"
 ( cd "$REPO_ROOT" && gomobile bind -target=android -androidapi 24 \
     -o gui/android/app/libs/odmobile.aar ./mobile )
 
-echo "==> Assembling debug APK"
-( cd "$SCRIPT_DIR" && ./gradlew --no-daemon assembleDebug )
+echo "==> Assembling debug APKs (phone + Android TV flavors)"
+( cd "$SCRIPT_DIR" && ./gradlew --no-daemon assembleMobileDebug assembleTvDebug )
 
-echo "==> Done. APK at:"
-echo "    $SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+echo "==> Done. APKs at:"
+echo "    $SCRIPT_DIR/app/build/outputs/apk/mobile/debug/app-mobile-debug.apk  (phone/tablet)"
+echo "    $SCRIPT_DIR/app/build/outputs/apk/tv/debug/app-tv-debug.apk          (Android TV)"

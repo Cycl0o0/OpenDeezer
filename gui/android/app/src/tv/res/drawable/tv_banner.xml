@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV home-row banner (320x180). Dark card with the Deezer-purple
+     play glyph, matching the app icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#121216"
+        android:pathData="M0,0 h320 v180 h-320 z" />
+    <path
+        android:fillColor="#A238FF"
+        android:pathData="M126,64 L126,116 L170,90 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M182,84 h12 v12 h-12 z M182,84 h12 v12 h-12 z" />
+</vector>

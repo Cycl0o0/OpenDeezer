@@ -134,6 +134,16 @@ object Engine {
     suspend fun webRemoteQRPng(): ByteArray =
         io { runCatching { Odmobile.webRemoteQRPNG() ?: ByteArray(0) }.getOrDefault(ByteArray(0)) }
 
+    // ---- OpenDeezer Connect host ----
+    // Advertise this device so other same-account OpenDeezer apps can discover
+    // and control it. Mirrors the desktop "make this device reachable" toggle.
+
+    fun setConnectHostEnabled(on: Boolean) =
+        runCatching { Odmobile.connectHostSetEnabled(if (on) 1L else 0L) }.let {}
+
+    fun connectHostInfo(): ConnectHostInfo? =
+        Json.connectHostInfo(runCatching { Odmobile.connectHostInfo() }.getOrNull())
+
     private suspend inline fun <T> io(crossinline block: () -> T): T =
         withContext(Dispatchers.IO) { block() }
 }

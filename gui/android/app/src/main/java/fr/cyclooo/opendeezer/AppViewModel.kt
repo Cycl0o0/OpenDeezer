@@ -87,9 +87,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 else -> {
                     stage = AuthStage.READY
                     player.start()
+                    applyRemoteHosts()
                 }
             }
         }
+    }
+
+    /**
+     * Re-enable whichever "make this device reachable" hosts were on last run.
+     * Called once logged in — the Connect host needs the account for same-account
+     * auth. Mirrors the iOS RemoteHostStore.applyOnLaunch().
+     */
+    private fun applyRemoteHosts() {
+        if (prefs.connectHostEnabled) Engine.setConnectHostEnabled(true)
+        if (prefs.phoneRemoteEnabled) Engine.setWebRemoteEnabled(true)
     }
 
     fun logout() {
