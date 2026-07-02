@@ -2496,7 +2496,15 @@ public sealed partial class MainWindow : Window
         presetCombo.SelectedIndex = selPreset >= 0 ? selPreset : customIdx;
 
         // 10 vertical band sliders (-12..+12 dB, 0.5 dB steps) over Hz labels.
-        var bandGrid = new Grid { IsEnabled = eq.Enabled };
+        // Grid is a Panel (no IsEnabled); wrap it in a ContentControl — a Control —
+        // so the whole band strip can be greyed out when the EQ is off.
+        var bandGrid = new Grid();
+        var bandGroup = new ContentControl
+        {
+            Content = bandGrid,
+            IsEnabled = eq.Enabled,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
         var bandSliders = new Slider[10];
         for (int i = 0; i < bandSliders.Length; i++)
         {
@@ -2564,7 +2572,7 @@ public sealed partial class MainWindow : Window
         {
             bool on = enable.IsOn;
             presetCombo.IsEnabled = on;
-            bandGrid.IsEnabled = on;
+            bandGroup.IsEnabled = on;
             preampSlider.IsEnabled = on;
             string payload = new JsonObject { ["enabled"] = on }.ToJsonString();
             await Task.Run(() => DeezerCore.DZSetEQJSON(payload));
@@ -2614,7 +2622,7 @@ public sealed partial class MainWindow : Window
 
         sp.Children.Add(enable);
         sp.Children.Add(psec);
-        sp.Children.Add(bandGrid);
+        sp.Children.Add(bandGroup);
         sp.Children.Add(pasec);
         sp.Children.Add(msec);
 
