@@ -310,6 +310,12 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: "26.0"
+      - name: Install the iOS platform for this Xcode
+        # macos-26 ships Xcode 26 without the iOS platform support files, so
+        # even a device build ('generic/platform=iOS') fails with
+        # "iOS 26.0 is not installed". Fetch it first (idempotent, cached image
+        # may already have it).
+        run: xcodebuild -downloadPlatform iOS || sudo xcodebuild -downloadPlatform iOS
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
