@@ -1,0 +1,198 @@
+/* OpenDeezer — 简体中文 */
+
+/* Sidebar / navigation */
+"Home" = "首页";
+"Search" = "搜索";
+"Library" = "音乐库";
+"Liked Songs" = "喜欢的歌曲";
+"Playlists" = "歌单";
+"Charts" = "排行榜";
+"Podcasts" = "播客";
+
+/* App menu / account row */
+"About OpenDeezer" = "关于 OpenDeezer";
+"Settings…" = "设置…";
+"Log in / Switch account…" = "登录 / 切换账户…";
+"Settings" = "设置";
+
+/* Update banner */
+"OpenDeezer %@ is available" = "OpenDeezer %@ 已可用";
+"Hide notes" = "隐藏说明";
+"Release notes" = "版本说明";
+"Download" = "下载";
+"Later" = "稍后";
+
+/* Login gate */
+"Logging in…" = "正在登录…";
+"Log in with Deezer" = "使用 Deezer 登录";
+"Hide manual ARL" = "隐藏手动 ARL";
+"Enter ARL manually" = "手动输入 ARL";
+"Paste your ARL cookie" = "粘贴你的 ARL Cookie";
+"Sign in" = "登录";
+
+/* Free-account gate */
+"Premium required" = "需要 Premium";
+"OpenDeezer needs a Deezer Premium subscription to stream. Your account: %@. Subscribe at deezer.com, then restart OpenDeezer." = "OpenDeezer 需要 Deezer Premium 订阅才能播放。你的账户：%@。请在 deezer.com 订阅后重新启动 OpenDeezer。";
+"Log in with a different account" = "使用其他账户登录";
+"Quit OpenDeezer" = "退出 OpenDeezer";
+
+/* Explicit badge */
+"Explicit" = "儿童不宜";
+
+/* Account label */
+"user %@" = "用户 %@";
+
+/* Credits / About */
+"v%@ · An open source reimplementation of Deezer" = "v%@ · Deezer 的开源重新实现";
+"by Cycl0o0" = "作者 Cycl0o0";
+"Signed in as %@" = "已登录为 %@";
+"Built with SwiftUI + a Go engine" = "基于 SwiftUI + Go 引擎构建";
+"Audio decrypted + decoded locally — your ARL never leaves your machine." = "音频在本地解密和解码——你的 ARL 绝不会离开你的设备。";
+"AGPL-3.0 · Not affiliated with Deezer." = "AGPL-3.0 · 与 Deezer 无关联。";
+"Checking…" = "正在检查…";
+"Check for Updates" = "检查更新";
+"Download v%@" = "下载 v%@";
+"Done" = "完成";
+
+/* Hero header + track table */
+"Play" = "播放";
+"Shuffle" = "随机播放";
+"Title" = "标题";
+"Album" = "专辑";
+"Time" = "时长";
+"Unlike" = "取消喜欢";
+"Like" = "喜欢";
+"Add to Playlist…" = "添加到歌单…";
+"Go to Artist" = "查看艺人";
+
+/* Playlist grid + create/rename/delete */
+"New Playlist" = "新建歌单";
+"Open" = "打开";
+"Rename…" = "重命名…";
+"Delete…" = "删除…";
+"Playlist name" = "歌单名称";
+"Create" = "创建";
+"Cancel" = "取消";
+"Name your new playlist." = "为你的新歌单命名。";
+"Rename Playlist" = "重命名歌单";
+"Save" = "保存";
+"Enter a new name." = "输入新名称。";
+"Delete “%@”?" = "删除“%@”？";
+"Delete" = "删除";
+"This can't be undone." = "此操作无法撤销。";
+
+/* Search */
+"Search tracks, albums, playlists" = "搜索歌曲、专辑、歌单";
+"Tracks" = "歌曲";
+"Artists" = "艺人";
+"Artist" = "艺人";
+"Albums" = "专辑";
+
+/* Settings — audio */
+"Audio Quality" = "音质";
+"Normal · MP3 128" = "普通 · MP3 128";
+"High · MP3 320" = "高 · MP3 320";
+"HiFi · FLAC lossless" = "HiFi · FLAC 无损";
+"Applied immediately and on next launch." = "立即生效，并在下次启动时应用。";
+"Output Device" = "输出设备";
+"System Default" = "系统默认";
+"%@ (System Default)" = "%@（系统默认）";
+"Choose where audio plays. Switching takes effect on the next track or seek." = "选择音频的播放设备。切换将在下一首歌曲或拖动进度时生效。";
+"Gapless playback" = "无缝播放";
+"Preloads the next track so albums play with no silence between songs." = "预加载下一首歌曲，让专辑歌曲之间无间断播放。";
+"Crossfade" = "淡入淡出";
+"Off" = "关闭";
+"Fades the end of one track into the start of the next." = "将一首歌曲的结尾与下一首的开头交叉淡化。";
+"Sleep timer" = "定时关闭";
+"%d min" = "%d 分钟";
+"End of track" = "当前歌曲结束时";
+"Volume normalization" = "音量标准化";
+"Evens out loudness differences between tracks (ReplayGain)." = "平衡不同歌曲之间的音量差异（ReplayGain）。";
+"Equalizer" = "均衡器";
+"Custom" = "自定义";
+"Preamp" = "前置放大";
+"Mono audio" = "单声道";
+"Plays both channels as one — helpful with a single speaker or hearing in one ear." = "将左右声道合为一个——适合单只扬声器或单耳聆听。";
+"Keep playing in background" = "在后台继续播放";
+"Closing the window hides it to the menu bar instead of quitting." = "关闭窗口时会隐藏到菜单栏，而不是退出。";
+
+/* Settings — remote control */
+"Remote control" = "远程控制";
+"Lets other devices control playback over the network." = "允许网络上的其他设备控制播放。";
+"Enable" = "启用";
+"Allow on local network (LAN)" = "允许在局域网（LAN）中使用";
+"Access token" = "访问令牌";
+"None" = "无";
+"Phone Remote" = "手机遥控";
+"Scan with your phone (same Wi-Fi), then enter the code." = "用手机扫描（同一 Wi-Fi），然后输入代码。";
+"Stored in %@" = "存储于 %@";
+
+/* Settings — sleep timer captions */
+"Playback pauses when the current track ends." = "当前歌曲播放结束后将暂停。";
+"Fades out and pauses in %@." = "将在 %@ 后淡出并暂停。";
+"Automatically pause playback after a set time." = "在设定的时间后自动暂停播放。";
+
+/* Player bar */
+"Nothing playing" = "暂无播放";
+"Lyrics" = "歌词";
+"Connected — choose a device" = "已连接——选择设备";
+"Connect to a device" = "连接到设备";
+
+/* Lyrics / artist */
+"No lyrics available" = "暂无歌词";
+"Couldn't load this artist." = "无法加载此艺人。";
+"Top Tracks" = "热门歌曲";
+"Related Artists" = "相关艺人";
+
+/* Podcasts */
+"Search podcasts" = "搜索播客";
+"Search for podcasts" = "搜索播客";
+"Podcast" = "播客";
+
+/* Charts */
+"Top Albums" = "热门专辑";
+"Top Artists" = "热门艺人";
+"Top Playlists" = "热门歌单";
+
+/* Device picker */
+"Connect to a Device" = "连接到设备";
+"Play on another device on your network" = "在你网络中的其他设备上播放";
+"Refresh" = "刷新";
+"This computer" = "这台电脑";
+"Play here" = "在此播放";
+"Looking for devices…" = "正在查找设备…";
+"No devices found on your network." = "在你的网络中未找到设备。";
+"Devices" = "设备";
+"Device" = "设备";
+
+/* Add to playlist */
+"Add to Playlist" = "添加到歌单";
+"New playlist…" = "新建歌单…";
+"Your Playlists" = "你的歌单";
+
+/* Home greeting */
+"Good morning" = "早上好";
+"Good afternoon" = "下午好";
+"Good evening" = "晚上好";
+
+/* Login sheet */
+"Signing in…" = "正在登录…";
+
+/* Tray menu */
+"Show OpenDeezer" = "显示 OpenDeezer";
+"Play / Pause" = "播放 / 暂停";
+"Next" = "下一首";
+"Previous" = "上一首";
+
+/* AppState — status / errors / list subtitles */
+"Login failed — invalid or expired ARL." = "登录失败——ARL 无效或已过期。";
+"OpenDeezer %@ is available." = "OpenDeezer %@ 已可用。";
+"You're up to date." = "你已是最新版本。";
+"plan" = "套餐";
+"%@ plan" = "%@ 套餐";
+"Your %@ doesn't include HiFi (FLAC)." = "你的 %@ 不包含 HiFi（FLAC）。";
+"Your %@ doesn't include High (MP3 320)." = "你的 %@ 不包含高（MP3 320）。";
+"Playlist" = "歌单";
+"Playlist · %@" = "歌单 · %@";
+"Top worldwide" = "全球热门";
+"Album · %@" = "专辑 · %@";

@@ -23,8 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.player.PlayerState
 
@@ -64,7 +66,7 @@ fun PlayerBar(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        track.name.ifBlank { "Unknown" },
+                        track.name.ifBlank { stringResource(R.string.unknown_title) },
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -81,16 +83,16 @@ fun PlayerBar(
                     }
                 }
                 IconButton(onClick = onPrev, enabled = state.hasPrev) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous")
+                    Icon(Icons.Filled.SkipPrevious, contentDescription = stringResource(R.string.action_previous))
                 }
                 IconButton(onClick = onToggle) {
                     Icon(
                         if (state.state == Engine.PLAYING) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "Play/Pause",
+                        contentDescription = stringResource(R.string.cd_play_pause),
                     )
                 }
                 IconButton(onClick = onNext, enabled = state.hasNext) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = "Next")
+                    Icon(Icons.Filled.SkipNext, contentDescription = stringResource(R.string.action_next))
                 }
             }
         }

@@ -60,7 +60,7 @@ struct PlayerBar: View {
             VStack(spacing: 3) {
                 HStack(spacing: 5) {
                     if app.current?.explicit == true { ExplicitBadge() }
-                    Text(app.current?.name ?? "Nothing playing")
+                    Text(app.current?.name ?? L("Nothing playing"))
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DZ.textPri)
                         .lineLimit(1)
                 }
@@ -114,26 +114,26 @@ struct PlayerBar: View {
                 app.toggleLikeCurrent()
             }
             .disabled(app.current == nil || app.playingEpisode)
-            .help(app.isCurrentLiked ? "Unlike" : "Like")
+            .help(app.isCurrentLiked ? L("Unlike") : L("Like"))
             // Lyrics for the now-playing track.
             iconButton("quote.bubble", tint: app.showLyrics ? DZ.accent : DZ.textSec) {
                 app.showLyrics = true
             }
             .disabled(app.current == nil)
-            .help("Lyrics")
+            .help(L("Lyrics"))
             // Jump to the now-playing track's artist.
             iconButton("music.mic", tint: DZ.textSec) {
                 app.openArtistForCurrent()
             }
             .disabled(app.current?.artists.first == nil)
-            .help("Go to Artist")
+            .help(L("Go to Artist"))
             // OpenDeezer Connect: pick a device to play on (Spotify-Connect style).
             iconButton("rectangle.connected.to.line.below",
                        tint: app.isConnectedRemote ? DZ.accent : DZ.textSec) {
                 app.showDevicePicker = true
                 app.discoverDevices()
             }
-            .help(app.isConnectedRemote ? "Connected — choose a device" : "Connect to a device")
+            .help(app.isConnectedRemote ? L("Connected — choose a device") : L("Connect to a device"))
             HStack(spacing: 6) {
                 Image(systemName: "speaker.fill").font(.system(size: 11)).foregroundStyle(DZ.textSec)
                 Slider(value: Binding(get: { app.volume }, set: { app.setVolume($0) }), in: 0...1)

@@ -32,9 +32,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.ConnectDevice
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.ui.components.deviceTypeLabel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -59,15 +62,15 @@ fun ConnectDialog(onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-        dismissButton = { TextButton(onClick = { refresh() }) { Text("Refresh") } },
-        title = { Text("OpenDeezer Connect") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
+        dismissButton = { TextButton(onClick = { refresh() }) { Text(stringResource(R.string.action_refresh)) } },
+        title = { Text(stringResource(R.string.settings_connect)) },
         text = {
             Column {
                 // "This device" — selecting it returns playback to local.
                 DeviceRow(
-                    title = "This device",
-                    subtitle = "OpenDeezer (Android)",
+                    title = stringResource(R.string.connect_this_device),
+                    subtitle = stringResource(R.string.device_self_phone),
                     leading = Icons.Filled.Smartphone,
                     selected = connected.isBlank(),
                     onClick = {
@@ -85,7 +88,7 @@ fun ConnectDialog(onDismiss: () -> Unit) {
                     }
                     else -> if (list.isEmpty()) {
                         Text(
-                            "No devices found on your network.",
+                            stringResource(R.string.connect_no_devices),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(8.dp),
@@ -96,7 +99,7 @@ fun ConnectDialog(onDismiss: () -> Unit) {
                                 DeviceRow(
                                     title = d.name.ifBlank { d.addr },
                                     subtitle = listOfNotNull(
-                                        d.typeLabel,
+                                        deviceTypeLabel(d),
                                         d.version.ifBlank { null }?.let { "v$it" },
                                     ).joinToString(" · "),
                                     leading = Icons.Filled.Cast,
@@ -154,7 +157,7 @@ private fun DeviceRow(
         if (selected) {
             Icon(
                 Icons.Filled.CheckCircle,
-                contentDescription = "Connected",
+                contentDescription = stringResource(R.string.cd_connected),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }

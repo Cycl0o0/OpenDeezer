@@ -173,9 +173,10 @@ struct EqualizerView: View {
 
     /// "bass-boost" → "Bass Boost".
     private func presetLabel(_ name: String) -> String {
-        name.split(separator: "-")
+        let titled = name.split(separator: "-")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
+        return String(localized: String.LocalizationValue(titled))
     }
 
     /// Band center in compact form: 31, 63, … 1K, 2K, … 16K.

@@ -251,13 +251,13 @@ struct Device: Decodable, Hashable, Identifiable {
 
     var typeLabel: String {
         switch client {
-        case "tui": return "Terminal"
-        case "darwin", "macos": return "Mac"
-        case "windows": return "Windows"
-        case "linux", "gnome", "kde": return "Linux"
-        case "android": return "Android"
-        case "ios": return "iPhone/iPad"
-        default: return client.isEmpty ? "Device" : client.capitalized
+        case "tui": return String(localized: "Terminal")
+        case "darwin", "macos": return String(localized: "Mac")
+        case "windows": return String(localized: "Windows")
+        case "linux", "gnome", "kde": return String(localized: "Linux")
+        case "android": return String(localized: "Android")
+        case "ios": return String(localized: "iPhone/iPad")
+        default: return client.isEmpty ? String(localized: "Device") : client.capitalized
         }
     }
     var symbol: String {

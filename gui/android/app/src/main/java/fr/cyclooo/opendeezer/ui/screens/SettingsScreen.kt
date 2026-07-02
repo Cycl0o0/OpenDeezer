@@ -50,15 +50,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.ConnectHostInfo
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.engine.WebRemoteInfo
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,16 +111,16 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
         }
     }
 
-    val qualityLabels = listOf("Normal", "High", "HiFi")
-    val sleepLabels = listOf("Off", "15", "30", "45", "60", "End")
+    val qualityLabels = listOf(stringResource(R.string.quality_normal), stringResource(R.string.quality_high), "HiFi")
+    val sleepLabels = listOf(stringResource(R.string.common_off), "15", "30", "45", "60", stringResource(R.string.sleep_end))
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -126,7 +130,7 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Text("Audio quality", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_audio_quality), style = MaterialTheme.typography.titleMedium)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 qualityLabels.forEachIndexed { index, label ->
                     SegmentedButton(
@@ -149,12 +153,16 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
 
             HorizontalDivider()
 
-            SettingSwitch("ReplayGain", "Normalise loudness across tracks", replayGain) {
+            SettingSwitch("ReplayGain", stringResource(R.string.setting_replaygain_sub), replayGain) {
                 replayGain = it
                 Engine.setReplayGain(it)
                 prefs.replayGain = if (it) 1 else 0
             }
-            SettingSwitch("Gapless playback", "No silence between tracks", gapless) {
+            SettingSwitch(
+                stringResource(R.string.setting_gapless_title),
+                stringResource(R.string.setting_gapless_sub),
+                gapless,
+            ) {
                 gapless = it
                 Engine.setGapless(it)
                 prefs.gapless = if (it) 1 else 0
@@ -163,9 +171,10 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
             HorizontalDivider()
 
             Column {
-                Text("Crossfade", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.settings_crossfade), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    if (crossfadeSec <= 0f) "Off" else "%.0f s".format(crossfadeSec),
+                    if (crossfadeSec <= 0f) stringResource(R.string.common_off)
+                    else stringResource(R.string.crossfade_seconds, crossfadeSec.roundToInt()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -185,14 +194,14 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
             HorizontalDivider()
 
             SettingAction(
-                title = "Equalizer",
-                subtitle = "10-band EQ, presets and mono audio",
+                title = stringResource(R.string.equalizer_title),
+                subtitle = stringResource(R.string.settings_eq_sub),
                 onClick = onEqualizer,
             )
 
             HorizontalDivider()
 
-            Text("Sleep timer", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_sleep_timer), style = MaterialTheme.typography.titleMedium)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 sleepLabels.forEachIndexed { index, label ->
                     SegmentedButton(
@@ -217,10 +226,10 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
 
             HorizontalDivider()
 
-            Text("OpenDeezer Connect", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_connect), style = MaterialTheme.typography.titleMedium)
             SettingSwitch(
-                "Make this device reachable",
-                "Let your other OpenDeezer apps find and control this device",
+                stringResource(R.string.connect_reachable_title),
+                stringResource(R.string.connect_reachable_sub),
                 connectHostEnabled,
             ) {
                 connectHostEnabled = it
@@ -229,7 +238,8 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
             }
             connectHostInfo?.takeIf { it.enabled && it.addr.isNotBlank() }?.let { info ->
                 Text(
-                    "Reachable at ${info.addr}" + (info.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                    stringResource(R.string.reachable_at, info.addr) +
+                        (info.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -237,10 +247,10 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
 
             HorizontalDivider()
 
-            Text("Phone Remote", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_phone_remote), style = MaterialTheme.typography.titleMedium)
             SettingSwitch(
-                "Enable",
-                "Serve a remote control page on your local Wi-Fi",
+                stringResource(R.string.common_enable),
+                stringResource(R.string.phone_remote_sub),
                 webRemoteEnabled,
             ) {
                 webRemoteEnabled = it
@@ -260,7 +270,7 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
-                            "Scan with your phone (same Wi-Fi), then enter the code.",
+                            stringResource(R.string.phone_remote_scan),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -273,7 +283,7 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                         if (imageBitmap != null) {
                             Image(
                                 bitmap = imageBitmap,
-                                contentDescription = "QR code",
+                                contentDescription = stringResource(R.string.cd_qr_code),
                                 modifier = Modifier.size(200.dp),
                             )
                         }
@@ -296,10 +306,10 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
 
             HorizontalDivider()
 
-            Text("About", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium)
             SettingAction(
-                title = "Check for updates",
-                subtitle = if (checkingUpdate) "Checking…" else "Checks GitHub for a newer release",
+                title = stringResource(R.string.update_check_title),
+                subtitle = if (checkingUpdate) stringResource(R.string.update_checking) else stringResource(R.string.update_check_sub),
                 enabled = !checkingUpdate,
                 trailing = {
                     if (checkingUpdate) {
@@ -323,17 +333,17 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
             HorizontalDivider()
 
             if (account != null) {
-                Text("Account", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.settings_account), style = MaterialTheme.typography.titleMedium)
                 Text(account.name, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Plan: ${account.offer.ifBlank { "—" }}" +
+                    stringResource(R.string.plan_label, account.offer.ifBlank { "—" }) +
                         (if (account.canHifi) " · HiFi" else if (account.canHq) " · HQ" else ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                Text("Sign out")
+                Text(stringResource(R.string.action_sign_out))
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -342,12 +352,12 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
     when (val result = updateResult) {
         is UpdateCheckResult.UpToDate -> AlertDialog(
             onDismissRequest = { updateResult = null },
-            confirmButton = { TextButton(onClick = { updateResult = null }) { Text("OK") } },
-            title = { Text("You're up to date") },
+            confirmButton = { TextButton(onClick = { updateResult = null }) { Text(stringResource(R.string.action_ok)) } },
+            title = { Text(stringResource(R.string.update_uptodate_title)) },
             text = {
                 Text(
-                    if (result.current.isBlank()) "This is the latest version."
-                    else "OpenDeezer v${result.current} is the latest version.",
+                    if (result.current.isBlank()) stringResource(R.string.update_latest_generic)
+                    else stringResource(R.string.update_latest_named, result.current),
                 )
             },
         )
@@ -358,13 +368,13 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                 TextButton(onClick = {
                     updateResult = null
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.info.url))) }
-                }) { Text("Download") }
+                }) { Text(stringResource(R.string.action_download)) }
             },
-            dismissButton = { TextButton(onClick = { updateResult = null }) { Text("Close") } },
-            title = { Text("OpenDeezer ${result.info.latest} available") },
+            dismissButton = { TextButton(onClick = { updateResult = null }) { Text(stringResource(R.string.action_close)) } },
+            title = { Text(stringResource(R.string.update_available_title, result.info.latest)) },
             text = {
                 Text(
-                    result.info.notes.ifBlank { "A new version is available on GitHub." },
+                    result.info.notes.ifBlank { stringResource(R.string.update_available_generic) },
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                 )
             },
@@ -372,9 +382,9 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
 
         UpdateCheckResult.Failed -> AlertDialog(
             onDismissRequest = { updateResult = null },
-            confirmButton = { TextButton(onClick = { updateResult = null }) { Text("OK") } },
-            title = { Text("Couldn't check for updates") },
-            text = { Text("Check your connection and try again.") },
+            confirmButton = { TextButton(onClick = { updateResult = null }) { Text(stringResource(R.string.action_ok)) } },
+            title = { Text(stringResource(R.string.update_failed_title)) },
+            text = { Text(stringResource(R.string.update_failed_body)) },
         )
 
         null -> {}
@@ -416,16 +426,21 @@ private fun canSelectQuality(account: Account?, index: Int): Boolean = when (ind
     else -> true
 }
 
+@Composable
 private fun qualityDescription(level: Int): String = when (level) {
-    2 -> "FLAC · lossless"
-    1 -> "MP3 · 320 kbps"
-    else -> "MP3 · 128 kbps"
+    2 -> stringResource(R.string.quality_desc_flac)
+    1 -> stringResource(R.string.quality_desc_high)
+    else -> stringResource(R.string.quality_desc_normal)
 }
 
+@Composable
 private fun sleepDescription(index: Int, labels: List<String>): String = when (index) {
-    0 -> "Playback won't pause automatically"
-    labels.lastIndex -> "Pauses when the current track ends"
-    else -> "Pauses in ${labels[index]} minutes"
+    0 -> stringResource(R.string.sleep_desc_off)
+    labels.lastIndex -> stringResource(R.string.sleep_desc_end)
+    else -> {
+        val minutes = labels[index].toIntOrNull() ?: 0
+        pluralStringResource(R.plurals.pauses_in_minutes, minutes, minutes)
+    }
 }
 
 @Composable

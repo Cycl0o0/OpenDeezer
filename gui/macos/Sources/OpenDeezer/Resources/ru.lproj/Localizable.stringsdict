@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>%d songs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d трек</string>
+            <key>few</key>
+            <string>%d трека</string>
+            <key>many</key>
+            <string>%d треков</string>
+            <key>other</key>
+            <string>%d трека</string>
+        </dict>
+    </dict>
+    <key>%d tracks</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d трек</string>
+            <key>few</key>
+            <string>%d трека</string>
+            <key>many</key>
+            <string>%d треков</string>
+            <key>other</key>
+            <string>%d трека</string>
+        </dict>
+    </dict>
+    <key>%d episodes</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d выпуск</string>
+            <key>few</key>
+            <string>%d выпуска</string>
+            <key>many</key>
+            <string>%d выпусков</string>
+            <key>other</key>
+            <string>%d выпуска</string>
+        </dict>
+    </dict>
+    <key>%d fans</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d поклонник</string>
+            <key>few</key>
+            <string>%d поклонника</string>
+            <key>many</key>
+            <string>%d поклонников</string>
+            <key>other</key>
+            <string>%d поклонника</string>
+        </dict>
+    </dict>
+    <key>Fades out and pauses after %d minutes.</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Затихнет и остановится через %d минуту.</string>
+            <key>few</key>
+            <string>Затихнет и остановится через %d минуты.</string>
+            <key>many</key>
+            <string>Затихнет и остановится через %d минут.</string>
+            <key>other</key>
+            <string>Затихнет и остановится через %d минуты.</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

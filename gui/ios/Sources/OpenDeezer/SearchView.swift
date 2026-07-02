@@ -10,13 +10,21 @@ struct SearchView: View {
     private enum Segment: String, CaseIterable, Identifiable {
         case tracks = "Songs", artists = "Artists", albums = "Albums", playlists = "Playlists"
         var id: String { rawValue }
+        var titleKey: LocalizedStringKey {
+            switch self {
+            case .tracks: return "Songs"
+            case .artists: return "Artists"
+            case .albums: return "Albums"
+            case .playlists: return "Playlists"
+            }
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             if results != nil {
                 Picker("Filter", selection: $segment) {
-                    ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Segment.allCases) { Text($0.titleKey).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
@@ -33,7 +41,7 @@ struct SearchView: View {
 
     @ViewBuilder private var content: some View {
         if query.trimmingCharacters(in: .whitespaces).isEmpty {
-            ContentUnavailableMessage(systemImage: "magnifyingglass", title: "Search Deezer", message: "Find songs, artists, albums and playlists.")
+            ContentUnavailableMessage(systemImage: "magnifyingglass", title: "Search Deezer", message: String(localized: "Find songs, artists, albums and playlists."))
         } else if isLoading {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = errorText {

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>%d songs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d titre</string>
+            <key>other</key>
+            <string>%d titres</string>
+        </dict>
+    </dict>
+    <key>%d tracks</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d titre</string>
+            <key>other</key>
+            <string>%d titres</string>
+        </dict>
+    </dict>
+    <key>%d episodes</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d épisode</string>
+            <key>other</key>
+            <string>%d épisodes</string>
+        </dict>
+    </dict>
+    <key>%d fans</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d fan</string>
+            <key>other</key>
+            <string>%d fans</string>
+        </dict>
+    </dict>
+    <key>Fades out and pauses after %d minutes.</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Baisse le volume et se met en pause après %d minute.</string>
+            <key>other</key>
+            <string>Baisse le volume et se met en pause après %d minutes.</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

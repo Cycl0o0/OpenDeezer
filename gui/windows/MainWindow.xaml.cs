@@ -60,6 +60,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = Config.LoadSettings();
+        Loc.SetLanguage(_settings.Language); // choose the UI language BEFORE any UI is built
         _accent = new SolidColorBrush(Color.FromArgb(0xFF, 0xA2, 0x38, 0xFF)); // Deezer Electric Violet
         BuildUi();
         try { AppWindow.Resize(new SizeInt32(1180, 760)); } catch { }
@@ -114,8 +115,12 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(bar, 2);
         RootGrid.Children.Add(bar);
 
+        // Arabic (and any RTL UI language): mirror the whole visual tree. ContentDialogs
+        // are mirrored separately in ShowDialog(); the Connect flyout in BuildTransport.
+        if (Loc.IsRtl) RootGrid.FlowDirection = FlowDirection.RightToLeft;
+
         _nav.Content = _homePage; // show the (empty) Home page until login fills it
-        _nav.Header = "Home";
+        _nav.Header = Loc.S("Nav_Home");
     }
 
     // Small dismissible "a newer version is available" banner above the nav.
@@ -123,7 +128,7 @@ public sealed partial class MainWindow : Window
     // never reserves space (and never blocks startup) unless an update is found.
     private InfoBar BuildUpdateBar()
     {
-        var downloadBtn = new Button { Content = "Download" };
+        var downloadBtn = new Button { Content = Loc.S("Btn_Download") };
         downloadBtn.Click += async (_, _) =>
         {
             if (string.IsNullOrEmpty(_updateUrl)) return;
@@ -152,9 +157,9 @@ public sealed partial class MainWindow : Window
     private void ShowUpdateNotice(UpdateInfo info)
     {
         _updateUrl = info.Url;
-        _updateBar.Title = "OpenDeezer " + info.Latest + " available";
+        _updateBar.Title = Loc.Format("Update_TitleFormat", info.Latest);
         _updateBar.Message = string.IsNullOrEmpty(info.Notes)
-            ? "A newer version is available for download."
+            ? Loc.S("Update_BodyDefault")
             : (info.Notes.Length > 240 ? info.Notes[..240] + "…" : info.Notes);
         _updateBar.IsOpen = true;
     }
@@ -171,13 +176,13 @@ public sealed partial class MainWindow : Window
             IsSettingsVisible = false,
             PaneTitle = "OpenDeezer",
         };
-        _homeItem = NavItem("Home", Symbol.Home, "home");
-        _likedItem = NavItem("Liked Songs", Symbol.Audio, "liked");
-        _flowItem = NavItem("Flow", Symbol.Play, "flow");
-        _playlistsItem = NavItem("Playlists", Symbol.List, "playlists");
-        _chartsItem = NavItem("Charts", Symbol.World, "charts");
-        _podcastsItem = NavItem("Podcasts", Symbol.Microphone, "podcasts");
-        _searchItem = NavItem("Search", Symbol.Find, "search");
+        _homeItem = NavItem(Loc.S("Nav_Home"), Symbol.Home, "home");
+        _likedItem = NavItem(Loc.S("Nav_LikedSongs"), Symbol.Audio, "liked");
+        _flowItem = NavItem(Loc.S("Nav_Flow"), Symbol.Play, "flow");
+        _playlistsItem = NavItem(Loc.S("Nav_Playlists"), Symbol.List, "playlists");
+        _chartsItem = NavItem(Loc.S("Nav_Charts"), Symbol.World, "charts");
+        _podcastsItem = NavItem(Loc.S("Nav_Podcasts"), Symbol.Microphone, "podcasts");
+        _searchItem = NavItem(Loc.S("Nav_Search"), Symbol.Find, "search");
         _nav.MenuItems.Add(_homeItem);
         _nav.MenuItems.Add(_likedItem);
         _nav.MenuItems.Add(_flowItem);
@@ -188,10 +193,10 @@ public sealed partial class MainWindow : Window
 
         // Account: re-open the login chooser to re-auth / switch accounts; handled
         // like Settings/About in OnNav (a modal action, not a page).
-        _accountItem = NavItem("Log in / Switch account…", Symbol.Contact, "account");
-        _settingsItem = NavItem("Settings", Symbol.Setting, "settings");
-        _phoneRemoteItem = NavItem("Phone Remote", Symbol.Phone, "phoneremote");
-        _aboutItem = NavItem("About", Symbol.Help, "about");
+        _accountItem = NavItem(Loc.S("Nav_Account"), Symbol.Contact, "account");
+        _settingsItem = NavItem(Loc.S("Nav_Settings"), Symbol.Setting, "settings");
+        _phoneRemoteItem = NavItem(Loc.S("Nav_PhoneRemote"), Symbol.Phone, "phoneremote");
+        _aboutItem = NavItem(Loc.S("Nav_About"), Symbol.Help, "about");
         _nav.FooterMenuItems.Add(_accountItem);
         _nav.FooterMenuItems.Add(_settingsItem);
         _nav.FooterMenuItems.Add(_phoneRemoteItem);
@@ -219,7 +224,7 @@ public sealed partial class MainWindow : Window
             var newBtn = new Button();
             var c = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             c.Children.Add(new FontIcon { Glyph = "\uE710" }); // Add
-            c.Children.Add(new TextBlock { Text = "New Playlist" });
+            c.Children.Add(new TextBlock { Text = Loc.S("Btn_NewPlaylist") });
             newBtn.Content = c;
             newBtn.Click += OnNewPlaylist;
             bar.Children.Add(newBtn);
@@ -239,24 +244,24 @@ public sealed partial class MainWindow : Window
         var queryRow = new Grid { ColumnSpacing = 8 };
         queryRow.ColumnDefinitions.Add(ColStar());
         queryRow.ColumnDefinitions.Add(ColAuto());
-        _searchBox = new TextBox { PlaceholderText = "Search Deezer…" };
+        _searchBox = new TextBox { PlaceholderText = Loc.S("Search_Placeholder") };
         _searchBox.KeyDown += OnSearchKey;
         Grid.SetColumn(_searchBox, 0);
-        var searchBtn = new Button { Content = "Search" };
+        var searchBtn = new Button { Content = Loc.S("Nav_Search") };
         searchBtn.Click += (_, _) => RunSearch();
         Grid.SetColumn(searchBtn, 1);
         queryRow.Children.Add(_searchBox);
         queryRow.Children.Add(searchBtn);
         Grid.SetRow(queryRow, 0); sp.Children.Add(queryRow);
 
-        var h1 = new TextBlock { Text = "Tracks", FontWeight = FontWeights.SemiBold };
+        var h1 = new TextBlock { Text = Loc.S("Search_TracksHeader"), FontWeight = FontWeights.SemiBold };
         Grid.SetRow(h1, 1); sp.Children.Add(h1);
 
         _searchTrackList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _searchTrackList.ItemClick += OnSearchTrackClick;
         Grid.SetRow(_searchTrackList, 2); sp.Children.Add(_searchTrackList);
 
-        var h2 = new TextBlock { Text = "Albums & Playlists", FontWeight = FontWeights.SemiBold };
+        var h2 = new TextBlock { Text = Loc.S("Search_AlbumsPlaylistsHeader"), FontWeight = FontWeights.SemiBold };
         Grid.SetRow(h2, 3); sp.Children.Add(h2);
 
         _searchGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
@@ -293,25 +298,25 @@ public sealed partial class MainWindow : Window
         };
         var col = new StackPanel { Spacing = 8 };
 
-        col.Children.Add(Section("Top Tracks"));
+        col.Children.Add(Section(Loc.S("Section_TopTracks")));
         _chartsTrackList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _chartsTrackList.ItemClick += OnChartsTrackClick;
         NoInnerScroll(_chartsTrackList);
         col.Children.Add(_chartsTrackList);
 
-        col.Children.Add(Section("Albums"));
+        col.Children.Add(Section(Loc.S("Section_Albums")));
         _chartsAlbumsGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _chartsAlbumsGrid.ItemClick += OnChartsAlbumClick;
         NoInnerScroll(_chartsAlbumsGrid);
         col.Children.Add(_chartsAlbumsGrid);
 
-        col.Children.Add(Section("Artists"));
+        col.Children.Add(Section(Loc.S("Section_Artists")));
         _chartsArtistsGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _chartsArtistsGrid.ItemClick += OnChartsArtistClick;
         NoInnerScroll(_chartsArtistsGrid);
         col.Children.Add(_chartsArtistsGrid);
 
-        col.Children.Add(Section("Playlists"));
+        col.Children.Add(Section(Loc.S("Section_Playlists")));
         _chartsPlaylistsGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _chartsPlaylistsGrid.ItemClick += OnChartsPlaylistClick;
         NoInnerScroll(_chartsPlaylistsGrid);
@@ -333,17 +338,17 @@ public sealed partial class MainWindow : Window
         var queryRow = new Grid { ColumnSpacing = 8 };
         queryRow.ColumnDefinitions.Add(ColStar());
         queryRow.ColumnDefinitions.Add(ColAuto());
-        _podcastBox = new TextBox { PlaceholderText = "Search podcasts…" };
+        _podcastBox = new TextBox { PlaceholderText = Loc.S("Podcast_SearchPlaceholder") };
         _podcastBox.KeyDown += OnPodcastKey;
         Grid.SetColumn(_podcastBox, 0);
-        var pbtn = new Button { Content = "Search" };
+        var pbtn = new Button { Content = Loc.S("Nav_Search") };
         pbtn.Click += (_, _) => RunPodcastSearch();
         Grid.SetColumn(pbtn, 1);
         queryRow.Children.Add(_podcastBox);
         queryRow.Children.Add(pbtn);
         Grid.SetRow(queryRow, 0); pp.Children.Add(queryRow);
 
-        var h = new TextBlock { Text = "Shows", FontWeight = FontWeights.SemiBold };
+        var h = new TextBlock { Text = Loc.S("Podcast_ShowsHeader"), FontWeight = FontWeights.SemiBold };
         Grid.SetRow(h, 1); pp.Children.Add(h);
 
         _podcastGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
@@ -366,7 +371,7 @@ public sealed partial class MainWindow : Window
 
         // Greeting -- refreshed to the current hour each time LoadHome() runs.
         int hour = DateTime.Now.Hour;
-        string greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+        string greeting = hour < 12 ? Loc.S("Greeting_Morning") : hour < 18 ? Loc.S("Greeting_Afternoon") : Loc.S("Greeting_Evening");
         _homeGreeting = new TextBlock
         {
             Text = greeting,
@@ -378,21 +383,21 @@ public sealed partial class MainWindow : Window
 
         // Quick-pick cards: tap to navigate to that existing page.
         var quickRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 8, 0, 4) };
-        quickRow.Children.Add(MakeQuickCard("Liked Songs", Symbol.Audio, () => { _nav.SelectedItem = _likedItem; }));
-        quickRow.Children.Add(MakeQuickCard("Flow", Symbol.Play, () => { _nav.SelectedItem = _flowItem; }));
-        quickRow.Children.Add(MakeQuickCard("Charts", Symbol.World, () => { _nav.SelectedItem = _chartsItem; }));
-        quickRow.Children.Add(MakeQuickCard("Podcasts", Symbol.Microphone, () => { _nav.SelectedItem = _podcastsItem; }));
+        quickRow.Children.Add(MakeQuickCard(Loc.S("Nav_LikedSongs"), Symbol.Audio, () => { _nav.SelectedItem = _likedItem; }));
+        quickRow.Children.Add(MakeQuickCard(Loc.S("Nav_Flow"), Symbol.Play, () => { _nav.SelectedItem = _flowItem; }));
+        quickRow.Children.Add(MakeQuickCard(Loc.S("Nav_Charts"), Symbol.World, () => { _nav.SelectedItem = _chartsItem; }));
+        quickRow.Children.Add(MakeQuickCard(Loc.S("Nav_Podcasts"), Symbol.Microphone, () => { _nav.SelectedItem = _podcastsItem; }));
         col.Children.Add(quickRow);
 
         // Top Tracks (vertical list; inner scroll disabled so the outer ScrollViewer drives).
-        col.Children.Add(Section("Top Tracks"));
+        col.Children.Add(Section(Loc.S("Section_TopTracks")));
         _homeTrackList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _homeTrackList.ItemClick += OnHomeTrackClick;
         NoInnerScroll(_homeTrackList);
         col.Children.Add(_homeTrackList);
 
         // Your Playlists (horizontal scroll rail of tiles).
-        col.Children.Add(Section("Your Playlists"));
+        col.Children.Add(Section(Loc.S("Section_YourPlaylists")));
         _homePlaylistScroll = new ScrollViewer
         {
             HorizontalScrollMode = ScrollMode.Auto,
@@ -442,19 +447,19 @@ public sealed partial class MainWindow : Window
         _artistFans = new TextBlock { Opacity = 0.6 };
         col.Children.Add(_artistFans);
 
-        col.Children.Add(Section("Top Tracks"));
+        col.Children.Add(Section(Loc.S("Section_TopTracks")));
         _artistTopList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _artistTopList.ItemClick += OnArtistTopClick;
         NoInnerScroll(_artistTopList);
         col.Children.Add(_artistTopList);
 
-        col.Children.Add(Section("Albums"));
+        col.Children.Add(Section(Loc.S("Section_Albums")));
         _artistAlbumsGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _artistAlbumsGrid.ItemClick += OnArtistAlbumClick;
         NoInnerScroll(_artistAlbumsGrid);
         col.Children.Add(_artistAlbumsGrid);
 
-        col.Children.Add(Section("Related Artists"));
+        col.Children.Add(Section(Loc.S("Section_RelatedArtists")));
         _artistRelatedGrid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _artistRelatedGrid.ItemClick += OnArtistRelatedClick;
         NoInnerScroll(_artistRelatedGrid);
@@ -476,7 +481,7 @@ public sealed partial class MainWindow : Window
         _lyricsPanel = new StackPanel { Spacing = 6 };
         _lyricsScroll.Content = _lyricsPanel;
         _lyricsPage = _lyricsScroll;
-        ShowLyricsMessage("Play a track to see its lyrics.");
+        ShowLyricsMessage(Loc.S("Lyrics_PlayPrompt"));
     }
 
     private Grid BuildTransport()
@@ -500,15 +505,15 @@ public sealed partial class MainWindow : Window
         _cover = new Image { Width = 48, Height = 48, VerticalAlignment = VerticalAlignment.Center };
         left.Children.Add(_cover);
         var now = new StackPanel { VerticalAlignment = VerticalAlignment.Center, MinWidth = 120, MaxWidth = 240 };
-        _nowTitle = new TextBlock { Text = "Logging in…", FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
+        _nowTitle = new TextBlock { Text = Loc.S("Status_LoggingIn"), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
         _nowArtist = new TextBlock { Opacity = 0.6, FontSize = 12, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
         now.Children.Add(_nowTitle); now.Children.Add(_nowArtist);
         left.Children.Add(now);
         _likeBtn = new ToggleButton { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Heart
-        ToolTipService.SetToolTip(_likeBtn, "Like / unlike");
+        ToolTipService.SetToolTip(_likeBtn, Loc.S("Tooltip_Like"));
         _likeBtn.Click += OnLike;
         _addBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Add to playlist
-        ToolTipService.SetToolTip(_addBtn, "Add to playlist");
+        ToolTipService.SetToolTip(_addBtn, Loc.S("Tooltip_AddToPlaylist"));
         _addBtn.Click += OnAddCurrentToPlaylist;
         left.Children.Add(_likeBtn); left.Children.Add(_addBtn);
         Grid.SetColumn(left, 0); bar.Children.Add(left);
@@ -517,10 +522,10 @@ public sealed partial class MainWindow : Window
         var center = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         var tr = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _shuffleBtn = new ToggleButton { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Shuffle
-        ToolTipService.SetToolTip(_shuffleBtn, "Shuffle");
+        ToolTipService.SetToolTip(_shuffleBtn, Loc.S("Tooltip_Shuffle"));
         _shuffleBtn.Click += OnShuffle;
         var prevBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Previous
-        ToolTipService.SetToolTip(prevBtn, "Previous");
+        ToolTipService.SetToolTip(prevBtn, Loc.S("Tooltip_Previous"));
         prevBtn.Click += (_, _) => Prev();
         // Play/pause as a filled accent circle - the Groove signature.
         _playIcon = new FontIcon { Glyph = "", FontSize = 16, Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)) }; // Play (white on accent)
@@ -533,15 +538,15 @@ public sealed partial class MainWindow : Window
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
-        ToolTipService.SetToolTip(_playBtn, "Play / pause");
+        ToolTipService.SetToolTip(_playBtn, Loc.S("Tooltip_PlayPause"));
         // Off-thread: when routed over Connect this forwards over HTTP (15 s timeout).
         _playBtn.Click += async (_, _) => await Task.Run(DeezerCore.DZTogglePause);
         var nextBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Next
-        ToolTipService.SetToolTip(nextBtn, "Next");
+        ToolTipService.SetToolTip(nextBtn, Loc.S("Tooltip_Next"));
         nextBtn.Click += (_, _) => Next();
         _repeatIcon = new FontIcon { Glyph = "", FontSize = 14 }; // RepeatAll
         _repeatBtn = new Button { Content = _repeatIcon };
-        ToolTipService.SetToolTip(_repeatBtn, "Repeat: off");
+        ToolTipService.SetToolTip(_repeatBtn, Loc.S("Tooltip_RepeatOff"));
         _repeatBtn.Click += OnRepeat;
         tr.Children.Add(_shuffleBtn); tr.Children.Add(prevBtn); tr.Children.Add(_playBtn); tr.Children.Add(nextBtn); tr.Children.Add(_repeatBtn);
         center.Children.Add(tr);
@@ -558,17 +563,17 @@ public sealed partial class MainWindow : Window
         // ---- RIGHT: lyrics - artist - connect (cast) - volume ----
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
         _lyricsBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // ClosedCaption
-        ToolTipService.SetToolTip(_lyricsBtn, "Lyrics");
+        ToolTipService.SetToolTip(_lyricsBtn, Loc.S("Tooltip_Lyrics"));
         _lyricsBtn.Click += (_, _) => ShowLyrics();
         _artistBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Contact
-        ToolTipService.SetToolTip(_artistBtn, "Artist");
+        ToolTipService.SetToolTip(_artistBtn, Loc.S("Tooltip_Artist"));
         _artistBtn.Click += OnArtist;
         // OpenDeezer Connect: a discreet cast button whose flyout lists LAN devices.
         _connectBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Cast
-        ToolTipService.SetToolTip(_connectBtn, "Connect to a device");
+        ToolTipService.SetToolTip(_connectBtn, Loc.S("Tooltip_Connect"));
         _connectFlyout = new Flyout();
-        var cp = new StackPanel { Spacing = 8, MinWidth = 280, Padding = new Thickness(4) };
-        cp.Children.Add(new TextBlock { Text = "Connect to a device", FontWeight = FontWeights.SemiBold });
+        var cp = new StackPanel { Spacing = 8, MinWidth = 280, Padding = new Thickness(4), FlowDirection = Loc.FlowDirection };
+        cp.Children.Add(new TextBlock { Text = Loc.S("Connect_Title"), FontWeight = FontWeights.SemiBold });
         _connectStatus = new TextBlock { Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
         _connectList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true, MaxHeight = 320 };
         _connectList.ItemClick += OnConnectItemClick;
@@ -605,7 +610,7 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
         };
-        ToolTipService.SetToolTip(b, "Explicit content");
+        ToolTipService.SetToolTip(b, Loc.S("Tooltip_Explicit"));
         return b;
     }
 
@@ -644,9 +649,9 @@ public sealed partial class MainWindow : Window
         if (!t.IsEpisode && !string.IsNullOrEmpty(t.Id))
         {
             var mf = new MenuFlyout();
-            var like = new MenuFlyoutItem { Text = "Like", Tag = t.Id };
+            var like = new MenuFlyoutItem { Text = Loc.S("Menu_Like"), Tag = t.Id };
             like.Click += OnRowLike;
-            var add = new MenuFlyoutItem { Text = "Add to playlist…", Tag = t.Id };
+            var add = new MenuFlyoutItem { Text = Loc.S("Menu_AddToPlaylist"), Tag = t.Id };
             add.Click += OnRowAddToPlaylist;
             mf.Items.Add(like); mf.Items.Add(add);
             g.ContextFlyout = mf;
@@ -696,12 +701,12 @@ public sealed partial class MainWindow : Window
         for (int i = 0; i < _playlists.Count; i++)
         {
             var p = _playlists[i];
-            var tile = MakeTile(p.Name, p.TrackCount + " tracks", p.ArtworkUrl, i);
+            var tile = MakeTile(p.Name, Loc.Plural("Tracks", p.TrackCount), p.ArtworkUrl, i);
             // Per-tile right-click: rename / delete (Tag carries the _playlists index).
             var mf = new MenuFlyout();
-            var rn = new MenuFlyoutItem { Text = "Rename…", Tag = i };
+            var rn = new MenuFlyoutItem { Text = Loc.S("Menu_Rename"), Tag = i };
             rn.Click += OnPlaylistRename;
-            var del = new MenuFlyoutItem { Text = "Delete…", Tag = i };
+            var del = new MenuFlyoutItem { Text = Loc.S("Menu_Delete"), Tag = i };
             del.Click += OnPlaylistDelete;
             mf.Items.Add(rn); mf.Items.Add(del);
             if (tile is FrameworkElement fe) fe.ContextFlyout = mf;
@@ -778,7 +783,7 @@ public sealed partial class MainWindow : Window
 
     private async Task TryLogin(string arl, bool persist)
     {
-        _nowTitle.Text = "Logging in…";
+        _nowTitle.Text = Loc.S("Status_LoggingIn");
         bool ok = await Task.Run(() =>
         {
             // Identify this instance to OpenDeezer Connect BEFORE DZInit.
@@ -792,8 +797,8 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            _nowTitle.Text = "Login failed";
-            await ShowMessage("Login failed", "That ARL is invalid or expired. Try logging in again.");
+            _nowTitle.Text = Loc.S("Status_LoginFailed");
+            await ShowMessage(Loc.S("Dialog_LoginFailedTitle"), Loc.S("Dialog_LoginFailedBody"));
             ShowLoginChoice();
         }
     }
@@ -809,7 +814,7 @@ public sealed partial class MainWindow : Window
         DeezerCore.DZSetCrossfadeMS(_settings.CrossfadeMs);
         if (!string.IsNullOrEmpty(_settings.AudioDevice)) DeezerCore.DZSetAudioDevice(_settings.AudioDevice);
 
-        _nowTitle.Text = "Checking account…";
+        _nowTitle.Text = Loc.S("Status_CheckingAccount");
         var acct = await Task.Run(() => DeezerCore.Account());
         _account = acct;
         if (!_account.Premium) { ShowBlocked(); return; } // Free account -> gate the app
@@ -817,7 +822,7 @@ public sealed partial class MainWindow : Window
         _lastFinished = DeezerCore.DZFinishedCount();
         _updatingVol = true; _volume.Value = DeezerCore.DZVolume() * 100.0; _updatingVol = false;
         _timer.Start();
-        _nowTitle.Text = "Not playing";
+        _nowTitle.Text = Loc.S("Status_NotPlaying");
         _nowArtist.Text = "";
         _suppressNav = false;
         // Force a SelectionChanged even when Home is ALREADY selected (the switch-
@@ -835,7 +840,7 @@ public sealed partial class MainWindow : Window
         try { _timer?.Stop(); } catch { }
         try { DeezerCore.DZStop(); } catch { }
 
-        var page = new Grid { Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x14, 0x04, 0x1E)) };
+        var page = new Grid { Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x14, 0x04, 0x1E)), FlowDirection = Loc.FlowDirection };
         var sp = new StackPanel
         {
             Spacing = 14,
@@ -854,7 +859,7 @@ public sealed partial class MainWindow : Window
         });
         sp.Children.Add(new TextBlock
         {
-            Text = "Premium required",
+            Text = Loc.S("Blocked_Title"),
             FontSize = 26,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -868,9 +873,9 @@ public sealed partial class MainWindow : Window
             TextAlignment = TextAlignment.Center,
             Opacity = 0.85,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Text = "Your account (" + offer + ") isn't Premium. Subscribe at deezer.com, then restart OpenDeezer.",
+            Text = Loc.Format("Blocked_BodyFormat", offer),
         });
-        var quit = new Button { Content = "Quit", HorizontalAlignment = HorizontalAlignment.Center };
+        var quit = new Button { Content = Loc.S("Btn_Quit"), HorizontalAlignment = HorizontalAlignment.Center };
         quit.Click += (_, _) => QuitApp();
         sp.Children.Add(quit);
         page.Children.Add(sp);
@@ -881,19 +886,19 @@ public sealed partial class MainWindow : Window
     // is the manual fallback. Cancel leaves the app idle (relaunch to retry).
     private async void ShowLoginChoice()
     {
-        _nowTitle.Text = "Not signed in";
+        _nowTitle.Text = Loc.S("Status_NotSignedIn");
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Sign in to Deezer",
+            Title = Loc.S("Dialog_SignInTitle"),
             Content = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "Choose how you'd like to sign in.",
+                Text = Loc.S("Dialog_SignInBody"),
             },
-            PrimaryButtonText = "Log in with Deezer",
-            SecondaryButtonText = "Enter ARL manually",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.S("Btn_LogInWithDeezer"),
+            SecondaryButtonText = Loc.S("Btn_EnterArlManually"),
+            CloseButtonText = Loc.S("Btn_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         var res = await ShowDialog(dlg);
@@ -905,7 +910,7 @@ public sealed partial class MainWindow : Window
         }
         else if (res == ContentDialogResult.Secondary)
         {
-            string entered = await PromptText("Log in with ARL", "Paste your Deezer ARL", "");
+            string entered = await PromptText(Loc.S("Dialog_LogInWithArlTitle"), Loc.S("Dialog_PasteArlPlaceholder"), "");
             entered = (entered ?? "").Trim();
             if (!string.IsNullOrEmpty(entered)) await TryLogin(entered, persist: true);
             else ShowLoginChoice();
@@ -922,8 +927,8 @@ public sealed partial class MainWindow : Window
         _loginDialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Log in with Deezer",
-            CloseButtonText = "Cancel",
+            Title = Loc.S("Dialog_WebLoginTitle"),
+            CloseButtonText = Loc.S("Btn_Cancel"),
         };
         // Let the dialog grow to fit the web page (defaults cap ~548 px).
         _loginDialog.Resources["ContentDialogMaxWidth"] = 620.0;
@@ -1013,13 +1018,13 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false; // leaving the lyrics/artist page for a menu page
         switch (tag)
         {
-            case "home": nav.Header = "Home"; nav.Content = _homePage; LoadHome(); break;
-            case "liked": nav.Header = "Liked Songs"; nav.Content = _tracksPage; LoadFavorites(); break;
-            case "flow": nav.Header = "Flow"; nav.Content = _tracksPage; LoadFlow(); break;
-            case "charts": nav.Header = "Charts"; nav.Content = _chartsPage; LoadCharts(); break;
-            case "playlists": nav.Header = "Playlists"; nav.Content = _playlistsPage; LoadPlaylists(); break;
-            case "podcasts": nav.Header = "Podcasts"; nav.Content = _podcastPage; _podcastBox.Focus(FocusState.Programmatic); break;
-            case "search": nav.Header = "Search"; nav.Content = _searchPage; _searchBox.Focus(FocusState.Programmatic); break;
+            case "home": nav.Header = Loc.S("Nav_Home"); nav.Content = _homePage; LoadHome(); break;
+            case "liked": nav.Header = Loc.S("Nav_LikedSongs"); nav.Content = _tracksPage; LoadFavorites(); break;
+            case "flow": nav.Header = Loc.S("Nav_Flow"); nav.Content = _tracksPage; LoadFlow(); break;
+            case "charts": nav.Header = Loc.S("Nav_Charts"); nav.Content = _chartsPage; LoadCharts(); break;
+            case "playlists": nav.Header = Loc.S("Nav_Playlists"); nav.Content = _playlistsPage; LoadPlaylists(); break;
+            case "podcasts": nav.Header = Loc.S("Nav_Podcasts"); nav.Content = _podcastPage; _podcastBox.Focus(FocusState.Programmatic); break;
+            case "search": nav.Header = Loc.S("Nav_Search"); nav.Content = _searchPage; _searchBox.Focus(FocusState.Programmatic); break;
         }
     }
 
@@ -1087,7 +1092,7 @@ public sealed partial class MainWindow : Window
         _artGen++;
         // Refresh the greeting in case the hour changed since the page was built.
         int hour = DateTime.Now.Hour;
-        _homeGreeting.Text = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+        _homeGreeting.Text = hour < 12 ? Loc.S("Greeting_Morning") : hour < 18 ? Loc.S("Greeting_Afternoon") : Loc.S("Greeting_Evening");
         FillTrackList(_homeTrackList, _homeTracks);
         FillHomePlaylistRail();
         try { _homeScroll.ChangeView(null, 0.0, null); } catch { }
@@ -1155,7 +1160,7 @@ public sealed partial class MainWindow : Window
         for (int i = 0; i < _podcasts.Count; i++)
         {
             var p = _podcasts[i];
-            string sub = p.EpisodeCount > 0 ? p.EpisodeCount + " episodes" : p.Description;
+            string sub = p.EpisodeCount > 0 ? Loc.Plural("Episodes", p.EpisodeCount) : p.Description;
             _podcastGrid.Items.Add(MakeTile(p.Name, sub, p.ArtworkUrl, i));
         }
     }
@@ -1195,9 +1200,9 @@ public sealed partial class MainWindow : Window
     {
         if (!_loggedIn || string.IsNullOrEmpty(artistId)) return;
         _lyricsShown = false;
-        _nav.Header = "Artist";
+        _nav.Header = Loc.S("Nav_Artist");
         _nav.Content = _artistPage;
-        _artistHeader.Text = "Loading…"; _artistFans.Text = "";
+        _artistHeader.Text = Loc.S("Status_Loading"); _artistFans.Text = "";
         _artistTopList.Items.Clear();
         _artistAlbumsGrid.Items.Clear();
         _artistRelatedGrid.Items.Clear();
@@ -1205,7 +1210,7 @@ public sealed partial class MainWindow : Window
         _artistTop = prof.Top;
         _artistAlbums = prof.Albums;
         _artistRelated = prof.Related;
-        _artistHeader.Text = string.IsNullOrEmpty(prof.Artist.Name) ? "Artist" : prof.Artist.Name;
+        _artistHeader.Text = string.IsNullOrEmpty(prof.Artist.Name) ? Loc.S("Nav_Artist") : prof.Artist.Name;
         _artistFans.Text = Wire.FansText(prof.Artist.NbFans);
         _artGen++;
         FillTrackList(_artistTopList, _artistTop); // reuses MakeTrackRow rows
@@ -1230,7 +1235,7 @@ public sealed partial class MainWindow : Window
     private void OnArtist(object s, RoutedEventArgs e)
     {
         string aid = CurrentArtistId();
-        if (string.IsNullOrEmpty(aid)) { _ = ShowMessage("No artist", "Start playing a track to view its artist."); return; }
+        if (string.IsNullOrEmpty(aid)) { _ = ShowMessage(Loc.S("Dialog_NoArtistTitle"), Loc.S("Dialog_NoArtistBody")); return; }
         OpenArtist(aid);
     }
 
@@ -1239,10 +1244,10 @@ public sealed partial class MainWindow : Window
     {
         if (!_loggedIn) return;
         _lyricsShown = true;
-        _nav.Header = "Lyrics";
+        _nav.Header = Loc.S("Nav_Lyrics");
         _nav.Content = _lyricsPage;
         string id = CurrentTrackId();
-        if (string.IsNullOrEmpty(id)) { ShowLyricsMessage("Play a track to see its lyrics."); return; }
+        if (string.IsNullOrEmpty(id)) { ShowLyricsMessage(Loc.S("Lyrics_PlayPrompt")); return; }
         LoadLyrics(id);
     }
 
@@ -1258,7 +1263,7 @@ public sealed partial class MainWindow : Window
         }
         int gen = ++_lyricsGen;
         _lyricsTrackId = trackId; // optimistic: stops the tick re-triggering
-        ShowLyricsMessage("Loading lyrics…");
+        ShowLyricsMessage(Loc.S("Lyrics_Loading"));
         var ly = await Task.Run(() => DeezerCore.Lyrics(trackId));
         _lyricsCache[trackId] = ly; // cache regardless of staleness
         if (gen != _lyricsGen) return; // a newer request superseded this one
@@ -1293,7 +1298,7 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            ShowLyricsMessage("No lyrics available.");
+            ShowLyricsMessage(Loc.S("Lyrics_None"));
         }
     }
 
@@ -1393,8 +1398,8 @@ public sealed partial class MainWindow : Window
         int gen = ++_connectGen; // drops a previous (slower) open
         _connectList.Items.Clear();
         _connectStatus.Visibility = Visibility.Visible;
-        if (!_loggedIn) { _connectStatus.Text = "Sign in to use Connect."; return; }
-        _connectStatus.Text = "Searching for devices…";
+        if (!_loggedIn) { _connectStatus.Text = Loc.S("Connect_SignIn"); return; }
+        _connectStatus.Text = Loc.S("Connect_Searching");
         var (devs, connAddr) = await Task.Run(() =>
         {
             var d = Wire.ParseConnectDevices(DeezerCore.TakeJson(DeezerCore.DZDiscoverDevices(700)));
@@ -1408,15 +1413,15 @@ public sealed partial class MainWindow : Window
 
         _connectList.Items.Clear();
         // "This computer" (local) -> disconnect. Active when no device is connected.
-        _connectList.Items.Add(MakeConnectRow("This computer", "Local playback", string.IsNullOrEmpty(connAddr), -1));
+        _connectList.Items.Add(MakeConnectRow(Loc.S("Connect_ThisComputer"), Loc.S("Connect_LocalPlayback"), string.IsNullOrEmpty(connAddr), -1));
         for (int i = 0; i < _connectDevices.Count; i++)
         {
             var d = _connectDevices[i];
             string sub = Wire.ConnectTypeLabel(d.Client);
-            if (!string.IsNullOrEmpty(d.Version)) sub = sub + " · OpenDeezer " + d.Version;
+            if (!string.IsNullOrEmpty(d.Version)) sub = Loc.Format("Connect_VersionFormat", sub, d.Version);
             _connectList.Items.Add(MakeConnectRow(string.IsNullOrEmpty(d.Name) ? d.Addr : d.Name, sub, d.Addr == connAddr, i));
         }
-        if (_connectDevices.Count == 0) _connectStatus.Text = "No other devices found on your network.";
+        if (_connectDevices.Count == 0) _connectStatus.Text = Loc.S("Connect_NoDevices");
         else _connectStatus.Visibility = Visibility.Collapsed;
     }
 
@@ -1440,7 +1445,7 @@ public sealed partial class MainWindow : Window
             int r = DeezerCore.DZConnectDevice(addr);
             return (r != 0, DeezerCore.ConnectedDevice());
         });
-        if (!ok) _ = ShowMessage("Couldn't connect", "That device could not be reached.");
+        if (!ok) _ = ShowMessage(Loc.S("Dialog_ConnectFailTitle"), Loc.S("Dialog_ConnectFailBody"));
         UpdateConnectIndicator(connAddr, ok ? name : "");
     }
 
@@ -1458,12 +1463,12 @@ public sealed partial class MainWindow : Window
         {
             _connectBtn.Foreground = _accent;
             string who = string.IsNullOrEmpty(name) ? addr : name;
-            ToolTipService.SetToolTip(_connectBtn, "Playing on " + who);
+            ToolTipService.SetToolTip(_connectBtn, Loc.Format("Connect_PlayingOnFormat", who));
         }
         else
         {
             _connectBtn.ClearValue(Control.ForegroundProperty);
-            ToolTipService.SetToolTip(_connectBtn, "Connect to a device");
+            ToolTipService.SetToolTip(_connectBtn, Loc.S("Tooltip_Connect"));
         }
     }
 
@@ -1493,7 +1498,7 @@ public sealed partial class MainWindow : Window
     private void OnAddCurrentToPlaylist(object s, RoutedEventArgs e)
     {
         string id = CurrentTrackId();
-        if (string.IsNullOrEmpty(id)) { _ = ShowMessage("No track", "Start playing a track to add it to a playlist."); return; }
+        if (string.IsNullOrEmpty(id)) { _ = ShowMessage(Loc.S("Dialog_NoTrackTitle"), Loc.S("Dialog_NoTrackBody")); return; }
         ShowAddToPlaylist(id);
     }
 
@@ -1505,17 +1510,17 @@ public sealed partial class MainWindow : Window
         var plists = await Task.Run(() => DeezerCore.Playlists());
 
         var list = new ListView { SelectionMode = ListViewSelectionMode.Single, MaxHeight = 360, MinWidth = 320 };
-        list.Items.Add(new TextBlock { Text = "＋  New playlist…" }); // index 0
+        list.Items.Add(new TextBlock { Text = Loc.S("Dialog_NewPlaylistItem") }); // index 0
         foreach (var p in plists) list.Items.Add(new TextBlock { Text = p.Name });
         list.SelectedIndex = plists.Count == 0 ? 0 : 1;
 
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Add to playlist",
+            Title = Loc.S("Dialog_AddToPlaylistTitle"),
             Content = list,
-            PrimaryButtonText = "Add",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.S("Btn_Add"),
+            CloseButtonText = Loc.S("Btn_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         if (await ShowDialog(dlg) != ContentDialogResult.Primary) return;
@@ -1525,10 +1530,10 @@ public sealed partial class MainWindow : Window
         string playlistId;
         if (idx == 0) // New playlist…
         {
-            string name = (await PromptText("New playlist", "Playlist name", "")).Trim();
+            string name = (await PromptText(Loc.S("Dialog_NewPlaylistTitle"), Loc.S("Dialog_PlaylistNamePlaceholder"), "")).Trim();
             if (string.IsNullOrEmpty(name)) return;
             playlistId = await Task.Run(() => Wire.ParseCreatedId(DeezerCore.TakeJson(DeezerCore.DZCreatePlaylist(name))));
-            if (string.IsNullOrEmpty(playlistId)) { _ = ShowMessage("Couldn't create playlist", "The playlist could not be created."); return; }
+            if (string.IsNullOrEmpty(playlistId)) { _ = ShowMessage(Loc.S("Dialog_CreateFailTitle"), Loc.S("Dialog_CreateFailBody")); return; }
         }
         else
         {
@@ -1538,16 +1543,16 @@ public sealed partial class MainWindow : Window
         }
         if (string.IsNullOrEmpty(playlistId)) return;
         bool ok = await Task.Run(() => DeezerCore.DZAddToPlaylist(playlistId, trackId) != 0);
-        if (!ok) _ = ShowMessage("Couldn't add to playlist", "The track could not be added.");
+        if (!ok) _ = ShowMessage(Loc.S("Dialog_AddFailTitle"), Loc.S("Dialog_AddFailBody"));
     }
 
     private async void OnNewPlaylist(object s, RoutedEventArgs e)
     {
         if (!_loggedIn) return;
-        string name = (await PromptText("New playlist", "Playlist name", "")).Trim();
+        string name = (await PromptText(Loc.S("Dialog_NewPlaylistTitle"), Loc.S("Dialog_PlaylistNamePlaceholder"), "")).Trim();
         if (string.IsNullOrEmpty(name)) return;
         string newId = await Task.Run(() => Wire.ParseCreatedId(DeezerCore.TakeJson(DeezerCore.DZCreatePlaylist(name))));
-        if (string.IsNullOrEmpty(newId)) { _ = ShowMessage("Couldn't create playlist", "The playlist could not be created."); return; }
+        if (string.IsNullOrEmpty(newId)) { _ = ShowMessage(Loc.S("Dialog_CreateFailTitle"), Loc.S("Dialog_CreateFailBody")); return; }
         LoadPlaylists(); // refresh the grid
     }
 
@@ -1555,10 +1560,10 @@ public sealed partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.Tag is not int i || i < 0 || i >= _playlists.Count) return;
         var p = _playlists[i];
-        string name = (await PromptText("Rename playlist", "Playlist name", p.Name)).Trim();
+        string name = (await PromptText(Loc.S("Dialog_RenamePlaylistTitle"), Loc.S("Dialog_PlaylistNamePlaceholder"), p.Name)).Trim();
         if (string.IsNullOrEmpty(name)) return;
         bool ok = await Task.Run(() => DeezerCore.DZRenamePlaylist(p.Id, name) != 0);
-        if (!ok) { _ = ShowMessage("Couldn't rename", "The playlist could not be renamed."); return; }
+        if (!ok) { _ = ShowMessage(Loc.S("Dialog_RenameFailTitle"), Loc.S("Dialog_RenameFailBody")); return; }
         LoadPlaylists();
     }
 
@@ -1566,10 +1571,10 @@ public sealed partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.Tag is not int i || i < 0 || i >= _playlists.Count) return;
         var p = _playlists[i];
-        bool yes = await Confirm("Delete playlist", "Delete “" + p.Name + "”? This can't be undone.", "Delete");
+        bool yes = await Confirm(Loc.S("Dialog_DeletePlaylistTitle"), Loc.Format("Dialog_DeletePlaylistBodyFormat", p.Name), Loc.S("Btn_Delete"));
         if (!yes) return;
         bool ok = await Task.Run(() => DeezerCore.DZDeletePlaylist(p.Id) != 0);
-        if (!ok) { _ = ShowMessage("Couldn't delete", "The playlist could not be deleted."); return; }
+        if (!ok) { _ = ShowMessage(Loc.S("Dialog_DeleteFailTitle"), Loc.S("Dialog_DeleteFailBody")); return; }
         LoadPlaylists();
     }
 
@@ -1582,8 +1587,8 @@ public sealed partial class MainWindow : Window
             XamlRoot = Content.XamlRoot,
             Title = title,
             Content = tb,
-            PrimaryButtonText = "OK",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.S("Btn_OK"),
+            CloseButtonText = Loc.S("Btn_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         return await ShowDialog(dlg) == ContentDialogResult.Primary ? tb.Text : "";
@@ -1596,7 +1601,7 @@ public sealed partial class MainWindow : Window
             Title = title,
             Content = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap },
             PrimaryButtonText = okText,
-            CloseButtonText = "Cancel",
+            CloseButtonText = Loc.S("Btn_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
         return await ShowDialog(dlg) == ContentDialogResult.Primary;
@@ -1745,7 +1750,7 @@ public sealed partial class MainWindow : Window
         _repeat = (_repeat + 1) % 3;
         _repeatIcon.Glyph = _repeat == 2 ? "" : ""; // RepeatOne or RepeatAll
         if (_repeat == 0) _repeatBtn.ClearValue(Control.ForegroundProperty); else _repeatBtn.Foreground = _accent;
-        ToolTipService.SetToolTip(_repeatBtn, _repeat == 0 ? "Repeat: off" : _repeat == 1 ? "Repeat: all" : "Repeat: one");
+        ToolTipService.SetToolTip(_repeatBtn, _repeat == 0 ? Loc.S("Tooltip_RepeatOff") : _repeat == 1 ? Loc.S("Tooltip_RepeatAll") : Loc.S("Tooltip_RepeatOne"));
         int mode = _repeat;
         bool clearPreload = !HasDeterministicNext(out _); // repeat-one never preloads; drop a stale one
         await Task.Run(() =>
@@ -2049,9 +2054,9 @@ public sealed partial class MainWindow : Window
     private void ShowTrayMenu()
     {
         IntPtr menu = NativeMethods.CreatePopupMenu();
-        NativeMethods.AppendMenuW(menu, NativeMethods.MF_STRING, (IntPtr)NativeMethods.MENU_RESTORE, "Open OpenDeezer");
+        NativeMethods.AppendMenuW(menu, NativeMethods.MF_STRING, (IntPtr)NativeMethods.MENU_RESTORE, Loc.S("Tray_Open"));
         NativeMethods.AppendMenuW(menu, NativeMethods.MF_SEPARATOR, IntPtr.Zero, null);
-        NativeMethods.AppendMenuW(menu, NativeMethods.MF_STRING, (IntPtr)NativeMethods.MENU_QUIT, "Quit");
+        NativeMethods.AppendMenuW(menu, NativeMethods.MF_STRING, (IntPtr)NativeMethods.MENU_QUIT, Loc.S("Tray_Quit"));
         NativeMethods.GetCursorPos(out var p);
         NativeMethods.SetForegroundWindow(_msgHwnd); // so the menu dismisses on focus loss
         NativeMethods.TrackPopupMenu(menu, NativeMethods.TPM_RIGHTBUTTON, p.X, p.Y, 0, _msgHwnd, IntPtr.Zero);
@@ -2116,6 +2121,7 @@ public sealed partial class MainWindow : Window
     // Guard ShowAsync (WinUI permits only one ContentDialog open at a time).
     private static async Task<ContentDialogResult> ShowDialog(ContentDialog dlg)
     {
+        dlg.FlowDirection = Loc.FlowDirection; // mirror every dialog for RTL languages (Arabic)
         try { return await dlg.ShowAsync(); }
         catch { return ContentDialogResult.None; }
     }
@@ -2127,7 +2133,7 @@ public sealed partial class MainWindow : Window
             XamlRoot = Content.XamlRoot,
             Title = title,
             Content = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap },
-            CloseButtonText = "OK",
+            CloseButtonText = Loc.S("Btn_OK"),
         };
         return ShowDialog(dlg);
     }
@@ -2161,12 +2167,12 @@ public sealed partial class MainWindow : Window
 
         // Audio quality
         var quality = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-        quality.Items.Add("Normal — MP3 128 kbps");
-        quality.Items.Add("High — MP3 320 kbps");
-        quality.Items.Add("HiFi — FLAC lossless");
+        quality.Items.Add(Loc.S("Quality_Normal"));
+        quality.Items.Add(Loc.S("Quality_High"));
+        quality.Items.Add(Loc.S("Quality_HiFi"));
         quality.SelectedIndex = _settings.Quality;
         var qsec = new StackPanel { Spacing = 4 };
-        qsec.Children.Add(new TextBlock { Text = "Audio quality", FontWeight = FontWeights.SemiBold });
+        qsec.Children.Add(new TextBlock { Text = Loc.S("Settings_AudioQuality"), FontWeight = FontWeights.SemiBold });
         qsec.Children.Add(quality);
         if (_account.LoggedIn)
         {
@@ -2174,7 +2180,7 @@ public sealed partial class MainWindow : Window
             if (exceeds)
                 qsec.Children.Add(new TextBlock
                 {
-                    Text = "Your plan (" + _account.Offer + ") may not support this quality; playback falls back automatically.",
+                    Text = Loc.Format("Settings_QualityWarnFormat", _account.Offer),
                     TextWrapping = TextWrapping.Wrap,
                     Opacity = 0.8,
                 });
@@ -2185,62 +2191,62 @@ public sealed partial class MainWindow : Window
         int selDev = 0;
         for (int i = 0; i < devices.Count; i++)
         {
-            string label = string.IsNullOrEmpty(devices[i].Name) ? "System default" : devices[i].Name;
-            if (devices[i].IsDefault) label += "  (default)";
+            string label = string.IsNullOrEmpty(devices[i].Name) ? Loc.S("Settings_SystemDefault") : devices[i].Name;
+            if (devices[i].IsDefault) label = Loc.Format("Settings_DeviceDefaultFormat", label);
             devCombo.Items.Add(label);
             if (devices[i].Id == curDev) selDev = i;
         }
         if (devices.Count > 0) devCombo.SelectedIndex = selDev;
-        else { devCombo.IsEnabled = false; devCombo.PlaceholderText = "No output devices"; }
+        else { devCombo.IsEnabled = false; devCombo.PlaceholderText = Loc.S("Settings_NoOutputDevices"); }
         var asec = new StackPanel { Spacing = 4 };
-        asec.Children.Add(new TextBlock { Text = "Output device", FontWeight = FontWeights.SemiBold });
+        asec.Children.Add(new TextBlock { Text = Loc.S("Settings_OutputDevice"), FontWeight = FontWeights.SemiBold });
         asec.Children.Add(devCombo);
 
         // Gapless
         var gapSwitch = new ToggleSwitch
         {
-            OnContent = "Play consecutive tracks with no silence",
-            OffContent = "Brief gap between tracks",
+            OnContent = Loc.S("Settings_GaplessOn"),
+            OffContent = Loc.S("Settings_GaplessOff"),
             IsOn = curGapless,
         };
         var gsec = new StackPanel { Spacing = 4 };
-        gsec.Children.Add(new TextBlock { Text = "Gapless playback", FontWeight = FontWeights.SemiBold });
+        gsec.Children.Add(new TextBlock { Text = Loc.S("Settings_GaplessPlayback"), FontWeight = FontWeights.SemiBold });
         gsec.Children.Add(gapSwitch);
 
         // Crossfade (0 / 3 / 6 / 12 s).
         int[] cfVals = { 0, 3000, 6000, 12000 };
         var cfCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-        cfCombo.Items.Add("Off");
-        cfCombo.Items.Add("3 seconds");
-        cfCombo.Items.Add("6 seconds");
-        cfCombo.Items.Add("12 seconds");
+        cfCombo.Items.Add(Loc.S("Common_Off"));
+        cfCombo.Items.Add(Loc.Plural("Seconds", 3));
+        cfCombo.Items.Add(Loc.Plural("Seconds", 6));
+        cfCombo.Items.Add(Loc.Plural("Seconds", 12));
         int cfIdx = 0;
         for (int i = 3; i >= 0; i--) { if (curCrossfade >= cfVals[i]) { cfIdx = i; break; } }
         cfCombo.SelectedIndex = cfIdx;
         var csec = new StackPanel { Spacing = 4 };
-        csec.Children.Add(new TextBlock { Text = "Crossfade", FontWeight = FontWeights.SemiBold });
+        csec.Children.Add(new TextBlock { Text = Loc.S("Settings_Crossfade"), FontWeight = FontWeights.SemiBold });
         csec.Children.Add(cfCombo);
 
         // Equalizer: opens its own dialog (10 vertical band sliders need the
         // width, and this list already scrolls). WinUI allows only one open
         // ContentDialog at a time, so the button hides Settings first; the EQ
         // applies live and is engine-persisted, so it never needed Save anyway.
-        var eqBtn = new Button { Content = "Equalizer…" };
+        var eqBtn = new Button { Content = Loc.S("Settings_EqualizerBtn") };
         var eqsec = new StackPanel { Spacing = 4 };
-        eqsec.Children.Add(new TextBlock { Text = "Equalizer", FontWeight = FontWeights.SemiBold });
-        eqsec.Children.Add(new TextBlock { Text = "10-band equalizer, preamp and mono audio.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+        eqsec.Children.Add(new TextBlock { Text = Loc.S("Settings_Equalizer"), FontWeight = FontWeights.SemiBold });
+        eqsec.Children.Add(new TextBlock { Text = Loc.S("Settings_EqualizerDesc"), Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
         eqsec.Children.Add(eqBtn);
 
         // Sleep timer (engine state; applied on Save via DZSetSleepTimer / DZCancelSleepTimer).
         // Off / 15 / 30 / 45 / 60 min, or pause when the current track ends.
         int[] slpMins = { 0, 15, 30, 45, 60 }; // combo index -> minutes; index 5 = End of track
         var slpCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-        slpCombo.Items.Add("Off");
-        slpCombo.Items.Add("15 minutes");
-        slpCombo.Items.Add("30 minutes");
-        slpCombo.Items.Add("45 minutes");
-        slpCombo.Items.Add("60 minutes");
-        slpCombo.Items.Add("End of track");
+        slpCombo.Items.Add(Loc.S("Common_Off"));
+        slpCombo.Items.Add(Loc.Plural("Minutes", 15));
+        slpCombo.Items.Add(Loc.Plural("Minutes", 30));
+        slpCombo.Items.Add(Loc.Plural("Minutes", 45));
+        slpCombo.Items.Add(Loc.Plural("Minutes", 60));
+        slpCombo.Items.Add(Loc.S("Settings_EndOfTrack"));
         int slpIdx = 0;
         if (slpActive)
         {
@@ -2255,29 +2261,29 @@ public sealed partial class MainWindow : Window
         }
         slpCombo.SelectedIndex = slpIdx;
         var slsec = new StackPanel { Spacing = 4 };
-        slsec.Children.Add(new TextBlock { Text = "Sleep timer", FontWeight = FontWeights.SemiBold });
+        slsec.Children.Add(new TextBlock { Text = Loc.S("Settings_SleepTimer"), FontWeight = FontWeights.SemiBold });
         slsec.Children.Add(slpCombo);
 
         // Volume normalization (ReplayGain) -- bound to engine state.
         var rg = new ToggleSwitch
         {
-            OnContent = "Normalize loudness across tracks (ReplayGain)",
-            OffContent = "Play tracks at their original loudness",
+            OnContent = Loc.S("Settings_ReplayGainOn"),
+            OffContent = Loc.S("Settings_ReplayGainOff"),
             IsOn = DeezerCore.DZReplayGain() != 0,
         };
         var rsec = new StackPanel { Spacing = 4 };
-        rsec.Children.Add(new TextBlock { Text = "Volume normalization", FontWeight = FontWeights.SemiBold });
+        rsec.Children.Add(new TextBlock { Text = Loc.S("Settings_VolumeNormalization"), FontWeight = FontWeights.SemiBold });
         rsec.Children.Add(rg);
 
         // Background / close-to-tray
         var tray = new ToggleSwitch
         {
-            OnContent = "Closing the window keeps playing in the tray",
-            OffContent = "Closing the window quits OpenDeezer",
+            OnContent = Loc.S("Settings_TrayOn"),
+            OffContent = Loc.S("Settings_TrayOff"),
             IsOn = _settings.CloseToTray,
         };
         var tsec = new StackPanel { Spacing = 4 };
-        tsec.Children.Add(new TextBlock { Text = "Background playback", FontWeight = FontWeights.SemiBold });
+        tsec.Children.Add(new TextBlock { Text = Loc.S("Settings_BackgroundPlayback"), FontWeight = FontWeights.SemiBold });
         tsec.Children.Add(tray);
 
         // Remote control (control API / phone remote): enable, LAN reachability, token.
@@ -2285,20 +2291,20 @@ public sealed partial class MainWindow : Window
         // behind the dialog's Save button.
         var ctrlEnableSwitch = new ToggleSwitch
         {
-            OnContent = "Remote control on",
-            OffContent = "Remote control off",
+            OnContent = Loc.S("Settings_RemoteOn"),
+            OffContent = Loc.S("Settings_RemoteOff"),
             IsOn = ctrlEnabled,
         };
         var ctrlLanSwitch = new ToggleSwitch
         {
-            OnContent = "Reachable on the local network",
-            OffContent = "This computer only",
+            OnContent = Loc.S("Settings_RemoteLanOn"),
+            OffContent = Loc.S("Settings_RemoteLanOff"),
             IsOn = ctrlLan,
             IsEnabled = ctrlEnabled,
         };
         var ctrlTokenBox = new TextBox
         {
-            PlaceholderText = "Access token (optional)",
+            PlaceholderText = Loc.S("Settings_AccessToken"),
             Text = ctrlToken,
             IsEnabled = ctrlEnabled,
         };
@@ -2326,27 +2332,27 @@ public sealed partial class MainWindow : Window
         ctrlLanSwitch.Toggled += (_, _) => ApplyControlConfig();
         ctrlTokenBox.LostFocus += (_, _) => ApplyControlConfig();
         var rcsec = new StackPanel { Spacing = 4 };
-        rcsec.Children.Add(new TextBlock { Text = "Remote control", FontWeight = FontWeights.SemiBold });
-        rcsec.Children.Add(new TextBlock { Text = "Control playback from another device on your network.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+        rcsec.Children.Add(new TextBlock { Text = Loc.S("Settings_RemoteControl"), FontWeight = FontWeights.SemiBold });
+        rcsec.Children.Add(new TextBlock { Text = Loc.S("Settings_RemoteDesc"), Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
         rcsec.Children.Add(ctrlEnableSwitch);
         rcsec.Children.Add(ctrlLanSwitch);
         rcsec.Children.Add(ctrlTokenBox);
 
         // Updates: on-demand GitHub release check (never downloads/installs anything).
-        var updStatus = new TextBlock { Text = "Check GitHub for a newer release.", Opacity = 0.8, TextWrapping = TextWrapping.Wrap };
-        var updBtn = new Button { Content = "Check for updates" };
-        var updDownloadBtn = new Button { Content = "Download", Visibility = Visibility.Collapsed };
+        var updStatus = new TextBlock { Text = Loc.S("Settings_UpdateCheckDesc"), Opacity = 0.8, TextWrapping = TextWrapping.Wrap };
+        var updBtn = new Button { Content = Loc.S("Settings_CheckForUpdates") };
+        var updDownloadBtn = new Button { Content = Loc.S("Btn_Download"), Visibility = Visibility.Collapsed };
         string updCheckUrl = "";
         updBtn.Click += async (_, _) =>
         {
             updBtn.IsEnabled = false;
-            updStatus.Text = "Checking…";
+            updStatus.Text = Loc.S("Settings_Checking");
             UpdateInfo info;
             try { info = await Task.Run(() => DeezerCore.CheckUpdate()); }
             catch { info = new UpdateInfo(); }
             if (info.HasUpdate)
             {
-                updStatus.Text = "v" + info.Latest + " available (you have v" + info.Current + ").";
+                updStatus.Text = Loc.Format("Settings_UpdateAvailFormat", info.Latest, info.Current);
                 updCheckUrl = info.Url;
                 updDownloadBtn.Visibility = Visibility.Visible;
                 ShowUpdateNotice(info); // also surface the dismissible banner for after the dialog closes
@@ -2354,8 +2360,8 @@ public sealed partial class MainWindow : Window
             else
             {
                 updStatus.Text = string.IsNullOrEmpty(info.Latest)
-                    ? "Could not check for updates. Try again later."
-                    : "You're up to date (v" + info.Current + ").";
+                    ? Loc.S("Settings_UpdateFail")
+                    : Loc.Format("Settings_UpToDateFormat", info.Current);
                 updDownloadBtn.Visibility = Visibility.Collapsed;
             }
             updBtn.IsEnabled = true;
@@ -2369,9 +2375,25 @@ public sealed partial class MainWindow : Window
         updRow.Children.Add(updBtn);
         updRow.Children.Add(updDownloadBtn);
         var usec = new StackPanel { Spacing = 4 };
-        usec.Children.Add(new TextBlock { Text = "Updates", FontWeight = FontWeights.SemiBold });
+        usec.Children.Add(new TextBlock { Text = Loc.S("Settings_Updates"), FontWeight = FontWeights.SemiBold });
         usec.Children.Add(updStatus);
         usec.Children.Add(updRow);
+
+        // Language: choose the UI language (or follow Windows). The already-built
+        // code-behind UI cannot re-text itself, so a change takes effect on the next
+        // launch; on Save we re-point Loc and prompt for a restart.
+        var langCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+        int selLang = 0;
+        for (int i = 0; i < Loc.Languages.Length; i++)
+        {
+            var lang = Loc.Languages[i];
+            langCombo.Items.Add(string.IsNullOrEmpty(lang.Tag) ? Loc.S("Settings_LanguageSystem") : lang.Native);
+            if (lang.Tag == _settings.Language) selLang = i;
+        }
+        langCombo.SelectedIndex = selLang;
+        var lsec = new StackPanel { Spacing = 4 };
+        lsec.Children.Add(new TextBlock { Text = Loc.S("Settings_Language"), FontWeight = FontWeights.SemiBold });
+        lsec.Children.Add(langCombo);
 
         sp.Children.Add(qsec);
         sp.Children.Add(asec);
@@ -2382,6 +2404,7 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(rsec);
         sp.Children.Add(tsec);
         sp.Children.Add(rcsec);
+        sp.Children.Add(lsec);
         sp.Children.Add(usec);
 
         // Wrap in a scroll viewer — the settings list (audio + remote control +
@@ -2396,10 +2419,10 @@ public sealed partial class MainWindow : Window
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Settings",
+            Title = Loc.S("Settings_Title"),
             Content = settingsScroll,
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.S("Btn_Save"),
+            CloseButtonText = Loc.S("Btn_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         eqBtn.Click += (_, _) => { dlg.Hide(); ShowEqualizer(); };
@@ -2435,7 +2458,20 @@ public sealed partial class MainWindow : Window
                 else DeezerCore.DZSetSleepTimer(slpMins[si], 0);       // minutes
             }
 
+            // UI language: persisted, but only takes effect on the next launch because
+            // the code-built tree is already texted. Re-point Loc and prompt a restart.
+            int li = langCombo.SelectedIndex;
+            string newLang = (li >= 0 && li < Loc.Languages.Length) ? Loc.Languages[li].Tag : "";
+            bool langChanged = newLang != _settings.Language;
+            _settings.Language = newLang;
+
             Config.SaveSettings(_settings);
+
+            if (langChanged)
+            {
+                Loc.SetLanguage(newLang);
+                _ = ShowMessage(Loc.S("Settings_Language"), Loc.S("Settings_LanguageRestart"));
+            }
         }
     }
 
@@ -2491,7 +2527,7 @@ public sealed partial class MainWindow : Window
         var presetCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = eq.Enabled };
         foreach (var name in eq.Presets) presetCombo.Items.Add(Wire.PresetLabel(name));
         int customIdx = presetCombo.Items.Count;
-        presetCombo.Items.Add("Custom");
+        presetCombo.Items.Add(Loc.S("EQ_Custom"));
         int selPreset = eq.Presets.IndexOf(eq.Preset);
         presetCombo.SelectedIndex = selPreset >= 0 ? selPreset : customIdx;
 
@@ -2564,8 +2600,8 @@ public sealed partial class MainWindow : Window
 
         var enable = new ToggleSwitch
         {
-            OnContent = "Equalizer on",
-            OffContent = "Equalizer off",
+            OnContent = Loc.S("EQ_EnableOn"),
+            OffContent = Loc.S("EQ_EnableOff"),
             IsOn = eq.Enabled,
         };
         enable.Toggled += async (_, _) =>
@@ -2581,8 +2617,8 @@ public sealed partial class MainWindow : Window
         // Mono downmix is independent of the EQ enable (never greyed with it).
         var mono = new ToggleSwitch
         {
-            OnContent = "Both channels play the same audio",
-            OffContent = "Stereo",
+            OnContent = Loc.S("EQ_MonoOn"),
+            OffContent = Loc.S("EQ_MonoOff"),
             IsOn = eq.Mono,
         };
         mono.Toggled += async (_, _) =>
@@ -2609,15 +2645,15 @@ public sealed partial class MainWindow : Window
         };
 
         var psec = new StackPanel { Spacing = 4 };
-        psec.Children.Add(new TextBlock { Text = "Preset", FontWeight = FontWeights.SemiBold });
+        psec.Children.Add(new TextBlock { Text = Loc.S("EQ_Preset"), FontWeight = FontWeights.SemiBold });
         psec.Children.Add(presetCombo);
 
         var pasec = new StackPanel { Spacing = 4 };
-        pasec.Children.Add(new TextBlock { Text = "Preamp", FontWeight = FontWeights.SemiBold });
+        pasec.Children.Add(new TextBlock { Text = Loc.S("EQ_Preamp"), FontWeight = FontWeights.SemiBold });
         pasec.Children.Add(preampSlider);
 
         var msec = new StackPanel { Spacing = 4 };
-        msec.Children.Add(new TextBlock { Text = "Mono audio", FontWeight = FontWeights.SemiBold });
+        msec.Children.Add(new TextBlock { Text = Loc.S("EQ_MonoAudio"), FontWeight = FontWeights.SemiBold });
         msec.Children.Add(mono);
 
         sp.Children.Add(enable);
@@ -2629,9 +2665,9 @@ public sealed partial class MainWindow : Window
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Equalizer",
+            Title = Loc.S("Settings_Equalizer"),
             Content = sp,
-            CloseButtonText = "Close",
+            CloseButtonText = Loc.S("Btn_Close"),
         };
         await ShowDialog(dlg);
     }
@@ -2652,7 +2688,7 @@ public sealed partial class MainWindow : Window
 
         sp.Children.Add(new TextBlock
         {
-            Text = "Scan with your phone (same Wi-Fi), then enter the code.",
+            Text = Loc.S("PhoneRemote_Instructions"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.8,
         });
@@ -2660,8 +2696,8 @@ public sealed partial class MainWindow : Window
         var tog = new ToggleSwitch
         {
             IsOn = initOn,
-            OnContent = "Phone Remote active",
-            OffContent = "Phone Remote off",
+            OnContent = Loc.S("PhoneRemote_On"),
+            OffContent = Loc.S("PhoneRemote_Off"),
         };
         sp.Children.Add(tog);
 
@@ -2721,9 +2757,9 @@ public sealed partial class MainWindow : Window
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Phone Remote",
+            Title = Loc.S("Nav_PhoneRemote"),
             Content = sp,
-            CloseButtonText = "Close",
+            CloseButtonText = Loc.S("Btn_Close"),
         };
         await ShowDialog(dlg);
     }
@@ -2765,24 +2801,23 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.7.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent });
-        sp.Children.Add(new TextBlock { Text = "An open source reimplementation of Deezer.", TextWrapping = TextWrapping.Wrap });
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.8.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
+        sp.Children.Add(new TextBlock { Text = Loc.S("About_Tagline"), TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text = "Native Windows client (WinUI 3 · C# · Fluent). The engine — login, browse, " +
-                   "Blowfish decrypt, MP3 decode, WASAPI playback — is the Go core libdeezercore.dll, linked in-process.",
+            Text = Loc.S("About_Description"),
         });
         if (_account.LoggedIn && !string.IsNullOrEmpty(_account.Name))
-            sp.Children.Add(new TextBlock { Text = "Signed in: " + _account.Name + " · " + _account.Offer, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold });
-        sp.Children.Add(new TextBlock { Text = "By Cycl0o0. Licensed under AGPL-3.0.", Opacity = 0.8 });
+            sp.Children.Add(new TextBlock { Text = Loc.Format("About_SignedInFormat", _account.Name, _account.Offer), TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold });
+        sp.Children.Add(new TextBlock { Text = Loc.S("About_Credits"), Opacity = 0.8 });
 
         var dlg = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "About OpenDeezer",
+            Title = Loc.S("About_Title"),
             Content = sp,
-            CloseButtonText = "Close",
+            CloseButtonText = Loc.S("Btn_Close"),
         };
         await ShowDialog(dlg);
     }

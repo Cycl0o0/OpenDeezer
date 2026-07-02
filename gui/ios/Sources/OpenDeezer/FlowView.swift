@@ -14,7 +14,7 @@ struct FlowView: View {
             } else if let error = errorText {
                 ContentUnavailableMessage(systemImage: "waveform", title: "Flow unavailable", message: error)
             } else if tracks.isEmpty {
-                ContentUnavailableMessage(systemImage: "waveform", title: "Flow is empty", message: "Try again later.")
+                ContentUnavailableMessage(systemImage: "waveform", title: "Flow is empty", message: String(localized: "Try again later."))
             } else {
                 List {
                     Section {

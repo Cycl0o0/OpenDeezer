@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/ui"
 	version_ "github.com/Cycl0o0/OpenDeezer/internal/version"
@@ -62,6 +64,15 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "audio:", err)
 		os.Exit(1)
+	}
+
+	// Set the UI language before building the model (some strings, e.g. the
+	// search placeholder, are captured at construction). The persisted language
+	// wins; an empty setting means auto-detect from the locale environment.
+	if lang := config.LoadLanguage(); lang != "" {
+		i18n.SetLocale(lang)
+	} else {
+		i18n.SetLocale(i18n.DetectLocale())
 	}
 
 	ui.Version = version

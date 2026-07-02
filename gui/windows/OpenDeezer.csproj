@@ -27,4 +27,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
   </ItemGroup>
+  <!-- Localization: MRT Core resources. The .NET SDK's EnableDefaultPriItems globs
+       Strings\**\*.resw automatically, so we do NOT list them explicitly (doing so
+       trips NETSDK1022 "Duplicate PRIResource items"). MakePri compiles them into
+       resources.pri (one resource subtree "Resources", one qualifier per locale
+       folder) which ships next to OpenDeezer.exe and is read by Loc.cs at runtime. -->
 </Project>

@@ -11,6 +11,8 @@
 // and verifies/persists it — a crash here can never take down the main app.
 #include <QApplication>
 #include <QByteArray>
+#include <QLocale>
+#include <QTranslator>
 #include <QNetworkCookie>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -33,11 +35,20 @@ int main(int argc, char **argv) {
 
     QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QApplication app(argc, argv);
+    // Localization: load the embedded catalog for the current locale (falls
+    // back to the English source strings when no matching .qm is present).
+    auto *translator = new QTranslator(&app);
+    if (translator->load(QLocale(), QStringLiteral("opendeezer"),
+                         QStringLiteral("_"), QStringLiteral(":/i18n")))
+        QApplication::installTranslator(translator);
+    QApplication::setLayoutDirection(QLocale().textDirection());
     app.setApplicationName("OpenDeezer Login");
-    app.setApplicationDisplayName("Log in to Deezer");
+    app.setApplicationDisplayName(
+        QCoreApplication::translate("LoginHelper", "Log in to Deezer"));
 
     QWidget win;
-    win.setWindowTitle(QStringLiteral("Log in to Deezer — OpenDeezer"));
+    win.setWindowTitle(
+        QCoreApplication::translate("LoginHelper", "Log in to Deezer — OpenDeezer"));
     win.resize(520, 700);
     auto *v = new QVBoxLayout(&win);
     v->setContentsMargins(0, 0, 0, 0);

@@ -2,11 +2,11 @@ package ui
 
 import (
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,19 +21,20 @@ func (m *Model) menuRows() []list.Item {
 	if r := LoadResume(); r != nil {
 		rows = append(rows, row{
 			kind: rowMenu, action: actResume,
-			title: "▶  Resume — " + r.Name,
+			title: "▶  " + i18n.T("Resume") + " — " + r.Name,
 			desc:  r.ArtistLine + " · " + fmtMS(r.PositionMS) + " / " + fmtMS(r.DurationMS),
 		})
 	}
 	rows = append(rows,
-		row{kind: rowMenu, title: "❤  Liked Songs", desc: "favorites", action: actLiked},
-		row{kind: rowMenu, title: "≡  My Playlists", desc: "your playlists", action: actPlaylists},
-		row{kind: rowMenu, title: "⚡ Flow", desc: "non-stop mix", action: actFlow},
-		row{kind: rowMenu, title: "📈 Charts", desc: "top tracks, albums & artists", action: actCharts},
-		row{kind: rowMenu, title: "🎙 Podcasts", desc: "search shows & episodes", action: actPodcasts},
-		row{kind: rowMenu, title: "🔍 Search", desc: "tracks, albums, artists, playlists", action: actSearch},
-		row{kind: rowMenu, title: "📡 Remote control", desc: "drive another OpenDeezer client", action: actRemote},
-		row{kind: rowMenu, title: "📱 Web Remote", desc: "control from your phone over Wi-Fi", action: actWebRemote},
+		row{kind: rowMenu, title: "❤  " + i18n.T("Liked Songs"), desc: i18n.T("favorites"), action: actLiked},
+		row{kind: rowMenu, title: "≡  " + i18n.T("My Playlists"), desc: i18n.T("your playlists"), action: actPlaylists},
+		row{kind: rowMenu, title: "⚡ Flow", desc: i18n.T("non-stop mix"), action: actFlow},
+		row{kind: rowMenu, title: "📈 " + i18n.T("Charts"), desc: i18n.T("top tracks, albums & artists"), action: actCharts},
+		row{kind: rowMenu, title: "🎙 " + i18n.T("Podcasts"), desc: i18n.T("search shows & episodes"), action: actPodcasts},
+		row{kind: rowMenu, title: "🔍 " + i18n.T("Search"), desc: i18n.T("tracks, albums, artists, playlists"), action: actSearch},
+		row{kind: rowMenu, title: "📡 " + i18n.T("Remote control"), desc: i18n.T("drive another OpenDeezer client"), action: actRemote},
+		row{kind: rowMenu, title: "📱 " + i18n.T("Web Remote"), desc: i18n.T("control from your phone over Wi-Fi"), action: actWebRemote},
+		row{kind: rowMenu, title: "🌐 " + i18n.T("Language") + ": " + currentLanguageName(), desc: i18n.T("interface language"), action: actLanguage},
 	)
 	return rows
 }
@@ -53,9 +54,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil {
 			if errors.Is(msg.err, deezer.ErrARLExpired) {
-				m.status = "ARL expired or invalid — refresh the 'arl' cookie from deezer.com, then `opendeezer -save-arl <arl>`"
+				m.status = i18n.T("ARL expired or invalid — refresh the 'arl' cookie from deezer.com, then `opendeezer -save-arl <arl>`")
 			} else {
-				m.status = "Login failed (network?): " + msg.err.Error()
+				m.status = i18n.Tf("Login failed (network?): %s", msg.err.Error())
 			}
 			return m, nil
 		}
@@ -70,13 +71,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = screenMenu
 		if m.acct.Name != "" {
-			m.status = "Logged in as " + m.acct.Name + " · " + m.acct.Offer
+			m.status = i18n.Tf("Logged in as %s · %s", m.acct.Name, m.acct.Offer)
 		} else {
-			m.status = "Logged in · " + m.acct.Offer
+			m.status = i18n.Tf("Logged in · %s", m.acct.Offer)
 		}
 		// Warn if the chosen quality exceeds the plan's entitlement.
 		if q := m.client.Quality(); (q == 2 && !m.acct.CanHiFi) || (q == 1 && !m.acct.CanHQ) {
-			m.status += "  (plan can't stream that quality — will fall back)"
+			m.status += "  " + i18n.T("(plan can't stream that quality — will fall back)")
 		}
 		m.list.Title = "OpenDeezer"
 		m.list.SetItems(m.menuRows())
@@ -163,7 +164,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Tracks are the playable context, held aside until an explicit play.
 		m.browse = msg.results.Tracks
-		m.list.Title = "Results"
+		m.list.Title = i18n.T("Results")
 		m.list.SetItems(items)
 		m.list.ResetSelected()
 		m.screen = screenList
@@ -178,7 +179,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if err := m.player.Play(msg.plan, msg.track.DurationMS); err != nil {
-			m.status = "Playback error: " + err.Error()
+			m.status = i18n.Tf("Playback error: %s", err.Error())
 			return m, nil
 		}
 		m.playing = true
@@ -226,7 +227,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, d := range msg.devices {
 			items[i] = deviceRow(d.ID, d.Name, d.ID == cur)
 		}
-		m.list.Title = "Output device"
+		m.list.Title = i18n.T("Output device")
 		m.list.SetItems(items)
 		m.list.ResetSelected()
 		m.screen = screenDevices
@@ -237,7 +238,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lyricsMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.status = "Lyrics: " + msg.err.Error()
+			m.status = i18n.Tf("Lyrics: %s", msg.err.Error())
 			return m, nil
 		}
 		if msg.trackID == m.lyricsTrack {
@@ -278,27 +279,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.loading = false
-		m.status = "Error: " + msg.err.Error()
+		m.status = i18n.Tf("Error: %s", msg.err.Error())
 		return m, nil
 
 	case updateCheckMsg:
+		// Capture whether this reply answers a manual re-check before clearing the
+		// flag: the status line is now localized, so it can't be compared against a
+		// fixed English "Checking…" literal to tell manual from silent checks.
+		wasManual := m.updateChecking
 		m.updateChecking = false
 		m.updateChecked = true
 		if msg.err == nil {
 			m.updateInfo = msg.info
 		}
-		// The silent startup check never touches m.status — the footer
-		// notice (see footer()) is enough when an update exists. Only a
-		// manual re-check (About screen) sets "Checking…" first, so only
-		// that path gets a status reply here.
-		if m.status == "Checking for updates…" {
+		// The silent startup check never touches m.status — the footer notice (see
+		// footer()) is enough when an update exists. Only a manual re-check (About
+		// screen) surfaces feedback here.
+		if wasManual {
 			switch {
 			case msg.err != nil:
-				m.status = "Update check failed (network?)"
+				m.status = i18n.T("Update check failed (network?)")
 			case msg.info.HasUpdate:
 				m.status = ""
 			default:
-				m.status = "You're on the latest version."
+				m.status = i18n.T("You're on the latest version.")
 			}
 		}
 		return m, nil
@@ -323,7 +327,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case remoteConnMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.status = "Remote: " + msg.err.Error()
+			m.status = i18n.Tf("Remote: %s", msg.err.Error())
 			return m, nil
 		}
 		m.remote = msg.client
@@ -337,13 +341,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if name == "" {
 			name = msg.addr
 		}
-		m.status = "Connected to " + name
+		m.status = i18n.Tf("Connected to %s", name)
 		_ = SaveLastPeer(msg.addr)
 		return m, nil
 
 	case remoteStateMsg:
 		if msg.err != nil {
-			m.status = "Remote: " + msg.err.Error()
+			m.status = i18n.Tf("Remote: %s", msg.err.Error())
 			return m, nil
 		}
 		m.remoteState = msg.state
@@ -352,7 +356,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case webRemoteMsg:
 		m.loading = false
 		if msg.errStr != "" {
-			m.status = "Web Remote: " + msg.errStr
+			m.status = i18n.Tf("Web Remote: %s", msg.errStr)
 			return m, nil
 		}
 		// When the cmd had to close the old loopback server and rebind on LAN,
@@ -370,7 +374,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.enabled {
 			m.status = ""
 		} else {
-			m.status = "Web remote disabled"
+			m.status = i18n.T("Web remote disabled")
 		}
 		return m, nil
 
@@ -378,17 +382,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		items := []list.Item{row{
 			kind: rowMenu, action: actRemoteManual,
-			title: "✎  Enter address…", desc: "type a host:port manually",
+			title: "✎  " + i18n.T("Enter address…"), desc: i18n.T("type a host:port manually"),
 		}}
 		for _, p := range msg.peers {
 			items = append(items, peerRow(p))
 		}
-		m.list.Title = "Connect to a device"
+		m.list.Title = i18n.T("Connect to a device")
 		m.list.SetItems(items)
 		m.list.ResetSelected()
 		m.screen = screenRemote
 		if len(msg.peers) == 0 {
-			m.status = "No devices found — enable OPENDEEZER_CONTROL=:7654 on the target."
+			m.status = i18n.T("No devices found — enable OPENDEEZER_CONTROL=:7654 on the target.")
 		} else {
 			m.status = ""
 		}
@@ -458,7 +462,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = sleepStatus(m.player)
 		case "sleepcancel":
 			m.player.CancelSleepTimer()
-			m.status = "Sleep timer off"
+			m.status = i18n.T("Sleep timer off")
 		}
 		m.publishMedia()
 		m.publishControl()
@@ -475,7 +479,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.q.Set(msg.tracks, 0)
 		m.browse = msg.tracks // keep row activation consistent with the shown list
 		m.episodeMode = msg.episodes
-		m.list.Title = "Now Playing"
+		m.list.Title = i18n.T("Now Playing")
 		m.list.SetItems(items)
 		m.list.ResetSelected()
 		m.screen = screenList
@@ -533,7 +537,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.loading = true
-			m.status = "Connecting…"
+			m.status = i18n.T("Connecting…")
 			return m, m.remoteConnectCmd(m.search.Value(), true) // manual: trusted, may use token
 		}
 		var cmd tea.Cmd
@@ -558,10 +562,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.loading = true
 			if m.searchPodcast {
-				m.status = "Searching…"
+				m.status = i18n.T("Searching…")
 				return m, m.podcastSearchCmd(q)
 			}
-			m.status = "Searching…"
+			m.status = i18n.T("Searching…")
 			return m, m.searchCmd(q)
 		}
 		var cmd tea.Cmd
@@ -590,12 +594,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		// Like the current track.
 		if t, ok := m.q.Current(); ok && !m.episodeMode {
-			m.status = "Liking…"
+			m.status = i18n.T("Liking…")
 			return m, m.likeCurrentCmd(t)
 		}
 		return m, nil
 	case "r":
-		m.status = "Repeat: " + m.q.CycleRepeat().String()
+		m.status = i18n.Tf("Repeat: %s", i18n.T(m.q.CycleRepeat().String()))
 		m.publishControl()
 		if m.remote != nil {
 			return m, remoteCmd(m.remote.CycleRepeat)
@@ -606,9 +610,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.preloadNextCmd()
 	case "z":
 		if m.q.ToggleShuffle() {
-			m.status = "Shuffle on"
+			m.status = i18n.T("Shuffle on")
 		} else {
-			m.status = "Shuffle off"
+			m.status = i18n.T("Shuffle off")
 		}
 		m.publishControl()
 		if m.remote != nil {
@@ -632,13 +636,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.updateChecking = true
-			m.status = "Checking for updates…"
+			m.status = i18n.T("Checking for updates…")
 			return m, m.updateCheckCmd()
 		}
 		m.toggleScreen(screenQueue)
 		return m, nil
 	case "t":
-		m.status = "Theme: " + m.cycleTheme()
+		m.status = i18n.Tf("Theme: %s", m.cycleTheme())
 		return m, nil
 	case "T":
 		// Cycle the sleep timer: off → 15 → 30 → 45 → 60 min → end-of-track → off.
@@ -650,18 +654,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.player.SetReplayGain(on)
 		_ = SaveReplayGain(on)
 		if on {
-			m.status = "ReplayGain on (loudness normalization)"
+			m.status = i18n.T("ReplayGain on (loudness normalization)")
 		} else {
-			m.status = "ReplayGain off"
+			m.status = i18n.T("ReplayGain off")
 		}
 		return m, nil
 	case "E":
 		on := !m.player.EQEnabled()
 		m.player.SetEQEnabled(on)
 		if on {
-			m.status = "Equalizer on (" + m.player.EQPreset() + ")"
+			m.status = i18n.Tf("Equalizer on (%s)", m.player.EQPreset())
 		} else {
-			m.status = "Equalizer off"
+			m.status = i18n.T("Equalizer off")
 		}
 		return m, nil
 	case "ctrl+e":
@@ -678,24 +682,24 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		_ = m.player.SetEQPreset(next)
 		if m.player.EQEnabled() {
-			m.status = "EQ preset: " + next
+			m.status = i18n.Tf("EQ preset: %s", next)
 		} else {
-			m.status = "EQ preset: " + next + " (equalizer off — E to enable)"
+			m.status = i18n.Tf("EQ preset: %s (equalizer off — E to enable)", next)
 		}
 		return m, nil
 	case "M":
 		on := !m.player.MonoDownmix()
 		m.player.SetMonoDownmix(on)
 		if on {
-			m.status = "Mono downmix on"
+			m.status = i18n.T("Mono downmix on")
 		} else {
-			m.status = "Mono downmix off"
+			m.status = i18n.T("Mono downmix off")
 		}
 		return m, nil
 	case "d":
 		// Output device picker.
 		m.loading = true
-		m.status = "Loading…"
+		m.status = i18n.T("Loading…")
 		return m, m.devicesCmd()
 	case "x":
 		// Cycle crossfade: 0 → 3s → 6s → 12s → 0.
@@ -703,9 +707,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.player.SetCrossfadeMS(next)
 		_ = SaveCrossfadeMS(next)
 		if next == 0 {
-			m.status = "Crossfade off"
+			m.status = i18n.T("Crossfade off")
 		} else {
-			m.status = "Crossfade " + strconv.Itoa(next/1000) + "s"
+			m.status = i18n.Tf("Crossfade %ds", next/1000)
 		}
 		return m, nil
 	case "ctrl+g":
@@ -713,9 +717,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.player.SetGapless(on)
 		_ = SaveGapless(on)
 		if on {
-			m.status = "Gapless on"
+			m.status = i18n.T("Gapless on")
 		} else {
-			m.status = "Gapless off"
+			m.status = i18n.T("Gapless off")
 		}
 		return m, nil
 	case "l":
@@ -733,7 +737,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen == screenLyrics && (m.lyrics == nil || m.lyricsTrack != t.ID) {
 			m.lyricsTrack = t.ID
 			m.loading = true
-			m.status = "Loading…"
+			m.status = i18n.T("Loading…")
 			return m, m.lyricsCmd(t)
 		}
 		return m, nil
@@ -755,11 +759,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		_ = SaveQuality(q)
 		switch q {
 		case 2:
-			m.status = "Audio quality: HiFi (FLAC)"
+			m.status = i18n.T("Audio quality: HiFi (FLAC)")
 		case 1:
-			m.status = "Audio quality: High (MP3 320)"
+			m.status = i18n.T("Audio quality: High (MP3 320)")
 		default:
-			m.status = "Audio quality: Normal (MP3 128)"
+			m.status = i18n.T("Audio quality: Normal (MP3 128)")
 		}
 		return m, nil
 	case "s":
@@ -825,19 +829,19 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 	case rowMenu:
 		switch it.action {
 		case actLiked:
-			m.status = "Loading…"
+			m.status = i18n.T("Loading…")
 			m.loading = true
 			return m, m.favoritesCmd()
 		case actPlaylists:
-			m.status = "Loading…"
+			m.status = i18n.T("Loading…")
 			m.loading = true
 			return m, m.playlistsCmd()
 		case actCharts:
-			m.status = "Loading…"
+			m.status = i18n.T("Loading…")
 			m.loading = true
 			return m, m.chartsCmd()
 		case actFlow:
-			m.status = "Loading…"
+			m.status = i18n.T("Loading…")
 			m.loading = true
 			return m, m.flowCmd()
 		case actSearch:
@@ -854,11 +858,23 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			return m, nil
 		case actRemote:
 			m.loading = true
-			m.status = "Scanning…"
+			m.status = i18n.T("Scanning…")
 			return m, m.discoverDevicesCmd()
 		case actWebRemote:
 			m.screen = screenWebRemote
 			m.status = ""
+			return m, nil
+		case actLanguage:
+			// Cycle the UI language and rebuild the home menu so every row
+			// re-renders in the new language (the list holds a static snapshot of
+			// its items; overlays/footer re-read T() every frame on their own).
+			name := m.cycleLanguage()
+			idx := m.list.Index()
+			m.list.SetItems(m.menuRows())
+			if idx >= 0 && idx < len(m.list.Items()) {
+				m.list.Select(idx)
+			}
+			m.status = i18n.Tf("Language: %s", name)
 			return m, nil
 		case actRemoteManual:
 			m.search.SetValue(LoadLastPeer())
@@ -881,11 +897,11 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 		m.playBrowsed(it.track.ID, false)
 		return m, m.playCurrent()
 	case rowArtist:
-		m.status = "Loading…"
+		m.status = i18n.T("Loading…")
 		m.loading = true
 		return m, m.artistTopCmd(it.artist)
 	case rowPodcast:
-		m.status = "Loading…"
+		m.status = i18n.T("Loading…")
 		m.loading = true
 		return m, m.episodesCmd(it.podcast)
 	case rowEpisode:
@@ -894,25 +910,25 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 		return m, m.playCurrent()
 	case rowDevice:
 		if err := m.player.SetDevice(it.deviceID); err != nil {
-			m.status = "Device error: " + err.Error()
+			m.status = i18n.Tf("Device error: %s", err.Error())
 		} else {
 			_ = SaveAudioDevice(it.deviceID)
-			m.status = "Output: " + it.title
+			m.status = i18n.Tf("Output: %s", it.title)
 		}
 		m.restoreList() // the picker replaced m.list; put the browse list back
 		m.screen = m.prevScreen
 		return m, nil
 	case rowPlaylist:
-		m.status = "Loading…"
+		m.status = i18n.T("Loading…")
 		m.loading = true
 		return m, m.playlistTracksCmd(it.playlist)
 	case rowAlbum:
-		m.status = "Loading…"
+		m.status = i18n.T("Loading…")
 		m.loading = true
 		return m, m.albumTracksCmd(it.album)
 	case rowPeer:
 		m.loading = true
-		m.status = "Connecting to " + it.title + "…"
+		m.status = i18n.Tf("Connecting to %s…", it.title)
 		return m, m.remoteConnectCmd(it.peerAddr, false) // discovered: account-only
 	}
 	return m, nil
@@ -959,7 +975,7 @@ func (m *Model) playCurrent() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	m.status = "Loading: " + t.Name
+	m.status = i18n.Tf("Loading: %s", t.Name)
 	m.loading = true
 	if m.episodeMode {
 		return m.episodeStreamCmd(t)
@@ -1079,5 +1095,5 @@ func (m *Model) shutdown() {
 }
 
 func volStatus(v float64) string {
-	return "Volume " + strconv.Itoa(int(v*100+0.5)) + "%"
+	return i18n.Tf("Volume %d%%", int(v*100+0.5))
 }

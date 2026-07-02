@@ -17,7 +17,7 @@ struct ChartsView: View {
                 }
 
                 if !app.chartAlbums.isEmpty {
-                    railHeader("Top Albums")
+                    railHeader(L("Top Albums"))
                     rail {
                         ForEach(app.chartAlbums) { a in
                             TileCard(url: a.artworkUrl, title: a.name, sub: a.artistLine) {
@@ -28,7 +28,7 @@ struct ChartsView: View {
                 }
 
                 if !app.chartArtists.isEmpty {
-                    railHeader("Top Artists")
+                    railHeader(L("Top Artists"))
                     rail {
                         ForEach(app.chartArtists) { ar in
                             ArtistTileCard(artist: ar) { app.openArtist(ar.id) }
@@ -37,11 +37,11 @@ struct ChartsView: View {
                 }
 
                 if !app.chartPlaylists.isEmpty {
-                    railHeader("Top Playlists")
+                    railHeader(L("Top Playlists"))
                     rail {
                         ForEach(app.chartPlaylists) { p in
                             TileCard(url: p.artworkUrl, title: p.name,
-                                     sub: "\(p.trackCount) tracks") {
+                                     sub: Lp("%d tracks", p.trackCount)) {
                                 app.openPlaylist(p)
                             }
                         }

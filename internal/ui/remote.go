@@ -9,6 +9,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -25,7 +26,9 @@ func normalizePeer(addr string) (base, hostport string) {
 func (m *Model) remoteConnectCmd(addr string, trusted bool) tea.Cmd {
 	base, hostport := normalizePeer(addr)
 	if base == "" {
-		return func() tea.Msg { return remoteConnMsg{err: fmt.Errorf("enter a host or host:port")} }
+		return func() tea.Msg {
+			return remoteConnMsg{err: fmt.Errorf("%s", i18n.T("enter a host or host:port"))}
+		}
 	}
 	token := ""
 	if trusted {
@@ -135,7 +138,7 @@ func (m *Model) handleRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.remote = nil
 		m.remoteState = control.State{}
 		m.screen = screenMenu
-		m.status = "Disconnected from remote"
+		m.status = i18n.T("Disconnected from remote")
 		if rc != nil {
 			_, _ = rc.Stop() // halt the remote device; fire-and-forget
 		}
@@ -155,7 +158,7 @@ func (m *Model) handleRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen == screenLyrics && (m.lyrics == nil || m.lyricsTrack != t.ID) {
 			m.lyricsTrack = t.ID
 			m.loading = true
-			m.status = "Loading…"
+			m.status = i18n.T("Loading…")
 			return m, m.lyricsCmd(t)
 		}
 		return m, nil
@@ -201,15 +204,15 @@ func clamp01(v float64) float64 {
 // remoteEntryView is the connect screen (address input).
 func (m *Model) remoteEntryView() string {
 	lines := []string{
-		"📡 Remote control — drive another OpenDeezer client",
+		"📡 " + i18n.T("Remote control") + " — " + i18n.T("drive another OpenDeezer client"),
 		"",
-		"Peer address (host or host:port, default port 7654):",
+		i18n.T("Peer address (host or host:port, default port 7654):"),
 		"  " + m.search.View(),
 		"",
-		"The peer must have its control API enabled (OPENDEEZER_CONTROL=:7654),",
-		"and be on the same Deezer account (or share a token).",
+		i18n.T("The peer must have its control API enabled (OPENDEEZER_CONTROL=:7654),"),
+		i18n.T("and be on the same Deezer account (or share a token)."),
 		"",
-		"enter connect · esc cancel",
+		i18n.T("enter connect · esc cancel"),
 	}
 	if m.status != "" {
 		lines = append(lines, "", m.status)
@@ -244,17 +247,17 @@ func (m *Model) remoteCtlView() string {
 		device += " · OpenDeezer v" + m.remoteVersion
 	}
 	lines := []string{
-		"📡 Connected to " + name + "  (" + m.remoteAddr + ")",
-		"Device: " + device,
+		"📡 " + i18n.Tf("Connected to %s", name) + "  (" + m.remoteAddr + ")",
+		i18n.T("Device") + ": " + device,
 		"",
-		"State:  " + state,
-		"Track:  " + track,
-		"Time:   " + fmtMS(st.PositionMS) + " / " + fmtMS(st.DurationMS),
-		"Volume: " + strconv.Itoa(int(st.Volume*100+0.5)) + "%" +
-			"   Repeat: " + repeat + "   Shuffle: " + boolLabel(st.Shuffle),
+		i18n.T("State") + ":  " + i18n.T(state),
+		i18n.T("Track") + ":  " + track,
+		i18n.T("Time") + ":   " + fmtMS(st.PositionMS) + " / " + fmtMS(st.DurationMS),
+		i18n.T("Volume") + ": " + strconv.Itoa(int(st.Volume*100+0.5)) + "%" +
+			"   " + i18n.T("Repeat") + ": " + i18n.T(repeat) + "   " + i18n.T("Shuffle") + ": " + boolLabel(st.Shuffle),
 		"",
-		"space play/pause · n next · p prev · s stop · ←/→ seek ±10s · +/- volume",
-		"r repeat · z shuffle · esc disconnect",
+		i18n.T("space play/pause · n next · p prev · s stop · ←/→ seek ±10s · +/- volume"),
+		i18n.T("r repeat · z shuffle · esc disconnect"),
 	}
 	if m.status != "" {
 		lines = append(lines, "", m.status)
@@ -264,7 +267,7 @@ func (m *Model) remoteCtlView() string {
 
 func boolLabel(b bool) string {
 	if b {
-		return "on"
+		return i18n.T("on")
 	}
-	return "off"
+	return i18n.T("off")
 }

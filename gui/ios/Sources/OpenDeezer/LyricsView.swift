@@ -58,7 +58,7 @@ struct LyricsView: View {
             ContentUnavailableMessage(
                 systemImage: "quote.bubble",
                 title: "Lyrics not available",
-                message: "This track doesn't have lyrics yet."
+                message: String(localized: "This track doesn't have lyrics yet.")
             )
         }
     }
@@ -159,7 +159,7 @@ struct LyricsView: View {
 /// surfaces and reused across the app.
 struct ContentUnavailableMessage: View {
     let systemImage: String
-    let title: String
+    let title: LocalizedStringKey
     let message: String
 
     var body: some View {

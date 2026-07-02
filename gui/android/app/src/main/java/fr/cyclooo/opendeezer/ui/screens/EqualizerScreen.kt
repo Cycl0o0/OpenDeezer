@@ -38,8 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -86,10 +88,10 @@ fun EqualizerScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Equalizer") },
+                title = { Text(stringResource(R.string.equalizer_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -98,7 +100,7 @@ fun EqualizerScreen(onBack: () -> Unit) {
         val st = eq
         if (st == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Equalizer unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.eq_unavailable), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Scaffold
         }
@@ -106,20 +108,20 @@ fun EqualizerScreen(onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            SettingSwitch("Enable", "Apply the 10-band EQ to playback", st.enabled) {
+            SettingSwitch(stringResource(R.string.common_enable), stringResource(R.string.eq_enable_sub), st.enabled) {
                 eq = st.copy(enabled = it)
                 Engine.setEqEnabled(it)
             }
 
             HorizontalDivider()
 
-            Text("Preset", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.eq_preset), style = MaterialTheme.typography.titleMedium)
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (st.preset == "custom") {
-                    FilterChip(selected = true, onClick = {}, label = { Text("Custom") })
+                    FilterChip(selected = true, onClick = {}, label = { Text(stringResource(R.string.eq_custom)) })
                 }
                 st.presets.forEach { name ->
                     FilterChip(
@@ -167,7 +169,7 @@ fun EqualizerScreen(onBack: () -> Unit) {
             }
 
             Column {
-                Text("Preamp", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.eq_preamp), style = MaterialTheme.typography.titleMedium)
                 Text(
                     "%+.1f dB".format(preamp),
                     style = MaterialTheme.typography.bodySmall,
@@ -183,7 +185,7 @@ fun EqualizerScreen(onBack: () -> Unit) {
 
             HorizontalDivider()
 
-            SettingSwitch("Mono audio", "Downmix stereo to a single channel", st.mono) {
+            SettingSwitch(stringResource(R.string.eq_mono_title), stringResource(R.string.eq_mono_sub), st.mono) {
                 eq = st.copy(mono = it)
                 Engine.setEqMono(it)
             }

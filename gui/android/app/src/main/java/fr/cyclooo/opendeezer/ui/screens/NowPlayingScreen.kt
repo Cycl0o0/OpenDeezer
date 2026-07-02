@@ -46,9 +46,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.player.PlayerController
 import fr.cyclooo.opendeezer.player.PlayerState
@@ -88,23 +90,23 @@ fun NowPlayingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Now Playing") },
+                title = { Text(stringResource(R.string.now_playing_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Back")
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = onCast) {
                         Icon(
                             if (state.connectedDevice.isNotBlank()) Icons.Filled.CastConnected else Icons.Filled.Cast,
-                            contentDescription = "Connect",
+                            contentDescription = stringResource(R.string.cd_connect),
                             tint = if (state.connectedDevice.isNotBlank()) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                     IconButton(onClick = onQueue) {
-                        Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue")
+                        Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_title))
                     }
                 },
             )
@@ -112,7 +114,7 @@ fun NowPlayingScreen(
     ) { padding ->
         if (track == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Nothing is playing.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.np_nothing_playing), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Scaffold
         }
@@ -128,7 +130,7 @@ fun NowPlayingScreen(
             )
             Spacer(Modifier.height(24.dp))
             Text(
-                track.name.ifBlank { "Unknown" },
+                track.name.ifBlank { stringResource(R.string.unknown_title) },
                 style = MaterialTheme.typography.headlineSmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -146,7 +148,7 @@ fun NowPlayingScreen(
             }
             if (state.connectedDevice.isNotBlank()) {
                 Text(
-                    "Playing on ${state.connectedDevice}",
+                    stringResource(R.string.np_playing_on, state.connectedDevice),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -185,12 +187,12 @@ fun NowPlayingScreen(
                 ) {
                     Icon(
                         if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = "Like",
+                        contentDescription = stringResource(R.string.cd_like),
                         tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 IconButton(onClick = player::prev, enabled = state.hasPrev) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
+                    Icon(Icons.Filled.SkipPrevious, contentDescription = stringResource(R.string.action_previous), modifier = Modifier.size(36.dp))
                 }
                 FilledIconButton(
                     onClick = player::togglePause,
@@ -198,15 +200,15 @@ fun NowPlayingScreen(
                 ) {
                     Icon(
                         if (state.state == Engine.PLAYING) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "Play/Pause",
+                        contentDescription = stringResource(R.string.cd_play_pause),
                         modifier = Modifier.size(36.dp),
                     )
                 }
                 IconButton(onClick = player::next, enabled = state.hasNext) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))
+                    Icon(Icons.Filled.SkipNext, contentDescription = stringResource(R.string.action_next), modifier = Modifier.size(36.dp))
                 }
                 IconButton(onClick = onLyrics, enabled = !track.isEpisode) {
-                    Icon(Icons.Filled.Lyrics, contentDescription = "Lyrics")
+                    Icon(Icons.Filled.Lyrics, contentDescription = stringResource(R.string.lyrics_title))
                 }
             }
 
@@ -223,7 +225,7 @@ fun NowPlayingScreen(
                 IconButton(onClick = { player.setShuffle(!state.shuffle) }) {
                     Icon(
                         Icons.Filled.Shuffle,
-                        contentDescription = "Shuffle",
+                        contentDescription = stringResource(R.string.cd_shuffle),
                         tint = if (state.shuffle) MaterialTheme.colorScheme.primary
                                else MaterialTheme.colorScheme.onSurface,
                     )
@@ -231,7 +233,7 @@ fun NowPlayingScreen(
                 IconButton(onClick = { player.setRepeat((state.repeatMode + 1) % 3) }) {
                     Icon(
                         if (state.repeatMode == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                        contentDescription = "Repeat",
+                        contentDescription = stringResource(R.string.cd_repeat),
                         tint = if (state.repeatMode != 0) MaterialTheme.colorScheme.primary
                                else MaterialTheme.colorScheme.onSurface,
                     )
@@ -241,7 +243,7 @@ fun NowPlayingScreen(
             Spacer(Modifier.height(16.dp))
 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.VolumeUp, contentDescription = "Volume", modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.VolumeUp, contentDescription = stringResource(R.string.cd_volume), modifier = Modifier.size(20.dp))
                 Spacer(Modifier.size(8.dp))
                 Slider(
                     value = volDrag ?: state.volume.toFloat().coerceIn(0f, 1f),

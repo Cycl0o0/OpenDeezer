@@ -74,10 +74,10 @@ struct DeezerLoginSheet: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.circle").foregroundStyle(DZ.accent)
-                Text("Log in with Deezer")
+                Text(L("Log in with Deezer"))
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(DZ.textPri)
                 Spacer()
-                Button("Cancel") { app.showLoginWeb = false }
+                Button(L("Cancel")) { app.showLoginWeb = false }
                     .buttonStyle(.plain).foregroundStyle(DZ.textSec)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
@@ -90,7 +90,7 @@ struct DeezerLoginSheet: View {
                 }
                 if app.busy {
                     Color.black.opacity(0.45)
-                    ProgressView("Signing in…").tint(DZ.accent)
+                    ProgressView(L("Signing in…")).tint(DZ.accent)
                         .padding(20)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }

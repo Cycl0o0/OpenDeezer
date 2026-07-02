@@ -7,3 +7,6 @@
 # Generated Go c-archive + header
 /lib/libdeezercore.a
 /lib/libdeezercore.h
+
+# Compiled Qt translation catalogs (lrelease regenerates them at build)
+*.qm

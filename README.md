@@ -71,6 +71,22 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
 - TUI extras: queue view, lyrics, help screen, themes, vim keys, resume.
 - Settings persisted to `~/.config/opendeezer/`; ARL stays local.
 
+## Languages
+
+OpenDeezer is fully localized into seven languages, across every client — the
+TUI, the phone web remote, and all the native GUIs:
+
+**English** · **简体中文** (`zh`) · **हिन्दी** (`hi`) · **Español** (`es`) ·
+**Français** (`fr`) · **العربية** (`ar`) · **Русский** (`ru`)
+
+The UI follows your **system language** and falls back to English for anything a
+language is missing. The GUIs each have a **Language** setting to override it per
+app (Arabic switches them to a right-to-left layout). The TUI picks the language
+from your `LANG` environment variable, or from its in-app 🌐 **Language** menu.
+
+Adding a new language — or fixing an existing one — is documented in
+[`docs/TRANSLATIONS.md`](docs/TRANSLATIONS.md).
+
 ## Install
 
 Download a binary from [Releases](../../releases).

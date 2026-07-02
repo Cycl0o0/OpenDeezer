@@ -23,7 +23,7 @@ struct ArtistView: View {
                             .clipShape(Circle())
                         Text(profile.artist.name).font(.title2.bold())
                         if profile.artist.nbFans > 0 {
-                            Text("\(profile.artist.nbFans.formatted()) fans")
+                            Text("\(profile.artist.nbFans) fans")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }

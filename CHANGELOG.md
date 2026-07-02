@@ -4,6 +4,26 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0]
+
+### Added
+- **Full UI localization** (all clients): the whole product — the TUI, the phone
+  web remote, and the macOS, iOS, Android (phone + TV), Windows, GNOME and KDE
+  apps — is now translated into six new languages alongside English: 简体中文
+  (`zh`), हिन्दी (`hi`), Español (`es`), Français (`fr`), العربية (`ar`) and
+  Русский (`ru`). Each client follows the system language and falls back to
+  English, with a per-app **Language** setting to override it (the TUI reads
+  `LANG` or its 🌐 Language menu); Arabic switches the GUIs to a right-to-left
+  layout. Strings are localized natively per platform — Go JSON catalogs
+  (`internal/i18n`) for the TUI, an inline dictionary for the web remote,
+  `.lproj`/String Catalogs on macOS/iOS, `.resw` on Windows, gettext `.po` on
+  GNOME, Qt `.ts` on KDE, and `values-*` resources on Android — each with the
+  plural rules the language needs and the shared brand/UI terms kept consistent
+  across all of them.
+- **Translation contributor guide** (`docs/TRANSLATIONS.md`): per-client steps for
+  adding or fixing a language, the shared-term glossary rule, and how to build and
+  verify each client.
+
 ## [1.7.0]
 
 ### Added

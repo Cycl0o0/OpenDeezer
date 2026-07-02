@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenDeezer</string>
+
+    <string name="action_back">Retour</string>
+    <string name="action_close">Fermer</string>
+    <string name="action_download">Télécharger</string>
+    <string name="action_retry">Réessayer</string>
+    <string name="action_refresh">Actualiser</string>
+    <string name="action_ok">OK</string>
+    <string name="action_sign_out">Se déconnecter</string>
+    <string name="action_play">Lecture</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_next">Suivant</string>
+    <string name="action_previous">Précédent</string>
+    <string name="action_play_all">Tout lire</string>
+    <string name="action_login">Se connecter</string>
+    <string name="common_enable">Activer</string>
+    <string name="common_off">Désactivé</string>
+    <string name="unknown_title">Inconnu</string>
+
+    <string name="cd_connect">Connecter</string>
+    <string name="cd_like">J\'aime</string>
+    <string name="cd_play_pause">Lecture/Pause</string>
+    <string name="cd_shuffle">Aléatoire</string>
+    <string name="cd_repeat">Répéter</string>
+    <string name="cd_volume">Volume</string>
+    <string name="cd_connected">Connecté</string>
+    <string name="cd_now_playing">En lecture</string>
+    <string name="cd_explicit">Contenu explicite</string>
+    <string name="cd_dismiss">Ignorer</string>
+    <string name="cd_qr_code">Code QR</string>
+    <string name="cd_remote_qr">QR de la télécommande</string>
+
+    <string name="notif_channel_playback">Lecture</string>
+
+    <string name="login_error_empty_arl">ARL vide</string>
+    <string name="login_error_failed">Échec de la connexion — vérifiez votre ARL et votre connexion.</string>
+    <string name="login_error_account">Impossible de charger le compte.</string>
+
+    <string name="device_type_terminal">Terminal</string>
+    <string name="device_type_generic">Appareil</string>
+
+    <string name="settings_title">Paramètres</string>
+    <string name="queue_title">File d\'attente</string>
+    <string name="lyrics_title">Paroles</string>
+    <string name="charts_title">Charts</string>
+    <string name="search_title">Recherche</string>
+    <string name="now_playing_title">En lecture</string>
+    <string name="playlists_title">Mes playlists</string>
+    <string name="podcasts_title">Podcasts</string>
+    <string name="equalizer_title">Égaliseur</string>
+
+    <string name="greeting_morning">Bonjour</string>
+    <string name="greeting_afternoon">Bon après-midi</string>
+    <string name="greeting_evening">Bonsoir</string>
+    <string name="greeting_named">%1$s, %2$s</string>
+    <string name="home_liked">Titres favoris</string>
+    <string name="section_top_tracks">Top titres</string>
+    <string name="section_your_playlists">Vos playlists</string>
+
+    <string name="settings_audio_quality">Qualité audio</string>
+    <string name="quality_normal">Normale</string>
+    <string name="quality_high">Élevée</string>
+    <string name="quality_desc_flac">FLAC · sans perte</string>
+    <string name="quality_desc_high">MP3 · 320 kbps</string>
+    <string name="quality_desc_normal">MP3 · 128 kbps</string>
+    <string name="setting_replaygain_sub">Normaliser le volume entre les titres</string>
+    <string name="setting_gapless_title">Lecture sans blanc</string>
+    <string name="setting_gapless_sub">Aucun silence entre les titres</string>
+    <string name="settings_crossfade">Fondu enchaîné</string>
+    <string name="crossfade_seconds">%1$d s</string>
+    <string name="settings_eq_sub">Égaliseur 10 bandes, préréglages et audio mono</string>
+    <string name="settings_sleep_timer">Minuteur de veille</string>
+    <string name="sleep_end">Fin</string>
+    <string name="sleep_desc_off">La lecture ne se mettra pas en pause automatiquement</string>
+    <string name="sleep_desc_end">Se met en pause à la fin du titre en cours</string>
+    <string name="connect_reachable_title">Rendre cet appareil accessible</string>
+    <string name="connect_reachable_sub">Permettez à vos autres applis OpenDeezer de trouver et de contrôler cet appareil</string>
+    <string name="reachable_at">Accessible sur %1$s</string>
+    <string name="settings_phone_remote">Télécommande téléphone</string>
+    <string name="phone_remote_sub">Diffuser une page de télécommande sur votre Wi-Fi local</string>
+    <string name="phone_remote_scan">Scannez avec votre téléphone (même Wi-Fi), puis saisissez le code.</string>
+    <string name="settings_about">À propos</string>
+    <string name="update_check_title">Rechercher des mises à jour</string>
+    <string name="update_checking">Vérification…</string>
+    <string name="update_check_sub">Recherche une nouvelle version sur GitHub</string>
+    <string name="settings_account">Compte</string>
+    <string name="plan_label">Forfait : %1$s</string>
+    <string name="plan_free">Gratuit</string>
+    <string name="update_uptodate_title">Vous êtes à jour</string>
+    <string name="update_latest_generic">Il s\'agit de la dernière version.</string>
+    <string name="update_latest_named">OpenDeezer v%1$s est la dernière version.</string>
+    <string name="update_available_title">OpenDeezer %1$s disponible</string>
+    <string name="update_available_generic">Une nouvelle version est disponible sur GitHub.</string>
+    <string name="update_failed_title">Impossible de vérifier les mises à jour</string>
+    <string name="update_failed_body">Vérifiez votre connexion et réessayez.</string>
+
+    <string name="login_manual_prompt">Collez votre jeton ARL Deezer</string>
+    <string name="login_web_prompt">Connectez-vous à Deezer</string>
+    <string name="login_use_web">Utiliser la connexion web à la place</string>
+    <string name="login_manual_help">Un long jeton issu du cookie de session Deezer. La connexion web le lit automatiquement.</string>
+    <string name="login_paste_manual">Coller l\'ARL manuellement</string>
+
+    <string name="np_nothing_playing">Aucune lecture en cours.</string>
+    <string name="np_playing_on">Lecture sur %1$s</string>
+
+    <string name="queue_empty">La file d\'attente est vide.</string>
+
+    <string name="lyrics_none">Aucune parole disponible.</string>
+
+    <string name="charts_unavailable">Charts indisponibles.</string>
+
+    <string name="episodes_none">Aucun épisode.</string>
+
+    <string name="eq_unavailable">Égaliseur indisponible</string>
+    <string name="eq_enable_sub">Appliquer l\'égaliseur 10 bandes à la lecture</string>
+    <string name="eq_preset">Préréglage</string>
+    <string name="eq_custom">Personnalisé</string>
+    <string name="eq_preamp">Préampli</string>
+    <string name="eq_mono_title">Audio mono</string>
+    <string name="eq_mono_sub">Mixer la stéréo en un seul canal</string>
+
+    <string name="playlists_empty">Vous n\'avez pas encore de playlists.</string>
+
+    <string name="podcasts_search_hint">Rechercher des émissions</string>
+    <string name="podcasts_empty_prompt">Recherchez dans les podcasts de Deezer.</string>
+    <string name="podcasts_no_results">Aucune émission trouvée.</string>
+
+    <string name="premium_required">Premium requis</string>
+    <string name="premium_body_named">L\'écoute à la demande nécessite un forfait Deezer payant. Votre compte (%1$s) est en « %2$s ».</string>
+    <string name="premium_body_anon">L\'écoute à la demande nécessite un forfait Deezer payant. Votre compte est en « %1$s ».</string>
+
+    <string name="search_hint">Titres, albums, artistes, playlists</string>
+    <string name="search_empty_prompt">Recherchez dans le catalogue de Deezer.</string>
+    <string name="search_no_results">Aucun résultat.</string>
+
+    <string name="section_tracks">Titres</string>
+    <string name="section_albums">Albums</string>
+    <string name="section_artists">Artistes</string>
+    <string name="section_playlists">Playlists</string>
+
+    <string name="tracklist_empty">Rien ici pour l\'instant.</string>
+
+    <string name="update_release_notes">Notes de version</string>
+
+    <string name="connect_this_device">Cet appareil</string>
+    <string name="connect_no_devices">Aucun appareil trouvé sur votre réseau.</string>
+
+    <string name="tv_premium_body">La lecture OpenDeezer nécessite un compte Deezer Premium.</string>
+    <string name="tv_use_another_account">Utiliser un autre compte</string>
+    <string name="nav_home">Accueil</string>
+    <string name="nav_library">Bibliothèque</string>
+
+    <string name="tv_load_error">Échec du chargement — vérifiez votre connexion.</string>
+    <string name="tv_flow_mix">Flow · votre mix</string>
+    <string name="tv_made_for_you">Fait pour vous</string>
+    <string name="tv_your_library">Votre bibliothèque</string>
+    <string name="tv_liked_songs">Titres favoris</string>
+    <string name="tv_your_playlists">Vos playlists</string>
+    <string name="tv_nothing_saved">Rien d\'enregistré pour l\'instant.</string>
+    <string name="tv_search_hint">Rechercher titres, albums, playlists</string>
+    <string name="tv_featured">À LA UNE</string>
+
+    <string name="tv_login_manual_prompt">Collez votre ARL Deezer</string>
+    <string name="tv_login_web_prompt">Connectez-vous à Deezer — l\'ARL est capturé pour vous</string>
+    <string name="tv_login_paste_instead">Coller l\'ARL à la place</string>
+    <string name="tv_login_signing_in">Connexion…</string>
+    <string name="tv_login_use_web">Utiliser la connexion web</string>
+    <string name="tv_login_manual_help">La connexion web lit l\'ARL automatiquement — ne le collez ici que si vous avez déjà le jeton.</string>
+
+    <string name="tv_section_audio">Audio</string>
+    <string name="tv_quality">Qualité</string>
+    <string name="tv_hifi_needs_plan">HiFi nécessite un forfait Deezer HiFi.</string>
+    <string name="tv_high_hifi_needs_plan">High/HiFi nécessitent un forfait Deezer HQ ou HiFi.</string>
+    <string name="eq_custom_edited">Personnalisé — les bandes ont été modifiées manuellement</string>
+    <string name="eq_adjust_hint">Gauche/droite sur une bande ci-dessous l\'ajuste de 1 dB</string>
+    <string name="tv_connect_reachable_sub">Permettez à vos autres applis OpenDeezer de contrôler cette TV</string>
+    <string name="tv_phone_remote">Télécommande téléphone</string>
+    <string name="tv_phone_remote_sub">Diffuser une télécommande navigateur sur votre Wi-Fi (scannez le QR)</string>
+    <string name="tv_remote_scan">Scannez avec votre téléphone (même Wi-Fi), puis saisissez le code :</string>
+    <string name="tv_play_on_device">Lire sur un autre appareil</string>
+    <string name="tv_searching_network">Recherche sur votre réseau…</string>
+    <string name="connected_to">Connecté à %1$s</string>
+    <string name="tv_playing_here">Lecture ici · ouvrez pour choisir un appareil</string>
+    <string name="tv_no_other_devices">Aucun autre appareil sur votre réseau.</string>
+    <string name="tv_rescan">Rescanner</string>
+    <string name="tv_searching">Recherche…</string>
+    <string name="tv_rescan_sub">Rechercher à nouveau des appareils</string>
+    <string name="tv_update_failed">Échec de la vérification — réessayez</string>
+    <string name="tv_update_available">Mise à jour disponible : %1$s</string>
+    <string name="tv_up_to_date">À jour (v%1$s)</string>
+    <string name="tv_toggle_on">ON</string>
+    <string name="tv_toggle_off">OFF</string>
+
+    <plurals name="n_tracks">
+        <item quantity="one">%1$d titre</item>
+        <item quantity="many">%1$d de titres</item>
+        <item quantity="other">%1$d titres</item>
+    </plurals>
+    <plurals name="n_episodes">
+        <item quantity="one">%1$d épisode</item>
+        <item quantity="many">%1$d d\'épisodes</item>
+        <item quantity="other">%1$d épisodes</item>
+    </plurals>
+    <plurals name="n_fans">
+        <item quantity="one">%1$d fan</item>
+        <item quantity="many">%1$d de fans</item>
+        <item quantity="other">%1$d fans</item>
+    </plurals>
+    <plurals name="pauses_in_minutes">
+        <item quantity="one">Pause dans %1$d minute</item>
+        <item quantity="many">Pause dans %1$d de minutes</item>
+        <item quantity="other">Pause dans %1$d minutes</item>
+    </plurals>
+</resources>

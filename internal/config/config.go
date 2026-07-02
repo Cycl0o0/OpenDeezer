@@ -244,3 +244,29 @@ func LoadDiscordAppID() string {
 	}
 	return readFile("discord-app-id.txt")
 }
+
+// LoadLanguage returns the persisted UI language code (e.g. "fr", "zh"), from
+// $OPENDEEZER_LANG or ~/.config/opendeezer/language.txt. An empty result means
+// "auto" — the caller should fall back to locale detection. Shared across every
+// client so the language chosen in one place (TUI, GUI) applies everywhere.
+func LoadLanguage() string {
+	if v := strings.TrimSpace(os.Getenv("OPENDEEZER_LANG")); v != "" {
+		return v
+	}
+	return readFile("language.txt")
+}
+
+// LanguageSetting returns ONLY the persisted language file (~/.config/opendeezer/
+// language.txt), ignoring $OPENDEEZER_LANG. LoadLanguage lets the env var win so a
+// forced locale applies everywhere at startup; the in-app Language menu, however,
+// edits and displays its own persisted selection, so it must read the file alone —
+// otherwise a set OPENDEEZER_LANG would freeze the menu on one entry and desync its
+// label from the locale actually applied.
+func LanguageSetting() string {
+	return readFile("language.txt")
+}
+
+// SaveLanguage persists the UI language code. "" clears it (back to auto).
+func SaveLanguage(code string) error {
+	return writeFile("language.txt", strings.TrimSpace(code))
+}

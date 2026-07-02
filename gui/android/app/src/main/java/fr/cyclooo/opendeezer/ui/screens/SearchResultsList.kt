@@ -9,7 +9,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Album
 import fr.cyclooo.opendeezer.engine.ArtistInfo
 import fr.cyclooo.opendeezer.engine.Playlist
@@ -35,13 +38,13 @@ fun SearchResultsList(
 ) {
     LazyColumn(modifier) {
         if (results.tracks.isNotEmpty()) {
-            item { SectionHeader("Tracks") }
+            item { SectionHeader(stringResource(R.string.section_tracks)) }
             itemsIndexed(results.tracks, key = { i, t -> "t-$i-${t.id}" }) { index, track ->
                 TrackRow(track = track, onClick = { player.playQueue(results.tracks, index) })
             }
         }
         if (results.albums.isNotEmpty()) {
-            item { SectionHeader("Albums") }
+            item { SectionHeader(stringResource(R.string.section_albums)) }
             item {
                 LazyRow {
                     items(results.albums, key = { "a-${it.id}" }) { album ->
@@ -51,13 +54,13 @@ fun SearchResultsList(
             }
         }
         if (results.artists.isNotEmpty()) {
-            item { SectionHeader("Artists") }
+            item { SectionHeader(stringResource(R.string.section_artists)) }
             item {
                 LazyRow {
                     items(results.artists, key = { "ar-${it.id}" }) { artist ->
                         MediaCard(
                             artist.name,
-                            if (artist.nbFans > 0) "${artist.nbFans} fans" else "",
+                            if (artist.nbFans > 0) pluralStringResource(R.plurals.n_fans, artist.nbFans, artist.nbFans) else "",
                             artist.artworkUrl,
                             { onArtist(artist) },
                             round = true,
@@ -67,7 +70,7 @@ fun SearchResultsList(
             }
         }
         if (results.playlists.isNotEmpty()) {
-            item { SectionHeader("Playlists") }
+            item { SectionHeader(stringResource(R.string.section_playlists)) }
             item {
                 LazyRow {
                     items(results.playlists, key = { "p-${it.id}" }) { pl ->

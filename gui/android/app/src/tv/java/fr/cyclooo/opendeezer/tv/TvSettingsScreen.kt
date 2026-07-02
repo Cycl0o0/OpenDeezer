@@ -45,14 +45,18 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.ConnectDevice
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.WebRemoteInfo
+import fr.cyclooo.opendeezer.ui.components.deviceTypeLabel
 import kotlinx.coroutines.launch
 
 /**
@@ -128,7 +132,7 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
     ) {
         item {
             Text(
-                "Settings",
+                stringResource(R.string.settings_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Black,
                 color = Color.White,
@@ -136,12 +140,12 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         }
 
         // ---- Audio ----
-        item { TvSectionTitle("Audio") }
+        item { TvSectionTitle(stringResource(R.string.tv_section_audio)) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Quality", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.tv_quality), color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf("Normal", "High", "HiFi").forEachIndexed { i, label ->
+                    listOf(stringResource(R.string.quality_normal), stringResource(R.string.quality_high), "HiFi").forEachIndexed { i, label ->
                         val allowed = when (i) {
                             2 -> account?.canHifi ?: true
                             1 -> account?.canHq ?: true
@@ -154,7 +158,7 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
                 }
                 if (account != null && !account.canHifi) {
                     Text(
-                        if (account.canHq) "HiFi needs a Deezer HiFi plan." else "High/HiFi need a Deezer HQ or HiFi plan.",
+                        if (account.canHq) stringResource(R.string.tv_hifi_needs_plan) else stringResource(R.string.tv_high_hifi_needs_plan),
                         color = TvPalette.TextDim,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -162,19 +166,19 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
             }
         }
         item {
-            TvToggleRow("ReplayGain", "Normalise loudness across tracks", replayGain) {
+            TvToggleRow("ReplayGain", stringResource(R.string.setting_replaygain_sub), replayGain) {
                 replayGain = it; Engine.setReplayGain(it); prefs.replayGain = if (it) 1 else 0
             }
         }
         item {
-            TvToggleRow("Gapless playback", "No silence between tracks", gapless) {
+            TvToggleRow(stringResource(R.string.setting_gapless_title), stringResource(R.string.setting_gapless_sub), gapless) {
                 gapless = it; Engine.setGapless(it); prefs.gapless = if (it) 1 else 0
             }
         }
         item {
-            val labels = listOf("Off", "15", "30", "45", "60", "End")
+            val labels = listOf(stringResource(R.string.common_off), "15", "30", "45", "60", stringResource(R.string.sleep_end))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Sleep timer", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.settings_sleep_timer), color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     labels.forEachIndexed { i, label ->
                         TvChoicePill(label, selected = sleepSel == i, enabled = true) {
@@ -189,9 +193,12 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
                 }
                 Text(
                     when (sleepSel) {
-                        0 -> "Playback won't pause automatically"
-                        labels.lastIndex -> "Pauses when the current track ends"
-                        else -> "Pauses in ${labels[sleepSel]} minutes"
+                        0 -> stringResource(R.string.sleep_desc_off)
+                        labels.lastIndex -> stringResource(R.string.sleep_desc_end)
+                        else -> {
+                            val minutes = labels[sleepSel].toIntOrNull() ?: 0
+                            pluralStringResource(R.plurals.pauses_in_minutes, minutes, minutes)
+                        }
                     },
                     color = TvPalette.TextDim,
                     style = MaterialTheme.typography.bodySmall,
@@ -200,15 +207,15 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         }
 
         // ---- Equalizer ----
-        item { TvSectionTitle("Equalizer") }
+        item { TvSectionTitle(stringResource(R.string.equalizer_title)) }
         item {
-            TvToggleRow("Enable", "Apply the 10-band EQ to playback", eqEnabled) {
+            TvToggleRow(stringResource(R.string.common_enable), stringResource(R.string.eq_enable_sub), eqEnabled) {
                 eqEnabled = it
                 Engine.setEqEnabled(it)
             }
         }
         item {
-            TvToggleRow("Mono audio", "Downmix stereo to a single channel", eqMono) {
+            TvToggleRow(stringResource(R.string.eq_mono_title), stringResource(R.string.eq_mono_sub), eqMono) {
                 eqMono = it
                 Engine.setEqMono(it)
             }
@@ -216,7 +223,7 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         eqInit?.takeIf { it.presets.isNotEmpty() }?.let { eq ->
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Preset", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.eq_preset), color = Color.White, style = MaterialTheme.typography.titleMedium)
                     eq.presets.chunked(5).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             row.forEach { name ->
@@ -233,7 +240,7 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
                         }
                     }
                     Text(
-                        if (eqPreset == "custom") "Custom — bands were edited manually" else "Left/right on a band below adjusts it by 1 dB",
+                        if (eqPreset == "custom") stringResource(R.string.eq_custom_edited) else stringResource(R.string.eq_adjust_hint),
                         color = TvPalette.TextDim,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -258,11 +265,11 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         }
 
         // ---- OpenDeezer Connect ----
-        item { TvSectionTitle("OpenDeezer Connect") }
+        item { TvSectionTitle(stringResource(R.string.settings_connect)) }
         item {
             TvToggleRow(
-                "Make this device reachable",
-                if (connectHost && connectAddr.isNotBlank()) "Reachable at $connectAddr" else "Let your other OpenDeezer apps control this TV",
+                stringResource(R.string.connect_reachable_title),
+                if (connectHost && connectAddr.isNotBlank()) stringResource(R.string.reachable_at, connectAddr) else stringResource(R.string.tv_connect_reachable_sub),
                 connectHost,
             ) {
                 connectHost = it
@@ -273,8 +280,8 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         }
         item {
             TvToggleRow(
-                "Phone remote",
-                "Serve a browser remote on your Wi-Fi (scan the QR)",
+                stringResource(R.string.tv_phone_remote),
+                stringResource(R.string.tv_phone_remote_sub),
                 phoneRemote,
             ) {
                 phoneRemote = it
@@ -294,11 +301,11 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
                         }
                         if (bmp != null) {
                             Box(Modifier.size(160.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(8.dp)) {
-                                Image(bitmap = bmp, contentDescription = "Remote QR", modifier = Modifier.fillMaxSize())
+                                Image(bitmap = bmp, contentDescription = stringResource(R.string.cd_remote_qr), modifier = Modifier.fillMaxSize())
                             }
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Scan on your phone (same Wi-Fi), then enter the code:", color = TvPalette.TextDim)
+                            Text(stringResource(R.string.tv_remote_scan), color = TvPalette.TextDim)
                             Text(info.code, color = Color.White, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.headlineSmall)
                             Text(info.url, color = TvPalette.TextDim, style = MaterialTheme.typography.bodyMedium)
                         }
@@ -308,11 +315,11 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         }
         item {
             TvActionRow(
-                "Play on another device",
+                stringResource(R.string.tv_play_on_device),
                 when {
-                    scanning -> "Searching your network…"
-                    connected.isNotBlank() -> "Connected to $connected"
-                    else -> "Playing here · open to pick a device"
+                    scanning -> stringResource(R.string.tv_searching_network)
+                    connected.isNotBlank() -> stringResource(R.string.connected_to, connected)
+                    else -> stringResource(R.string.tv_playing_here)
                 },
             ) { rescanDevices() }
         }
@@ -322,32 +329,32 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         devices?.let { list ->
             item {
                 Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TvDeviceRow("This device", "OpenDeezer (Android TV)", connected.isBlank()) {
+                    TvDeviceRow(stringResource(R.string.connect_this_device), stringResource(R.string.device_self_tv), connected.isBlank()) {
                         scope.launch { Engine.disconnectDevice(); connected = "" }
                     }
                     if (list.isEmpty()) {
-                        Text("No other devices on your network.", color = TvPalette.TextDim, modifier = Modifier.padding(8.dp))
+                        Text(stringResource(R.string.tv_no_other_devices), color = TvPalette.TextDim, modifier = Modifier.padding(8.dp))
                     } else list.forEach { d ->
-                        TvDeviceRow(d.name.ifBlank { d.addr }, listOfNotNull(d.typeLabel, d.version.ifBlank { null }?.let { "v$it" }).joinToString(" · "), connected == d.addr) {
+                        TvDeviceRow(d.name.ifBlank { d.addr }, listOfNotNull(deviceTypeLabel(d), d.version.ifBlank { null }?.let { "v$it" }).joinToString(" · "), connected == d.addr) {
                             scope.launch { if (Engine.connectDevice(d.addr)) connected = Engine.connectedDevice() }
                         }
                     }
-                    TvDeviceRow(if (scanning) "Searching…" else "Rescan", "Look for devices again", selected = false) { rescanDevices() }
+                    TvDeviceRow(if (scanning) stringResource(R.string.tv_searching) else stringResource(R.string.tv_rescan), stringResource(R.string.tv_rescan_sub), selected = false) { rescanDevices() }
                 }
             }
         }
 
         // ---- About ----
-        item { TvSectionTitle("About") }
+        item { TvSectionTitle(stringResource(R.string.settings_about)) }
         item {
-            TvActionRow("Check for updates", updateText.ifBlank { "Checks GitHub for a newer release" }) {
-                updateText = "Checking…"
+            TvActionRow(stringResource(R.string.update_check_title), updateText.ifBlank { stringResource(R.string.update_check_sub) }) {
+                updateText = context.getString(R.string.update_checking)
                 scope.launch {
                     val info = Engine.checkUpdate()
                     updateText = when {
-                        info == null -> "Couldn't check — try again"
-                        info.hasUpdate -> "Update available: ${info.latest}"
-                        else -> "Up to date (v${info.current})"
+                        info == null -> context.getString(R.string.tv_update_failed)
+                        info.hasUpdate -> context.getString(R.string.tv_update_available, info.latest)
+                        else -> context.getString(R.string.tv_up_to_date, info.current)
                     }
                 }
             }
@@ -355,18 +362,18 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
 
         // ---- Account ----
         if (account != null) {
-            item { TvSectionTitle("Account") }
+            item { TvSectionTitle(stringResource(R.string.settings_account)) }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(account.name, color = Color.White, style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Plan: ${account.offer.ifBlank { "—" }}" +
+                        stringResource(R.string.plan_label, account.offer.ifBlank { "—" }) +
                             (if (account.canHifi) " · HiFi" else if (account.canHq) " · HQ" else ""),
                         color = TvPalette.TextDim,
                     )
                 }
             }
-            item { TvPill("Sign out", onClick = onLogout) }
+            item { TvPill(stringResource(R.string.action_sign_out), onClick = onLogout) }
         }
         item { Spacer(Modifier.height(20.dp)) }
     }
@@ -406,7 +413,7 @@ private fun TvToggleRow(
                 contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
                 Text(
-                    if (on) "ON" else "OFF",
+                    if (on) stringResource(R.string.tv_toggle_on) else stringResource(R.string.tv_toggle_off),
                     color = if (on) Color.White else TvPalette.TextDim,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,

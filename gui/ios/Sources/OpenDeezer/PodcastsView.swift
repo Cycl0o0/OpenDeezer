@@ -12,14 +12,14 @@ struct PodcastsView: View {
             if !hasSearched {
                 ContentUnavailableMessage(
                     systemImage: "mic.fill", title: "Search Podcasts",
-                    message: "Find shows by name to browse their episodes."
+                    message: String(localized: "Find shows by name to browse their episodes.")
                 )
             } else if isLoading {
                 ProgressView()
             } else if let error = errorText {
                 ContentUnavailableMessage(systemImage: "mic.slash", title: "Search failed", message: error)
             } else if podcasts.isEmpty {
-                ContentUnavailableMessage(systemImage: "mic.slash", title: "No podcasts found", message: "Try a different search.")
+                ContentUnavailableMessage(systemImage: "mic.slash", title: "No podcasts found", message: String(localized: "Try a different search."))
             } else {
                 List(podcasts) { podcast in
                     NavigationLink { PodcastDetailView(podcast: podcast) } label: {

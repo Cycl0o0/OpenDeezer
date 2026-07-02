@@ -31,15 +31,27 @@ cd gui/kde
 
 ```sh
 sudo apt install build-essential cmake pkg-config qt6-base-dev \
-                 qt6-webengine-dev libasound2-dev
+                 qt6-webengine-dev qt6-l10n-tools libasound2-dev
 # plus Go 1.26+ (https://go.dev/dl) — `go` must be on PATH
 ```
 
 `qt6-base-dev` provides Qt6 Widgets + Concurrent; `qt6-webengine-dev` provides
 Qt6 WebEngineWidgets for the embedded Deezer login (`QWebEngineView`);
+`qt6-l10n-tools` provides `lrelease` and the `LinguistTools` CMake module used to
+compile the shipped `i18n/*.ts` catalogs into embedded `.qm` files;
 `libasound2-dev` is needed at link time because the Go engine (via `oto/v3`)
 links ALSA (`-lasound`). At runtime the host just needs `libasound.so.2` and the
 Qt6 WebEngine runtime (`libqt6webenginewidgets6` / `qt6-qtwebengine`).
+
+## Translations
+
+The UI is localized via Qt Linguist. Catalogs live in `i18n/opendeezer_<lang>.ts`
+(currently `zh_CN`, `hi`, `es`, `fr`, `ar`, `ru`); English is the source language
+and needs no catalog. `qt_add_translations` in `CMakeLists.txt` compiles each
+`.ts` to a `.qm` embedded under the Qt resource prefix `/i18n`, and `main.cpp`
+installs a `QTranslator` for `QLocale::system()` at startup (Arabic also flips the
+layout direction to RTL). See `TRANSLATIONS.md` at the repo root for how to add a
+new language.
 
 ## Login
 

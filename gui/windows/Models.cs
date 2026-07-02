@@ -85,6 +85,7 @@ internal sealed class Settings
     public bool Gapless;
     public int CrossfadeMs;
     public string AudioDevice = "";
+    public string Language = ""; // BCP-47 UI language tag; "" = follow the OS
 }
 
 // ---- small JsonElement accessors (defaulting, never throwing) ----------------
@@ -143,11 +144,11 @@ internal static class Wire
         return $"{s / 60}:{s % 60:D2}";
     }
 
-    // "1,234,567 fans" (thousands-grouped); empty when unknown.
+    // "1,234,567 fans" (thousands-grouped, localized + pluralized); empty when unknown.
     public static string FansText(long n)
     {
         if (n <= 0) return "";
-        return n.ToString("N0", CultureInfo.InvariantCulture) + " fans";
+        return Loc.Plural("Fans", n);
     }
 
     // EQ band-center label: 31.5 -> "31", 500 -> "500", 1000 -> "1k", 16000 -> "16k".
@@ -168,11 +169,11 @@ internal static class Wire
     public static string ConnectTypeLabel(string client)
     {
         string c = (client ?? "").ToLowerInvariant();
-        if (c == "tui") return "Terminal";
-        if (c == "darwin" || c == "macos") return "macOS";
+        if (c == "tui") return Loc.S("ConnectType_Terminal");
+        if (c == "darwin" || c == "macos") return "macOS";   // OS names kept verbatim
         if (c == "windows") return "Windows";
         if (c == "linux" || c == "gnome" || c == "kde") return "Linux";
-        return string.IsNullOrEmpty(client) ? "Device" : client;
+        return string.IsNullOrEmpty(client) ? Loc.S("ConnectType_Device") : client;
     }
 
     // This PC's name, advertised over OpenDeezer Connect discovery.
@@ -530,6 +531,7 @@ internal static class Config
             s.Gapless = o.Bool("gapless", s.Gapless);
             s.CrossfadeMs = (int)o.Num("crossfadeMs", s.CrossfadeMs);
             s.AudioDevice = o.Str("audioDevice", s.AudioDevice);
+            s.Language = o.Str("language", s.Language);
         }
         catch { }
         return s;
@@ -550,6 +552,7 @@ internal static class Config
                 ["gapless"] = s.Gapless,
                 ["crossfadeMs"] = s.CrossfadeMs,
                 ["audioDevice"] = s.AudioDevice,
+                ["language"] = s.Language,
             };
             File.WriteAllText(SettingsPath(), o.ToJsonString());
         }

@@ -50,9 +50,9 @@ struct HomeView: View {
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<18: return "Good afternoon"
-        default: return "Good evening"
+        case 5..<12: return String(localized: "Good morning")
+        case 12..<18: return String(localized: "Good afternoon")
+        default: return String(localized: "Good evening")
         }
     }
 
@@ -93,7 +93,7 @@ struct HomeView: View {
 // MARK: - Reusable pieces
 
 struct SectionHeader: View {
-    let title: String
+    let title: LocalizedStringKey
     var body: some View {
         Text(title)
             .font(.title2.bold())
@@ -102,7 +102,7 @@ struct SectionHeader: View {
 }
 
 struct QuickPickCard: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     let tint: Color
 

@@ -34,9 +34,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.Podcast
 import fr.cyclooo.opendeezer.ui.components.Artwork
@@ -66,10 +69,10 @@ fun PodcastsScreen(onBack: () -> Unit, onOpen: (Podcast) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Podcasts") },
+                title = { Text(stringResource(R.string.podcasts_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -79,7 +82,7 @@ fun PodcastsScreen(onBack: () -> Unit, onOpen: (Podcast) -> Unit) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search shows") },
+                placeholder = { Text(stringResource(R.string.podcasts_search_hint)) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -90,8 +93,8 @@ fun PodcastsScreen(onBack: () -> Unit, onOpen: (Podcast) -> Unit) {
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                    query.isBlank() -> CenteredMessage("Search Deezer's podcasts.")
-                    results.isEmpty() -> CenteredMessage("No shows found.")
+                    query.isBlank() -> CenteredMessage(stringResource(R.string.podcasts_empty_prompt))
+                    results.isEmpty() -> CenteredMessage(stringResource(R.string.podcasts_no_results))
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         // Index-qualified: duplicate/blank ids must not crash the list.
                         itemsIndexed(results, key = { i, p -> "$i-${p.id}" }) { _, p ->
@@ -112,7 +115,11 @@ fun PodcastsScreen(onBack: () -> Unit, onOpen: (Podcast) -> Unit) {
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
-                                        if (p.episodeCount > 0) "${p.episodeCount} episodes" else p.description,
+                                        if (p.episodeCount > 0) {
+                                            pluralStringResource(R.plurals.n_episodes, p.episodeCount, p.episodeCount)
+                                        } else {
+                                            p.description
+                                        },
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2,

@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -116,7 +117,7 @@ private fun MainScaffold(vm: AppViewModel) {
                 )
             }
             composable(Routes.LIKED) {
-                TrackListScreen("Liked Songs", player, back) { Engine.favorites() }
+                TrackListScreen(stringResource(R.string.home_liked), player, back) { Engine.favorites() }
             }
             composable(Routes.FLOW) {
                 TrackListScreen("Flow", player, back) { Engine.flow() }

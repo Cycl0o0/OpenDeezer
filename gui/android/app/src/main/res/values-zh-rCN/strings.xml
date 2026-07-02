@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenDeezer</string>
+
+    <string name="action_back">返回</string>
+    <string name="action_close">关闭</string>
+    <string name="action_download">下载</string>
+    <string name="action_retry">重试</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_ok">确定</string>
+    <string name="action_sign_out">退出登录</string>
+    <string name="action_play">播放</string>
+    <string name="action_pause">暂停</string>
+    <string name="action_next">下一首</string>
+    <string name="action_previous">上一首</string>
+    <string name="action_play_all">全部播放</string>
+    <string name="action_login">登录</string>
+    <string name="common_enable">启用</string>
+    <string name="common_off">关闭</string>
+    <string name="unknown_title">未知</string>
+
+    <string name="cd_connect">连接</string>
+    <string name="cd_like">喜欢</string>
+    <string name="cd_play_pause">播放/暂停</string>
+    <string name="cd_shuffle">随机播放</string>
+    <string name="cd_repeat">循环播放</string>
+    <string name="cd_volume">音量</string>
+    <string name="cd_connected">已连接</string>
+    <string name="cd_now_playing">正在播放</string>
+    <string name="cd_explicit">露骨内容</string>
+    <string name="cd_dismiss">忽略</string>
+    <string name="cd_qr_code">二维码</string>
+    <string name="cd_remote_qr">遥控二维码</string>
+
+    <string name="notif_channel_playback">播放</string>
+
+    <string name="login_error_empty_arl">ARL 为空</string>
+    <string name="login_error_failed">登录失败 — 请检查你的 ARL 和网络连接。</string>
+    <string name="login_error_account">无法加载账户。</string>
+
+    <string name="device_type_terminal">终端</string>
+    <string name="device_type_generic">设备</string>
+
+    <string name="settings_title">设置</string>
+    <string name="queue_title">播放队列</string>
+    <string name="lyrics_title">歌词</string>
+    <string name="charts_title">排行榜</string>
+    <string name="search_title">搜索</string>
+    <string name="now_playing_title">正在播放</string>
+    <string name="playlists_title">我的歌单</string>
+    <string name="podcasts_title">播客</string>
+    <string name="equalizer_title">均衡器</string>
+
+    <string name="greeting_morning">早上好</string>
+    <string name="greeting_afternoon">下午好</string>
+    <string name="greeting_evening">晚上好</string>
+    <string name="greeting_named">%1$s，%2$s</string>
+    <string name="home_liked">喜欢的歌曲</string>
+    <string name="section_top_tracks">热门歌曲</string>
+    <string name="section_your_playlists">你的歌单</string>
+
+    <string name="settings_audio_quality">音质</string>
+    <string name="quality_normal">普通</string>
+    <string name="quality_high">高</string>
+    <string name="quality_desc_flac">FLAC · 无损</string>
+    <string name="quality_desc_high">MP3 · 320 kbps</string>
+    <string name="quality_desc_normal">MP3 · 128 kbps</string>
+    <string name="setting_replaygain_sub">统一各曲目的响度</string>
+    <string name="setting_gapless_title">无缝播放</string>
+    <string name="setting_gapless_sub">曲目间无静音间隔</string>
+    <string name="settings_crossfade">淡入淡出</string>
+    <string name="crossfade_seconds">%1$d 秒</string>
+    <string name="settings_eq_sub">10 段均衡器、预设和单声道</string>
+    <string name="settings_sleep_timer">定时关闭</string>
+    <string name="sleep_end">播完</string>
+    <string name="sleep_desc_off">不会自动暂停播放</string>
+    <string name="sleep_desc_end">当前曲目播放完后暂停</string>
+    <string name="connect_reachable_title">让此设备可被发现</string>
+    <string name="connect_reachable_sub">让你的其他 OpenDeezer 应用发现并控制此设备</string>
+    <string name="reachable_at">可通过 %1$s 访问</string>
+    <string name="settings_phone_remote">手机遥控</string>
+    <string name="phone_remote_sub">在本地 Wi-Fi 上提供遥控网页</string>
+    <string name="phone_remote_scan">用手机扫描（同一 Wi-Fi），然后输入验证码。</string>
+    <string name="settings_about">关于</string>
+    <string name="update_check_title">检查更新</string>
+    <string name="update_checking">正在检查…</string>
+    <string name="update_check_sub">到 GitHub 检查是否有新版本</string>
+    <string name="settings_account">账户</string>
+    <string name="plan_label">套餐：%1$s</string>
+    <string name="plan_free">免费</string>
+    <string name="update_uptodate_title">已是最新版本</string>
+    <string name="update_latest_generic">这已是最新版本。</string>
+    <string name="update_latest_named">OpenDeezer v%1$s 已是最新版本。</string>
+    <string name="update_available_title">OpenDeezer %1$s 可用</string>
+    <string name="update_available_generic">GitHub 上有新版本可用。</string>
+    <string name="update_failed_title">无法检查更新</string>
+    <string name="update_failed_body">请检查网络连接后重试。</string>
+
+    <string name="login_manual_prompt">粘贴你的 Deezer ARL 令牌</string>
+    <string name="login_web_prompt">登录 Deezer</string>
+    <string name="login_use_web">改用网页登录</string>
+    <string name="login_manual_help">来自你 Deezer 会话 Cookie 的一长串令牌。网页登录会自动读取它。</string>
+    <string name="login_paste_manual">手动粘贴 ARL</string>
+
+    <string name="np_nothing_playing">当前没有播放内容。</string>
+    <string name="np_playing_on">正在 %1$s 上播放</string>
+
+    <string name="queue_empty">播放队列为空。</string>
+
+    <string name="lyrics_none">暂无歌词。</string>
+
+    <string name="charts_unavailable">排行榜不可用。</string>
+
+    <string name="episodes_none">暂无单集。</string>
+
+    <string name="eq_unavailable">均衡器不可用</string>
+    <string name="eq_enable_sub">对播放应用 10 段均衡器</string>
+    <string name="eq_preset">预设</string>
+    <string name="eq_custom">自定义</string>
+    <string name="eq_preamp">前置放大</string>
+    <string name="eq_mono_title">单声道</string>
+    <string name="eq_mono_sub">将立体声混合为单声道</string>
+
+    <string name="playlists_empty">你还没有歌单。</string>
+
+    <string name="podcasts_search_hint">搜索节目</string>
+    <string name="podcasts_empty_prompt">搜索 Deezer 的播客。</string>
+    <string name="podcasts_no_results">未找到节目。</string>
+
+    <string name="premium_required">需要 Premium</string>
+    <string name="premium_body_named">按需畅听需要付费的 Deezer 套餐。你的账户（%1$s）目前为“%2$s”。</string>
+    <string name="premium_body_anon">按需畅听需要付费的 Deezer 套餐。你的账户目前为“%1$s”。</string>
+
+    <string name="search_hint">歌曲、专辑、艺人、歌单</string>
+    <string name="search_empty_prompt">搜索 Deezer 的曲库。</string>
+    <string name="search_no_results">没有结果。</string>
+
+    <string name="section_tracks">歌曲</string>
+    <string name="section_albums">专辑</string>
+    <string name="section_artists">艺人</string>
+    <string name="section_playlists">歌单</string>
+
+    <string name="tracklist_empty">这里还没有内容。</string>
+
+    <string name="update_release_notes">更新说明</string>
+
+    <string name="connect_this_device">此设备</string>
+    <string name="connect_no_devices">你的网络中未找到设备。</string>
+
+    <string name="tv_premium_body">OpenDeezer 播放需要 Deezer Premium 账户。</string>
+    <string name="tv_use_another_account">使用其他账户</string>
+    <string name="nav_home">首页</string>
+    <string name="nav_library">音乐库</string>
+
+    <string name="tv_load_error">加载失败 — 请检查网络连接。</string>
+    <string name="tv_flow_mix">Flow · 你的专属混音</string>
+    <string name="tv_made_for_you">为你打造</string>
+    <string name="tv_your_library">你的音乐库</string>
+    <string name="tv_liked_songs">喜欢的歌曲</string>
+    <string name="tv_your_playlists">你的歌单</string>
+    <string name="tv_nothing_saved">还没有保存任何内容。</string>
+    <string name="tv_search_hint">搜索歌曲、专辑、歌单</string>
+    <string name="tv_featured">精选</string>
+
+    <string name="tv_login_manual_prompt">粘贴你的 Deezer ARL</string>
+    <string name="tv_login_web_prompt">登录 Deezer — 系统会自动获取 ARL</string>
+    <string name="tv_login_paste_instead">改为粘贴 ARL</string>
+    <string name="tv_login_signing_in">正在登录…</string>
+    <string name="tv_login_use_web">使用网页登录</string>
+    <string name="tv_login_manual_help">网页登录会自动读取 ARL — 只有当你已有该令牌时才在此粘贴。</string>
+
+    <string name="tv_section_audio">音频</string>
+    <string name="tv_quality">音质</string>
+    <string name="tv_hifi_needs_plan">HiFi 需要 Deezer HiFi 套餐。</string>
+    <string name="tv_high_hifi_needs_plan">High/HiFi 需要 Deezer HQ 或 HiFi 套餐。</string>
+    <string name="eq_custom_edited">自定义 — 已手动调整各频段</string>
+    <string name="eq_adjust_hint">在下方某个频段上按左/右可将其调整 1 dB</string>
+    <string name="tv_connect_reachable_sub">让你的其他 OpenDeezer 应用控制此电视</string>
+    <string name="tv_phone_remote">手机遥控</string>
+    <string name="tv_phone_remote_sub">在你的 Wi-Fi 上提供浏览器遥控（扫描二维码）</string>
+    <string name="tv_remote_scan">用手机扫描（同一 Wi-Fi），然后输入验证码：</string>
+    <string name="tv_play_on_device">在其他设备上播放</string>
+    <string name="tv_searching_network">正在搜索你的网络…</string>
+    <string name="connected_to">已连接到 %1$s</string>
+    <string name="tv_playing_here">正在此设备播放 · 打开以选择设备</string>
+    <string name="tv_no_other_devices">你的网络中没有其他设备。</string>
+    <string name="tv_rescan">重新扫描</string>
+    <string name="tv_searching">正在搜索…</string>
+    <string name="tv_rescan_sub">再次查找设备</string>
+    <string name="tv_update_failed">无法检查 — 请重试</string>
+    <string name="tv_update_available">有可用更新：%1$s</string>
+    <string name="tv_up_to_date">已是最新版本（v%1$s）</string>
+    <string name="tv_toggle_on">开</string>
+    <string name="tv_toggle_off">关</string>
+
+    <plurals name="n_tracks">
+        <item quantity="other">%1$d 首歌曲</item>
+    </plurals>
+    <plurals name="n_episodes">
+        <item quantity="other">%1$d 集</item>
+    </plurals>
+    <plurals name="n_fans">
+        <item quantity="other">%1$d 位粉丝</item>
+    </plurals>
+    <plurals name="pauses_in_minutes">
+        <item quantity="other">%1$d 分钟后暂停</item>
+    </plurals>
+</resources>

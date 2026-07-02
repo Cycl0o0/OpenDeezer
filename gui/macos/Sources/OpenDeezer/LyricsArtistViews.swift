@@ -42,7 +42,7 @@ struct LyricsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     if app.current?.explicit == true { ExplicitBadge() }
-                    Text(app.current?.name ?? "Lyrics")
+                    Text(app.current?.name ?? L("Lyrics"))
                         .font(.system(size: 16, weight: .bold)).foregroundStyle(DZ.textPri)
                         .lineLimit(1)
                 }
@@ -50,7 +50,7 @@ struct LyricsView: View {
                     .font(.system(size: 12)).foregroundStyle(DZ.textSec).lineLimit(1)
             }
             Spacer()
-            Button("Done") { app.showLyrics = false }
+            Button(L("Done")) { app.showLyrics = false }
                 .buttonStyle(.glass).tint(DZ.accent)
         }
         .padding(16)
@@ -75,7 +75,7 @@ struct LyricsView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "quote.bubble")
                         .font(.system(size: 32)).foregroundStyle(DZ.textSec)
-                    Text("No lyrics available")
+                    Text(L("No lyrics available"))
                         .font(.system(size: 14)).foregroundStyle(DZ.textSec)
                 }
             }
@@ -136,7 +136,7 @@ struct ArtistView: View {
                 profileBody(p)
             } else {
                 VStack { Spacer()
-                    Text("Couldn't load this artist.")
+                    Text(L("Couldn't load this artist."))
                         .font(.system(size: 14)).foregroundStyle(DZ.textSec)
                     Spacer() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -149,7 +149,7 @@ struct ArtistView: View {
     private var toolbar: some View {
         HStack {
             Spacer()
-            Button("Done") { app.showArtist = false }
+            Button(L("Done")) { app.showArtist = false }
                 .buttonStyle(.glass).tint(DZ.accent)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -161,7 +161,7 @@ struct ArtistView: View {
                 artistHeader(p.artist)
 
                 if !p.top.isEmpty {
-                    sectionHeader("Top Tracks")
+                    sectionHeader(L("Top Tracks"))
                     LazyVStack(spacing: 0) {
                         ForEach(Array(p.top.enumerated()), id: \.element.id) { i, t in
                             TrackRowView(index: i, track: t,
@@ -174,7 +174,7 @@ struct ArtistView: View {
                 }
 
                 if !p.albums.isEmpty {
-                    sectionHeader("Albums")
+                    sectionHeader(L("Albums"))
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 18) {
                             ForEach(p.albums) { a in
@@ -186,7 +186,7 @@ struct ArtistView: View {
                 }
 
                 if !p.related.isEmpty {
-                    sectionHeader("Related Artists")
+                    sectionHeader(L("Related Artists"))
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 18) {
                             ForEach(p.related) { ar in
@@ -207,12 +207,12 @@ struct ArtistView: View {
             Artwork(url: a.artworkUrl, size: 132, radius: 66)   // circular
                 .shadow(radius: 14, y: 6)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Artist").font(.system(size: 11, weight: .bold)).textCase(.uppercase)
+                Text(L("Artist")).font(.system(size: 11, weight: .bold)).textCase(.uppercase)
                     .foregroundStyle(DZ.textSec)
                 Text(a.name).font(.system(size: 34, weight: .bold))
                     .foregroundStyle(DZ.textPri).lineLimit(2)
                 if a.nbFans > 0 {
-                    Text("\(a.nbFans.formatted()) fans")
+                    Text(Lp("%d fans", a.nbFans))
                         .font(.title3).foregroundStyle(DZ.textPri.opacity(0.9))
                 }
             }

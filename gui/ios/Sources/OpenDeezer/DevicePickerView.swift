@@ -35,7 +35,7 @@ struct DevicePickerView: View {
                 Section("Nearby devices") {
                     if devices.isEmpty {
                         HStack {
-                            Text(isScanning ? "Searching…" : "No devices found")
+                            Text(isScanning ? String(localized: "Searching…") : String(localized: "No devices found"))
                                 .foregroundStyle(.secondary)
                             Spacer()
                             if isScanning { ProgressView() }

@@ -52,17 +52,17 @@ final class TrayController: NSObject, NSWindowDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "Show OpenDeezer", action: #selector(showWindow), keyEquivalent: "")
+        menu.addItem(withTitle: L("Show OpenDeezer"), action: #selector(showWindow), keyEquivalent: "")
             .target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Play / Pause", action: #selector(playPause), keyEquivalent: "")
+        menu.addItem(withTitle: L("Play / Pause"), action: #selector(playPause), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: "Next", action: #selector(nextTrack), keyEquivalent: "")
+        menu.addItem(withTitle: L("Next"), action: #selector(nextTrack), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: "Previous", action: #selector(prevTrack), keyEquivalent: "")
+        menu.addItem(withTitle: L("Previous"), action: #selector(prevTrack), keyEquivalent: "")
             .target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit OpenDeezer", action: #selector(quit), keyEquivalent: "q")
+        menu.addItem(withTitle: L("Quit OpenDeezer"), action: #selector(quit), keyEquivalent: "q")
             .target = self
 
         item.menu = menu

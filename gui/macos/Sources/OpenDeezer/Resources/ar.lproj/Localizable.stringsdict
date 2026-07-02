@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>%d songs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>%d أغنية</string>
+            <key>one</key>
+            <string>أغنية واحدة</string>
+            <key>two</key>
+            <string>أغنيتان</string>
+            <key>few</key>
+            <string>%d أغانٍ</string>
+            <key>many</key>
+            <string>%d أغنية</string>
+            <key>other</key>
+            <string>%d أغنية</string>
+        </dict>
+    </dict>
+    <key>%d tracks</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>%d أغنية</string>
+            <key>one</key>
+            <string>أغنية واحدة</string>
+            <key>two</key>
+            <string>أغنيتان</string>
+            <key>few</key>
+            <string>%d أغانٍ</string>
+            <key>many</key>
+            <string>%d أغنية</string>
+            <key>other</key>
+            <string>%d أغنية</string>
+        </dict>
+    </dict>
+    <key>%d episodes</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>%d حلقة</string>
+            <key>one</key>
+            <string>حلقة واحدة</string>
+            <key>two</key>
+            <string>حلقتان</string>
+            <key>few</key>
+            <string>%d حلقات</string>
+            <key>many</key>
+            <string>%d حلقة</string>
+            <key>other</key>
+            <string>%d حلقة</string>
+        </dict>
+    </dict>
+    <key>%d fans</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>%d معجب</string>
+            <key>one</key>
+            <string>معجب واحد</string>
+            <key>two</key>
+            <string>معجبان</string>
+            <key>few</key>
+            <string>%d معجبين</string>
+            <key>many</key>
+            <string>%d معجبًا</string>
+            <key>other</key>
+            <string>%d معجب</string>
+        </dict>
+    </dict>
+    <key>Fades out and pauses after %d minutes.</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>يتلاشى ويتوقف مؤقتًا بعد %d دقيقة.</string>
+            <key>one</key>
+            <string>يتلاشى ويتوقف مؤقتًا بعد دقيقة واحدة.</string>
+            <key>two</key>
+            <string>يتلاشى ويتوقف مؤقتًا بعد دقيقتين.</string>
+            <key>few</key>
+            <string>يتلاشى ويتوقف مؤقتًا بعد %d دقائق.</string>
+            <key>many</key>
+            <string>يتلاشى ويتوقف مؤقتًا بعد %d دقيقة.</string>
+            <key>other</key>
+            <string>يتلاشى ويتوقف مؤقتًا بعد %d دقيقة.</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

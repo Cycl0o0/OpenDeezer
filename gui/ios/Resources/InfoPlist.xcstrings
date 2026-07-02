@@ -1,0 +1,47 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يكتشف OpenDeezer أجهزة OpenDeezer Connect الأخرى ويستضيف التحكم بالهاتف عن بُعد عبر شبكتك المحلية."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenDeezer detecta otros dispositivos OpenDeezer Connect y aloja el control remoto del teléfono en tu red local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenDeezer détecte les autres appareils OpenDeezer Connect et héberge la télécommande du téléphone sur votre réseau local."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenDeezer आपके लोकल नेटवर्क पर अन्य OpenDeezer Connect डिवाइस खोजता है और फ़ोन रिमोट होस्ट करता है।"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenDeezer обнаруживает другие устройства OpenDeezer Connect и запускает пульт для телефона в вашей локальной сети."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenDeezer 需要通过本地网络发现其他 OpenDeezer Connect 设备并提供手机遥控功能。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

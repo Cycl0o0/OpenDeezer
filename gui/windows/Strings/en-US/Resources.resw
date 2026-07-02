@@ -1,0 +1,592 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Nav_Home" xml:space="preserve">
+    <value>Home</value>
+  </data>
+  <data name="Nav_LikedSongs" xml:space="preserve">
+    <value>Liked Songs</value>
+  </data>
+  <data name="Nav_Flow" xml:space="preserve">
+    <value>Flow</value>
+  </data>
+  <data name="Nav_Playlists" xml:space="preserve">
+    <value>Playlists</value>
+  </data>
+  <data name="Nav_Charts" xml:space="preserve">
+    <value>Charts</value>
+  </data>
+  <data name="Nav_Podcasts" xml:space="preserve">
+    <value>Podcasts</value>
+  </data>
+  <data name="Nav_Search" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="Nav_Account" xml:space="preserve">
+    <value>Log in / Switch account…</value>
+  </data>
+  <data name="Nav_Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Nav_PhoneRemote" xml:space="preserve">
+    <value>Phone Remote</value>
+  </data>
+  <data name="Nav_About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="Nav_Artist" xml:space="preserve">
+    <value>Artist</value>
+  </data>
+  <data name="Nav_Lyrics" xml:space="preserve">
+    <value>Lyrics</value>
+  </data>
+  <data name="Btn_Download" xml:space="preserve">
+    <value>Download</value>
+  </data>
+  <data name="Btn_NewPlaylist" xml:space="preserve">
+    <value>New Playlist</value>
+  </data>
+  <data name="Btn_Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Btn_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Btn_OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Btn_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Btn_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Btn_Quit" xml:space="preserve">
+    <value>Quit</value>
+  </data>
+  <data name="Btn_Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Btn_LogInWithDeezer" xml:space="preserve">
+    <value>Log in with Deezer</value>
+  </data>
+  <data name="Btn_EnterArlManually" xml:space="preserve">
+    <value>Enter ARL manually</value>
+  </data>
+  <data name="Section_TopTracks" xml:space="preserve">
+    <value>Top Tracks</value>
+  </data>
+  <data name="Section_Albums" xml:space="preserve">
+    <value>Albums</value>
+  </data>
+  <data name="Section_Artists" xml:space="preserve">
+    <value>Artists</value>
+  </data>
+  <data name="Section_Playlists" xml:space="preserve">
+    <value>Playlists</value>
+  </data>
+  <data name="Section_YourPlaylists" xml:space="preserve">
+    <value>Your Playlists</value>
+  </data>
+  <data name="Section_RelatedArtists" xml:space="preserve">
+    <value>Related Artists</value>
+  </data>
+  <data name="Search_Placeholder" xml:space="preserve">
+    <value>Search Deezer…</value>
+  </data>
+  <data name="Search_TracksHeader" xml:space="preserve">
+    <value>Tracks</value>
+  </data>
+  <data name="Search_AlbumsPlaylistsHeader" xml:space="preserve">
+    <value>Albums &amp; Playlists</value>
+  </data>
+  <data name="Podcast_SearchPlaceholder" xml:space="preserve">
+    <value>Search podcasts…</value>
+  </data>
+  <data name="Podcast_ShowsHeader" xml:space="preserve">
+    <value>Shows</value>
+  </data>
+  <data name="Greeting_Morning" xml:space="preserve">
+    <value>Good morning</value>
+  </data>
+  <data name="Greeting_Afternoon" xml:space="preserve">
+    <value>Good afternoon</value>
+  </data>
+  <data name="Greeting_Evening" xml:space="preserve">
+    <value>Good evening</value>
+  </data>
+  <data name="Tooltip_Like" xml:space="preserve">
+    <value>Like / unlike</value>
+  </data>
+  <data name="Tooltip_AddToPlaylist" xml:space="preserve">
+    <value>Add to playlist</value>
+  </data>
+  <data name="Tooltip_Shuffle" xml:space="preserve">
+    <value>Shuffle</value>
+  </data>
+  <data name="Tooltip_Previous" xml:space="preserve">
+    <value>Previous</value>
+  </data>
+  <data name="Tooltip_PlayPause" xml:space="preserve">
+    <value>Play / pause</value>
+  </data>
+  <data name="Tooltip_Next" xml:space="preserve">
+    <value>Next</value>
+  </data>
+  <data name="Tooltip_RepeatOff" xml:space="preserve">
+    <value>Repeat: off</value>
+  </data>
+  <data name="Tooltip_RepeatAll" xml:space="preserve">
+    <value>Repeat: all</value>
+  </data>
+  <data name="Tooltip_RepeatOne" xml:space="preserve">
+    <value>Repeat: one</value>
+  </data>
+  <data name="Tooltip_Lyrics" xml:space="preserve">
+    <value>Lyrics</value>
+  </data>
+  <data name="Tooltip_Artist" xml:space="preserve">
+    <value>Artist</value>
+  </data>
+  <data name="Tooltip_Connect" xml:space="preserve">
+    <value>Connect to a device</value>
+  </data>
+  <data name="Tooltip_Explicit" xml:space="preserve">
+    <value>Explicit content</value>
+  </data>
+  <data name="Menu_Like" xml:space="preserve">
+    <value>Like</value>
+  </data>
+  <data name="Menu_AddToPlaylist" xml:space="preserve">
+    <value>Add to playlist…</value>
+  </data>
+  <data name="Menu_Rename" xml:space="preserve">
+    <value>Rename…</value>
+  </data>
+  <data name="Menu_Delete" xml:space="preserve">
+    <value>Delete…</value>
+  </data>
+  <data name="Status_LoggingIn" xml:space="preserve">
+    <value>Logging in…</value>
+  </data>
+  <data name="Status_LoginFailed" xml:space="preserve">
+    <value>Login failed</value>
+  </data>
+  <data name="Status_CheckingAccount" xml:space="preserve">
+    <value>Checking account…</value>
+  </data>
+  <data name="Status_NotPlaying" xml:space="preserve">
+    <value>Not playing</value>
+  </data>
+  <data name="Status_NotSignedIn" xml:space="preserve">
+    <value>Not signed in</value>
+  </data>
+  <data name="Status_Loading" xml:space="preserve">
+    <value>Loading…</value>
+  </data>
+  <data name="Connect_Title" xml:space="preserve">
+    <value>Connect to a device</value>
+  </data>
+  <data name="Connect_SignIn" xml:space="preserve">
+    <value>Sign in to use Connect.</value>
+  </data>
+  <data name="Connect_Searching" xml:space="preserve">
+    <value>Searching for devices…</value>
+  </data>
+  <data name="Connect_ThisComputer" xml:space="preserve">
+    <value>This computer</value>
+  </data>
+  <data name="Connect_LocalPlayback" xml:space="preserve">
+    <value>Local playback</value>
+  </data>
+  <data name="Connect_NoDevices" xml:space="preserve">
+    <value>No other devices found on your network.</value>
+  </data>
+  <data name="Connect_VersionFormat" xml:space="preserve">
+    <value>{0} · OpenDeezer {1}</value>
+  </data>
+  <data name="Connect_PlayingOnFormat" xml:space="preserve">
+    <value>Playing on {0}</value>
+  </data>
+  <data name="ConnectType_Terminal" xml:space="preserve">
+    <value>Terminal</value>
+  </data>
+  <data name="ConnectType_Device" xml:space="preserve">
+    <value>Device</value>
+  </data>
+  <data name="Lyrics_PlayPrompt" xml:space="preserve">
+    <value>Play a track to see its lyrics.</value>
+  </data>
+  <data name="Lyrics_Loading" xml:space="preserve">
+    <value>Loading lyrics…</value>
+  </data>
+  <data name="Lyrics_None" xml:space="preserve">
+    <value>No lyrics available.</value>
+  </data>
+  <data name="Dialog_SignInTitle" xml:space="preserve">
+    <value>Sign in to Deezer</value>
+  </data>
+  <data name="Dialog_SignInBody" xml:space="preserve">
+    <value>Choose how you'd like to sign in.</value>
+  </data>
+  <data name="Dialog_WebLoginTitle" xml:space="preserve">
+    <value>Log in with Deezer</value>
+  </data>
+  <data name="Dialog_LogInWithArlTitle" xml:space="preserve">
+    <value>Log in with ARL</value>
+  </data>
+  <data name="Dialog_PasteArlPlaceholder" xml:space="preserve">
+    <value>Paste your Deezer ARL</value>
+  </data>
+  <data name="Dialog_LoginFailedTitle" xml:space="preserve">
+    <value>Login failed</value>
+  </data>
+  <data name="Dialog_LoginFailedBody" xml:space="preserve">
+    <value>That ARL is invalid or expired. Try logging in again.</value>
+  </data>
+  <data name="Dialog_NoArtistTitle" xml:space="preserve">
+    <value>No artist</value>
+  </data>
+  <data name="Dialog_NoArtistBody" xml:space="preserve">
+    <value>Start playing a track to view its artist.</value>
+  </data>
+  <data name="Dialog_NoTrackTitle" xml:space="preserve">
+    <value>No track</value>
+  </data>
+  <data name="Dialog_NoTrackBody" xml:space="preserve">
+    <value>Start playing a track to add it to a playlist.</value>
+  </data>
+  <data name="Dialog_AddToPlaylistTitle" xml:space="preserve">
+    <value>Add to playlist</value>
+  </data>
+  <data name="Dialog_NewPlaylistItem" xml:space="preserve">
+    <value>＋  New playlist…</value>
+  </data>
+  <data name="Dialog_NewPlaylistTitle" xml:space="preserve">
+    <value>New playlist</value>
+  </data>
+  <data name="Dialog_PlaylistNamePlaceholder" xml:space="preserve">
+    <value>Playlist name</value>
+  </data>
+  <data name="Dialog_RenamePlaylistTitle" xml:space="preserve">
+    <value>Rename playlist</value>
+  </data>
+  <data name="Dialog_DeletePlaylistTitle" xml:space="preserve">
+    <value>Delete playlist</value>
+  </data>
+  <data name="Dialog_DeletePlaylistBodyFormat" xml:space="preserve">
+    <value>Delete “{0}”? This can’t be undone.</value>
+  </data>
+  <data name="Dialog_CreateFailTitle" xml:space="preserve">
+    <value>Couldn't create playlist</value>
+  </data>
+  <data name="Dialog_CreateFailBody" xml:space="preserve">
+    <value>The playlist could not be created.</value>
+  </data>
+  <data name="Dialog_AddFailTitle" xml:space="preserve">
+    <value>Couldn't add to playlist</value>
+  </data>
+  <data name="Dialog_AddFailBody" xml:space="preserve">
+    <value>The track could not be added.</value>
+  </data>
+  <data name="Dialog_RenameFailTitle" xml:space="preserve">
+    <value>Couldn't rename</value>
+  </data>
+  <data name="Dialog_RenameFailBody" xml:space="preserve">
+    <value>The playlist could not be renamed.</value>
+  </data>
+  <data name="Dialog_DeleteFailTitle" xml:space="preserve">
+    <value>Couldn't delete</value>
+  </data>
+  <data name="Dialog_DeleteFailBody" xml:space="preserve">
+    <value>The playlist could not be deleted.</value>
+  </data>
+  <data name="Dialog_ConnectFailTitle" xml:space="preserve">
+    <value>Couldn't connect</value>
+  </data>
+  <data name="Dialog_ConnectFailBody" xml:space="preserve">
+    <value>That device could not be reached.</value>
+  </data>
+  <data name="Blocked_Title" xml:space="preserve">
+    <value>Premium required</value>
+  </data>
+  <data name="Blocked_BodyFormat" xml:space="preserve">
+    <value>Your account ({0}) isn't Premium. Subscribe at deezer.com, then restart OpenDeezer.</value>
+  </data>
+  <data name="Update_TitleFormat" xml:space="preserve">
+    <value>OpenDeezer {0} available</value>
+  </data>
+  <data name="Update_BodyDefault" xml:space="preserve">
+    <value>A newer version is available for download.</value>
+  </data>
+  <data name="Tray_Open" xml:space="preserve">
+    <value>Open OpenDeezer</value>
+  </data>
+  <data name="Tray_Quit" xml:space="preserve">
+    <value>Quit</value>
+  </data>
+  <data name="Settings_Title" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Settings_AudioQuality" xml:space="preserve">
+    <value>Audio quality</value>
+  </data>
+  <data name="Quality_Normal" xml:space="preserve">
+    <value>Normal — MP3 128 kbps</value>
+  </data>
+  <data name="Quality_High" xml:space="preserve">
+    <value>High — MP3 320 kbps</value>
+  </data>
+  <data name="Quality_HiFi" xml:space="preserve">
+    <value>HiFi — FLAC lossless</value>
+  </data>
+  <data name="Settings_QualityWarnFormat" xml:space="preserve">
+    <value>Your plan ({0}) may not support this quality; playback falls back automatically.</value>
+  </data>
+  <data name="Settings_OutputDevice" xml:space="preserve">
+    <value>Output device</value>
+  </data>
+  <data name="Settings_SystemDefault" xml:space="preserve">
+    <value>System default</value>
+  </data>
+  <data name="Settings_DeviceDefaultFormat" xml:space="preserve">
+    <value>{0}  (default)</value>
+  </data>
+  <data name="Settings_NoOutputDevices" xml:space="preserve">
+    <value>No output devices</value>
+  </data>
+  <data name="Settings_GaplessPlayback" xml:space="preserve">
+    <value>Gapless playback</value>
+  </data>
+  <data name="Settings_GaplessOn" xml:space="preserve">
+    <value>Play consecutive tracks with no silence</value>
+  </data>
+  <data name="Settings_GaplessOff" xml:space="preserve">
+    <value>Brief gap between tracks</value>
+  </data>
+  <data name="Settings_Crossfade" xml:space="preserve">
+    <value>Crossfade</value>
+  </data>
+  <data name="Common_Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Settings_Equalizer" xml:space="preserve">
+    <value>Equalizer</value>
+  </data>
+  <data name="Settings_EqualizerBtn" xml:space="preserve">
+    <value>Equalizer…</value>
+  </data>
+  <data name="Settings_EqualizerDesc" xml:space="preserve">
+    <value>10-band equalizer, preamp and mono audio.</value>
+  </data>
+  <data name="Settings_SleepTimer" xml:space="preserve">
+    <value>Sleep timer</value>
+  </data>
+  <data name="Settings_EndOfTrack" xml:space="preserve">
+    <value>End of track</value>
+  </data>
+  <data name="Settings_VolumeNormalization" xml:space="preserve">
+    <value>Volume normalization</value>
+  </data>
+  <data name="Settings_ReplayGainOn" xml:space="preserve">
+    <value>Normalize loudness across tracks (ReplayGain)</value>
+  </data>
+  <data name="Settings_ReplayGainOff" xml:space="preserve">
+    <value>Play tracks at their original loudness</value>
+  </data>
+  <data name="Settings_BackgroundPlayback" xml:space="preserve">
+    <value>Background playback</value>
+  </data>
+  <data name="Settings_TrayOn" xml:space="preserve">
+    <value>Closing the window keeps playing in the tray</value>
+  </data>
+  <data name="Settings_TrayOff" xml:space="preserve">
+    <value>Closing the window quits OpenDeezer</value>
+  </data>
+  <data name="Settings_RemoteControl" xml:space="preserve">
+    <value>Remote control</value>
+  </data>
+  <data name="Settings_RemoteDesc" xml:space="preserve">
+    <value>Control playback from another device on your network.</value>
+  </data>
+  <data name="Settings_RemoteOn" xml:space="preserve">
+    <value>Remote control on</value>
+  </data>
+  <data name="Settings_RemoteOff" xml:space="preserve">
+    <value>Remote control off</value>
+  </data>
+  <data name="Settings_RemoteLanOn" xml:space="preserve">
+    <value>Reachable on the local network</value>
+  </data>
+  <data name="Settings_RemoteLanOff" xml:space="preserve">
+    <value>This computer only</value>
+  </data>
+  <data name="Settings_AccessToken" xml:space="preserve">
+    <value>Access token (optional)</value>
+  </data>
+  <data name="Settings_Updates" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="Settings_UpdateCheckDesc" xml:space="preserve">
+    <value>Check GitHub for a newer release.</value>
+  </data>
+  <data name="Settings_CheckForUpdates" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="Settings_Checking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="Settings_UpdateAvailFormat" xml:space="preserve">
+    <value>v{0} available (you have v{1}).</value>
+  </data>
+  <data name="Settings_UpdateFail" xml:space="preserve">
+    <value>Could not check for updates. Try again later.</value>
+  </data>
+  <data name="Settings_UpToDateFormat" xml:space="preserve">
+    <value>You're up to date (v{0}).</value>
+  </data>
+  <data name="Settings_Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Settings_LanguageSystem" xml:space="preserve">
+    <value>System default</value>
+  </data>
+  <data name="Settings_LanguageRestart" xml:space="preserve">
+    <value>Restart OpenDeezer to apply the new language.</value>
+  </data>
+  <data name="EQ_Preset" xml:space="preserve">
+    <value>Preset</value>
+  </data>
+  <data name="EQ_Custom" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="EQ_Preamp" xml:space="preserve">
+    <value>Preamp</value>
+  </data>
+  <data name="EQ_MonoAudio" xml:space="preserve">
+    <value>Mono audio</value>
+  </data>
+  <data name="EQ_EnableOn" xml:space="preserve">
+    <value>Equalizer on</value>
+  </data>
+  <data name="EQ_EnableOff" xml:space="preserve">
+    <value>Equalizer off</value>
+  </data>
+  <data name="EQ_MonoOn" xml:space="preserve">
+    <value>Both channels play the same audio</value>
+  </data>
+  <data name="EQ_MonoOff" xml:space="preserve">
+    <value>Stereo</value>
+  </data>
+  <data name="PhoneRemote_Instructions" xml:space="preserve">
+    <value>Scan with your phone (same Wi-Fi), then enter the code.</value>
+  </data>
+  <data name="PhoneRemote_On" xml:space="preserve">
+    <value>Phone Remote active</value>
+  </data>
+  <data name="PhoneRemote_Off" xml:space="preserve">
+    <value>Phone Remote off</value>
+  </data>
+  <data name="About_Title" xml:space="preserve">
+    <value>About OpenDeezer</value>
+  </data>
+  <data name="About_Tagline" xml:space="preserve">
+    <value>An open source reimplementation of Deezer.</value>
+  </data>
+  <data name="About_Description" xml:space="preserve">
+    <value>Native Windows client (WinUI 3 · C# · Fluent). The engine — login, browse, Blowfish decrypt, MP3 decode, WASAPI playback — is the Go core libdeezercore.dll, linked in-process.</value>
+  </data>
+  <data name="About_SignedInFormat" xml:space="preserve">
+    <value>Signed in: {0} · {1}</value>
+  </data>
+  <data name="About_Credits" xml:space="preserve">
+    <value>By Cycl0o0. Licensed under AGPL-3.0.</value>
+  </data>
+  <data name="Tracks_One" xml:space="preserve">
+    <value>{0} track</value>
+  </data>
+  <data name="Tracks_Other" xml:space="preserve">
+    <value>{0} tracks</value>
+  </data>
+  <data name="Episodes_One" xml:space="preserve">
+    <value>{0} episode</value>
+  </data>
+  <data name="Episodes_Other" xml:space="preserve">
+    <value>{0} episodes</value>
+  </data>
+  <data name="Fans_One" xml:space="preserve">
+    <value>{0} fan</value>
+  </data>
+  <data name="Fans_Other" xml:space="preserve">
+    <value>{0} fans</value>
+  </data>
+  <data name="Minutes_One" xml:space="preserve">
+    <value>{0} minute</value>
+  </data>
+  <data name="Minutes_Other" xml:space="preserve">
+    <value>{0} minutes</value>
+  </data>
+  <data name="Seconds_One" xml:space="preserve">
+    <value>{0} second</value>
+  </data>
+  <data name="Seconds_Other" xml:space="preserve">
+    <value>{0} seconds</value>
+  </data>
+</root>

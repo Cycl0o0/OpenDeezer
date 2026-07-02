@@ -6,6 +6,7 @@ import (
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	"github.com/Cycl0o0/OpenDeezer/internal/version"
 
 	"github.com/charmbracelet/lipgloss"
@@ -63,25 +64,27 @@ func (m *Model) blockedView() string {
 		"",
 		accent.Render("OpenDeezer"),
 		"",
-		statusSty.Render("Premium required."),
+		statusSty.Render(i18n.T("Premium required.")),
 		"",
-		"Streaming needs a Deezer Premium plan.",
-		dim.Render("Your account: " + m.acct.Offer),
+		i18n.T("Streaming needs a Deezer Premium plan."),
+		dim.Render(i18n.Tf("Your account: %s", m.acct.Offer)),
 		"",
-		dim.Render("Subscribe at deezer.com, then restart OpenDeezer."),
+		dim.Render(i18n.T("Subscribe at deezer.com, then restart OpenDeezer.")),
 		"",
-		dim.Render("q to quit"),
+		dim.Render(i18n.T("q to quit")),
 	}
 	return padTo(lines, max(1, m.height))
 }
 
 func (m *Model) searchView() string {
+	// Refresh the placeholder each render so a live locale change is reflected.
+	m.search.Placeholder = i18n.T("Search Deezer…")
 	lines := []string{
-		accent.Render("Search Deezer"),
+		accent.Render(i18n.T("Search Deezer")),
 		"",
 		m.search.View(),
 		"",
-		dim.Render("enter to search · esc to go back"),
+		dim.Render(i18n.T("enter to search · esc to go back")),
 	}
 	// Pad to roughly fill the list area.
 	for len(lines) < max(1, m.height-footerHeight) {
@@ -100,31 +103,31 @@ var Version = version.Number
 func (m *Model) creditsView() string {
 	lines := []string{
 		accent.Render("OpenDeezer") + dim.Render(" "+Version),
-		dim.Render("An open source reimplementation of Deezer"),
+		dim.Render(i18n.T("An open source reimplementation of Deezer")),
 		"",
-		"by " + accent.Render(creditsAuthor),
+		i18n.T("by") + " " + accent.Render(creditsAuthor),
 		"",
-		dim.Render("Built with:"),
+		dim.Render(i18n.T("Built with:")),
 		"  • Bubble Tea / Bubbles / Lip Gloss — Charm",
 		"  • go-mp3 + oto — Hajime Hoshi / Ebitengine",
 		"  • x/crypto/blowfish — Go authors",
 		"",
-		dim.Render("Audio decrypted + decoded locally. Your ARL never leaves your machine."),
-		dim.Render("AGPL-3.0. Not affiliated with Deezer."),
+		dim.Render(i18n.T("Audio decrypted + decoded locally. Your ARL never leaves your machine.")),
+		dim.Render(i18n.T("AGPL-3.0. Not affiliated with Deezer.")),
 		"",
 	}
 	switch {
 	case m.updateChecking:
-		lines = append(lines, statusSty.Render("Checking for updates…"))
+		lines = append(lines, statusSty.Render(i18n.T("Checking for updates…")))
 	case m.updateInfo.HasUpdate:
-		lines = append(lines, statusSty.Render(fmt.Sprintf(
+		lines = append(lines, statusSty.Render(i18n.Tf(
 			"⬆ v%s available — U to open · u to re-check", m.updateInfo.Latest)))
 	case m.updateChecked:
-		lines = append(lines, dim.Render("You're on the latest version. (u to check again)"))
+		lines = append(lines, dim.Render(i18n.T("You're on the latest version. (u to check again)")))
 	default:
-		lines = append(lines, dim.Render("u to check for updates"))
+		lines = append(lines, dim.Render(i18n.T("u to check for updates")))
 	}
-	lines = append(lines, "", dim.Render("? or esc to go back"))
+	lines = append(lines, "", dim.Render(i18n.T("? or esc to go back")))
 	return padTo(lines, max(1, m.height-footerHeight))
 }
 
@@ -136,23 +139,23 @@ func (m *Model) nowPlayingView() string {
 			t.ArtistLine(),
 			dim.Render(t.AlbumName),
 			"",
-			dim.Render(m.player.State().String()),
+			dim.Render(i18n.T(m.player.State().String())),
 		}
 		if f := deezer.FormatLabel(m.player.Format()); f != "" {
-			meta = append(meta, dim.Render("Output: "+f))
+			meta = append(meta, dim.Render(i18n.Tf("Output: %s", f)))
 		}
 	} else {
-		meta = []string{dim.Render("Nothing playing.")}
+		meta = []string{dim.Render(i18n.T("Nothing playing."))}
 	}
 
 	cover := m.curCover
 	if cover == "" {
 		if !artworkSupported() {
-			cover = dim.Render("(artwork needs a 256-color / truecolor terminal)")
+			cover = dim.Render(i18n.T("(artwork needs a 256-color / truecolor terminal)"))
 		} else if m.playing {
-			cover = dim.Render("(loading cover…)")
+			cover = dim.Render(i18n.T("(loading cover…)"))
 		} else {
-			cover = dim.Render("(no cover)")
+			cover = dim.Render(i18n.T("(no cover)"))
 		}
 	}
 
@@ -192,20 +195,20 @@ func (m *Model) footer() string {
 			now += dim.Render("  [" + f + "]")
 		}
 	} else if e := m.player.LastError(); e != "" {
-		now = dim.Render("⏹ stopped — " + e)
+		now = dim.Render("⏹ " + i18n.Tf("stopped — %s", e))
 	} else {
-		now = dim.Render("⏹ nothing playing")
+		now = dim.Render("⏹ " + i18n.T("nothing playing"))
 	}
 
 	bar := m.progressBar()
 
-	shuf := "off"
+	shuf := i18n.T("off")
 	if m.q.Shuffle() {
-		shuf = "on"
+		shuf = i18n.T("on")
 	}
-	help := dim.Render(fmt.Sprintf(
+	help := dim.Render(i18n.Tf(
 		"space play · n/p · z shuf:%s · r rep:%s · +/- %d%% · / search · l lyrics · u queue · h qual · ? help · q quit",
-		shuf, m.q.Repeat().String(), int(m.player.Volume()*100+0.5)))
+		shuf, i18n.T(m.q.Repeat().String()), int(m.player.Volume()*100+0.5)))
 
 	status := ""
 	if m.status != "" {
@@ -224,7 +227,7 @@ func (m *Model) footer() string {
 		content = status + "\n" + content
 	}
 	if m.updateInfo.HasUpdate && !m.updateDismissed {
-		notice := statusSty.Render(fmt.Sprintf(
+		notice := statusSty.Render(i18n.Tf(
 			"⬆ v%s available — U to open · X to dismiss", m.updateInfo.Latest))
 		content = notice + "\n" + content
 	}
@@ -259,11 +262,11 @@ func fmtMS(ms int64) string {
 func (m *Model) queueView() string {
 	ts := m.q.Tracks()
 	if len(ts) == 0 {
-		return padTo([]string{dim.Render("Queue is empty.")}, max(1, m.height-footerHeight))
+		return padTo([]string{dim.Render(i18n.T("Queue is empty."))}, max(1, m.height-footerHeight))
 	}
 	cur := m.q.Index()
 	rows := max(1, m.height-footerHeight-2)
-	lines := []string{accent.Render(fmt.Sprintf("Queue (%d tracks)", len(ts))), ""}
+	lines := []string{accent.Render(i18n.Tn("Queue (%d track)", "Queue (%d tracks)", len(ts))), ""}
 	// Window around the current track so long queues stay readable.
 	start := 0
 	if cur > rows/2 {
@@ -296,11 +299,11 @@ func (m *Model) lyricsView() string {
 		pos = m.remoteState.PositionMS
 	}
 	if !ok {
-		return padTo([]string{dim.Render("Nothing playing.")}, max(1, m.height-footerHeight))
+		return padTo([]string{dim.Render(i18n.T("Nothing playing."))}, max(1, m.height-footerHeight))
 	}
 	header := accent.Render(t.Name) + dim.Render(" — "+t.ArtistLine())
 	if m.lyrics == nil {
-		return padTo([]string{header, "", dim.Render("(loading lyrics…)")}, max(1, m.height-footerHeight))
+		return padTo([]string{header, "", dim.Render(i18n.T("(loading lyrics…)"))}, max(1, m.height-footerHeight))
 	}
 	rows := max(3, m.height-footerHeight-2)
 
@@ -328,7 +331,7 @@ func (m *Model) lyricsView() string {
 	}
 
 	if m.lyrics.Plain == "" {
-		return padTo([]string{header, "", dim.Render("(no lyrics available)")}, max(1, m.height-footerHeight))
+		return padTo([]string{header, "", dim.Render(i18n.T("(no lyrics available)"))}, max(1, m.height-footerHeight))
 	}
 	lines := append([]string{header, ""}, strings.Split(m.lyrics.Plain, "\n")...)
 	return padTo(lines, max(1, m.height-footerHeight))
@@ -367,10 +370,10 @@ func (m *Model) helpView() string {
 		{"esc", "back"},
 		{"q", "quit"},
 	}
-	lines := []string{accent.Render("Keybindings"), ""}
+	lines := []string{accent.Render(i18n.T("Keybindings")), ""}
 	for _, b := range binds {
-		lines = append(lines, "  "+accent.Render(fmt.Sprintf("%-12s", b[0]))+dim.Render(b[1]))
+		lines = append(lines, "  "+accent.Render(fmt.Sprintf("%-12s", b[0]))+dim.Render(i18n.T(b[1])))
 	}
-	lines = append(lines, "", dim.Render("? or esc to go back"))
+	lines = append(lines, "", dim.Render(i18n.T("? or esc to go back")))
 	return padTo(lines, max(1, m.height-footerHeight))
 }

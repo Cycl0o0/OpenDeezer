@@ -102,7 +102,7 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 22)).foregroundStyle(DZ.accent)
-                Text("Settings")
+                Text(L("Settings"))
                     .font(.system(size: 22, weight: .bold)).foregroundStyle(DZ.textPri)
                 Spacer()
             }
@@ -113,18 +113,18 @@ struct SettingsView: View {
             // Audio quality
             settingsCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Audio Quality", systemImage: "waveform")
+                    Label(L("Audio Quality"), systemImage: "waveform")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                     Picker("", selection: Binding(
                         get: { app.settings.quality },
                         set: { app.setQuality($0) })) {
-                        Text("Normal · MP3 128").tag(0)
-                        Text("High · MP3 320").tag(1)
-                        Text("HiFi · FLAC lossless").tag(2)
+                        Text(L("Normal · MP3 128")).tag(0)
+                        Text(L("High · MP3 320")).tag(1)
+                        Text(L("HiFi · FLAC lossless")).tag(2)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    Text("Applied immediately and on next launch.")
+                    Text(L("Applied immediately and on next launch."))
                         .font(.caption).foregroundStyle(DZ.textSec)
                     if let note = app.qualityEntitlementNote {
                         Label(note, systemImage: "exclamationmark.triangle.fill")
@@ -136,21 +136,21 @@ struct SettingsView: View {
             // Output device
             settingsCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Output Device", systemImage: "hifispeaker.fill")
+                    Label(L("Output Device"), systemImage: "hifispeaker.fill")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                     Picker("", selection: Binding(
                         get: { app.currentAudioDeviceID },
                         set: { app.setAudioDevice($0) })) {
                         // The engine reports "" as the system default device.
                         if !app.audioDevices.contains(where: { $0.id == app.currentAudioDeviceID }) {
-                            Text("System Default").tag(app.currentAudioDeviceID)
+                            Text(L("System Default")).tag(app.currentAudioDeviceID)
                         }
                         ForEach(app.audioDevices) { d in
-                            Text(d.isDefault ? "\(d.name) (System Default)" : d.name).tag(d.id)
+                            Text(d.isDefault ? Lf("%@ (System Default)", d.name) : d.name).tag(d.id)
                         }
                     }
                     .labelsHidden()
-                    Text("Choose where audio plays. Switching takes effect on the next track or seek.")
+                    Text(L("Choose where audio plays. Switching takes effect on the next track or seek."))
                         .font(.caption).foregroundStyle(DZ.textSec)
                 }
             }
@@ -161,9 +161,9 @@ struct SettingsView: View {
                     get: { app.settings.gapless },
                     set: { app.setGapless($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Gapless playback", systemImage: "forward.end.alt.fill")
+                        Label(L("Gapless playback"), systemImage: "forward.end.alt.fill")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
-                        Text("Preloads the next track so albums play with no silence between songs.")
+                        Text(L("Preloads the next track so albums play with no silence between songs."))
                             .font(.caption).foregroundStyle(DZ.textSec)
                     }
                 }
@@ -174,19 +174,19 @@ struct SettingsView: View {
             // Crossfade
             settingsCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Crossfade", systemImage: "wave.3.forward")
+                    Label(L("Crossfade"), systemImage: "wave.3.forward")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                     Picker("", selection: Binding(
                         get: { app.settings.crossfadeMS },
                         set: { app.setCrossfadeMS($0) })) {
-                        Text("Off").tag(0)
+                        Text(L("Off")).tag(0)
                         Text("3s").tag(3000)
                         Text("6s").tag(6000)
                         Text("12s").tag(12000)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    Text("Fades the end of one track into the start of the next.")
+                    Text(L("Fades the end of one track into the start of the next."))
                         .font(.caption).foregroundStyle(DZ.textSec)
                 }
             }
@@ -194,17 +194,17 @@ struct SettingsView: View {
             // Sleep timer
             settingsCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Sleep timer", systemImage: "moon.zzz.fill")
+                    Label(L("Sleep timer"), systemImage: "moon.zzz.fill")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                     Picker("", selection: Binding(
                         get: { app.sleepMode },
                         set: { app.setSleepMode($0); updateSleepRemaining() })) {
-                        Text("Off").tag(0)
-                        Text("15 min").tag(15)
-                        Text("30 min").tag(30)
-                        Text("45 min").tag(45)
-                        Text("60 min").tag(60)
-                        Text("End of track").tag(-1)
+                        Text(L("Off")).tag(0)
+                        Text(Lf("%d min", 15)).tag(15)
+                        Text(Lf("%d min", 30)).tag(30)
+                        Text(Lf("%d min", 45)).tag(45)
+                        Text(Lf("%d min", 60)).tag(60)
+                        Text(L("End of track")).tag(-1)
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
@@ -219,9 +219,9 @@ struct SettingsView: View {
                     get: { app.replayGain },
                     set: { app.setReplayGain($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Volume normalization", systemImage: "speaker.wave.2.fill")
+                        Label(L("Volume normalization"), systemImage: "speaker.wave.2.fill")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
-                        Text("Evens out loudness differences between tracks (ReplayGain).")
+                        Text(L("Evens out loudness differences between tracks (ReplayGain)."))
                             .font(.caption).foregroundStyle(DZ.textSec)
                     }
                 }
@@ -240,7 +240,7 @@ struct SettingsView: View {
                             eqEnabled = on
                             Task.detached { Core.setEQEnabled(on) }
                         })) {
-                        Label("Equalizer", systemImage: "slider.vertical.3")
+                        Label(L("Equalizer"), systemImage: "slider.vertical.3")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                     }
                     .toggleStyle(.switch)
@@ -254,7 +254,7 @@ struct SettingsView: View {
                         }
                         // Display-only entry the selection lands on after a
                         // manual band edit; selecting it applies nothing.
-                        Text("Custom").tag("custom")
+                        Text(L("Custom")).tag("custom")
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
@@ -270,7 +270,7 @@ struct SettingsView: View {
                     .opacity(eqEnabled ? 1 : 0.45)
 
                     HStack(spacing: 8) {
-                        Text("Preamp").font(.system(size: 13)).foregroundStyle(DZ.textPri)
+                        Text(L("Preamp")).font(.system(size: 13)).foregroundStyle(DZ.textPri)
                         Slider(value: Binding(
                             get: { eqPreamp },
                             set: { v in
@@ -297,9 +297,9 @@ struct SettingsView: View {
                         Task.detached { Core.setEQMono(on) }
                     })) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Mono audio", systemImage: "speaker.wave.1.fill")
+                        Label(L("Mono audio"), systemImage: "speaker.wave.1.fill")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
-                        Text("Plays both channels as one — helpful with a single speaker or hearing in one ear.")
+                        Text(L("Plays both channels as one — helpful with a single speaker or hearing in one ear."))
                             .font(.caption).foregroundStyle(DZ.textSec)
                     }
                 }
@@ -313,9 +313,9 @@ struct SettingsView: View {
                     get: { app.settings.closeToTray },
                     set: { app.setCloseToTray($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Keep playing in background", systemImage: "menubar.arrow.up.rectangle")
+                        Label(L("Keep playing in background"), systemImage: "menubar.arrow.up.rectangle")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
-                        Text("Closing the window hides it to the menu bar instead of quitting.")
+                        Text(L("Closing the window hides it to the menu bar instead of quitting."))
                             .font(.caption).foregroundStyle(DZ.textSec)
                     }
                 }
@@ -328,9 +328,9 @@ struct SettingsView: View {
             // pairing flow, which runs on the same server.
             settingsCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Remote control", systemImage: "antenna.radiowaves.left.and.right")
+                    Label(L("Remote control"), systemImage: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
-                    Text("Lets other devices control playback over the network.")
+                    Text(L("Lets other devices control playback over the network."))
                         .font(.caption).foregroundStyle(DZ.textSec)
 
                     Toggle(isOn: Binding(
@@ -339,7 +339,7 @@ struct SettingsView: View {
                             controlEnabled = on
                             applyControlConfig()
                         })) {
-                        Text("Enable").font(.system(size: 13)).foregroundStyle(DZ.textPri)
+                        Text(L("Enable")).font(.system(size: 13)).foregroundStyle(DZ.textPri)
                     }
                     .toggleStyle(.switch)
                     .tint(DZ.accent)
@@ -351,7 +351,7 @@ struct SettingsView: View {
                             controlAddr = on ? ":7654" : ""
                             applyControlConfig()
                         })) {
-                        Text("Allow on local network (LAN)")
+                        Text(L("Allow on local network (LAN)"))
                             .font(.system(size: 13)).foregroundStyle(DZ.textPri)
                     }
                     .toggleStyle(.switch)
@@ -359,8 +359,8 @@ struct SettingsView: View {
                     .disabled(!controlEnabled)
 
                     HStack(spacing: 8) {
-                        Text("Access token").font(.system(size: 13)).foregroundStyle(DZ.textPri)
-                        TextField("None", text: Binding(
+                        Text(L("Access token")).font(.system(size: 13)).foregroundStyle(DZ.textPri)
+                        TextField(L("None"), text: Binding(
                             get: { controlToken },
                             set: { controlToken = $0 }))
                             .textFieldStyle(.roundedBorder)
@@ -387,13 +387,13 @@ struct SettingsView: View {
                                 webRemoteQRImage = nil
                             }
                         })) {
-                        Label("Phone Remote", systemImage: "iphone.radiowaves.left.and.right")
+                        Label(L("Phone Remote"), systemImage: "iphone.radiowaves.left.and.right")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                     }
                     .toggleStyle(.switch)
                     .tint(DZ.accent)
 
-                    Text("Scan with your phone (same Wi-Fi), then enter the code.")
+                    Text(L("Scan with your phone (same Wi-Fi), then enter the code."))
                         .font(.caption).foregroundStyle(DZ.textSec)
 
                     if webRemoteEnabled, !webRemoteCode.isEmpty {
@@ -422,10 +422,10 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
 
             HStack {
-                Text("Stored in ~/.config/opendeezer/settings.json")
+                Text(Lf("Stored in %@", "~/.config/opendeezer/settings.json"))
                     .font(.caption2).foregroundStyle(DZ.textSec)
                 Spacer()
-                Button("Done") { app.showSettings = false }
+                Button(L("Done")) { app.showSettings = false }
                     .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
             }
             .padding(.top, 18)
@@ -555,13 +555,13 @@ struct SettingsView: View {
     // minutes-based timer runs, otherwise a short description of the choice.
     private var sleepTimerNote: String {
         if app.sleepMode == -1 {
-            return "Playback pauses when the current track ends."
+            return L("Playback pauses when the current track ends.")
         } else if app.sleepMode > 0 {
             return sleepRemaining.isEmpty
-                ? "Fades out and pauses after \(app.sleepMode) minutes."
-                : "Fades out and pauses in \(sleepRemaining)."
+                ? Lp("Fades out and pauses after %d minutes.", app.sleepMode)
+                : Lf("Fades out and pauses in %@.", sleepRemaining)
         }
-        return "Automatically pause playback after a set time."
+        return L("Automatically pause playback after a set time.")
     }
 
     // Refresh the "12:34" remaining string from the engine (minutes mode only).

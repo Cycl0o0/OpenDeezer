@@ -83,7 +83,7 @@ struct PlaylistDetailView: View {
                 .frame(width: 180, height: 180)
                 .shadow(radius: 10, y: 6)
             Text(playlist.name).font(.title2.bold()).multilineTextAlignment(.center)
-            Text("\(playlist.owner) · \(playlist.trackCount) songs")
+            (Text(playlist.owner) + Text(verbatim: " · ") + Text("\(playlist.trackCount) songs"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 

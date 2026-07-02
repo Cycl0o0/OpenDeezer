@@ -28,10 +28,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.ui.theme.DeezerPurple
 
 private const val LOGIN_URL = "https://www.deezer.com/login"
@@ -61,9 +63,9 @@ fun TvLoginScreen(busy: Boolean, error: String?, onArl: (arl: String, auto: Bool
 
     Column(Modifier.fillMaxSize().padding(40.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("OpenDeezer", style = MaterialTheme.typography.headlineMedium, color = DeezerPurple)
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, color = DeezerPurple)
             Text(
-                if (manual) "Paste your Deezer ARL" else "Sign in to Deezer — the ARL is captured for you",
+                if (manual) stringResource(R.string.tv_login_manual_prompt) else stringResource(R.string.tv_login_web_prompt),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -117,7 +119,7 @@ fun TvLoginScreen(busy: Boolean, error: String?, onArl: (arl: String, auto: Bool
                 )
             }
             TvPill(
-                label = "Paste ARL instead",
+                label = stringResource(R.string.tv_login_paste_instead),
                 onClick = { manual = true },
             )
         }
@@ -142,16 +144,16 @@ private fun TvManualArl(busy: Boolean, onArl: (String) -> Unit, onBack: () -> Un
         )
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             TvPill(
-                label = if (busy) "Signing in…" else "Log in",
+                label = if (busy) stringResource(R.string.tv_login_signing_in) else stringResource(R.string.action_login),
                 onClick = { if (arl.isNotBlank()) onArl(arl.trim()) },
             )
             TvPill(
-                label = "Use web sign-in",
+                label = stringResource(R.string.tv_login_use_web),
                 onClick = onBack,
             )
         }
         Text(
-            "Web sign-in reads the ARL automatically — only paste it here if you already have the token.",
+            stringResource(R.string.tv_login_manual_help),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Start,
