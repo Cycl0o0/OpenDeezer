@@ -7,7 +7,7 @@
 //
 // Tools: get_status, play_pause, next, prev, stop, restart, cycle_repeat,
 // toggle_shuffle, set_volume, seek, search, list_playlists, play_track,
-// play_playlist.
+// play_playlist, get_eq, set_eq.
 package main
 
 import (
@@ -19,9 +19,10 @@ import (
 	"strings"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
+	version_ "github.com/Cycl0o0/OpenDeezer/internal/version"
 )
 
-var version = "1.5.2"
+var version = version_.Number
 
 const protocolVersion = "2024-11-05"
 
@@ -78,9 +79,14 @@ func (s *server) serve(in io.Reader, out io.Writer) {
 		var req rpcReq
 		if err := json.Unmarshal([]byte(line), &req); err != nil {
 			logf("parse error: %v", err)
+			s.replyErr(json.RawMessage("null"), -32700, "parse error")
 			continue
 		}
 		s.dispatch(req)
+	}
+	if err := sc.Err(); err != nil {
+		logf("stdin: %v", err)
+		os.Exit(1)
 	}
 }
 
@@ -146,6 +152,9 @@ func (s *server) reply(id json.RawMessage, result any) {
 }
 
 func (s *server) replyErr(id json.RawMessage, code int, msg string) {
+	if len(id) == 0 {
+		return // notification: no response
+	}
 	s.write(rpcResp{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}})
 }
 

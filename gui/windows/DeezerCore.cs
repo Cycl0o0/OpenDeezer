@@ -119,6 +119,18 @@ internal static class DeezerCore
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSleepTimerEndOfTrack();   // 1/0
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern long DZSleepTimerRemainingMS();
 
+    // ---- v1.7 additions (10-band equalizer / mono downmix) --------------------
+    // DZEQJSON -> {enabled,mono,preampDb,gainsDb:[10],preset,bands:[10],presets:[...]}.
+    // DZSetEQJSON takes a PARTIAL update (every key optional): enabled, mono,
+    // preampDb, gainsDb ([10]), preset, band:{index,gainDb}. Returns 1 on success,
+    // 0 if any present key failed (unknown preset, bad band index). EQ state +
+    // persistence live in the engine (eq.json) -- the app never saves EQ itself.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZEQJSON();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSetEQJSON([MarshalAs(UnmanagedType.LPUTF8Str)] string js);
+    // Discard a preloaded next track once it is no longer the deterministic next
+    // (shuffle / repeat toggled after a gapless preload was armed).
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZClearPreload();
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -171,6 +183,7 @@ internal static class DeezerCore
     }
     internal static HomeData Home() => Wire.ParseHome(TakeJson(DZHomeJSON()));
     internal static string ControlConfig() => TakeJson(DZControlConfigJSON());
+    internal static EQState EQ() => Wire.ParseEQ(TakeJson(DZEQJSON()));
 
     // {current,latest,hasUpdate,url,notes}; network failure -> HasUpdate=false.
     internal static UpdateInfo CheckUpdate() => Wire.ParseUpdateInfo(TakeJson(DZCheckUpdateJSON()));

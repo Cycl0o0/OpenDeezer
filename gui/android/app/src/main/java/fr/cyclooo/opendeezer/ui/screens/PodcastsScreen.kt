@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -93,7 +93,8 @@ fun PodcastsScreen(onBack: () -> Unit, onOpen: (Podcast) -> Unit) {
                     query.isBlank() -> CenteredMessage("Search Deezer's podcasts.")
                     results.isEmpty() -> CenteredMessage("No shows found.")
                     else -> LazyColumn(Modifier.fillMaxSize()) {
-                        items(results, key = { it.id }) { p ->
+                        // Index-qualified: duplicate/blank ids must not crash the list.
+                        itemsIndexed(results, key = { i, p -> "$i-${p.id}" }) { _, p ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()

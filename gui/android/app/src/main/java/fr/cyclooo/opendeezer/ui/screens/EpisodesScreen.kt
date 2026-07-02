@@ -71,7 +71,7 @@ fun EpisodesScreen(
                 } else {
                     val asTracks = list.map { it.asTrack() }
                     LazyColumn(Modifier.fillMaxSize()) {
-                        itemsIndexed(list, key = { _, e -> e.id }) { index, e ->
+                        itemsIndexed(list, key = { i, e -> "$i-${e.id}" }) { index, e ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()

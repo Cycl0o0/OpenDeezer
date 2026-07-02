@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +39,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +83,13 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
             },
         )
     }
+    // EQ state lives engine-side (persisted there, shared with every client);
+    // read once on entry, mirror edits locally.
+    val eqInit = remember { Engine.eqState() }
+    var eqEnabled by remember { mutableStateOf(eqInit?.enabled ?: false) }
+    var eqMono by remember { mutableStateOf(eqInit?.mono ?: false) }
+    var eqPreset by remember { mutableStateOf(eqInit?.preset ?: "flat") }
+    val eqGains = remember { mutableStateListOf<Double>().apply { addAll(eqInit?.gainsDb ?: List(10) { 0.0 }) } }
     var connectHost by remember { mutableStateOf(Engine.connectHostInfo()?.enabled ?: false) }
     var connectAddr by remember { mutableStateOf(Engine.connectHostInfo()?.addr.orEmpty()) }
     var phoneRemote by remember { mutableStateOf(Engine.webRemoteInfo()?.enabled ?: false) }
@@ -185,6 +199,64 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
             }
         }
 
+        // ---- Equalizer ----
+        item { TvSectionTitle("Equalizer") }
+        item {
+            TvToggleRow("Enable", "Apply the 10-band EQ to playback", eqEnabled) {
+                eqEnabled = it
+                Engine.setEqEnabled(it)
+            }
+        }
+        item {
+            TvToggleRow("Mono audio", "Downmix stereo to a single channel", eqMono) {
+                eqMono = it
+                Engine.setEqMono(it)
+            }
+        }
+        eqInit?.takeIf { it.presets.isNotEmpty() }?.let { eq ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Preset", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    eq.presets.chunked(5).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            row.forEach { name ->
+                                TvChoicePill(eqPresetLabel(name), selected = eqPreset == name, enabled = true) {
+                                    Engine.setEqPreset(name)
+                                    // Re-read: the preset rewrites all bands.
+                                    Engine.eqState()?.let { st ->
+                                        eqPreset = st.preset
+                                        eqGains.clear()
+                                        eqGains.addAll(st.gainsDb)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        if (eqPreset == "custom") "Custom — bands were edited manually" else "Left/right on a band below adjusts it by 1 dB",
+                        color = TvPalette.TextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    eq.bands.forEachIndexed { i, hz ->
+                        TvEqBandRow(
+                            label = if (hz >= 1000) "${(hz / 1000).toInt()} kHz" else "${hz.toInt()} Hz",
+                            gainDb = eqGains.getOrElse(i) { 0.0 },
+                        ) { delta ->
+                            val v = (eqGains.getOrElse(i) { 0.0 } + delta).coerceIn(-12.0, 12.0)
+                            eqGains[i] = v
+                            // The engine flips to "custom" on band edits; mirror it.
+                            eqPreset = "custom"
+                            Engine.setEqBand(i, v)
+                        }
+                    }
+                }
+            }
+        }
+
         // ---- OpenDeezer Connect ----
         item { TvSectionTitle("OpenDeezer Connect") }
         item {
@@ -251,7 +323,7 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
             item {
                 Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     TvDeviceRow("This device", "OpenDeezer (Android TV)", connected.isBlank()) {
-                        Engine.disconnectDevice(); connected = ""
+                        scope.launch { Engine.disconnectDevice(); connected = "" }
                     }
                     if (list.isEmpty()) {
                         Text("No other devices on your network.", color = TvPalette.TextDim, modifier = Modifier.padding(8.dp))
@@ -363,6 +435,72 @@ private fun TvDeviceRow(title: String, subtitle: String, selected: Boolean, onCl
             if (subtitle.isNotBlank()) Text(subtitle, color = TvPalette.TextDim, style = MaterialTheme.typography.bodySmall)
         }
         if (selected) Text("✓", color = TvPalette.Purple, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+// "bass-boost" -> "Bass Boost".
+private fun eqPresetLabel(name: String): String =
+    name.split('-').joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
+
+/**
+ * One EQ band: a focusable row whose D-pad LEFT/RIGHT adjusts the gain by
+ * 1 dB (consumed, so focus stays put; up/down still moves between rows).
+ */
+@Composable
+private fun TvEqBandRow(label: String, gainDb: Double, onAdjust: (Double) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key) {
+                    Key.DirectionLeft -> {
+                        onAdjust(-1.0); true
+                    }
+                    Key.DirectionRight -> {
+                        onAdjust(1.0); true
+                    }
+                    else -> false
+                }
+            }
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (focused) TvPalette.Purple.copy(alpha = 0.16f) else Color.Transparent)
+            .clickable(onClick = {}) // focus target only; left/right adjusts
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            label,
+            color = if (focused) Color.White else TvPalette.TextDim,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.width(72.dp),
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(10.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color.White.copy(alpha = 0.10f)),
+        ) {
+            val frac = ((gainDb + 12.0) / 24.0).toFloat().coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .fillMaxWidth(frac)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(if (focused) TvPalette.Purple else TvPalette.Purple.copy(alpha = 0.5f)),
+            )
+        }
+        Text(
+            "%+.0f dB".format(gainDb),
+            color = if (focused) Color.White else TvPalette.TextDim,
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.width(64.dp),
+        )
     }
 }
 

@@ -39,6 +39,40 @@ func TestLoadControlEnv(t *testing.T) {
 	}
 }
 
+func TestLoadControlDisableValues(t *testing.T) {
+	t.Setenv("OPENDEEZER_CONTROL_TOKEN", "")
+	for _, v := range []string{"0", "off", "false", "no", "FALSE", "No"} {
+		t.Setenv("OPENDEEZER_CONTROL", v)
+		if c := LoadControl(); c.Enabled {
+			t.Fatalf("OPENDEEZER_CONTROL=%q should disable, got %+v", v, c)
+		}
+	}
+}
+
+func TestNormalizePeer(t *testing.T) {
+	cases := []struct {
+		in, hostport string
+	}{
+		{"host", "host:7654"},
+		{"host:9000", "host:9000"},
+		{"http://host:9000", "host:9000"},
+		{"192.168.1.5", "192.168.1.5:7654"},
+		{"fd7a:115c:a1e0::42", "[fd7a:115c:a1e0::42]:7654"},
+		{"[::1]", "[::1]:7654"},
+		{"[::1]:7654", "[::1]:7654"},
+		{"::1", "[::1]:7654"},
+	}
+	for _, c := range cases {
+		base, hp := NormalizePeer(c.in)
+		if hp != c.hostport || base != "http://"+c.hostport {
+			t.Errorf("NormalizePeer(%q) = %q,%q want http://%s,%s", c.in, base, hp, c.hostport, c.hostport)
+		}
+	}
+	if base, hp := NormalizePeer("  "); base != "" || hp != "" {
+		t.Errorf("NormalizePeer(empty) = %q,%q want empty", base, hp)
+	}
+}
+
 func TestLoadDiscordAppIDEnv(t *testing.T) {
 	t.Setenv("OPENDEEZER_DISCORD_APP_ID", "12345")
 	if LoadDiscordAppID() != "12345" {

@@ -36,6 +36,8 @@ func TestParseLevel(t *testing.T) {
 	cases := map[string]Level{
 		"debug": LevelDebug, "INFO": LevelInfo, "warn": LevelWarn,
 		"error": LevelError, "off": LevelOff, "bogus": LevelInfo,
+		"Debug": LevelDebug, "Warn": LevelWarn, "WARNING": LevelWarn,
+		"Off": LevelOff, " info ": LevelInfo,
 	}
 	for in, want := range cases {
 		if got := ParseLevel(in); got != want {

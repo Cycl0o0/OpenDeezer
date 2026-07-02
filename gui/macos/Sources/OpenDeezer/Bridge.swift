@@ -244,6 +244,10 @@ enum Core {
     static func preload(_ trackID: String, durationMs: Int64) {
         withC(trackID) { DZPreload($0, Int64(durationMs)) }
     }
+    /// Discards a preloaded next track. Call when the upcoming track is no
+    /// longer deterministic (shuffle/repeat toggled after a preload was armed)
+    /// so a stale preload can't be gaplessly swapped in.
+    static func clearPreload() { DZClearPreload() }
 
     // MARK: sleep timer (v1.6)
 
@@ -261,6 +265,52 @@ enum Core {
     static func sleepEndOfTrack() -> Bool { DZSleepTimerEndOfTrack() == 1 }
     /// Milliseconds until a minutes-based timer fires (0 for end-of-track / off).
     static func sleepRemainingMS() -> Int64 { DZSleepTimerRemainingMS() }
+
+    // MARK: equalizer / mono downmix (v1.7)
+
+    // The DZEQJSON / DZSetEQJSON symbols land in Clib/libdeezercore.h when
+    // `make corelib` regenerates it; the engine exports already exist.
+
+    /// Full EQ snapshot: current settings plus the core-owned band frequencies
+    /// and preset names, so the UI never hardcodes them.
+    struct EQState: Decodable {
+        let enabled: Bool
+        let mono: Bool
+        let preampDb: Double
+        let gainsDb: [Double]
+        let preset: String
+        let bands: [Double]
+        let presets: [String]
+    }
+
+    /// Current EQ state; nil until the engine is up. The engine owns the values
+    /// (persisted in ~/.config/opendeezer/eq.json) — re-read on panel open.
+    static func eqState() -> EQState? {
+        decode(EQState.self, takeJSON(DZEQJSON()))
+    }
+
+    // setEQ sends a partial-update JSON object to DZSetEQJSON. Every key is
+    // optional; the engine flips preset to "custom" on manual band edits and
+    // debounces persistence itself.
+    @discardableResult
+    private static func setEQ(_ obj: [String: Any]) -> Bool {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+              let js = String(data: data, encoding: .utf8) else { return false }
+        return withC(js) { DZSetEQJSON($0) } == 1
+    }
+
+    static func setEQEnabled(_ on: Bool) { setEQ(["enabled": on]) }
+    /// Mono downmix — independent of the EQ enable flag.
+    static func setEQMono(_ on: Bool) { setEQ(["mono": on]) }
+    /// Applies a named preset (one of EQState.presets); the engine sets all bands.
+    @discardableResult
+    static func setEQPreset(_ name: String) -> Bool { setEQ(["preset": name]) }
+    /// Sets one band's gain (dB, -12..+12); the engine flips preset to "custom".
+    static func setEQBand(_ index: Int, gainDb: Double) {
+        setEQ(["band": ["index": index, "gainDb": gainDb]])
+    }
+    /// Output preamp in dB (-12..+12).
+    static func setEQPreamp(_ db: Double) { setEQ(["preampDb": db]) }
 
     // MARK: OpenDeezer Connect (device picker)
 

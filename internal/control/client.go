@@ -145,6 +145,31 @@ func (c *Client) CancelSleepTimer() (State, error) {
 	return c.state(http.MethodPost, "/sleep?cancel=1")
 }
 
+// eqState issues a request whose response is an EQState (GET /eq and POST /eq
+// both return the post-command equalizer snapshot).
+func (c *Client) eqState(method, path string) (EQState, error) {
+	b, err := c.raw(method, path)
+	if err != nil {
+		return EQState{}, err
+	}
+	var st EQState
+	if err := json.Unmarshal(b, &st); err != nil {
+		return EQState{}, err
+	}
+	return st, nil
+}
+
+// EQ returns the peer's equalizer snapshot (enabled, mono downmix, preamp,
+// per-band gains, active preset and the preset/band lists).
+func (c *Client) EQ() (EQState, error) { return c.eqState(http.MethodGet, "/eq") }
+
+// SetEQ applies a partial equalizer update. params carries any of the POST /eq
+// query params — on=0|1, mono=0|1, preset=name, band=N&db=X, preamp=dB — and
+// the server applies whichever are present (at least one is required).
+func (c *Client) SetEQ(params url.Values) (EQState, error) {
+	return c.eqState(http.MethodPost, "/eq?"+params.Encode())
+}
+
 // Search returns the raw search-results JSON from the server.
 func (c *Client) Search(q string) (json.RawMessage, error) {
 	return c.raw(http.MethodGet, "/search?q="+url.QueryEscape(q))

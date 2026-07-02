@@ -166,6 +166,54 @@ func TestStartRefusesOpenModeOnLAN(t *testing.T) {
 	s2.Close()
 }
 
+// TestHostHeaderValidation covers the DNS-rebinding guard: requests with a DNS
+// name in the Host header are rejected, while localhost / literal-IP hosts pass.
+func TestHostHeaderValidation(t *testing.T) {
+	_, base := newTestServer(t, Config{},
+		func() State { return State{State: "playing"} }, Commands{})
+
+	// Baseline: the loopback IP host used by the test client is accepted.
+	if code := getWith(t, base+"/status", nil); code != http.StatusOK {
+		t.Fatalf("IP-literal host = %d, want 200", code)
+	}
+
+	// A rebound DNS name in the Host header is rejected before reaching handlers.
+	req, _ := http.NewRequest(http.MethodGet, base+"/status", nil)
+	req.Host = "attacker.com"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("DNS-name host = %d, want 403", resp.StatusCode)
+	}
+
+	// localhost is an accepted form.
+	req2, _ := http.NewRequest(http.MethodGet, base+"/status", nil)
+	req2.Host = "localhost:7654"
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("localhost host = %d, want 200", resp2.StatusCode)
+	}
+
+	// A LAN IP literal is accepted (an IP cannot be DNS-rebound).
+	req3, _ := http.NewRequest(http.MethodGet, base+"/status", nil)
+	req3.Host = "192.168.1.42:7654"
+	resp3, err := http.DefaultClient.Do(req3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != http.StatusOK {
+		t.Fatalf("LAN IP host = %d, want 200", resp3.StatusCode)
+	}
+}
+
 func TestWhoamiIsUnauthenticated(t *testing.T) {
 	s, base := newTestServer(t, Config{Token: "secret"},
 		func() State { return State{} }, Commands{})
@@ -309,7 +357,7 @@ func TestPairingFlow(t *testing.T) {
 
 	// 8. Origin + valid session → POST mutation is allowed (SPA's CSRF-safe path).
 	code8 := postWith(t, base+"/playpause", map[string]string{
-		"Origin":                 "http://192.168.1.42:7654",
+		"Origin":               "http://192.168.1.42:7654",
 		"X-OpenDeezer-Session": sessToken,
 	})
 	if code8 != http.StatusOK {
@@ -329,7 +377,7 @@ func TestPairingFlow(t *testing.T) {
 
 	// 10. Origin + invalid session → 403 (from noBrowser before auth).
 	code10 := postWith(t, base+"/playpause", map[string]string{
-		"Origin":                 "http://192.168.1.42:7654",
+		"Origin":               "http://192.168.1.42:7654",
 		"X-OpenDeezer-Session": "notavalidtoken",
 	})
 	if code10 != http.StatusForbidden {

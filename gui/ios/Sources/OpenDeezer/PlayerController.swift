@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import MediaPlayer
 import UIKit
@@ -30,7 +31,12 @@ final class PlayerController: ObservableObject {
     @Published private(set) var state: PlayerState = .stopped
     @Published private(set) var positionMs: Int64 = 0
     @Published private(set) var durationMs: Int64 = 0
-    @Published var isShuffle = false { didSet { Engine.setShuffle(isShuffle) } }
+    @Published var isShuffle = false {
+        didSet {
+            let on = isShuffle
+            Task { await Engine.setShuffle(on) }
+        }
+    }
     @Published private(set) var repeatMode: RepeatMode = .off
     @Published private(set) var formatLabel: String = ""
     @Published private(set) var artwork: UIImage?
@@ -44,9 +50,19 @@ final class PlayerController: ObservableObject {
     private var lastFinished = 0
     private var artworkToken = 0
     private var seeking = false
+    private var wasPlayingBeforeInterruption = false
+    private var outputSuspended = false
+    private var idleSince: Date?
+
+    /// Keep the OS audio output alive this long after pause/stop so brief
+    /// track transitions don't tear it down, then suspend it (the oto queue
+    /// otherwise renders silence forever, which keeps the app from ever being
+    /// suspended in the background).
+    private static let outputIdleGrace: TimeInterval = 5
 
     private init() {
         configureRemoteCommandCenter()
+        observeAudioSessionNotifications()
     }
 
     /// Starts the 0.4s poll loop; call once the engine is logged in.
@@ -63,7 +79,10 @@ final class PlayerController: ObservableObject {
     private func tick() {
         state = PlayerState(rawValue: Engine.state()) ?? .stopped
         if !seeking { positionMs = Engine.positionMS() }
-        durationMs = Engine.durationMS()
+        // The engine reports 0 for podcast episodes; fall back to the
+        // client-known duration so the scrubber / lock screen stay usable.
+        let engineDuration = Engine.durationMS()
+        durationMs = engineDuration > 0 ? engineDuration : (current?.durationMs ?? 0)
         formatLabel = Engine.format()
         connectedDeviceAddr = Engine.connectedDevice()
 
@@ -72,6 +91,7 @@ final class PlayerController: ObservableObject {
             lastFinished = finished
             advance(auto: true)
         }
+        updateOutputSuspension()
         updateNowPlayingInfo()
     }
 
@@ -97,7 +117,11 @@ final class PlayerController: ObservableObject {
         currentIndex = nil
         current = Track(episode: episode)
         loadArtwork(url: episode.artworkUrl)
-        Task { _ = await Engine.playEpisode(id: episode.id) }
+        // Re-baseline so a finish from the previous track landing in the same
+        // poll window doesn't trigger a spurious advance.
+        lastFinished = Engine.finishedCount()
+        beginAudioPlayback()
+        Task { _ = await Engine.playEpisode(id: episode.id, durationMs: episode.durationMs) }
     }
 
     private func playCurrent() {
@@ -106,6 +130,10 @@ final class PlayerController: ObservableObject {
         current = track
         loadArtwork(url: track.artworkUrl)
         positionMs = 0
+        // Re-baseline so a finish from the previous track landing in the same
+        // poll window doesn't trigger a spurious advance past this one.
+        lastFinished = Engine.finishedCount()
+        beginAudioPlayback()
         Task {
             _ = await Engine.play(id: track.id, durationMs: track.durationMs)
         }
@@ -113,10 +141,14 @@ final class PlayerController: ObservableObject {
 
     func togglePlayPause() {
         guard hasNowPlaying else { return }
+        if !isPlaying { beginAudioPlayback() }
         Task { await Engine.togglePause() }
     }
     func pause() { Task { await Engine.pause() } }
-    func resume() { Task { await Engine.resume() } }
+    func resume() {
+        beginAudioPlayback()
+        Task { await Engine.resume() }
+    }
 
     func seek(to ms: Int64) {
         seeking = true
@@ -149,8 +181,9 @@ final class PlayerController: ObservableObject {
             return
         }
         if auto && repeatMode == .one {
-            seek(to: 0)
-            resume()
+            // The engine is Stopped once a track finishes (its decode loop has
+            // exited), so seek+resume are no-ops — restart the track instead.
+            playCurrent()
             return
         }
         var newIndex: Int
@@ -183,12 +216,99 @@ final class PlayerController: ObservableObject {
 
     func cycleRepeat() {
         repeatMode = RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off
-        Engine.setRepeat(repeatMode.rawValue)
+        let mode = repeatMode.rawValue
+        Task { await Engine.setRepeat(mode) }
     }
 
     func setVolume(_ v: Double) {
         volume = v
-        Engine.setVolume(v)
+        Task { await Engine.setVolume(v) }
+    }
+
+    // MARK: - Audio session / output lifecycle
+
+    /// Activates the session and wakes the OS output right before local
+    /// playback (re)starts. No-op while routed to a Connect device — remote
+    /// playback must not interrupt other apps' audio on this phone.
+    private func beginAudioPlayback() {
+        guard connectedDeviceAddr.isEmpty else { return }
+        idleSince = nil
+        try? AVAudioSession.sharedInstance().setActive(true, options: [])
+        if outputSuspended {
+            outputSuspended = false
+            Engine.setOutputSuspended(false)
+        }
+    }
+
+    /// Suspends the OS output + deactivates the session once playback has
+    /// been idle (paused/stopped/routed remotely) past the grace period, so
+    /// iOS can suspend the app instead of receiving silence forever.
+    private func updateOutputSuspension() {
+        let locallyPlaying = state == .playing && connectedDeviceAddr.isEmpty
+        if locallyPlaying {
+            idleSince = nil
+            // Self-heal: the grace timer (or an interruption) may have
+            // suspended the output while a play request was still resolving
+            // its stream URL; without this the AudioQueue stays paused and
+            // the app shows "playing" in silence.
+            if outputSuspended { beginAudioPlayback() }
+            return
+        }
+        if idleSince == nil { idleSince = Date() }
+        if !outputSuspended, let since = idleSince,
+           Date().timeIntervalSince(since) >= Self.outputIdleGrace {
+            suspendOutput()
+        }
+    }
+
+    /// Order matters: stop the queue first, then deactivate (deactivating a
+    /// session with a running AudioQueue fails).
+    private func suspendOutput() {
+        outputSuspended = true
+        Engine.setOutputSuspended(true)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func observeAudioSessionNotifications() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        center.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: nil) { [weak self] note in
+            let userInfo = note.userInfo
+            Task { @MainActor in self?.handleInterruption(userInfo) }
+        }
+        center.addObserver(forName: AVAudioSession.routeChangeNotification, object: session, queue: nil) { [weak self] note in
+            let userInfo = note.userInfo
+            Task { @MainActor in self?.handleRouteChange(userInfo) }
+        }
+    }
+
+    private func handleInterruption(_ userInfo: [AnyHashable: Any]?) {
+        guard let raw = userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        switch type {
+        case .began:
+            // Suspend immediately (no grace): the system paused the queue
+            // anyway, and only an explicit resume restarts it afterwards.
+            wasPlayingBeforeInterruption = isPlaying
+            if isPlaying { pause() }
+            suspendOutput()
+        case .ended:
+            let optRaw = (userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: optRaw)
+            if wasPlayingBeforeInterruption && options.contains(.shouldResume) {
+                resume()
+            }
+            wasPlayingBeforeInterruption = false
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange(_ userInfo: [AnyHashable: Any]?) {
+        guard let raw = userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+        // Headphones unplugged / Bluetooth device gone: don't blast the speaker.
+        if reason == .oldDeviceUnavailable && isPlaying { pause() }
     }
 
     // MARK: - Connect

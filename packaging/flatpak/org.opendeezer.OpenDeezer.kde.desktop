@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=OpenDeezer
+Comment=An open source reimplementation of Deezer
+Exec=opendeezer-kde
+Icon=org.opendeezer.OpenDeezer.kde
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;
+Keywords=music;deezer;streaming;player;

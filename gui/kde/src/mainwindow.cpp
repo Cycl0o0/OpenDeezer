@@ -432,6 +432,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     QTimer::singleShot(0, this, &MainWindow::startLogin);
 }
 
+// Worker lambdas capture `this` and post results back with
+// QMetaObject::invokeMethod(this, ...), but this window is a stack object in
+// opendeezer_run destroyed the moment app.exec() returns — drain both pools
+// before the memory (and, in the dlopen'd launcher case, the code) goes away.
+// Results already queued to the dead event loop are purged by ~QObject.
+MainWindow::~MainWindow() {
+    m_artPool.waitForDone();
+    QThreadPool::globalInstance()->waitForDone();
+}
+
 // ---- OS integration: MPRIS, tray, settings --------------------------------
 
 QString MainWindow::settingsPath() const {
@@ -450,18 +460,24 @@ void MainWindow::setupMpris() {
     connect(m_mpris, &MprisController::playPauseRequested, this, &MainWindow::togglePause);
     connect(m_mpris, &MprisController::nextRequested,      this, &MainWindow::next);
     connect(m_mpris, &MprisController::prevRequested,      this, &MainWindow::prev);
-    connect(m_mpris, &MprisController::playRequested,  this, [this] { DZResume(); });
-    connect(m_mpris, &MprisController::pauseRequested, this, [this] { DZPause(); });
-    connect(m_mpris, &MprisController::stopRequested,  this, [this] { DZStop(); });
+    // Transport commands become blocking HTTP requests (15 s timeout) when
+    // routed to a Connect device — keep them off the GUI thread like every
+    // other blocking DZ call.
+    connect(m_mpris, &MprisController::playRequested,  this,
+            [] { QtConcurrent::run([] { DZResume(); }); });
+    connect(m_mpris, &MprisController::pauseRequested, this,
+            [] { QtConcurrent::run([] { DZPause(); }); });
+    connect(m_mpris, &MprisController::stopRequested,  this,
+            [] { QtConcurrent::run([] { DZStop(); }); });
     connect(m_mpris, &MprisController::seekRequested, this, [this](qlonglong offUs) {
         // MPRIS Seek is relative (µs); the engine seeks to an absolute ms.
         const qint64 target = qMax<qint64>(0, DZPositionMS() + offUs / 1000);
-        DZSeek(target);
+        QtConcurrent::run([target] { DZSeek(target); });
         m_mpris->notifySeeked(target);
     });
     connect(m_mpris, &MprisController::setPositionRequested, this, [this](qlonglong posUs) {
         const qint64 ms = qMax<qint64>(0, posUs / 1000);
-        DZSeek(ms);
+        QtConcurrent::run([ms] { DZSeek(ms); });
         m_mpris->notifySeeked(ms);
     });
     connect(m_mpris, &MprisController::volumeChangeRequested, this, [this](double v) {
@@ -808,7 +824,9 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         }
         return;
     }
-    DZStop();
+    // DZStop is a blocking HTTP request when routed to a Connect device — run
+    // it on a worker; the destructor drains the pool before the engine goes.
+    QtConcurrent::run([] { DZStop(); });
     QMainWindow::closeEvent(event);
     qApp->quit();
 }
@@ -836,7 +854,7 @@ void MainWindow::buildMenu() {
     auto *about = help->addAction("&About OpenDeezer");
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            "<h3>OpenDeezer 1.6.0</h3>"
+            "<h3>OpenDeezer 1.7.0</h3>"
             "<p>A Deezer client for the desktop.</p>";
         // Show the signed-in account tier (from DZAccountJSON) when available.
         if (m_haveAccount && !m_accountName.isEmpty())
@@ -1342,9 +1360,11 @@ QWidget *MainWindow::buildTransport() {
     connect(m_seek, &QSlider::sliderPressed, this, [this] { m_seeking = true; });
     connect(m_seek, &QSlider::sliderReleased, this, [this] {
         m_seeking = false;
-        DZSeek(m_seek->value());
+        // DZSeek is a blocking HTTP request when routed to a Connect device.
+        const qint64 pos = m_seek->value();
+        QtConcurrent::run([pos] { DZSeek(pos); });
         if (m_mpris)
-            m_mpris->notifySeeked(m_seek->value()); // discontinuous jump
+            m_mpris->notifySeeked(pos); // discontinuous jump
     });
     connect(m_seek, &QSlider::valueChanged, this, [this](int v) {
         if (m_seeking)
@@ -1360,7 +1380,7 @@ QWidget *MainWindow::buildTransport() {
     m_shuffleBtn->setToolTip(QStringLiteral("Shuffle"));
     connect(m_shuffleBtn, &QToolButton::toggled, this, [this](bool on) {
         m_shuffle = on;
-        DZSetShuffle(on ? 1 : 0);
+        QtConcurrent::run([on] { DZSetShuffle(on ? 1 : 0); });
     });
     h->addWidget(m_shuffleBtn);
 
@@ -1381,7 +1401,8 @@ QWidget *MainWindow::buildTransport() {
         m_repeatBtn->setToolTip(m_repeat == 0 ? QStringLiteral("Repeat: off")
                                 : m_repeat == 1 ? QStringLiteral("Repeat: all")
                                                 : QStringLiteral("Repeat: one"));
-        DZSetRepeat(m_repeat);
+        const int mode = m_repeat;
+        QtConcurrent::run([mode] { DZSetRepeat(mode); });
     });
     h->addWidget(m_repeatBtn);
 
@@ -2374,6 +2395,7 @@ void MainWindow::openPodcast(const Podcast &p) {
     m_podcastTitle->setText(p.name);
     m_stack->setCurrentIndex(8); // podcast episodes page
     m_episodes.clear();
+    ++m_artGen; // clear() deletes the old items; drop their in-flight art now
     m_episodeList->clear();
     m_episodeList->addItem(new QListWidgetItem(QStringLiteral("Loading…")));
     statusBar()->showMessage("Loading…");
@@ -2833,7 +2855,11 @@ void MainWindow::setNowPlaying(const Track &t) {
         });
 }
 
-void MainWindow::togglePause() { DZTogglePause(); }
+// DZTogglePause is instant locally but a blocking HTTP request when routed to
+// a Connect device — never call it on the GUI thread.
+void MainWindow::togglePause() {
+    QtConcurrent::run([] { DZTogglePause(); });
+}
 
 void MainWindow::next() {
     if (m_queue.isEmpty())
@@ -2891,10 +2917,32 @@ void MainWindow::preloadNext() {
     QtConcurrent::run([id, dur] { DZPreload(cstr(id), dur); });
 }
 
+// DZSetVolume is instant locally but a blocking HTTP request (15 s timeout)
+// when routed to a Connect device, and valueChanged fires for every step of a
+// slider drag — send from a single worker that always pushes the newest value,
+// coalescing the intermediate ones.
 void MainWindow::setVolume(int percent) {
-    DZSetVolume(percent / 100.0);
     if (m_mpris)
         m_mpris->updateVolume(percent / 100.0);
+    m_pendingVol.store(percent);
+    if (m_volInFlight.exchange(true))
+        return; // the live sender picks the new value up
+    QtConcurrent::run([this] {
+        int sent = -1;
+        for (;;) {
+            const int v = m_pendingVol.load();
+            if (v != sent) {
+                DZSetVolume(v / 100.0);
+                sent = v;
+                continue;
+            }
+            m_volInFlight.store(false);
+            // A setVolume() racing between the load and the store above saw
+            // the sender as still alive and didn't start one — reclaim it.
+            if (m_pendingVol.load() == sent || m_volInFlight.exchange(true))
+                return;
+        }
+    });
 }
 
 // ---- OpenDeezer Connect (LAN device picker) -------------------------------
@@ -3017,12 +3065,18 @@ void MainWindow::connectDevice(const QString &addr, const QString &name) {
     });
 }
 
-// Return playback to this computer. DZDisconnectDevice is local + instant.
+// Return playback to this computer. DZDisconnectDevice sends a synchronous
+// Stop to the remote peer, so it runs on a worker like connectDevice.
 void MainWindow::disconnectDevice() {
-    DZDisconnectDevice();
-    m_connectName.clear();
-    statusBar()->showMessage(QStringLiteral("Playing on this computer"), 3000);
-    refreshConnectButton();
+    statusBar()->showMessage(QStringLiteral("Disconnecting…"));
+    QtConcurrent::run([this] {
+        DZDisconnectDevice();
+        QMetaObject::invokeMethod(this, [this] {
+            m_connectName.clear();
+            statusBar()->showMessage(QStringLiteral("Playing on this computer"), 3000);
+            refreshConnectButton();
+        }, Qt::QueuedConnection);
+    });
 }
 
 // Paint the cast button: accent + the device name in the tooltip when routed to

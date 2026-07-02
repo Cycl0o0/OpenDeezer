@@ -12,9 +12,9 @@ import (
 //   - Addr            — listen address (e.g. "127.0.0.1:7654" or ":7654")
 //   - Token           — bearer token; set to enable token auth
 //   - SameAccountOnly — when Token is empty, require the controller to prove it
-//                       is logged into the same Deezer account
+//     is logged into the same Deezer account
 //   - WebRemote       — serve the phone web-remote SPA at GET /remote and
-//                       use pairing (6-digit code) as the auth mechanism
+//     use pairing (6-digit code) as the auth mechanism
 type Config = internalcontrol.Config
 
 // Commands are the playback actions a [Server] dispatches. Set only the
@@ -53,11 +53,11 @@ type Server struct {
 //
 //   - cfg     — listen address and auth mode
 //   - status  — called on each request; must return a race-free snapshot of
-//               the current playback state
+//     the current playback state
 //   - account — called on each request; must return the logged-in identity
 //   - cmds    — the actions the server can dispatch to your player
 //   - dz      — Deezer client used to serve GET /search and GET /playlists;
-//               pass nil to disable browse endpoints
+//     pass nil to disable browse endpoints
 func NewServer(
 	cfg Config,
 	status func() State,

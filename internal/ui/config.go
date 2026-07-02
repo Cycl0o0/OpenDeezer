@@ -193,7 +193,7 @@ func LoadControl() ControlConfig {
 		return c
 	case v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true"):
 		c.Enabled = true
-	case v == "0" || strings.EqualFold(v, "off"):
+	case v == "0" || strings.EqualFold(v, "off") || strings.EqualFold(v, "false") || strings.EqualFold(v, "no"):
 		c.Enabled = false
 	default:
 		c.Enabled = true

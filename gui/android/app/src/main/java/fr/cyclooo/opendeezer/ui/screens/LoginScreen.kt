@@ -52,7 +52,9 @@ private fun readArl(): String? {
 fun LoginScreen(
     busy: Boolean,
     error: String?,
-    onArl: (String) -> Unit,
+    // auto = true when the ARL was captured from the WebView cookie jar rather
+    // than typed by the user, so a token that already failed isn't retried.
+    onArl: (arl: String, auto: Boolean) -> Unit,
 ) {
     var manual by rememberSaveable { mutableStateOf(false) }
     var arlField by rememberSaveable { mutableStateOf("") }
@@ -98,7 +100,7 @@ fun LoginScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 )
                 Button(
-                    onClick = { onArl(arlField.trim()) },
+                    onClick = { onArl(arlField.trim(), false) },
                     enabled = !busy && arlField.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Log in") }
@@ -125,10 +127,18 @@ fun LoginScreen(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         webViewClient = object : WebViewClient() {
+                            // Redirect chains fire onPageFinished repeatedly;
+                            // submit each captured token at most once.
+                            private var sent: String? = null
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 CookieManager.getInstance().flush()
-                                readArl()?.let { onArl(it) }
+                                readArl()?.let {
+                                    if (it != sent) {
+                                        sent = it
+                                        onArl(it, true)
+                                    }
+                                }
                             }
                         }
                         loadUrl(LOGIN_URL)

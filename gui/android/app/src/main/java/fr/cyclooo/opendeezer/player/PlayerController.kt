@@ -3,6 +3,7 @@ package fr.cyclooo.opendeezer.player
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.Track
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class PlayerState(
     val current: Track? = null,
@@ -45,6 +47,10 @@ class PlayerController(private val scope: CoroutineScope) {
     private var pollJob: Job? = null
     private var repeatMode: Int = 0       // 0=off, 1=all, 2=one
     private var shuffleEnabled: Boolean = false
+    // Serializes track starts: while a start is in flight, poll() must not
+    // auto-advance on a finish of the *previous* track (it would double-advance).
+    private var startGen: Int = 0
+    private var startInFlight: Boolean = false
 
     fun start() {
         if (pollJob?.isActive == true) return
@@ -97,7 +103,7 @@ class PlayerController(private val scope: CoroutineScope) {
     fun prev() {
         // Restart the current track if we're past a few seconds, else go back.
         if (Engine.positionMs() > 3000L || index <= 0) {
-            Engine.seek(0)
+            control { Engine.seek(0) }
         } else {
             index--
             startCurrent()
@@ -111,25 +117,20 @@ class PlayerController(private val scope: CoroutineScope) {
         }
     }
 
-    fun togglePause() {
-        Engine.togglePause()
-        pushImmediate()
-    }
+    fun togglePause() = control { Engine.togglePause() }
 
-    fun seek(ms: Long) {
-        Engine.seek(ms)
-        pushImmediate()
-    }
+    fun pause() = control { Engine.pause() }
 
-    fun setVolume(v: Double) {
-        Engine.setVolume(v.coerceIn(0.0, 1.0))
-        pushImmediate()
-    }
+    fun resume() = control { Engine.resume() }
+
+    fun seek(ms: Long) = control { Engine.seek(ms) }
+
+    fun setVolume(v: Double) = control { Engine.setVolume(v.coerceIn(0.0, 1.0)) }
 
     fun stopPlayback() {
-        Engine.stop()
         queue = emptyList()
         index = -1
+        control { Engine.stop() }
         pushImmediate()
     }
 
@@ -137,29 +138,46 @@ class PlayerController(private val scope: CoroutineScope) {
     // mode: 0=off, 1=all, 2=one
     fun setRepeat(mode: Int) {
         repeatMode = mode.coerceIn(0, 2)
-        Engine.setRepeat(repeatMode)
-        pushImmediate()
+        control { Engine.setRepeat(repeatMode) }
     }
 
     // B4: toggle shuffle locally and forward to any connected remote.
     fun setShuffle(on: Boolean) {
         shuffleEnabled = on
-        Engine.setShuffle(if (on) 1 else 0)
-        pushImmediate()
+        control { Engine.setShuffle(if (on) 1 else 0) }
+    }
+
+    // When routed to a Connect device these engine calls do synchronous HTTP
+    // (15s timeout), so they must never run on the main thread.
+    private fun control(block: () -> Unit) {
+        scope.launch {
+            withContext(Dispatchers.IO) { block() }
+            pushImmediate()
+        }
     }
 
     private fun startCurrent() {
         val t = queue.getOrNull(index) ?: return
-        // Take a baseline so the resulting finish doesn't trigger a spurious advance.
-        lastFinished = Engine.finishedCount()
+        val gen = ++startGen
+        startInFlight = true
         scope.launch {
-            if (t.isEpisode) Engine.playEpisode(t.id) else Engine.play(t.id, t.durationMs)
+            if (t.isEpisode) Engine.playEpisode(t.id, t.durationMs) else Engine.play(t.id, t.durationMs)
+            if (gen == startGen) {
+                // Baseline after the new track actually replaced the old one, so a
+                // natural finish during the async start can't trigger an advance.
+                lastFinished = Engine.finishedCount()
+                startInFlight = false
+            }
             pushImmediate()
         }
         pushImmediate()
     }
 
     private fun poll() {
+        if (startInFlight) {
+            push()
+            return
+        }
         val finished = Engine.finishedCount()
         if (finished > lastFinished) {
             lastFinished = finished

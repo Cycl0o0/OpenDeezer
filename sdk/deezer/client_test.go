@@ -49,6 +49,17 @@ func TestTrackIDOf(t *testing.T) {
 		{"deezer:track:3135556", "3135556"},
 		{"https://www.deezer.com/track/3135556", "3135556"},
 		{"3135556", "3135556"},
+		{"https://www.deezer.com/track/3135556?host=0", "3135556"},
+		{"https://www.deezer.com/track/3135556?utm_campaign=x&utm_content=track-3135556", "3135556"},
+		{"https://www.deezer.com/en/track/3135556#frag", "3135556"},
+		// Parity with internal/deezer.TrackIDOf: trailing slashes are tolerated
+		// and negative SNG_IDs (user uploads) keep their sign.
+		{"https://www.deezer.com/en/track/3135556/", "3135556"},
+		{"-123456789", "-123456789"},
+		{"deezer:track:-123456789", "-123456789"},
+		// Non-numeric input is rejected instead of digit-filtered.
+		{"garbage", ""},
+		{"", ""},
 	}
 	for _, tc := range cases {
 		if got := dz.TrackIDOf(tc.uri); got != tc.want {

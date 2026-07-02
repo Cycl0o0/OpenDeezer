@@ -50,7 +50,7 @@ final class AppState: ObservableObject {
     @Published var section: Section = .home
     @Published var homeData: HomeResponse?       // loaded by loadHome() / DZHomeJSON
     @Published var homeLoading = false
-    @Published var tracks: [Track] = []          // current track list / queue
+    @Published var tracks: [Track] = []          // browsed track list (play queue is separate)
     @Published var listTitle = "Liked Songs"
     @Published var listArtwork = ""              // hero artwork (empty => Liked gradient)
     @Published var listIsLiked = true            // hero style: gradient vs artwork
@@ -124,10 +124,19 @@ final class AppState: ObservableObject {
     @Published var repeatMode: RepeatMode = .off
     @Published var playingEpisode = false   // current item is a podcast episode (standalone)
 
+    // Play queue — playback advances through this, independent of `tracks`
+    // (the browsed list), so navigating the library never stops the music.
+    private var queue: [Track] = []
     private var queueIndex = 0
     private var lastFinished = 0
     private var lastState: PlayerState = .stopped
     private var timer: Timer?
+    private var lastEngineTruthID = ""  // engine now-playing id seen last tick (adoption gate)
+    private var preloadedID: String?    // track id armed for a gapless/crossfade swap
+    // Coalesced volume sender — remote-routed DZSetVolume is a blocking HTTP
+    // round-trip, so a slider drag must never queue one call per pixel.
+    private var pendingVolume: Double?
+    private var volumeSendInFlight = false
 
     // MARK: login
 
@@ -398,6 +407,9 @@ final class AppState: ObservableObject {
         }
     }
     func openAlbum(_ a: Album) {
+        // Search renders its own results screen; route to the shared track-list
+        // screen so the opened album is actually visible.
+        if section == .search { section = .playlists }
         listTitle = a.name
         listArtwork = a.artworkUrl
         listIsLiked = false
@@ -736,15 +748,15 @@ final class AppState: ObservableObject {
     // MARK: playback
 
     func play(_ track: Track, in list: [Track]) {
-        tracks = list
+        queue = list
         queueIndex = list.firstIndex(of: track) ?? 0
         playCurrent()
     }
 
     private func playCurrent() {
-        guard queueIndex >= 0, queueIndex < tracks.count else { return }
+        guard queueIndex >= 0, queueIndex < queue.count else { return }
         playingEpisode = false
-        let t = tracks[queueIndex]
+        let t = queue[queueIndex]
         current = t
         durationMs = t.durationMs
         positionMs = 0
@@ -752,7 +764,9 @@ final class AppState: ObservableObject {
         // Push the new track to the OS Now Playing surface immediately.
         nowPlaying.update(track: t, state: .loading, positionMs: 0, durationMs: t.durationMs)
         // Preload the deterministic next track so the engine can swap seamlessly.
+        // (DZPlay discards any previously armed preload before this one lands.)
         let next = nextTrackForPreload()
+        preloadedID = next?.id
         Task.detached {
             Core.play(t.id, durationMs: t.durationMs)
             if let n = next { Core.preload(n.id, durationMs: n.durationMs) }
@@ -762,27 +776,53 @@ final class AppState: ObservableObject {
     // The next index the queue will advance to deterministically (nil if none, or
     // when shuffle / repeat-one make it non-deterministic).
     private func deterministicNextIndex() -> Int? {
-        guard !tracks.isEmpty, !shuffle, repeatMode != .one else { return nil }
-        if queueIndex + 1 < tracks.count { return queueIndex + 1 }
+        guard !queue.isEmpty, !shuffle, repeatMode != .one else { return nil }
+        if queueIndex + 1 < queue.count { return queueIndex + 1 }
         if repeatMode == .all { return 0 }
         return nil
     }
 
     // The track to preload for a seamless transition, or nil when not applicable.
+    // Never preload while routed to a remote device: the remote streams its own
+    // audio, and a local preload would download a duplicate stream for nothing.
     private func nextTrackForPreload() -> Track? {
-        guard seamless, !playingEpisode, let n = deterministicNextIndex() else { return nil }
-        return tracks[n]
+        guard seamless, !playingEpisode, !isConnectedRemote,
+              let n = deterministicNextIndex() else { return nil }
+        return queue[n]
     }
 
-    func togglePause() { Core.togglePause() }
+    // A shuffle/repeat change can invalidate an armed linear-next preload:
+    // re-arm with the new deterministic next when there is one, otherwise
+    // discard the stale preload (DZClearPreload) so the boundary can never
+    // swap into a track the queue won't play.
+    private func reconcilePreload() {
+        guard seamless, !playingEpisode, !isConnectedRemote, state != .stopped else { return }
+        if let w = nextTrackForPreload() {
+            guard w.id != preloadedID else { return }
+            preloadedID = w.id
+            Task.detached { Core.preload(w.id, durationMs: w.durationMs) }
+        } else if preloadedID != nil {
+            preloadedID = nil
+            Task.detached { Core.clearPreload() }
+        }
+    }
+
+    // Transport calls are a blocking HTTP round-trip (up to the control client's
+    // timeout) when routed to a remote device — keep them off the main thread
+    // and update the UI optimistically; tick() reconciles against engine truth.
+    func togglePause() {
+        if state == .playing { state = .paused }
+        else if state == .paused { state = .playing }
+        Task.detached { Core.togglePause() }
+    }
 
     func next() {
-        guard !tracks.isEmpty else { return }
-        if shuffle && tracks.count > 1 {
+        guard !queue.isEmpty else { return }
+        if shuffle && queue.count > 1 {
             var n = queueIndex
-            while n == queueIndex { n = Int.random(in: 0..<tracks.count) }
+            while n == queueIndex { n = Int.random(in: 0..<queue.count) }
             queueIndex = n
-        } else if queueIndex + 1 < tracks.count {
+        } else if queueIndex + 1 < queue.count {
             queueIndex += 1
         } else if repeatMode == .all {
             queueIndex = 0
@@ -791,14 +831,29 @@ final class AppState: ObservableObject {
     }
 
     func prev() {
-        guard !tracks.isEmpty else { return }
+        guard !queue.isEmpty else { return }
         if queueIndex > 0 { queueIndex -= 1 }
         playCurrent()
     }
 
     func setVolume(_ v: Double) {
         volume = v
-        Core.setVolume(v)
+        pendingVolume = v
+        flushVolume()
+    }
+
+    // Sends at most one volume call at a time, always ending on the latest value.
+    private func flushVolume() {
+        guard !volumeSendInFlight, let v = pendingVolume else { return }
+        pendingVolume = nil
+        volumeSendInFlight = true
+        Task.detached {
+            Core.setVolume(v)
+            await MainActor.run {
+                self.volumeSendInFlight = false
+                self.flushVolume()
+            }
+        }
     }
 
     func seek(toFraction f: Double) {
@@ -810,7 +865,7 @@ final class AppState: ObservableObject {
     func seek(toMs ms: Int64) {
         let clamped = max(0, min(ms, durationMs))
         positionMs = clamped          // optimistic; the timer reconciles
-        Core.seek(clamped)
+        Task.detached { Core.seek(clamped) }
         nowPlaying.updatePlayback(state: state, positionMs: clamped, durationMs: durationMs)
     }
 
@@ -837,13 +892,16 @@ final class AppState: ObservableObject {
     // Toggle shuffle and forward the change to the connected remote (if any).
     func setShuffle(_ on: Bool) {
         shuffle = on
-        Core.setShuffle(on)
+        Task.detached { Core.setShuffle(on) }
+        reconcilePreload()
     }
 
     // Advance the repeat cycle (off → all → one → off) and forward to remote.
     func cycleRepeat() {
         repeatMode = RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off
-        Core.setRepeat(repeatMode.rawValue)
+        let mode = repeatMode.rawValue
+        Task.detached { Core.setRepeat(mode) }
+        reconcilePreload()
     }
 
     // MARK: polling
@@ -871,21 +929,31 @@ final class AppState: ObservableObject {
         }
         state = s
         outputFormat = Core.format
+        // Mirror volume changed externally (phone remote / control API / remote
+        // device) while no local send is pending, so the slider tracks reality
+        // and the next local nudge can't snap audio to a stale value.
+        if pendingVolume == nil && !volumeSendInFlight {
+            let v = Core.volume
+            if abs(v - volume) > 0.001 { volume = v }
+        }
         // Engine-truth now-playing sync. DZNowPlayingJSON reports the track the
         // engine is ACTUALLY playing — started here via the control API, or, when
         // routed through OpenDeezer Connect, the REMOTE device's current track.
-        // Adopt it only when it names a different track than what's shown; keep the
-        // last display when it reports nothing (nil). Gating on the id means the
-        // artwork only reloads on a real track change, so there's no flicker /
-        // redundant art fetch. Runs before the finished-count advance so a local
-        // queue advance (which sets `current` itself) wins this tick and the engine
-        // truth reconciles on the next one.
-        if let np = Core.nowPlaying(), np.id != current?.id {
+        // Adopt it only when the engine's truth itself CHANGED to a track other
+        // than what's shown: the engine never updates its current track on a
+        // seamless gapless/crossfade swap, and a just-clicked track's DZPlay may
+        // not have landed yet — in both cases the unchanged engine id is stale
+        // and the local queue is authoritative. Keep the last display when it
+        // reports nothing (nil).
+        let np = Core.nowPlaying()
+        let npID = np?.id ?? ""
+        if let np, npID != lastEngineTruthID, npID != current?.id {
             current = np
             durationMs = np.durationMs
             lastState = s
             nowPlaying.update(track: np, state: s, positionMs: positionMs, durationMs: np.durationMs)
         }
+        lastEngineTruthID = npID
         let f = Core.finishedCount
         if f != lastFinished {
             lastFinished = f
@@ -910,13 +978,15 @@ final class AppState: ObservableObject {
         // new next. Otherwise fall back to an explicit play of the next track.
         if seamless, let n = deterministicNextIndex(), Core.state == .playing {
             queueIndex = n
-            let t = tracks[queueIndex]
+            let t = queue[queueIndex]
             current = t
             durationMs = t.durationMs
             positionMs = 0
             lastState = .playing
             nowPlaying.update(track: t, state: .playing, positionMs: 0, durationMs: t.durationMs)
-            if let next = nextTrackForPreload() {
+            let next = nextTrackForPreload()
+            preloadedID = next?.id
+            if let next {
                 Task.detached { Core.preload(next.id, durationMs: next.durationMs) }
             }
         } else {

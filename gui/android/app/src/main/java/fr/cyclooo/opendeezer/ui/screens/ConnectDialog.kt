@@ -71,9 +71,11 @@ fun ConnectDialog(onDismiss: () -> Unit) {
                     leading = Icons.Filled.Smartphone,
                     selected = connected.isBlank(),
                     onClick = {
-                        Engine.disconnectDevice()
-                        connected = ""
-                        onDismiss()
+                        scope.launch {
+                            Engine.disconnectDevice()
+                            connected = ""
+                            onDismiss()
+                        }
                     },
                 )
                 Spacer(Modifier.size(4.dp))

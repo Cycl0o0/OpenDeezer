@@ -72,6 +72,7 @@ fun NowPlayingScreen(
     var liked by remember(track?.id) { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
+    var volDrag by remember { mutableStateOf<Float?>(null) }
 
     // Reconcile the heart with the engine's real favourite state so an
     // already-liked track shows filled and the first tap removes it.
@@ -243,8 +244,17 @@ fun NowPlayingScreen(
                 Icon(Icons.Filled.VolumeUp, contentDescription = "Volume", modifier = Modifier.size(20.dp))
                 Spacer(Modifier.size(8.dp))
                 Slider(
-                    value = state.volume.toFloat().coerceIn(0f, 1f),
-                    onValueChange = { player.setVolume(it.toDouble()) },
+                    value = volDrag ?: state.volume.toFloat().coerceIn(0f, 1f),
+                    onValueChange = {
+                        volDrag = it
+                        // Local volume tracks the drag; a Connect remote would do one
+                        // HTTP round-trip per frame, so it only gets the final value.
+                        if (state.connectedDevice.isBlank()) player.setVolume(it.toDouble())
+                    },
+                    onValueChangeFinished = {
+                        volDrag?.let { player.setVolume(it.toDouble()) }
+                        volDrag = null
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }

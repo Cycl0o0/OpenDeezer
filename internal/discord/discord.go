@@ -3,8 +3,9 @@
 // application client id (configure via $OPENDEEZER_DISCORD_APP_ID or
 // ~/.config/opendeezer/discord-app-id.txt); with none set it is a no-op.
 //
-// Connection is best-effort and lazy: if Discord isn't running it silently does
-// nothing and retries on the next update. Works on macOS/Linux (unix socket);
+// Connection is best-effort and lazy: all IPC work runs on a dedicated worker
+// goroutine fed by Update, so the caller (the Bubble Tea update loop) never
+// blocks on a dial or a wedged Discord. Works on macOS/Linux (unix socket);
 // Windows (named pipe) is currently a no-op.
 package discord
 
@@ -43,6 +44,13 @@ const (
 	opHandshake int32 = 0
 	opFrame     int32 = 1
 	opClose     int32 = 2
+	opPing      int32 = 3
+	opPong      int32 = 4
+)
+
+const (
+	ipcTimeout       = 2 * time.Second  // dial / read READY / write frame
+	reconnectBackoff = 15 * time.Second // gap between failed connect attempts
 )
 
 var errNoIPC = errors.New("discord: no IPC socket")
@@ -59,41 +67,96 @@ func New(appID string) Presence {
 	if appID == "" {
 		return noop{}
 	}
-	return &richPresence{appID: appID, pid: os.Getpid()}
+	r := &richPresence{
+		appID: appID,
+		pid:   os.Getpid(),
+		wake:  make(chan struct{}, 1),
+		done:  make(chan struct{}),
+	}
+	go r.run()
+	return r
 }
 
 type richPresence struct {
 	appID string
 	pid   int
 
-	mu          sync.Mutex
+	mu     sync.Mutex
+	latest State
+	hasNew bool
+	closed bool
+	wake   chan struct{} // buffered(1): a new state or close is pending
+	done   chan struct{} // closed when the worker goroutine exits
+
+	// The following are owned by the worker goroutine (run/push/connect/shutdown)
+	// or, for conn writes, additionally guarded by wmu.
+	wmu         sync.Mutex // serialises writes to conn (worker + PONG from drain)
 	conn        net.Conn
 	nonce       int
 	lastKey     string
-	closed      bool
+	lastStart   int64     // unix secs of the last sent "start" timestamp (0 when not playing)
+	nextConnect time.Time // don't dial again before this (reconnect backoff)
 	warnedNoIPC bool
 }
 
-// Update pushes the state to Discord, (re)connecting if needed. Errors are
-// swallowed — the connection is dropped and retried on the next call.
+// Update stores the latest state and wakes the worker. It never blocks on IPC.
 func (r *richPresence) Update(s State) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
+	if !r.closed {
+		r.latest = s
+		r.hasNew = true
 	}
+	r.mu.Unlock()
+	r.signal()
+}
 
-	// Throttle: Discord rate-limits activity updates. "Listening" timestamps let
-	// Discord animate progress on its own, so we only resend when the track or
-	// play/pause state changes.
-	key := s.Status + "|" + s.Title + "|" + s.Artist
-	if key == r.lastKey {
+func (r *richPresence) signal() {
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
+}
+
+// run is the worker loop: it applies the latest state to Discord and handles
+// shutdown. All blocking IPC (dial, handshake, writes) happens here, off the
+// caller's goroutine.
+func (r *richPresence) run() {
+	defer close(r.done)
+	for range r.wake {
+		r.mu.Lock()
+		closed := r.closed
+		s := r.latest
+		hasNew := r.hasNew
+		r.hasNew = false
+		r.mu.Unlock()
+
+		if closed {
+			r.shutdown()
+			return
+		}
+		if hasNew {
+			r.push(s)
+		}
+	}
+}
+
+// push (re)connects if needed and sends the activity, deduping unchanged states.
+func (r *richPresence) push(s State) {
+	// Throttle: Discord rate-limits activity updates. The key covers everything
+	// that affects the rendered presence except the timestamps; a bare position
+	// change (seek, repeat-one restart) is caught separately by positionJumped.
+	key := throttleKey(s)
+	if key == r.lastKey && !r.positionJumped(s) {
 		return
 	}
 
 	if r.conn == nil {
+		if time.Now().Before(r.nextConnect) {
+			return // backing off after a recent failure
+		}
 		if err := r.connect(); err != nil {
-			return // Discord not available; try again next update
+			r.nextConnect = time.Now().Add(reconnectBackoff)
+			return
 		}
 	}
 
@@ -103,14 +166,36 @@ func (r *richPresence) Update(s State) {
 	} else {
 		payload = r.activityFrame(s)
 	}
-	if err := writeFrame(r.conn, opFrame, payload); err != nil {
+	if err := r.writeConn(opFrame, payload); err != nil {
 		r.drop()
 		return
 	}
 	r.lastKey = key
 }
 
-// connect dials the IPC socket and performs the handshake. Caller holds r.mu.
+// throttleKey identifies a presence-visible state; timestamps are excluded.
+func throttleKey(s State) string {
+	return s.Status + "|" + s.Title + "|" + s.Artist + "|" + s.Album + "|" +
+		strconv.FormatInt(s.DurationMS, 10)
+}
+
+// positionJumped reports whether the reported position has drifted from where
+// Discord's own extrapolation (from the last sent start) would put it, i.e. a
+// seek or a repeat-one restart that the throttle key alone would miss.
+func (r *richPresence) positionJumped(s State) bool {
+	if s.Status != "playing" || r.lastStart == 0 {
+		return false
+	}
+	expectedMS := (time.Now().Unix() - r.lastStart) * 1000
+	diff := s.PositionMS - expectedMS
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff > 2000
+}
+
+// connect dials the IPC socket, handshakes, and starts the drain goroutine.
+// Runs on the worker goroutine (never on the caller's).
 func (r *richPresence) connect() error {
 	conn, err := dialIPC()
 	if err != nil {
@@ -122,54 +207,100 @@ func (r *richPresence) connect() error {
 		return err
 	}
 	hs, _ := json.Marshal(map[string]any{"v": 1, "client_id": r.appID})
+	_ = conn.SetWriteDeadline(time.Now().Add(ipcTimeout))
 	if err := writeFrame(conn, opHandshake, hs); err != nil {
 		_ = conn.Close()
 		return err
 	}
-	// Expect a READY dispatch; ignore the contents. Bound the read: connect() runs
-	// under r.mu (which Close() also needs), so a socket that accepts but never
-	// sends READY (a stale/foreign discord-ipc-N socket) must not block forever and
-	// deadlock shutdown.
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	// Expect a READY dispatch; ignore the contents. Bound the read so a socket
+	// that accepts but never sends READY (a stale/foreign discord-ipc-N socket)
+	// can't wedge the worker.
+	_ = conn.SetReadDeadline(time.Now().Add(ipcTimeout))
 	if _, _, err := readFrame(conn); err != nil {
 		_ = conn.Close()
 		return err
 	}
-	_ = conn.SetReadDeadline(time.Time{}) // clear the deadline for the connection's life
+	_ = conn.SetReadDeadline(time.Time{}) // clear for the drain loop
 	r.conn = conn
 	r.lastKey = ""
+	r.lastStart = 0
 	r.warnedNoIPC = false
+	go r.drain(conn) // read+discard responses (and PING->PONG) so the RX buffer never fills
 	odlog.Info("discord: rich presence connected (app %s)", r.appID)
 	return nil
 }
 
+// drain reads and discards every frame Discord sends (SET_ACTIVITY replies,
+// PINGs) so the socket receive buffer never fills; it answers PING with PONG and
+// exits when conn errors (dropped/closed).
+func (r *richPresence) drain(conn net.Conn) {
+	for {
+		op, buf, err := readFrame(conn)
+		if err != nil {
+			return
+		}
+		if op == opPing {
+			_ = r.writeConnTo(conn, opPong, buf)
+		}
+	}
+}
+
+// writeConn writes a frame to the current conn with a deadline.
+func (r *richPresence) writeConn(op int32, payload []byte) error {
+	return r.writeConnTo(r.conn, op, payload)
+}
+
+// writeConnTo writes to a specific conn under wmu (worker writes and the drain
+// goroutine's PONGs must not interleave on the same socket).
+func (r *richPresence) writeConnTo(conn net.Conn, op int32, payload []byte) error {
+	if conn == nil {
+		return errNoIPC
+	}
+	r.wmu.Lock()
+	defer r.wmu.Unlock()
+	_ = conn.SetWriteDeadline(time.Now().Add(ipcTimeout))
+	return writeFrame(conn, op, payload)
+}
+
 func (r *richPresence) drop() {
 	if r.conn != nil {
-		_ = r.conn.Close()
+		_ = r.conn.Close() // also unblocks the drain goroutine
 		r.conn = nil
 	}
 	r.lastKey = ""
+	r.lastStart = 0
 }
 
-// Close clears the presence and closes the socket.
+// Close clears the presence and shuts down the worker.
 func (r *richPresence) Close() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
+	r.closed = true
+	r.mu.Unlock()
+	r.signal()
+	<-r.done
+}
+
+// shutdown clears the presence and closes the socket; runs on the worker.
+func (r *richPresence) shutdown() {
 	if r.conn != nil {
-		_ = writeFrame(r.conn, opFrame, r.clearFrame())
-		_ = writeFrame(r.conn, opClose, []byte("{}"))
+		_ = r.writeConn(opFrame, r.clearFrame())
+		_ = r.writeConn(opClose, []byte("{}"))
 		_ = r.conn.Close()
 		r.conn = nil
 	}
-	r.closed = true
 }
 
 // activityFrame builds a SET_ACTIVITY payload for a now-playing track.
 func (r *richPresence) activityFrame(s State) []byte {
 	r.nonce++
+	r.lastStart = 0
 	act := map[string]any{
 		"type":    2, // Listening
-		"details": trim(s.Title, 128),
+		"details": pad2(trim(s.Title, 128)),
 		"assets": map[string]any{
 			"large_image": "opendeezer",
 			"large_text":  firstNonEmpty(s.Album, "OpenDeezer"),
@@ -181,9 +312,15 @@ func (r *richPresence) activityFrame(s State) []byte {
 	switch {
 	case s.Status == "playing" && s.DurationMS > 0:
 		start := time.Now().Unix() - s.PositionMS/1000
+		r.lastStart = start
 		act["timestamps"] = map[string]any{"start": start, "end": start + s.DurationMS/1000}
 	case s.Status == "paused":
-		act["state"] = firstNonEmpty(asStr(act["state"]), "Paused") + " · paused"
+		// Discord rejects a 1-char state; avoid the doubled "Paused · paused".
+		if v := asStr(act["state"]); v != "" {
+			act["state"] = v + " · paused"
+		} else {
+			act["state"] = "Paused"
+		}
 	}
 	return r.setActivity(act)
 }
@@ -191,6 +328,7 @@ func (r *richPresence) activityFrame(s State) []byte {
 // clearFrame builds a SET_ACTIVITY payload that removes the presence.
 func (r *richPresence) clearFrame() []byte {
 	r.nonce++
+	r.lastStart = 0
 	return r.setActivity(nil)
 }
 
@@ -240,6 +378,15 @@ func trim(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// pad2 ensures a Discord string field is at least 2 chars (Discord rejects a
+// 1-char details/state, which would silently drop the whole SET_ACTIVITY).
+func pad2(s string) string {
+	if len(s) == 1 {
+		return s + " "
+	}
+	return s
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -64,6 +64,14 @@ final class SessionStore: ObservableObject {
     func logout() {
         KeychainStore.delete(key: arlKey)
         PlayerController.shared.stopPlayback()
+        // Stop advertising / serving the account over the network — otherwise
+        // a paired web remote or Connect peer can keep driving the logged-out
+        // account while the app shows the login screen.
+        RemoteHostStore.shared.disableAll()
+        // Tear down the engine session as well (control server, Connect-host
+        // advertiser, Deezer client) so nothing keeps running under the old
+        // account; the next login re-inits services fresh.
+        Task { await Engine.logout() }
         account = nil
         phase = .loggedOut
     }

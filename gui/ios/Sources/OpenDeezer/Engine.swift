@@ -21,11 +21,21 @@ enum EngineError: LocalizedError {
 /// directly.
 enum Engine {
     private static let ioQueue = DispatchQueue(label: "fr.cyclooo.OpenDeezer.engine.io", qos: .userInitiated)
+    /// Bulk artwork downloads run here, concurrently, so a screenful of slow
+    /// cover fetches (15s HTTP timeout each) can't head-of-line-block
+    /// play/pause/seek on the serial transport queue.
+    private static let fetchQueue = DispatchQueue(label: "fr.cyclooo.OpenDeezer.engine.fetch", qos: .utility, attributes: .concurrent)
     private static let decoder = JSONDecoder()
 
     private static func run<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             ioQueue.async { continuation.resume(returning: body()) }
+        }
+    }
+
+    private static func runFetch<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            fetchQueue.async { continuation.resume(returning: body()) }
         }
     }
 
@@ -56,6 +66,12 @@ enum Engine {
     static func checkUpdate() async -> UpdateInfo? {
         try? decode(await run { OdmobileCheckUpdate() }, as: UpdateInfo.self)
     }
+
+    /// Tears the engine session down: stops playback, closes the control
+    /// server (web-remote pairing + same-account auth) and the Connect-host
+    /// advertiser, and forgets the Deezer client. A later `initEngine` starts
+    /// services fresh for the new account.
+    static func logout() async { await run { OdmobileLogout() } }
 
     // MARK: - Browse
 
@@ -104,13 +120,20 @@ enum Engine {
     static func play(id: String, durationMs: Int64) async -> Bool {
         await run { OdmobilePlay(id, durationMs) }
     }
-    static func playEpisode(id: String) async -> Bool { await run { OdmobilePlayEpisode(id) } }
+    static func playEpisode(id: String, durationMs: Int64) async -> Bool {
+        await run { OdmobilePlayEpisodeMS(id, durationMs) }
+    }
     static func pause() async { await run { OdmobilePause() } }
     static func resume() async { await run { OdmobileResume() } }
     static func togglePause() async { await run { OdmobileTogglePause() } }
     static func stop() async { await run { OdmobileStop() } }
     static func seek(ms: Int64) async { await run { OdmobileSeek(ms) } }
-    static func setVolume(_ v: Double) { OdmobileSetVolume(v) }
+    /// Async: when routed to a Connect device this becomes a blocking HTTP
+    /// POST (15s timeout) engine-side — it must never run on the main thread.
+    static func setVolume(_ v: Double) async { await run { OdmobileSetVolume(v) } }
+    /// Suspends/resumes the local OS audio device (never Connect-routed);
+    /// cheap and local, safe to call synchronously.
+    static func setOutputSuspended(_ on: Bool) { OdmobileSetOutputSuspended(on) }
     static func volume() -> Double { OdmobileVolume() }
     static func state() -> Int { OdmobileState() }
     static func positionMS() -> Int64 { OdmobilePositionMS() }
@@ -153,6 +176,31 @@ enum Engine {
     static func setCrossfadeMS(_ ms: Int) { OdmobileSetCrossfadeMS(ms) }
     static func crossfadeMS() -> Int { OdmobileCrossfadeMS() }
 
+    // MARK: - Equalizer
+
+    /// Full EQ + mono-downmix state. The DSP, persistence and the
+    /// preset→"custom" flip on manual band edits all live engine-side; the UI
+    /// only renders this state and forwards changes.
+    static func eqState() async -> EQState? {
+        let json = await run { OdmobileEQJSON() }
+        return try? decode(json, as: EQState.self)
+    }
+
+    /// EQ setters are cheap in-memory DSP-parameter writes (the engine
+    /// debounces its own persistence), so they're safe to call synchronously.
+    static func setEQEnabled(_ on: Bool) { applyEQ(["enabled": on]) }
+    static func setEQMono(_ on: Bool) { applyEQ(["mono": on]) }
+    static func setEQPreset(_ name: String) { applyEQ(["preset": name]) }
+    static func setEQBand(index: Int, gainDb: Double) { applyEQ(["band": ["index": index, "gainDb": gainDb]]) }
+    static func setEQPreamp(_ db: Double) { applyEQ(["preampDb": db]) }
+
+    /// Serializes a partial EQ update for `OdmobileSetEQJSON` (every key optional).
+    private static func applyEQ(_ fields: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: fields),
+              let json = String(data: data, encoding: .utf8) else { return }
+        _ = OdmobileSetEQJSON(json)
+    }
+
     // MARK: - Sleep timer
 
     /// Pause after `minutes` (with fade-out), or when the current track ends if
@@ -175,8 +223,9 @@ enum Engine {
     static func connectDevice(_ addr: String) async -> Bool { await run { OdmobileConnectDevice(addr) } }
     static func disconnectDevice() async { await run { OdmobileDisconnectDevice() } }
     static func connectedDevice() -> String { OdmobileConnectedDevice() }
-    static func setRepeat(_ mode: Int) { OdmobileSetRepeat(mode) }
-    static func setShuffle(_ on: Bool) { OdmobileSetShuffle(on ? 1 : 0) }
+    /// Async like setVolume: Connect-routed, so a blocking HTTP POST engine-side.
+    static func setRepeat(_ mode: Int) async { await run { OdmobileSetRepeat(mode) } }
+    static func setShuffle(_ on: Bool) async { await run { OdmobileSetShuffle(on ? 1 : 0) } }
 
     // MARK: - Web remote
 
@@ -197,5 +246,5 @@ enum Engine {
 
     // MARK: - Misc
 
-    static func fetch(_ url: String) async -> Data? { await run { OdmobileFetch(url) } }
+    static func fetch(_ url: String) async -> Data? { await runFetch { OdmobileFetch(url) } }
 }

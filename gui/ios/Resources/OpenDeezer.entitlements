@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required on iOS 14+ for OpenDeezer Connect discovery: joining the
+	     239.255.42.99 multicast group and sending broadcast probes from BSD
+	     sockets silently fail without it on physical devices. Request the
+	     capability for your App ID at developer.apple.com (Multicast
+	     Networking); simulator builds don't need it. -->
+	<key>com.apple.developer.networking.multicast</key>
+	<true/>
+</dict>
+</plist>

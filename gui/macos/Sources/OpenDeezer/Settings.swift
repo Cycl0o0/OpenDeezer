@@ -64,9 +64,13 @@ struct SettingsView: View {
     @State private var webRemoteQRImage: NSImage? = nil
 
     // Remote control (control API) state — read from DZControlConfigJSON on
-    // appear, applied live via DZSetControlConfig on every change.
+    // appear, applied via DZSetControlConfig only on explicit user changes
+    // (applying restarts the server, so it must never fire programmatically).
+    // controlAddr preserves a custom address configured elsewhere (TUI/config);
+    // it is only recomputed when the user actually flips the LAN toggle.
     @State private var controlEnabled = false
     @State private var controlLAN = false
+    @State private var controlAddr = ""
     @State private var controlToken = ""
 
     // Sleep timer remaining, refreshed once a second while the sheet is open.
@@ -74,6 +78,24 @@ struct SettingsView: View {
     // the countdown, so we only mirror the "12:34" display here.
     @State private var sleepRemaining = ""
     private let sleepTick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    // Equalizer state (engine-owned, persisted in ~/.config/opendeezer/eq.json).
+    // Re-read on appear: another client (TUI, phone remote) may have changed it.
+    // Band frequencies and preset names come from the engine so they're never
+    // hardcoded twice; the defaults below only render until the first load.
+    @State private var eqEnabled = false
+    @State private var eqMono = false
+    @State private var eqPreset = "flat"
+    @State private var eqGains = [Double](repeating: 0, count: 10)
+    @State private var eqPreamp = 0.0
+    @State private var eqBands: [Double] = [31.5, 63, 125, 250, 500,
+                                            1000, 2000, 4000, 8000, 16000]
+    @State private var eqPresets = ["flat"]
+    // Coalesces continuous Slider drags into at most one in-flight engine call
+    // (same shape as AppState.flushVolume). No client-side saving: the engine
+    // debounces disk persistence itself.
+    @State private var pendingEQ: (@Sendable () -> Void)? = nil
+    @State private var eqSendInFlight = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -207,6 +229,84 @@ struct SettingsView: View {
                 .tint(DZ.accent)
             }
 
+            // Equalizer — 10-band graphic EQ applied by the shared engine.
+            // The engine owns the state; slider drags call set-band live and
+            // any manual band edit flips the preset to Custom (engine-side).
+            settingsCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(isOn: Binding(
+                        get: { eqEnabled },
+                        set: { on in
+                            eqEnabled = on
+                            Task.detached { Core.setEQEnabled(on) }
+                        })) {
+                        Label("Equalizer", systemImage: "slider.vertical.3")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                    }
+                    .toggleStyle(.switch)
+                    .tint(DZ.accent)
+
+                    Picker("", selection: Binding(
+                        get: { eqPreset },
+                        set: { selectEQPreset($0) })) {
+                        ForEach(eqPresets, id: \.self) { p in
+                            Text(eqPresetLabel(p)).tag(p)
+                        }
+                        // Display-only entry the selection lands on after a
+                        // manual band edit; selecting it applies nothing.
+                        Text("Custom").tag("custom")
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .disabled(!eqEnabled)
+
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ForEach(0..<10, id: \.self) { i in
+                            eqBandColumn(i)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .disabled(!eqEnabled)
+                    .opacity(eqEnabled ? 1 : 0.45)
+
+                    HStack(spacing: 8) {
+                        Text("Preamp").font(.system(size: 13)).foregroundStyle(DZ.textPri)
+                        Slider(value: Binding(
+                            get: { eqPreamp },
+                            set: { v in
+                                eqPreamp = v
+                                sendEQ { Core.setEQPreamp(v) }
+                            }), in: -12...12)
+                            .tint(DZ.accent)
+                        Text(dbLabel(eqPreamp) + " dB")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(DZ.textSec)
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                    .disabled(!eqEnabled)
+                    .opacity(eqEnabled ? 1 : 0.45)
+                }
+            }
+
+            // Mono audio — engine-side downmix, independent of the EQ switch.
+            settingsCard {
+                Toggle(isOn: Binding(
+                    get: { eqMono },
+                    set: { on in
+                        eqMono = on
+                        Task.detached { Core.setEQMono(on) }
+                    })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Mono audio", systemImage: "speaker.wave.1.fill")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                        Text("Plays both channels as one — helpful with a single speaker or hearing in one ear.")
+                            .font(.caption).foregroundStyle(DZ.textSec)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(DZ.accent)
+            }
+
             // Background playback
             settingsCard {
                 Toggle(isOn: Binding(
@@ -248,6 +348,7 @@ struct SettingsView: View {
                         get: { controlLAN },
                         set: { on in
                             controlLAN = on
+                            controlAddr = on ? ":7654" : ""
                             applyControlConfig()
                         })) {
                         Text("Allow on local network (LAN)")
@@ -266,7 +367,10 @@ struct SettingsView: View {
                             .onSubmit { applyControlConfig() }
                     }
                     .disabled(!controlEnabled)
-                    .onChange(of: controlToken) { _, _ in applyControlConfig() }
+                    // No .onChange here: it would fire when loadControlConfig()
+                    // populates the field (silently restarting the server and
+                    // clobbering the config) and on every keystroke. The token
+                    // applies on submit (Enter) instead.
 
                     Divider().overlay(DZ.hairline).padding(.vertical, 2)
 
@@ -333,9 +437,118 @@ struct SettingsView: View {
             app.loadAudioDevices()
             loadWebRemoteInfo()
             loadControlConfig()
+            loadEQState()
             updateSleepRemaining()
         }
         .onReceive(sleepTick) { _ in updateSleepRemaining() }
+    }
+
+    // MARK: equalizer
+
+    // One EQ band: dB readout on top, a rotated vertical slider, Hz label
+    // below. The inner frame's width becomes the vertical run; the outer frame
+    // reserves the rotated footprint so the HStack lays the columns out evenly.
+    @ViewBuilder
+    private func eqBandColumn(_ i: Int) -> some View {
+        VStack(spacing: 4) {
+            Text(dbLabel(eqGains[i]))
+                .font(.system(size: 9, design: .monospaced)).foregroundStyle(DZ.textSec)
+            Slider(value: eqGainBinding(i), in: -12...12)
+                .tint(DZ.accent)
+                .frame(width: 96)
+                .rotationEffect(.degrees(-90))
+                .frame(width: 24, height: 96)
+            Text(hzLabel(eqBands[i]))
+                .font(.system(size: 9)).foregroundStyle(DZ.textSec)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // Gain binding for band i with a soft 0 dB detent (values inside ±0.5 dB
+    // snap to flat, like a hardware EQ's center notch). A manual edit shows the
+    // preset as Custom immediately; the engine flips its own state to match.
+    private func eqGainBinding(_ i: Int) -> Binding<Double> {
+        Binding(
+            get: { eqGains[i] },
+            set: { v in
+                let db = abs(v) < 0.5 ? 0 : v
+                guard eqGains[i] != db else { return }
+                eqGains[i] = db
+                eqPreset = "custom"
+                sendEQ { Core.setEQBand(i, gainDb: db) }
+            })
+    }
+
+    // Applies a preset, then re-reads the engine state so all sliders jump to
+    // the preset's curve. "Custom" is the display-only entry — nothing to apply.
+    private func selectEQPreset(_ name: String) {
+        eqPreset = name
+        guard name != "custom" else { return }
+        Task.detached {
+            Core.setEQPreset(name)
+            let st = Core.eqState()
+            await MainActor.run {
+                guard let st else { return }
+                eqGains = st.gainsDb
+                eqPreset = st.preset
+            }
+        }
+    }
+
+    // Sends at most one EQ engine call at a time, always ending on the latest
+    // value — Slider fires continuously during a drag (same shape as
+    // AppState.flushVolume). Persistence is debounced engine-side.
+    private func sendEQ(_ call: @escaping @Sendable () -> Void) {
+        pendingEQ = call
+        flushEQ()
+    }
+
+    private func flushEQ() {
+        guard !eqSendInFlight, let call = pendingEQ else { return }
+        pendingEQ = nil
+        eqSendInFlight = true
+        Task.detached {
+            call()
+            await MainActor.run {
+                eqSendInFlight = false
+                flushEQ()
+            }
+        }
+    }
+
+    // Populate the Equalizer card from the engine's current state (another
+    // client may have changed it since the sheet was last open).
+    private func loadEQState() {
+        Task.detached {
+            let st = Core.eqState()
+            await MainActor.run {
+                guard let st else { return }
+                eqEnabled = st.enabled
+                eqMono = st.mono
+                eqPreamp = st.preampDb
+                eqPreset = st.preset
+                if st.gainsDb.count == eqGains.count { eqGains = st.gainsDb }
+                if st.bands.count == eqBands.count { eqBands = st.bands }
+                if !st.presets.isEmpty { eqPresets = st.presets }
+            }
+        }
+    }
+
+    // "bass-boost" -> "Bass Boost" for the preset menu.
+    private func eqPresetLabel(_ name: String) -> String {
+        name.split(separator: "-")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    // 31.5 -> "31", 250 -> "250", 16000 -> "16k".
+    private func hzLabel(_ hz: Double) -> String {
+        hz >= 1000 ? "\(Int(hz / 1000))k" : "\(Int(hz))"
+    }
+
+    // Signed one-decimal gain, with flat shown as a plain "0".
+    private func dbLabel(_ db: Double) -> String {
+        db == 0 ? "0" : String(format: "%+.1f", db)
     }
 
     // Caption under the sleep-timer picker: shows the live countdown while a
@@ -375,22 +588,27 @@ struct SettingsView: View {
     }
 
     // Populate the Remote control toggles from the engine's current config.
+    // Only sets @State directly — must never call applyControlConfig(), which
+    // would restart the running server (and drop web-remote pairing) just for
+    // opening the sheet.
     private func loadControlConfig() {
         Task.detached {
             let cfg = Core.controlConfig()
             await MainActor.run {
                 controlEnabled = cfg?.enabled ?? false
                 controlLAN = cfg?.lan ?? false
+                controlAddr = cfg?.addr ?? ""
                 controlToken = cfg?.token ?? ""
             }
         }
     }
 
-    // Persists + applies the Remote control settings on every change.
-    // addr: LAN on -> ":7654" (all interfaces), LAN off -> "" (localhost only).
+    // Persists + applies the Remote control settings on a user change. The addr
+    // is the loaded one unless the LAN toggle was flipped (":7654" = all
+    // interfaces, "" = localhost only), so a custom address survives edits.
     private func applyControlConfig() {
         Core.setControlConfig(enabled: controlEnabled,
-                              addr: controlLAN ? ":7654" : "",
+                              addr: controlAddr,
                               token: controlToken)
     }
 

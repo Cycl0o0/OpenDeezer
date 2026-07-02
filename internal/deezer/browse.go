@@ -146,7 +146,7 @@ func (c *Client) ArtistProfile(id string) (*ArtistPage, error) {
 // Lyrics fetches a track's lyrics via gw song.getLyrics, returning both the
 // plain text and, when Deezer provides them, time-synced lines.
 func (c *Client) Lyrics(trackID string) (*Lyrics, error) {
-	b, err := c.gw("song.getLyrics", fmt.Sprintf(`{"sng_id":"%s"}`, trackID))
+	b, err := c.gw("song.getLyrics", fmt.Sprintf(`{"sng_id":%s}`, jsonEsc(trackID)))
 	if err != nil {
 		return nil, err
 	}

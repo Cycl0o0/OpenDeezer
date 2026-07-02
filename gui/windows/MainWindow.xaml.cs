@@ -30,6 +30,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Text;
@@ -532,7 +534,8 @@ public sealed partial class MainWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         ToolTipService.SetToolTip(_playBtn, "Play / pause");
-        _playBtn.Click += (_, _) => DeezerCore.DZTogglePause();
+        // Off-thread: when routed over Connect this forwards over HTTP (15 s timeout).
+        _playBtn.Click += async (_, _) => await Task.Run(DeezerCore.DZTogglePause);
         var nextBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Next
         ToolTipService.SetToolTip(nextBtn, "Next");
         nextBtn.Click += (_, _) => Next();
@@ -1024,7 +1027,9 @@ public sealed partial class MainWindow : Window
     private async void LoadFavorites()
     {
         if (!_loggedIn) return;
+        int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.Favorites());
+        if (gen != _browseGen) return; // a newer navigation superseded this one
         _tracks = tracks;
         _artGen++;
         FillTrackList(_trackList, _tracks);
@@ -1054,7 +1059,9 @@ public sealed partial class MainWindow : Window
     private async void LoadFlow()
     {
         if (!_loggedIn) return;
+        int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.Flow());
+        if (gen != _browseGen) return; // a newer navigation superseded this one
         _tracks = tracks;
         _artGen++;
         FillTrackList(_trackList, _tracks);
@@ -1105,7 +1112,9 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false;
         _nav.Header = p.Name;
         _nav.Content = _tracksPage;
+        int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.PlaylistTracks(p.Id));
+        if (gen != _browseGen) return; // a newer navigation superseded this one
         _tracks = tracks;
         _artGen++;
         FillTrackList(_trackList, _tracks);
@@ -1116,7 +1125,9 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false;
         _nav.Header = a.Name;
         _nav.Content = _tracksPage;
+        int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.AlbumTracks(a.Id));
+        if (gen != _browseGen) return; // a newer navigation superseded this one
         _tracks = tracks;
         _artGen++;
         FillTrackList(_trackList, _tracks);
@@ -1157,7 +1168,9 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false;
         _nav.Header = pod.Name;
         _nav.Content = _tracksPage;
+        int gen = ++_browseGen;
         var eps = await Task.Run(() => Wire.ParseEpisodes(DeezerCore.TakeJson(DeezerCore.DZPodcastEpisodesJSON(pod.Id))));
+        if (gen != _browseGen) return; // a newer navigation superseded this one
         var tracks = new List<Track>(eps.Count);
         foreach (var e in eps)
         {
@@ -1617,19 +1630,30 @@ public sealed partial class MainWindow : Window
         }
         DispatchPlay(t.Id, t.DurationMs, t.IsEpisode, nextId, nextDur);
     }
-    // Blocking play (then optional preload) serialized on one background task.
-    private async void DispatchPlay(string id, long dur, bool episode, string nextId, long nextDur)
+    // Blocking play (then optional preload) chained onto one serialized background
+    // task so DZPlay calls reach the engine in click order, plus a generation
+    // counter so a play superseded by a faster follow-up click is skipped entirely
+    // (otherwise the slower network response wins and arms a stale gapless preload).
+    private void DispatchPlay(string id, long dur, bool episode, string nextId, long nextDur)
     {
-        await Task.Run(() =>
+        int gen = ++_playDispatchGen;
+        _playChain = _playChain.ContinueWith(_ =>
         {
+            if (gen != Volatile.Read(ref _playDispatchGen)) return; // superseded while queued
             if (episode) DeezerCore.DZPlayEpisode(id, dur); // plain, unencrypted stream
             else DeezerCore.DZPlay(id, dur);                // prepares the stream over the network -> blocks
+            if (gen != Volatile.Read(ref _playDispatchGen)) return; // superseded mid-play -> its preload is stale
             if (!string.IsNullOrEmpty(nextId)) DeezerCore.DZPreload(nextId, nextDur); // warm next for the gapless swap
-        });
+        }, TaskScheduler.Default);
     }
-    private async void DispatchPreload(string id, long dur)
+    private void DispatchPreload(string id, long dur)
     {
-        await Task.Run(() => DeezerCore.DZPreload(id, dur));
+        int gen = _playDispatchGen; // no new play: preload only while still current
+        _playChain = _playChain.ContinueWith(_ =>
+        {
+            if (gen != Volatile.Read(ref _playDispatchGen)) return;
+            DeezerCore.DZPreload(id, dur);
+        }, TaskScheduler.Default);
     }
     // The next queue index when advance is deterministic (mirrors Next()'s ordering).
     private bool HasDeterministicNext(out int outIndex)
@@ -1700,27 +1724,78 @@ public sealed partial class MainWindow : Window
         if (_queueIndex > 0) --_queueIndex;
         PlayCurrent();
     }
-    private void OnShuffle(object s, RoutedEventArgs e) { _shuffle = _shuffleBtn.IsChecked == true; DeezerCore.DZSetShuffle(_shuffle ? 1 : 0); if (_shuffle) _shuffleBtn.Foreground = _accent; else _shuffleBtn.ClearValue(Control.ForegroundProperty); }
-    private void OnRepeat(object s, RoutedEventArgs e)
+    // Off-thread like every other blocking DZ* call: when routed over Connect these
+    // forward over HTTP (15 s timeout), so they must never run on the dispatcher.
+    private async void OnShuffle(object s, RoutedEventArgs e)
+    {
+        _shuffle = _shuffleBtn.IsChecked == true;
+        if (_shuffle) _shuffleBtn.Foreground = _accent; else _shuffleBtn.ClearValue(Control.ForegroundProperty);
+        int on = _shuffle ? 1 : 0;
+        // Next is no longer deterministic -> drop any armed gapless preload so a
+        // stale next track can't be swapped in (DZClearPreload's documented case).
+        bool clearPreload = !HasDeterministicNext(out _);
+        await Task.Run(() =>
+        {
+            DeezerCore.DZSetShuffle(on);
+            if (clearPreload) DeezerCore.DZClearPreload();
+        });
+    }
+    private async void OnRepeat(object s, RoutedEventArgs e)
     {
         _repeat = (_repeat + 1) % 3;
         _repeatIcon.Glyph = _repeat == 2 ? "" : ""; // RepeatOne or RepeatAll
         if (_repeat == 0) _repeatBtn.ClearValue(Control.ForegroundProperty); else _repeatBtn.Foreground = _accent;
         ToolTipService.SetToolTip(_repeatBtn, _repeat == 0 ? "Repeat: off" : _repeat == 1 ? "Repeat: all" : "Repeat: one");
-        DeezerCore.DZSetRepeat(_repeat);
+        int mode = _repeat;
+        bool clearPreload = !HasDeterministicNext(out _); // repeat-one never preloads; drop a stale one
+        await Task.Run(() =>
+        {
+            DeezerCore.DZSetRepeat(mode);
+            if (clearPreload) DeezerCore.DZClearPreload();
+        });
     }
     private void OnSeekChanged(object s, RangeBaseValueChangedEventArgs e)
     {
         if (_updatingSeek) return; // programmatic update from the poll tick
         long ms = (long)Math.Round(e.NewValue);
-        DeezerCore.DZSeek(ms);
         _posText.Text = Wire.TimeText(ms);
         _lastSeekTick = Environment.TickCount64;
+        _pendingSeekMs = ms;
+        PumpSeek();
+    }
+    // Coalescing pump (UI-thread state only): one DZSeek in flight at a time; drag
+    // ticks arriving mid-flight collapse into a single trailing call with the
+    // latest value, so a slider drag never queues blocking round-trips.
+    private async void PumpSeek()
+    {
+        if (_seekInFlight) { _seekDirty = true; return; }
+        _seekInFlight = true;
+        do
+        {
+            _seekDirty = false;
+            long ms = _pendingSeekMs;
+            await Task.Run(() => DeezerCore.DZSeek(ms));
+        } while (_seekDirty);
+        _seekInFlight = false;
+        _lastSeekTick = Environment.TickCount64; // hold the poll off until after the last commit
     }
     private void OnVolumeChanged(object s, RangeBaseValueChangedEventArgs e)
     {
         if (_updatingVol) return;
-        DeezerCore.DZSetVolume(e.NewValue / 100.0);
+        _pendingVolume = e.NewValue / 100.0;
+        PumpVolume();
+    }
+    private async void PumpVolume()
+    {
+        if (_volInFlight) { _volDirty = true; return; }
+        _volInFlight = true;
+        do
+        {
+            _volDirty = false;
+            double v = _pendingVolume;
+            await Task.Run(() => DeezerCore.DZSetVolume(v));
+        } while (_volDirty);
+        _volInFlight = false;
     }
 
     // ---- 300 ms poll: cheap state reads + auto-advance + SMTC push -----------
@@ -1845,8 +1920,8 @@ public sealed partial class MainWindow : Window
         {
             switch (btn)
             {
-                case SystemMediaTransportControlsButton.Play: DeezerCore.DZResume(); break;
-                case SystemMediaTransportControlsButton.Pause: DeezerCore.DZPause(); break;
+                case SystemMediaTransportControlsButton.Play: _ = Task.Run(DeezerCore.DZResume); break;
+                case SystemMediaTransportControlsButton.Pause: _ = Task.Run(DeezerCore.DZPause); break;
                 case SystemMediaTransportControlsButton.Next: Next(); break;
                 case SystemMediaTransportControlsButton.Previous: Prev(); break;
             }
@@ -1858,10 +1933,11 @@ public sealed partial class MainWindow : Window
         long ms = (long)a.RequestedPlaybackPosition.TotalMilliseconds;
         DispatcherQueue.TryEnqueue(() =>
         {
-            DeezerCore.DZSeek(ms);
             _lastSeekTick = Environment.TickCount64;
             _updatingSeek = true; _seek.Value = ms; _updatingSeek = false;
             _posText.Text = Wire.TimeText(ms);
+            _pendingSeekMs = ms;
+            PumpSeek(); // off-thread + coalesced with any slider drag
             UpdateSmtcTimeline(ms, (long)_seek.Maximum);
         });
     }
@@ -2145,6 +2221,16 @@ public sealed partial class MainWindow : Window
         csec.Children.Add(new TextBlock { Text = "Crossfade", FontWeight = FontWeights.SemiBold });
         csec.Children.Add(cfCombo);
 
+        // Equalizer: opens its own dialog (10 vertical band sliders need the
+        // width, and this list already scrolls). WinUI allows only one open
+        // ContentDialog at a time, so the button hides Settings first; the EQ
+        // applies live and is engine-persisted, so it never needed Save anyway.
+        var eqBtn = new Button { Content = "Equalizer…" };
+        var eqsec = new StackPanel { Spacing = 4 };
+        eqsec.Children.Add(new TextBlock { Text = "Equalizer", FontWeight = FontWeights.SemiBold });
+        eqsec.Children.Add(new TextBlock { Text = "10-band equalizer, preamp and mono audio.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+        eqsec.Children.Add(eqBtn);
+
         // Sleep timer (engine state; applied on Save via DZSetSleepTimer / DZCancelSleepTimer).
         // Off / 15 / 30 / 45 / 60 min, or pause when the current track ends.
         int[] slpMins = { 0, 15, 30, 45, 60 }; // combo index -> minutes; index 5 = End of track
@@ -2216,11 +2302,19 @@ public sealed partial class MainWindow : Window
             Text = ctrlToken,
             IsEnabled = ctrlEnabled,
         };
+        // Skip no-op applies: DZSetControlConfig restarts the control server, which
+        // would kill an active Phone Remote's pairing code + phone sessions even
+        // when the user merely tabbed through the token box.
+        bool appliedOn = ctrlEnabled;
+        string appliedAddr = ctrlLan ? ":7654" : "";
+        string appliedToken = ctrlToken;
         async void ApplyControlConfig()
         {
             bool on = ctrlEnableSwitch.IsOn;
             string addr = ctrlLanSwitch.IsOn ? ":7654" : "";
             string token = ctrlTokenBox.Text ?? "";
+            if (on == appliedOn && addr == appliedAddr && token == appliedToken) return;
+            appliedOn = on; appliedAddr = addr; appliedToken = token;
             await Task.Run(() => DeezerCore.DZSetControlConfig(on ? 1 : 0, addr, token));
         }
         ctrlEnableSwitch.Toggled += (_, _) =>
@@ -2283,6 +2377,7 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(asec);
         sp.Children.Add(gsec);
         sp.Children.Add(csec);
+        sp.Children.Add(eqsec);
         sp.Children.Add(slsec);
         sp.Children.Add(rsec);
         sp.Children.Add(tsec);
@@ -2307,6 +2402,7 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
+        eqBtn.Click += (_, _) => { dlg.Hide(); ShowEqualizer(); };
         if (await ShowDialog(dlg) == ContentDialogResult.Primary)
         {
             int lvl = quality.SelectedIndex;
@@ -2341,6 +2437,195 @@ public sealed partial class MainWindow : Window
 
             Config.SaveSettings(_settings);
         }
+    }
+
+    // 10-band equalizer + mono downmix. Everything applies LIVE via DZSetEQJSON
+    // partial updates and the ENGINE owns state + persistence (eq.json debounced
+    // engine-side), so the dialog has no Save button and this app stores nothing.
+    private async void ShowEqualizer()
+    {
+        // Fresh engine state off the UI thread -- another client (remote, phone)
+        // may have changed the EQ since this app last looked.
+        var eq = await Task.Run(() => DeezerCore.EQ());
+
+        bool updatingEq = false; // programmatic slider/combo writes (mirrors _updatingSeek)
+
+        // Coalescing pump like PumpSeek: one DZSetEQJSON in flight at a time; drag
+        // ticks arriving mid-flight collapse into a single trailing call per band
+        // (+ preamp), so a slider drag never queues blocking round-trips.
+        var pendingBand = new double?[10];
+        double? pendingPreamp = null;
+        bool eqInFlight = false;
+        async void PumpEq()
+        {
+            if (eqInFlight) return;
+            eqInFlight = true;
+            while (true)
+            {
+                string payload = "";
+                for (int i = 0; i < pendingBand.Length; i++)
+                {
+                    if (pendingBand[i] is double g)
+                    {
+                        pendingBand[i] = null;
+                        payload = new JsonObject { ["band"] = new JsonObject { ["index"] = i, ["gainDb"] = g } }.ToJsonString();
+                        break;
+                    }
+                }
+                if (payload.Length == 0 && pendingPreamp is double pa)
+                {
+                    pendingPreamp = null;
+                    payload = new JsonObject { ["preampDb"] = pa }.ToJsonString();
+                }
+                if (payload.Length == 0) break;
+                await Task.Run(() => DeezerCore.DZSetEQJSON(payload));
+            }
+            eqInFlight = false;
+        }
+
+        var sp = new StackPanel { Spacing = 16, MinWidth = 420 };
+
+        // Preset picker: engine preset ids + a display-only "Custom" entry the
+        // combo snaps to when any band is edited by hand (the engine does the
+        // same flip on its side automatically).
+        var presetCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = eq.Enabled };
+        foreach (var name in eq.Presets) presetCombo.Items.Add(Wire.PresetLabel(name));
+        int customIdx = presetCombo.Items.Count;
+        presetCombo.Items.Add("Custom");
+        int selPreset = eq.Presets.IndexOf(eq.Preset);
+        presetCombo.SelectedIndex = selPreset >= 0 ? selPreset : customIdx;
+
+        // 10 vertical band sliders (-12..+12 dB, 0.5 dB steps) over Hz labels.
+        var bandGrid = new Grid { IsEnabled = eq.Enabled };
+        var bandSliders = new Slider[10];
+        for (int i = 0; i < bandSliders.Length; i++)
+        {
+            bandGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var s = new Slider
+            {
+                Orientation = Orientation.Vertical,
+                Minimum = -12,
+                Maximum = 12,
+                StepFrequency = 0.5,
+                Height = 140,
+                Value = i < eq.GainsDb.Length ? eq.GainsDb[i] : 0,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = _accent,
+            };
+            int idx = i;
+            s.ValueChanged += (_, e) =>
+            {
+                if (updatingEq) return;
+                pendingBand[idx] = e.NewValue;
+                // A manual band edit flips the engine preset to "custom"; mirror it.
+                updatingEq = true;
+                presetCombo.SelectedIndex = customIdx;
+                updatingEq = false;
+                PumpEq();
+            };
+            bandSliders[i] = s;
+            var col = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
+            col.Children.Add(s);
+            col.Children.Add(new TextBlock
+            {
+                Text = Wire.BandText(i < eq.Bands.Length ? eq.Bands[i] : 0),
+                FontSize = 11,
+                Opacity = 0.7,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            Grid.SetColumn(col, i);
+            bandGrid.Children.Add(col);
+        }
+
+        // Preamp: overall output trim under the bands (same -12..+12 range).
+        var preampSlider = new Slider
+        {
+            Minimum = -12,
+            Maximum = 12,
+            StepFrequency = 0.5,
+            Value = eq.PreampDb,
+            Foreground = _accent,
+            IsEnabled = eq.Enabled,
+        };
+        preampSlider.ValueChanged += (_, e) =>
+        {
+            if (updatingEq) return;
+            pendingPreamp = e.NewValue;
+            PumpEq();
+        };
+
+        var enable = new ToggleSwitch
+        {
+            OnContent = "Equalizer on",
+            OffContent = "Equalizer off",
+            IsOn = eq.Enabled,
+        };
+        enable.Toggled += async (_, _) =>
+        {
+            bool on = enable.IsOn;
+            presetCombo.IsEnabled = on;
+            bandGrid.IsEnabled = on;
+            preampSlider.IsEnabled = on;
+            string payload = new JsonObject { ["enabled"] = on }.ToJsonString();
+            await Task.Run(() => DeezerCore.DZSetEQJSON(payload));
+        };
+
+        // Mono downmix is independent of the EQ enable (never greyed with it).
+        var mono = new ToggleSwitch
+        {
+            OnContent = "Both channels play the same audio",
+            OffContent = "Stereo",
+            IsOn = eq.Mono,
+        };
+        mono.Toggled += async (_, _) =>
+        {
+            string payload = new JsonObject { ["mono"] = mono.IsOn }.ToJsonString();
+            await Task.Run(() => DeezerCore.DZSetEQJSON(payload));
+        };
+
+        presetCombo.SelectionChanged += async (_, _) =>
+        {
+            if (updatingEq) return;
+            int pi = presetCombo.SelectedIndex;
+            if (pi < 0 || pi >= eq.Presets.Count) return; // "Custom" is a state, not a choice
+            string payload = new JsonObject { ["preset"] = eq.Presets[pi] }.ToJsonString();
+            // A preset rewrites every band, so re-read the state and move the sliders.
+            var st = await Task.Run(() =>
+            {
+                DeezerCore.DZSetEQJSON(payload);
+                return DeezerCore.EQ();
+            });
+            updatingEq = true;
+            for (int i = 0; i < bandSliders.Length && i < st.GainsDb.Length; i++) bandSliders[i].Value = st.GainsDb[i];
+            updatingEq = false;
+        };
+
+        var psec = new StackPanel { Spacing = 4 };
+        psec.Children.Add(new TextBlock { Text = "Preset", FontWeight = FontWeights.SemiBold });
+        psec.Children.Add(presetCombo);
+
+        var pasec = new StackPanel { Spacing = 4 };
+        pasec.Children.Add(new TextBlock { Text = "Preamp", FontWeight = FontWeights.SemiBold });
+        pasec.Children.Add(preampSlider);
+
+        var msec = new StackPanel { Spacing = 4 };
+        msec.Children.Add(new TextBlock { Text = "Mono audio", FontWeight = FontWeights.SemiBold });
+        msec.Children.Add(mono);
+
+        sp.Children.Add(enable);
+        sp.Children.Add(psec);
+        sp.Children.Add(bandGrid);
+        sp.Children.Add(pasec);
+        sp.Children.Add(msec);
+
+        var dlg = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Equalizer",
+            Content = sp,
+            CloseButtonText = "Close",
+        };
+        await ShowDialog(dlg);
     }
 
     private async void ShowPhoneRemote()
@@ -2472,7 +2757,7 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.6.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent });
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.7.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent });
         sp.Children.Add(new TextBlock { Text = "An open source reimplementation of Deezer.", TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {
@@ -2590,6 +2875,17 @@ public sealed partial class MainWindow : Window
     private bool _loggedIn, _blocked, _shuffle, _updatingSeek, _updatingVol, _suppressNav;
     private int _lastFinished, _artGen, _playGen, _queueIndex = -1, _repeat;
     private long _lastSeekTick;
+    private int _browseGen; // drops stale track-list fetches (mirrors _lyricsGen/_connectGen)
+
+    // play dispatch serialization (DispatchPlay/DispatchPreload)
+    private Task _playChain = Task.CompletedTask;
+    private int _playDispatchGen;
+
+    // seek/volume coalescing pumps (all flags touched on the UI thread only)
+    private long _pendingSeekMs;
+    private bool _seekInFlight, _seekDirty;
+    private double _pendingVolume;
+    private bool _volInFlight, _volDirty;
 
     // login (embedded Deezer webview + automatic arl-cookie capture)
     private WebView2? _loginWebView;

@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -57,7 +58,7 @@ func LoadControl() Control {
 		return c
 	case v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true"):
 		c.Enabled = true
-	case v == "0" || strings.EqualFold(v, "off"):
+	case v == "0" || strings.EqualFold(v, "off") || strings.EqualFold(v, "false") || strings.EqualFold(v, "no"):
 		c.Enabled = false
 	default:
 		c.Enabled = true
@@ -88,7 +89,32 @@ func writeFile(name, contents string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name), []byte(contents), 0600)
+	// Write atomically (temp file + rename) so a crash or a concurrent reader in
+	// another client never sees a truncated/torn file — an emptied
+	// control-token.txt would silently downgrade the LAN control API from bearer
+	// auth to same-account auth.
+	tmp, err := os.CreateTemp(dir, name+".tmp*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(contents); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, filepath.Join(dir, name))
 }
 
 // SaveControlEnabled persists whether the control API starts automatically, so
@@ -164,10 +190,49 @@ func NormalizePeer(addr string) (base, hostport string) {
 	if addr == "" {
 		return "", ""
 	}
-	if !strings.Contains(addr, ":") {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		// No port present. Bracket bare IPv6 literals (which themselves contain
+		// colons) before appending the default port so the result stays a valid
+		// host:port — Tailscale/VPN peers are commonly IPv6.
+		if ip := net.ParseIP(addr); ip != nil && ip.To4() == nil {
+			addr = "[" + addr + "]"
+		}
 		addr += ":7654"
 	}
 	return "http://" + addr, addr
+}
+
+// EQ is the persisted equalizer + mono-downmix state. It is loaded and saved by
+// the audio engine itself (not per client), so the TUI, every GUI and the
+// control API all share one set of settings through ~/.config/opendeezer.
+type EQ struct {
+	Enabled  bool      `json:"enabled"`
+	Mono     bool      `json:"mono"`
+	PreampDB float64   `json:"preampDb"`
+	GainsDB  []float64 `json:"gainsDb"`
+	Preset   string    `json:"preset"`
+}
+
+// LoadEQ reads eq.json from the config dir. ok is false when the file is
+// missing or unparseable (caller falls back to defaults).
+func LoadEQ() (eq EQ, ok bool) {
+	s := readFile("eq.json")
+	if s == "" {
+		return EQ{}, false
+	}
+	if err := json.Unmarshal([]byte(s), &eq); err != nil {
+		return EQ{}, false
+	}
+	return eq, true
+}
+
+// SaveEQ persists the equalizer state to eq.json in the config dir.
+func SaveEQ(eq EQ) error {
+	b, err := json.Marshal(eq)
+	if err != nil {
+		return err
+	}
+	return writeFile("eq.json", string(b))
 }
 
 // LoadDiscordAppID returns the Discord application id for Rich Presence, from

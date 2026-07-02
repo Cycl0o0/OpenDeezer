@@ -27,7 +27,7 @@ fun TvApp(vm: AppViewModel) {
             AuthStage.NEEDS_LOGIN -> TvLoginScreen(
                 busy = vm.busy,
                 error = vm.loginError,
-                onArl = { vm.login(it) },
+                onArl = { arl, auto -> vm.login(arl, auto = auto) },
             )
             AuthStage.NEEDS_PREMIUM -> Centered {
                 Column(

@@ -3,13 +3,29 @@ import UIKit
 
 /// Process-wide cache for cover art fetched through `Engine.fetch` (the Go
 /// engine performs the HTTP request so the same networking stack + UA is used
-/// everywhere the desktop/Android GUIs use it).
+/// everywhere the desktop/Android GUIs use it). NSCache-backed so a long
+/// browsing session can't grow unbounded: capped entry count, auto-eviction
+/// under memory pressure, full purge on an explicit memory warning.
 actor ImageCache {
     static let shared = ImageCache()
-    private var cache: [String: UIImage] = [:]
 
-    func image(for url: String) -> UIImage? { cache[url] }
-    func set(_ image: UIImage, for url: String) { cache[url] = image }
+    private let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 200 // decoded 500x500 covers are ~1 MB each
+        return cache
+    }()
+
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: nil
+        ) { [cache] _ in
+            cache.removeAllObjects() // NSCache is thread-safe
+        }
+    }
+
+    func image(for url: String) -> UIImage? { cache.object(forKey: url as NSString) }
+    func set(_ image: UIImage, for url: String) { cache.setObject(image, forKey: url as NSString) }
 }
 
 /// Square artwork view backed by `OdmobileFetch`, with a placeholder while

@@ -13,7 +13,7 @@ import (
 //
 // Also fuzzed continuously by OSS-Fuzz / ClusterFuzzLite.
 func FuzzFLACDecode(f *testing.F) {
-	f.Add([]byte("fLaC"))               // FLAC magic, then truncated
+	f.Add([]byte("fLaC"))                 // FLAC magic, then truncated
 	f.Add([]byte("fLaC\x00\x00\x00\x22")) // magic + a bogus STREAMINFO header
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, data []byte) {

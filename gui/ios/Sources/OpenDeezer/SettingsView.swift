@@ -95,6 +95,7 @@ struct SettingsView: View {
                             .tint(Palette.accent)
                             .onChange(of: crossfadeMs) { _, value in AudioPrefs.crossfadeMs = Int(value); Engine.setCrossfadeMS(Int(value)) }
                     }
+                    NavigationLink("Equalizer") { EqualizerView() }
                 }
 
                 Section {

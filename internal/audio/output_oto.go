@@ -54,6 +54,22 @@ func (o *otoOutput) devices() ([]Device, error) {
 func (o *otoOutput) setDevice(string) error { return nil }
 func (o *otoOutput) currentDevice() string  { return "" }
 
+// suspend releases/restores the audio context (used on audio-focus loss, e.g.
+// iOS interruptions) without dropping the queued player.
+func (o *otoOutput) suspend(on bool) error {
+	if o.ctx == nil {
+		return nil
+	}
+	if on {
+		return o.ctx.Suspend()
+	}
+	return o.ctx.Resume()
+}
+
+// oto follows the system default device on a device change itself, so there is
+// nothing for the player to recover from here.
+func (o *otoOutput) setLostHandler(func(string)) {}
+
 func (o *otoOutput) close() {
 	if o.player != nil {
 		_ = o.player.Close()

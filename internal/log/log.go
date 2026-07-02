@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -39,16 +40,16 @@ func (l Level) String() string {
 
 // ParseLevel maps a name (case-insensitive) to a Level; unknown => LevelInfo.
 func ParseLevel(s string) Level {
-	switch s {
-	case "debug", "DEBUG":
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
 		return LevelDebug
-	case "info", "INFO":
+	case "info":
 		return LevelInfo
-	case "warn", "WARN", "warning":
+	case "warn", "warning":
 		return LevelWarn
-	case "error", "ERROR":
+	case "error":
 		return LevelError
-	case "off", "OFF", "none":
+	case "off", "none":
 		return LevelOff
 	default:
 		return LevelInfo

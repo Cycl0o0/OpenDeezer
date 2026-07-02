@@ -14,27 +14,27 @@ import (
 
 // AddFavoriteTrack likes a track (adds it to Liked Songs).
 func (c *Client) AddFavoriteTrack(trackID string) error {
-	_, err := c.gw("favorite_song.add", fmt.Sprintf(`{"SNG_ID":"%s"}`, trackID))
+	_, err := c.gw("favorite_song.add", fmt.Sprintf(`{"SNG_ID":%s}`, jsonEsc(trackID)))
 	return err
 }
 
 // RemoveFavoriteTrack unlikes a track.
 func (c *Client) RemoveFavoriteTrack(trackID string) error {
-	_, err := c.gw("favorite_song.remove", fmt.Sprintf(`{"SNG_ID":"%s"}`, trackID))
+	_, err := c.gw("favorite_song.remove", fmt.Sprintf(`{"SNG_ID":%s}`, jsonEsc(trackID)))
 	return err
 }
 
 // AddToPlaylist appends a track to a playlist the user can edit.
 func (c *Client) AddToPlaylist(playlistID, trackID string) error {
 	_, err := c.gw("playlist.addSongs",
-		fmt.Sprintf(`{"playlist_id":"%s","songs":[["%s",0]]}`, playlistID, trackID))
+		fmt.Sprintf(`{"playlist_id":%s,"songs":[[%s,0]]}`, jsonEsc(playlistID), jsonEsc(trackID)))
 	return err
 }
 
 // RemoveFromPlaylist removes a track from a playlist.
 func (c *Client) RemoveFromPlaylist(playlistID, trackID string) error {
 	_, err := c.gw("playlist.deleteSongs",
-		fmt.Sprintf(`{"playlist_id":"%s","songs":[["%s",0]]}`, playlistID, trackID))
+		fmt.Sprintf(`{"playlist_id":%s,"songs":[[%s,0]]}`, jsonEsc(playlistID), jsonEsc(trackID)))
 	return err
 }
 
@@ -45,7 +45,7 @@ func songsArray(trackIDs []string) string {
 	}
 	parts := make([]string, len(trackIDs))
 	for i, id := range trackIDs {
-		parts[i] = fmt.Sprintf(`["%s",0]`, id)
+		parts[i] = fmt.Sprintf(`[%s,0]`, jsonEsc(id))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -78,12 +78,12 @@ func (c *Client) CreatePlaylist(title string, trackIDs []string) (string, error)
 func (c *Client) RenamePlaylist(playlistID, title string) error {
 	t, _ := json.Marshal(title)
 	_, err := c.gw("playlist.update",
-		fmt.Sprintf(`{"playlist_id":"%s","title":%s}`, playlistID, t))
+		fmt.Sprintf(`{"playlist_id":%s,"title":%s}`, jsonEsc(playlistID), t))
 	return err
 }
 
 // DeletePlaylist deletes a playlist the user owns.
 func (c *Client) DeletePlaylist(playlistID string) error {
-	_, err := c.gw("playlist.delete", fmt.Sprintf(`{"playlist_id":"%s"}`, playlistID))
+	_, err := c.gw("playlist.delete", fmt.Sprintf(`{"playlist_id":%s}`, jsonEsc(playlistID)))
 	return err
 }

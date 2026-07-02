@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
 )
@@ -63,8 +65,63 @@ func argFloat(args map[string]any, key string) (float64, error) {
 	return f, nil
 }
 
+// Optional-argument variants: present reports whether the key was given at
+// all, so absent keys are skipped while wrong-typed ones still error.
+func argStringOpt(args map[string]any, key string) (val string, present bool, err error) {
+	v, ok := args[key]
+	if !ok {
+		return "", false, nil
+	}
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return "", false, fmt.Errorf("argument %q must be a non-empty string", key)
+	}
+	return s, true, nil
+}
+
+func argFloatOpt(args map[string]any, key string) (val float64, present bool, err error) {
+	v, ok := args[key]
+	if !ok {
+		return 0, false, nil
+	}
+	f, ok := v.(float64) // JSON numbers decode to float64
+	if !ok {
+		return 0, false, fmt.Errorf("argument %q must be a number", key)
+	}
+	return f, true, nil
+}
+
+func argBoolOpt(args map[string]any, key string) (val bool, present bool, err error) {
+	v, ok := args[key]
+	if !ok {
+		return false, false, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, false, fmt.Errorf("argument %q must be a boolean", key)
+	}
+	return b, true, nil
+}
+
+// bit renders a bool as the "0"/"1" the control API's query params expect.
+func bit(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
 // stateText renders a (State, error) result as pretty JSON text.
 func stateText(st control.State, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	b, _ := json.MarshalIndent(st, "", "  ")
+	return string(b), nil
+}
+
+// eqText renders an (EQState, error) result as pretty JSON text.
+func eqText(st control.EQState, err error) (string, error) {
 	if err != nil {
 		return "", err
 	}
@@ -142,6 +199,59 @@ func buildTools(c *control.Client) []tool {
 			func(map[string]any) (string, error) {
 				raw, err := c.Playlists()
 				return string(raw), err
+			}},
+		{"get_eq", "Get the 10-band equalizer state: enabled, mono downmix, preamp, per-band gains (dB), band center frequencies and the available presets.", noArgs,
+			func(map[string]any) (string, error) { return eqText(c.EQ()) }},
+		{"set_eq", "Change the equalizer. Every argument is optional but at least one must be given; band and gain_db go together. Editing a band switches the preset to \"custom\".",
+			objSchema(map[string]any{
+				"enabled":   map[string]any{"type": "boolean", "description": "Turn the equalizer on or off"},
+				"mono":      map[string]any{"type": "boolean", "description": "Turn mono downmix on or off (independent of the EQ)"},
+				"preset":    map[string]any{"type": "string", "description": "Preset name: flat, bass-boost, bass-reducer, treble-boost, vocal, rock, pop, jazz, classical or electronic"},
+				"band":      map[string]any{"type": "integer", "minimum": 0, "maximum": 9, "description": "Band index 0..9 (31.5 Hz .. 16 kHz); requires gain_db"},
+				"gain_db":   map[string]any{"type": "number", "minimum": -12, "maximum": 12, "description": "Gain for band, in dB"},
+				"preamp_db": map[string]any{"type": "number", "minimum": -12, "maximum": 12, "description": "Output preamp in dB"},
+			}),
+			func(args map[string]any) (string, error) {
+				q := url.Values{}
+				if v, ok, err := argBoolOpt(args, "enabled"); err != nil {
+					return "", err
+				} else if ok {
+					q.Set("on", bit(v))
+				}
+				if v, ok, err := argBoolOpt(args, "mono"); err != nil {
+					return "", err
+				} else if ok {
+					q.Set("mono", bit(v))
+				}
+				if v, ok, err := argStringOpt(args, "preset"); err != nil {
+					return "", err
+				} else if ok {
+					q.Set("preset", v)
+				}
+				band, hasBand, err := argFloatOpt(args, "band")
+				if err != nil {
+					return "", err
+				}
+				gain, hasGain, err := argFloatOpt(args, "gain_db")
+				if err != nil {
+					return "", err
+				}
+				if hasBand != hasGain {
+					return "", fmt.Errorf("band and gain_db must be given together")
+				}
+				if hasBand {
+					q.Set("band", strconv.Itoa(int(band)))
+					q.Set("db", strconv.FormatFloat(gain, 'f', -1, 64))
+				}
+				if v, ok, err := argFloatOpt(args, "preamp_db"); err != nil {
+					return "", err
+				} else if ok {
+					q.Set("preamp", strconv.FormatFloat(v, 'f', -1, 64))
+				}
+				if len(q) == 0 {
+					return "", fmt.Errorf("give at least one of enabled, mono, preset, band+gain_db, preamp_db")
+				}
+				return eqText(c.SetEQ(q))
 			}},
 	}
 }

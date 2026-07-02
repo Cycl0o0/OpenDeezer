@@ -54,7 +54,9 @@ private fun readArl(): String? {
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun TvLoginScreen(busy: Boolean, error: String?, onArl: (String) -> Unit) {
+// onArl's auto = true when the ARL was captured from the WebView cookie jar
+// rather than typed, so a token that already failed isn't retried in a loop.
+fun TvLoginScreen(busy: Boolean, error: String?, onArl: (arl: String, auto: Boolean) -> Unit) {
     var manual by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().padding(40.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -73,7 +75,7 @@ fun TvLoginScreen(busy: Boolean, error: String?, onArl: (String) -> Unit) {
         }
 
         if (manual) {
-            TvManualArl(busy = busy, onArl = onArl, onBack = { manual = false })
+            TvManualArl(busy = busy, onArl = { onArl(it, false) }, onBack = { manual = false })
         } else {
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 AndroidView(
@@ -87,10 +89,18 @@ fun TvLoginScreen(busy: Boolean, error: String?, onArl: (String) -> Unit) {
                             isFocusable = true
                             isFocusableInTouchMode = true
                             webViewClient = object : WebViewClient() {
+                                // Redirect chains fire onPageFinished repeatedly;
+                                // submit each captured token at most once.
+                                private var sent: String? = null
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     CookieManager.getInstance().flush()
-                                    readArl()?.let { onArl(it) }
+                                    readArl()?.let {
+                                        if (it != sent) {
+                                            sent = it
+                                            onArl(it, true)
+                                        }
+                                    }
                                 }
                             }
                             loadUrl(LOGIN_URL)

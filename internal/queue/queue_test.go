@@ -140,6 +140,57 @@ func TestPeekNext(t *testing.T) {
 	}
 }
 
+func TestShuffleRepeatOffPlaysEachOnceThenStops(t *testing.T) {
+	q := New()
+	q.Set(tracks(10), 0)
+	q.SetShuffle(true)
+	seen := map[string]int{curID(q): 1}
+	for q.Next() {
+		seen[curID(q)]++
+	}
+	if len(seen) != 10 {
+		t.Fatalf("shuffle RepeatOff should visit all 10 tracks, got %d", len(seen))
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("track %q played %d times, want exactly 1 (no replacement)", id, n)
+		}
+	}
+}
+
+func TestShuffleRepeatAllReshufflesAndContinues(t *testing.T) {
+	q := New()
+	q.Set(tracks(5), 0)
+	q.SetShuffle(true)
+	q.SetRepeat(RepeatAll)
+	// Advancing far past one cycle must never stop, and must not repeat the
+	// just-finished track across a wrap.
+	prev := curID(q)
+	for i := 0; i < 100; i++ {
+		if !q.Next() {
+			t.Fatalf("shuffle RepeatAll should never stop (advance %d)", i)
+		}
+		if curID(q) == prev {
+			t.Fatalf("advance %d repeated %q back-to-back", i, prev)
+		}
+		prev = curID(q)
+	}
+}
+
+func TestSetIndexRecordsHistory(t *testing.T) {
+	q := New()
+	q.Set(tracks(10), 0)
+	q.Next() // 0->1
+	q.Next() // 1->2, now at index 2
+	q.SetIndex(7)
+	if q.Index() != 7 {
+		t.Fatalf("SetIndex -> %d want 7", q.Index())
+	}
+	if !q.Prev() || q.Index() != 2 {
+		t.Fatalf("Prev after pick should retrace to the playing track (2), got %d", q.Index())
+	}
+}
+
 func TestCycleRepeat(t *testing.T) {
 	q := New()
 	if q.CycleRepeat() != RepeatAll || q.CycleRepeat() != RepeatOne || q.CycleRepeat() != RepeatOff {

@@ -30,10 +30,11 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/update"
+	"github.com/Cycl0o0/OpenDeezer/internal/version"
 )
 
-// Version is the engine/app version.
-const Version = "1.6.0"
+// Version is the engine/app version (single source: internal/version).
+const Version = version.Number
 
 var (
 	mu       sync.Mutex
@@ -43,6 +44,7 @@ var (
 
 	curMu    sync.Mutex
 	curTrack deezer.Track
+	curGen   uint64 // bumped by setCurrentTrack; lets async meta fetches detect a newer track
 )
 
 // ---- JSON DTOs (same wire shape as the desktop GUIs) ----
@@ -127,9 +129,22 @@ func jstr(v any, err error) string {
 
 func curClient() *deezer.Client { mu.Lock(); defer mu.Unlock(); return client }
 func curPlayer() *audio.Player  { mu.Lock(); defer mu.Unlock(); return player }
-func setCurrentTrack(t deezer.Track) {
+func setCurrentTrack(t deezer.Track) uint64 {
 	curMu.Lock()
+	defer curMu.Unlock()
+	curGen++
 	curTrack = t
+	return curGen
+}
+
+// setCurrentTrackAt applies an async metadata enrichment only if no newer
+// setCurrentTrack landed since gen (a bare ID re-check would race a concurrent
+// Play and pin the previous track's metadata for the whole next track).
+func setCurrentTrackAt(gen uint64, t deezer.Track) {
+	curMu.Lock()
+	if curGen == gen {
+		curTrack = t
+	}
 	curMu.Unlock()
 }
 func currentTrack() deezer.Track {
@@ -169,6 +184,7 @@ func Init(arl string) bool {
 	client = c
 	mu.Unlock()
 	startServices(c)
+	refreshControlServer(c)
 	return true
 }
 
@@ -400,23 +416,55 @@ func searchJSON(tracks []deezer.Track, albums []deezer.Album, artists []deezer.A
 
 // ---- podcasts ----
 
+// jPodcast / jEpisode mirror corelib's DTOs: deezer.Podcast/Episode have no
+// json tags, so marshaling them raw would break the lowercase wire contract.
+type jPodcast struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ArtworkURL   string `json:"artworkUrl"`
+	EpisodeCount int    `json:"episodeCount"`
+}
+type jEpisode struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ArtworkURL  string `json:"artworkUrl"`
+	DurationMS  int64  `json:"durationMs"`
+	ReleaseDate string `json:"releaseDate"`
+	PodcastName string `json:"podcastName"`
+}
+
 func SearchPodcasts(q string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ps, err := c.SearchPodcasts(q)
-		return map[string]any{"podcasts": ps}, err
+		out := make([]jPodcast, len(ps))
+		for i, p := range ps {
+			out[i] = jPodcast{ID: p.ID, Name: p.Name, Description: p.Description, ArtworkURL: p.ArtworkURL, EpisodeCount: p.EpisodeCount}
+		}
+		return map[string]any{"podcasts": out}, err
 	})
 }
 func PodcastEpisodes(id string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		es, err := c.PodcastEpisodes(id)
-		return map[string]any{"episodes": es}, err
+		out := make([]jEpisode, len(es))
+		for i, e := range es {
+			out[i] = jEpisode{ID: e.ID, Title: e.Title, Description: e.Description, ArtworkURL: e.ArtworkURL, DurationMS: e.DurationMS, ReleaseDate: e.ReleaseDate, PodcastName: e.PodcastName}
+		}
+		return map[string]any{"episodes": out}, err
 	})
 }
 
-// PlayEpisode resolves + plays a podcast episode (plain stream). Sets the
-// episode as the current track immediately (id only), then asynchronously
-// enriches title / podcast name / artwork via the REST /episode endpoint.
-func PlayEpisode(id string) bool {
+// PlayEpisode resolves + plays a podcast episode (plain stream) with an unknown
+// duration. Prefer PlayEpisodeMS when the caller knows the duration.
+func PlayEpisode(id string) bool { return PlayEpisodeMS(id, 0) }
+
+// PlayEpisodeMS resolves + plays a podcast episode (plain stream). Sets the
+// episode as the current track immediately (id + duration, mirroring corelib
+// DZPlayEpisode — the player never derives duration from the stream), then
+// asynchronously enriches title / podcast name / artwork via REST /episode.
+func PlayEpisodeMS(id string, durationMS int64) bool {
 	c, p := curClient(), curPlayer()
 	if c == nil || p == nil {
 		return false
@@ -426,22 +474,20 @@ func PlayEpisode(id string) bool {
 		odlog.Warn("episode %s: %v", id, err)
 		return false
 	}
-	if err := p.Play(plan, 0); err != nil {
+	if err := p.Play(plan, durationMS); err != nil {
 		return false
 	}
-	setCurrentTrack(deezer.Track{ID: id})
-	go fetchEpisodeMeta(c, id)
+	gen := setCurrentTrack(deezer.Track{ID: id, DurationMS: durationMS})
+	go fetchEpisodeMeta(c, id, gen)
 	return true
 }
 
-func fetchEpisodeMeta(c *deezer.Client, id string) {
+func fetchEpisodeMeta(c *deezer.Client, id string, gen uint64) {
 	ep, err := c.EpisodeMeta(id)
 	if err != nil || ep.ID == "" {
 		return
 	}
-	if currentTrack().ID == id {
-		setCurrentTrack(ep.AsTrack())
-	}
+	setCurrentTrackAt(gen, ep.AsTrack())
 }
 
 // ---- library writes ----
@@ -503,14 +549,14 @@ func Play(trackID string, durationMS int64) bool {
 	if err := p.Play(plan, durationMS); err != nil {
 		return false
 	}
-	setCurrentTrack(deezer.Track{ID: trackID, DurationMS: durationMS})
-	go fetchTrackMeta(c, trackID)
+	gen := setCurrentTrack(deezer.Track{ID: trackID, DurationMS: durationMS})
+	go fetchTrackMeta(c, trackID, gen)
 	return true
 }
 
-func fetchTrackMeta(c *deezer.Client, id string) {
-	if t, err := c.Track(id); err == nil && t.ID != "" && currentTrack().ID == id {
-		setCurrentTrack(t)
+func fetchTrackMeta(c *deezer.Client, id string, gen uint64) {
+	if t, err := c.Track(id); err == nil && t.ID != "" {
+		setCurrentTrackAt(gen, t)
 	}
 }
 
@@ -560,6 +606,15 @@ func Stop() {
 	}
 	if p := curPlayer(); p != nil {
 		p.Stop()
+	}
+}
+
+// SetOutputSuspended suspends (true) or resumes (false) the local OS audio
+// device without touching playback state — for audio-focus/route handling on
+// mobile. Local-only: it never routes to a Connect device.
+func SetOutputSuspended(on bool) {
+	if p := curPlayer(); p != nil {
+		p.SetOutputSuspended(on)
 	}
 }
 func Seek(ms int64) {
@@ -642,6 +697,7 @@ func NowPlaying() string {
 			return jstr(jTrack{
 				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, ArtistID: t.ArtistID,
 				AlbumName: t.Album, Explicit: t.Explicit, DurationMS: t.DurationMS,
+				ArtworkURL: t.ArtworkURL,
 			}, nil)
 		}
 		return jstr(map[string]any{}, nil)
@@ -676,22 +732,34 @@ func Fetch(url string) []byte {
 // ---- engine-hosted services (control API + discovery) ----
 
 var (
-	servicesOnce sync.Once
-	ctrlSrv      *control.Server
-	hostAdv      *discovery.Responder // mDNS advertiser while Connect host is enabled
-	clientID     = runtime.GOOS       // "android"
-	deviceLabel  = "OpenDeezer (Android)"
+	servicesOnce  sync.Once
+	ctrlSrv       *control.Server
+	ctrlCfg       control.Config       // config ctrlSrv was created with (for account-switch rebuilds)
+	ctrlSrvClient *deezer.Client       // client snapshotted into ctrlSrv by control.New
+	hostAdv       *discovery.Responder // mDNS advertiser while Connect host is enabled
+	clientID      = runtime.GOOS       // "android"
+	deviceLabel   = "OpenDeezer (Android)"
 )
+
+// engineEQ bridges the control API's /eq endpoint to the engine player.
+func engineEQ() *control.EQ {
+	return control.PlayerEQ(func() control.EQController {
+		if p := curPlayer(); p != nil {
+			return p
+		}
+		return nil
+	}, audio.EQPresetNames)
+}
 
 func startServices(c *deezer.Client) {
 	servicesOnce.Do(func() {
 		if cfg := config.LoadControl(); cfg.Enabled {
-			ctrlSrv = control.New(
-				control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount},
-				engineState, engineAccount, engineCommands(), c,
-			)
+			ccfg := control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount}
+			ctrlSrv = control.New(ccfg, engineState, engineAccount, engineCommands(), c)
+			ctrlCfg, ctrlSrvClient = ccfg, c
 			ctrlSrv.SetVersion(Version)
 			ctrlSrv.SetClientInfo(clientID, deviceLabel)
+			ctrlSrv.SetEQ(engineEQ())
 			if err := ctrlSrv.Start(); err == nil {
 				if !config.IsLoopbackAddr(cfg.Addr) {
 					if _, port, e := net.SplitHostPort(ctrlSrv.Addr()); e == nil {
@@ -703,6 +771,49 @@ func startServices(c *deezer.Client) {
 			}
 		}
 	})
+}
+
+// refreshControlServer rebuilds the control server around the current client
+// after a re-login: control.New snapshots the *deezer.Client for the browse
+// endpoints (/playlists, /search), so without this an account switch keeps
+// serving the previous account's library on its stale session. Pairing
+// sessions are dropped deliberately — a phone paired under the old account
+// must re-pair. No-op when there is no server or it already holds c.
+func refreshControlServer(c *deezer.Client) {
+	mu.Lock()
+	srv, cfg := ctrlSrv, ctrlCfg
+	stale := srv != nil && ctrlSrvClient != c
+	mu.Unlock()
+	if !stale {
+		return
+	}
+	cfg.Addr = srv.Addr() // keep the actual bound host:port (cfg may have said :0)
+	pairing := srv.PairingActive()
+	srv.Close()
+	s := control.New(cfg, engineState, engineAccount, engineCommands(), c)
+	s.SetVersion(Version)
+	s.SetClientInfo(clientID, deviceLabel)
+	s.SetEQ(engineEQ())
+	if err := s.Start(); err != nil {
+		odlog.Warn("control api restart: %v", err)
+		mu.Lock()
+		if ctrlSrv == srv {
+			ctrlSrv = nil
+		}
+		adv := hostAdv
+		hostAdv = nil
+		mu.Unlock()
+		if adv != nil {
+			adv.Close() // the advertised port is gone
+		}
+		return
+	}
+	if pairing {
+		s.EnablePairing() // fresh code; old sessions must not carry across accounts
+	}
+	mu.Lock()
+	ctrlSrv, ctrlSrvClient = s, c
+	mu.Unlock()
 }
 
 func advertInfo() discovery.Info {
@@ -778,7 +889,19 @@ func engineCommands() control.Commands {
 				p.SetVolume(v)
 			}
 		},
-		PlayTrack:    func(id string) { Play(id, 0) },
+		PlayTrack: func(id string) {
+			// Fetch the real duration first (mirrors corelib enginePlayTrack):
+			// playing with 0 leaves /status durationMs at 0, and controllers'
+			// end-of-track detectors require DurationMS > 0 — auto-advance
+			// would stall after the first track.
+			var durationMS int64
+			if c := curClient(); c != nil {
+				if t, err := c.Track(id); err == nil {
+					durationMS = t.DurationMS
+				}
+			}
+			Play(id, durationMS)
+		},
 		PlayPlaylist: func(id string) {},
 		SetSleepTimer: func(minutes int, eot bool) {
 			if p := curPlayer(); p != nil {
@@ -906,13 +1029,17 @@ func ConnectDevice(addr string) bool {
 		return false
 	}
 	rc := control.NewClient(base, "", c.UserID())
-	if _, err := rc.Whoami(); err != nil {
+	// /whoami is served unauthenticated by design, so it can't prove the peer is
+	// controllable. Require an authed /status to succeed BEFORE stopping local
+	// playback: a token-protected or different-account peer would otherwise 401
+	// every command, leaving the user with dead audio and a "connected" UI.
+	st, err := rc.Status()
+	if err != nil {
 		return false
 	}
 	if p := curPlayer(); p != nil {
 		p.Stop()
 	}
-	st, _ := rc.Status()
 
 	// Sync the engine's current-track with what's playing on the remote,
 	// so now-playing / lyrics reflect the remote immediately.
@@ -921,6 +1048,7 @@ func ConnectDevice(addr string) bool {
 			ID: st.Track.ID, Name: st.Track.Title, DurationMS: st.Track.DurationMS,
 			Artists:   []deezer.Artist{{ID: st.Track.ArtistID, Name: st.Track.Artist}},
 			AlbumName: st.Track.Album, Explicit: st.Track.Explicit,
+			ArtworkURL: st.Track.ArtworkURL,
 		})
 	}
 
@@ -1028,6 +1156,7 @@ func remotePoller(rc *control.Client, stop chan struct{}) {
 					ID: st.Track.ID, Name: st.Track.Title, DurationMS: st.Track.DurationMS,
 					Artists:   []deezer.Artist{{ID: st.Track.ArtistID, Name: st.Track.Artist}},
 					AlbumName: st.Track.Album, Explicit: st.Track.Explicit,
+					ArtworkURL: st.Track.ArtworkURL,
 				})
 			}
 		}
@@ -1105,15 +1234,18 @@ func mobileEnsureWebRemoteServer() {
 // the browser phone remote can still pair on top (a valid pairing session is
 // checked before same-account auth). Returns nil on bind failure.
 func mobileStartServer(addr string) *control.Server {
-	s := control.New(
-		control.Config{Addr: addr, SameAccountOnly: true},
-		engineState, engineAccount, engineCommands(), curClient(),
-	)
+	cfg := control.Config{Addr: addr, SameAccountOnly: true}
+	c := curClient()
+	s := control.New(cfg, engineState, engineAccount, engineCommands(), c)
 	s.SetVersion(Version)
 	s.SetClientInfo(clientID, deviceLabel)
+	s.SetEQ(engineEQ())
 	if err := s.Start(); err != nil {
 		return nil
 	}
+	mu.Lock()
+	ctrlCfg, ctrlSrvClient = cfg, c
+	mu.Unlock()
 	return s
 }
 
@@ -1259,4 +1391,96 @@ func mobileIsLoopback(addr string) bool {
 		return ip.IsLoopback()
 	}
 	return false
+}
+
+// ---- equalizer + mono downmix (v1.7) ----
+
+// EQJSON returns the equalizer state:
+// {enabled,mono,preampDb,gainsDb:[10],preset,bands:[10],presets:[...]}.
+// Same wire shape as corelib's DZEQJSON so every client renders the same UI.
+func EQJSON() string {
+	p := curPlayer()
+	if p == nil {
+		return jstr(nil, fmt.Errorf("engine not ready"))
+	}
+	return jstr(map[string]any{
+		"enabled":  p.EQEnabled(),
+		"mono":     p.MonoDownmix(),
+		"preampDb": p.EQPreampDB(),
+		"gainsDb":  p.EQGains(),
+		"preset":   p.EQPreset(),
+		"bands":    p.EQBands(),
+		"presets":  audio.EQPresetNames,
+	}, nil)
+}
+
+// SetEQJSON applies a partial EQ update. Recognized keys (all optional):
+// enabled (bool), mono (bool), preampDb (number), gainsDb ([10]number),
+// preset (string), band ({"index":N,"gainDb":X}). Returns false if any present
+// key failed to apply.
+func SetEQJSON(js string) bool {
+	var req struct {
+		Enabled  *bool      `json:"enabled"`
+		Mono     *bool      `json:"mono"`
+		PreampDB *float64   `json:"preampDb"`
+		GainsDB  *[]float64 `json:"gainsDb"`
+		Preset   *string    `json:"preset"`
+		Band     *struct {
+			Index  int     `json:"index"`
+			GainDB float64 `json:"gainDb"`
+		} `json:"band"`
+	}
+	if err := json.Unmarshal([]byte(js), &req); err != nil {
+		return false
+	}
+	p := curPlayer()
+	if p == nil {
+		return false
+	}
+	ok := true
+	if req.Enabled != nil {
+		p.SetEQEnabled(*req.Enabled)
+	}
+	if req.Mono != nil {
+		p.SetMonoDownmix(*req.Mono)
+	}
+	if req.PreampDB != nil {
+		p.SetEQPreamp(*req.PreampDB)
+	}
+	if req.Preset != nil && p.SetEQPreset(*req.Preset) != nil {
+		ok = false
+	}
+	if req.GainsDB != nil && p.SetEQGains(*req.GainsDB) != nil {
+		ok = false
+	}
+	if req.Band != nil && p.SetEQGain(req.Band.Index, req.Band.GainDB) != nil {
+		ok = false
+	}
+	return ok
+}
+
+// ---- logout ----
+
+// Logout tears the engine session down: stops playback, closes the control
+// server (dropping web-remote pairing sessions and the old account's
+// same-account auth), stops Connect-host advertising, and forgets the Deezer
+// client. A later Init starts services fresh for the new account.
+func Logout() {
+	if p := curPlayer(); p != nil {
+		p.Stop()
+	}
+	mu.Lock()
+	srv := ctrlSrv
+	adv := hostAdv
+	ctrlSrv, ctrlSrvClient, hostAdv = nil, nil, nil
+	ctrlCfg = control.Config{}
+	client = nil
+	servicesOnce = sync.Once{} // allow startServices on the next Init
+	mu.Unlock()
+	if adv != nil {
+		adv.Close()
+	}
+	if srv != nil {
+		srv.Close()
+	}
 }

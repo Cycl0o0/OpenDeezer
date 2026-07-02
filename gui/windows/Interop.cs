@@ -109,9 +109,16 @@ internal static class Smtc
     [DllImport("combase.dll")] private static extern int WindowsDeleteString(IntPtr hstring);
     [DllImport("combase.dll")] private static extern int RoGetActivationFactory(IntPtr activatableClassId, [In] ref Guid iid, out IntPtr factory);
 
-    [ComImport, Guid("ddb0472d-c911-4a1f-86d9-dc3d71a95f5a"), InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
+    // Declared IUnknown-based: .NET 5+ removed built-in WinRT interop, so casting
+    // an RCW to an InterfaceIsIInspectable interface throws PlatformNotSupported.
+    // The three IInspectable vtable slots that precede GetForWindow in the native
+    // interface are padded with placeholders (never called from here).
+    [ComImport, Guid("ddb0472d-c911-4a1f-86d9-dc3d71a95f5a"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface ISystemMediaTransportControlsInterop
     {
+        void GetIids();             // IInspectable slot 3 (placeholder)
+        void GetRuntimeClassName(); // IInspectable slot 4 (placeholder)
+        void GetTrustLevel();       // IInspectable slot 5 (placeholder)
         [PreserveSig] int GetForWindow(IntPtr appWindow, [In] ref Guid riid, out IntPtr mediaTransportControl);
     }
 

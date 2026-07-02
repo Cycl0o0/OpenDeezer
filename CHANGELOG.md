@@ -4,6 +4,115 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0]
+
+### Added
+- **10-band graphic equalizer** (all clients): peaking-filter bands at the classic
+  31 Hz – 16 kHz octave centers, ±12 dB each, with ten presets (flat, bass boost,
+  bass reducer, treble boost, vocal, rock, pop, jazz, classical, electronic — any
+  manual tweak becomes "custom") and a ±12 dB preamp. The DSP runs in the shared
+  Go engine's realtime path (lock-free, allocation-free biquad cascade), and the
+  state persists engine-side, so the TUI (`E` toggle, `ctrl+e` preset), the
+  macOS/iOS/Android (phone + TV)/Windows/GNOME/KDE apps, the phone web remote and
+  the control API (`GET`/`POST /eq`) all see one shared equalizer. Exposed in the
+  SDK (`player.SetEQ*`) and as `get_eq`/`set_eq` MCP tools.
+- **Mono downmix** (all clients): folds stereo to mono for single-speaker setups
+  and accessibility; lives next to the equalizer everywhere, independent of it.
+- **Podcast episodes now carry their show name** over every client wire
+  (`podcastName`), so episode lists can show it consistently.
+- **Engine-side logout** on Android/iOS: signing out now also logs the engine
+  out and shuts down the Connect host/web-remote servers, so the old account's
+  library and credentials are no longer reachable over the LAN after a switch.
+
+### Fixed
+An audited sweep (every finding independently verified before fixing) across the
+core and all eight clients:
+
+- **Audio engine**: seeking works again in the last ~4 s of a track (and in
+  short fully-decoded tracks); seeks no longer play 200–400 ms of stale pre-seek
+  audio; crossfade no longer double-counts the incoming track's opening
+  (position drift + every-other-transition overlap) and applies each track's own
+  ReplayGain inside the fade window; switching output devices can no longer run
+  two realtime callbacks at once; unplugging the output device falls back to the
+  system default (or surfaces an error) instead of wedging in "Playing"; podcasts
+  encoded at rates other than 44.1 kHz are resampled instead of playing at the
+  wrong speed/pitch; track downloads use a dedicated HTTP client with sane
+  timeouts and are cancellable (a stalled CDN read no longer leaks a goroutine +
+  full track buffer); two races around gapless advance and sleep-timer re-arm.
+- **Deezer client**: expired license tokens are refreshed and real `get_url`
+  errors surfaced (no more blanket "track unavailable"); share URLs with query
+  strings resolve to the right track; gateway errors during login are no longer
+  misreported as "ARL expired"; REST/search error envelopes are checked instead
+  of decoding as empty success; IDs are JSON-escaped in gw request bodies.
+- **TUI**: browsing a track list no longer clobbers the live play queue;
+  enabling the Web Remote preserves the configured token (MCP/token clients kept
+  working); repeated Web-Remote toggles no longer leak servers; slow track
+  resolves can't override a newer selection; stale preloads after
+  shuffle/repeat changes; the device picker esc-trap; footer state after an
+  end-of-track sleep stop; remote-screen lyrics key and quit-cleanup.
+- **Queue/config**: shuffle now plays a true permutation (no repeats-before-
+  exhaustion, honors repeat-off, reshuffles on repeat-all) and records manual
+  jumps in history; config writes are atomic (a crash can't truncate the control
+  token and silently downgrade auth); IPv6 Connect peers work; `false`/`no`
+  disable values parse correctly; log-level parsing is case-insensitive.
+- **Control API**: Host-header validation blocks DNS-rebinding against the
+  localhost no-auth mode.
+- **MPRIS**: no longer crashes the app when the D-Bus connection drops; Pause()
+  pauses instead of toggling; Seeked is emitted; per-track `mpris:trackid`;
+  redundant PropertiesChanged storms stopped; Quit() works.
+- **Discord**: connecting no longer blocks the player loop; the IPC socket is
+  drained (no more buffer-full stalls); progress updates after seeks and on
+  repeat-one; 1-character titles and empty-artist pause states render correctly.
+- **macOS**: gapless/crossfade auto-advance no longer snaps the UI back to the
+  previous track; Connect-routed transport controls moved off the main thread
+  (no more 15 s beachballs); browsing Playlists/Search no longer wipes the play
+  queue; opening Settings doesn't silently rewrite the control-API config;
+  volume stays in sync with remote changes; stale gapless preloads are cleared
+  on shuffle/repeat; web-login retry works after a failed ARL verify.
+- **GNOME**: Play/Pause during a podcast episode pauses (instead of starting an
+  unrelated queue track); Connect-routed transport + disconnect calls moved off
+  the GTK main thread; now-playing metadata no longer blanks after a race;
+  playlist names render literally (Pango markup injection); manual-ARL login
+  re-enables after use; MPRIS Next honors shuffle/repeat; duplicate playlist
+  rows from stale fetches; dead Play button after the queue finishes.
+- **KDE**: two use-after-frees (podcast cover-art callbacks, login-helper crash
+  path) and one at-quit crash; Connect-routed transport moved off the GUI
+  thread; Settings OK no longer silently disables an active Phone Remote.
+- **Windows**: media keys / SMTC overlay work on .NET 8 (interop used an
+  interface type that throws on .NET 5+); Connect-routed transport moved off the
+  UI thread; concurrent track starts serialized (no more wrong-track races with
+  stale preloads); Settings apply-on-LostFocus no longer kills an active Phone
+  Remote; stale search/navigation responses can't overwrite newer pages.
+- **Android**: playback survives backgrounding (foreground media service +
+  MediaSession + audio focus — pauses for calls, resumes after); Podcasts work
+  (wire-contract mismatch made every list come back blank); Connect-routed
+  controls no longer freeze the UI (ANR); sign-out isn't undone by a stale
+  WebView cookie; double-advance race after manual track selection; TV error
+  states show a Retry instead of a blank screen; queue empty-state layout.
+- **iOS**: audio session handling reworked — playback recovers after phone
+  calls/Siri/other apps (interruption + route-change handling), the session
+  activates on play instead of at launch (no longer pauses other apps' music on
+  open), and the engine's output is suspended when idle so the app can actually
+  sleep in the background; repeat-one no longer halts at end of track; Connect
+  discovery works on physical devices (multicast entitlement); podcast episodes
+  show real durations; artwork fetches no longer block transport controls;
+  manual track selection can't be skipped by a stale finish signal; image cache
+  is bounded and responds to memory pressure.
+- **MCP server**: JSON-RPC compliance (parse-error responses, notification
+  handling, non-zero exit on stdin failure).
+- **SDK**: `DownloadTrackContext` (cancellation + timeouts); Connect host
+  startup no longer leaks a server on partial failure; same-account auth and
+  device-label documentation/behavior fixes; example data races fixed.
+- **Packaging/CI**: AUR/Homebrew/winget/Flatpak manifests track releases again
+  (were pinned at 1.0.0); Android release APKs support a stable signing key via
+  repo secrets (upgrades across releases); KDE flatpak launches from the app
+  menu; unified-build icon names; release-checksum job no longer emits a stale
+  self-reference on re-runs; `make cross` Windows target fixed for the cgo
+  audio engine.
+- **Version reporting**: the desktop GUIs' embedded engine and the MCP server
+  reported 1.5.2 on 1.6.0 builds (perpetual false "update available" banner);
+  all version constants now track the release.
+
 ## [1.6.0]
 
 ### Added

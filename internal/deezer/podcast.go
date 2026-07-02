@@ -104,7 +104,7 @@ func (c *Client) PodcastEpisodeStream(episodeID string) (*StreamPlan, error) {
 	if !c.LoggedIn() {
 		return nil, fmt.Errorf("not logged in")
 	}
-	b, err := c.gw("episode.getData", fmt.Sprintf(`{"episode_id":"%s"}`, episodeID))
+	b, err := c.gw("episode.getData", fmt.Sprintf(`{"episode_id":%s}`, jsonEsc(episodeID)))
 	if err != nil {
 		return nil, err
 	}

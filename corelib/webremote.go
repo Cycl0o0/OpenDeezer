@@ -111,6 +111,7 @@ func DZSetControlConfig(enabled C.int, addr *C.char, token *C.char) {
 	)
 	srv.SetVersion(coreVersion)
 	srv.SetClientInfo(id, dev)
+	srv.SetEQ(engineEQ())
 	if err := srv.Start(); err != nil {
 		return
 	}
@@ -242,13 +243,21 @@ func ensureWebRemoteServer() {
 	c := curClient()
 	id, dev := clientInfo()
 
+	// Preserve any configured token / same-account auth so MCP and Connect keep
+	// working after the web remote rebinds the server — Server.auth() evaluates
+	// the pairing session token first, so phone pairing coexists with these.
+	// Dropping them would silently downgrade a token-protected control API to
+	// session-only auth and 401 every MCP/Connect request until restart.
+	cfg := config.LoadControl()
+
 	startNew := func(addr string) *control.Server {
 		s := control.New(
-			control.Config{Addr: addr, WebRemote: true},
+			control.Config{Addr: addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount, WebRemote: true},
 			engineState, engineAccount, engineCommands(), c,
 		)
 		s.SetVersion(coreVersion)
 		s.SetClientInfo(id, dev)
+		s.SetEQ(engineEQ())
 		if err := s.Start(); err != nil {
 			return nil
 		}

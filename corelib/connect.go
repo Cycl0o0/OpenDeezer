@@ -122,14 +122,20 @@ func DZDiscoverDevices(timeoutMS C.int) *C.char {
 	if devs == nil {
 		devs = []discovery.Device{}
 	}
-	devs = mergeConfiguredPeers(devs)
+	devs = mergeConfiguredPeers(devs, time.Duration(ms)*time.Millisecond)
 	return jsonStr(devs, nil)
 }
 
 // mergeConfiguredPeers adds manually-listed peers (config) not already found by
 // discovery — querying each /whoami for its name/type/version. Lets Connect work
 // over unicast-only networks (Tailscale/VPN) that carry no multicast/broadcast.
-func mergeConfiguredPeers(devs []discovery.Device) []discovery.Device {
+//
+// The /whoami probes run concurrently and are bounded by timeout: on a VPN mesh
+// an offline peer silently drops packets, so a sequential probe would block the
+// whole call on the control client's 15s HTTP timeout per dead peer. Peers that
+// don't answer in time are still listed by address (without metadata) so the
+// user can connect anyway — DZConnectDevice does its own Whoami before routing.
+func mergeConfiguredPeers(devs []discovery.Device, timeout time.Duration) []discovery.Device {
 	peers := config.LoadPeers()
 	if len(peers) == 0 {
 		return devs
@@ -142,22 +148,56 @@ func mergeConfiguredPeers(devs []discovery.Device) []discovery.Device {
 	if c := curClient(); c != nil {
 		uid = c.UserID()
 	}
+	// Collect the peers still to probe (dedup against discovery and each other).
+	type probe struct{ base, hp string }
+	var todo []probe
 	for _, p := range peers {
 		base, hp := config.NormalizePeer(p)
 		if base == "" || seen[hp] {
 			continue
 		}
 		seen[hp] = true
-		who, err := control.NewClient(base, "", uid).Whoami()
-		name := hp
-		client, version := "", ""
-		if err == nil {
-			if who.Name != "" {
-				name = who.Name
+		todo = append(todo, probe{base, hp})
+	}
+	if len(todo) == 0 {
+		return devs
+	}
+	// Probe concurrently; a buffered channel means a late responder never blocks
+	// its goroutine after we've stopped collecting.
+	type result struct {
+		hp, name, client, version string
+	}
+	results := make(chan result, len(todo))
+	for _, pr := range todo {
+		go func(pr probe) {
+			r := result{hp: pr.hp, name: pr.hp}
+			if who, err := control.NewClient(pr.base, "", uid).Whoami(); err == nil {
+				if who.Name != "" {
+					r.name = who.Name
+				}
+				r.client, r.version = who.Client, who.Version
 			}
-			client, version = who.Client, who.Version
+			results <- r
+		}(pr)
+	}
+	got := map[string]result{}
+	deadline := time.After(timeout)
+collect:
+	for range todo {
+		select {
+		case r := <-results:
+			got[r.hp] = r
+		case <-deadline:
+			break collect
 		}
-		devs = append(devs, discovery.Device{Name: name, Addr: hp, Client: client, Version: version})
+	}
+	// Append in the configured peer order; peers that didn't answer get addr-only.
+	for _, pr := range todo {
+		if r, ok := got[pr.hp]; ok {
+			devs = append(devs, discovery.Device{Name: r.name, Addr: r.hp, Client: r.client, Version: r.version})
+		} else {
+			devs = append(devs, discovery.Device{Name: pr.hp, Addr: pr.hp})
+		}
 	}
 	return devs
 }
@@ -289,6 +329,15 @@ func remotePoller(rc *control.Client, stop chan struct{}) {
 func setRemoteState(st control.State) {
 	mu.Lock()
 	if remoteCli != nil {
+		// A command's status response can be the first observer of the remote's
+		// track end (playing -> stopped near the end), so detect it here too — not
+		// only in remotePoller — and bump finished to fire this device's
+		// auto-advance. Otherwise the next poll sees stopped -> stopped and never
+		// advances. The position guard keeps a user-initiated stop from advancing.
+		if remoteSt.State == "playing" && st.State == "stopped" &&
+			remoteSt.DurationMS > 0 && remoteSt.PositionMS >= remoteSt.DurationMS-2000 {
+			finished++
+		}
 		remoteSt = st
 	}
 	mu.Unlock()

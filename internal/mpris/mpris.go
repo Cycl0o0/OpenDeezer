@@ -22,6 +22,7 @@ type Commands struct {
 	Next        func()
 	Prev        func()
 	Stop        func()
+	Quit        func()                            // exit the app; nil => CanQuit advertised false
 	Seek        func(offsetUS int64)              // relative
 	SetPosition func(trackID string, posUS int64) // absolute
 }

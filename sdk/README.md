@@ -207,7 +207,7 @@ Check `Whoami.Auth` on the target device to know which credential to supply:
 |---|---|
 | `"token"` | `token="<bearer-token>"` |
 | `"account"` | `accountID="<your Deezer user id>"` |
-| `"session"` | Use `control.NewClient` and pair via GET /remote |
+| `"session"` | Not controllable from `RemoteClient`/`control.Client`; driveable only from the device's embedded browser remote, which sends a paired session token in the `X-OpenDeezer-Session` header (stored in localStorage, not a cookie) |
 | `"none"` | Empty strings |
 
 ---

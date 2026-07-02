@@ -77,6 +77,18 @@ extern int       DZSleepTimerActive(void);
 extern int       DZSleepTimerEndOfTrack(void);
 extern long long DZSleepTimerRemainingMS(void);
 
+/* 10-band equalizer + mono downmix — all state (band table, presets, debounced
+ * persistence) lives engine-side; this file only renders controls. Declared
+ * explicitly (see DZSetRepeat above) so this file compiles against an older
+ * libdeezercore.h.
+ *   DZEQJSON: {enabled,mono,preampDb,gainsDb:[10],preset,bands:[10],presets:[...]};
+ *     free the result with DZFree.
+ *   DZSetEQJSON: partial update — enabled/mono (bool), preampDb (number),
+ *     gainsDb ([10]number), preset (string), band ({"index":N,"gainDb":X});
+ *     returns 1 on success, 0 if any present key failed to apply. */
+extern char *DZEQJSON(void);
+extern int   DZSetEQJSON(char *js);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -185,6 +197,7 @@ typedef struct {
   AdwDialog            *addpl_dialog;
   GtkWidget            *addpl_list;     /* the boxed listbox of playlists */
   char                 *addpl_track_id; /* track being added */
+  guint                 addpl_gen;      /* drops stale async playlist fetches */
 
   /* podcasts (an AdwDialog: search shows -> episodes -> play) */
   AdwDialog            *pod_dialog;
@@ -328,7 +341,7 @@ static void settings_save(App *a);
 static DzTrack *mpris_current_track(App *a);
 static void mpris_notify_track(App *a);
 static void mpris_notify_status(App *a, const char *status);
-static void mpris_notify_volume(App *a);
+static void mpris_notify_volume(App *a, double vol);
 static void mpris_emit_seeked(App *a, gint64 pos_ms);
 static void mpris_setup(App *a);
 
@@ -362,8 +375,13 @@ static void lyrics_highlight(App *a);
  * ------------------------------------------------------------------------- */
 
 static void toast(App *a, const char *msg) {
-  if (a && a->toast)
-    adw_toast_overlay_add_toast(a->toast, adw_toast_new(msg));
+  if (a && a->toast) {
+    /* AdwToast titles are Pango markup — escape so playlist/track/account
+     * names containing & or < render literally instead of breaking the toast */
+    char *esc = g_markup_escape_text(msg ? msg : "", -1);
+    adw_toast_overlay_add_toast(a->toast, adw_toast_new(esc));
+    g_free(esc);
+  }
 }
 
 G_GNUC_PRINTF(2, 3)
@@ -422,6 +440,14 @@ static gboolean jbool(JsonObject *o, const char *key) {
       return json_node_get_boolean(n);
   }
   return FALSE;
+}
+static double jdouble(JsonObject *o, const char *key) {
+  if (o && json_object_has_member(o, key)) {
+    JsonNode *n = json_object_get_member(o, key);
+    if (JSON_NODE_HOLDS_VALUE(n))
+      return json_node_get_double(n); /* converts int-typed nodes too */
+  }
+  return 0.0;
 }
 
 static DzTrack *dz_track_from_json(JsonObject *o) {
@@ -642,6 +668,7 @@ static void load_async(App *a, LoadKind kind, const char *arg) {
 static GtkWidget *make_side_row(const char *title, const char *subtitle, const char *icon,
                                 int kind, const char *id) {
   GtkWidget *row = adw_action_row_new();
+  adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
   if (subtitle && *subtitle)
     adw_action_row_set_subtitle(ADW_ACTION_ROW(row), subtitle);
@@ -735,6 +762,72 @@ static void sidebar_clear_playlists(App *a) {
 static void sidebar_refresh_playlists(App *a) {
   sidebar_clear_playlists(a);
   load_playlists_async(a);
+}
+
+/* ---------------------------------------------------------------------------
+ * transport dispatch — when playback is routed to another device via OpenDeezer
+ * Connect, the transport DZ* calls (pause/resume/stop/seek/volume/repeat/
+ * shuffle) each perform a blocking HTTP request to the remote (15 s timeout),
+ * so they must never run on the GTK main loop. A single-thread pool keeps them
+ * off the main loop AND in submission order (a GTask worker pool would not
+ * guarantee ordering between e.g. two quick toggles); results are
+ * fire-and-forget — the 300 ms tick reconciles the UI with the engine state.
+ * ------------------------------------------------------------------------- */
+
+typedef enum {
+  TR_TOGGLE_PAUSE, TR_RESUME, TR_PAUSE, TR_STOP,
+  TR_SEEK, TR_SET_VOLUME, TR_SET_REPEAT, TR_SET_SHUFFLE
+} TransportOp;
+typedef struct { TransportOp op; long long arg; } TransportMsg;
+
+static gint transport_vol_milli;  /* latest requested volume ×1000 (atomic) */
+static gint transport_vol_queued; /* a TR_SET_VOLUME is already queued (coalesce) */
+
+static void transport_run(gpointer item, gpointer user_data) {
+  (void)user_data;
+  TransportMsg *m = item;
+  switch (m->op) {
+    case TR_TOGGLE_PAUSE: DZTogglePause(); break;
+    case TR_RESUME:       DZResume(); break;
+    case TR_PAUSE:        DZPause(); break;
+    case TR_STOP:         DZStop(); break;
+    case TR_SEEK:         DZSeek(m->arg); break;
+    case TR_SET_VOLUME:
+      /* re-arm BEFORE reading so a set arriving mid-call queues a fresh op */
+      g_atomic_int_set(&transport_vol_queued, 0);
+      DZSetVolume(g_atomic_int_get(&transport_vol_milli) / 1000.0);
+      break;
+    case TR_SET_REPEAT:   DZSetRepeat((int)m->arg); break;
+    case TR_SET_SHUFFLE:  DZSetShuffle((int)m->arg); break;
+  }
+  g_free(m);
+}
+
+static GThreadPool *transport_pool; /* created lazily, only from the main thread */
+
+static void transport_call(TransportOp op, long long arg) {
+  if (!transport_pool)
+    transport_pool = g_thread_pool_new(transport_run, NULL, 1 /* ordered */, FALSE, NULL);
+  TransportMsg *m = g_new0(TransportMsg, 1);
+  m->op = op;
+  m->arg = arg;
+  g_thread_pool_push(transport_pool, m, NULL);
+}
+
+/* Volume drags emit continuously, so queue at most one op and let it read the
+ * latest requested value when it actually runs (drops intermediate values). */
+static void transport_set_volume(double v) {
+  g_atomic_int_set(&transport_vol_milli, (gint)(v * 1000.0));
+  if (g_atomic_int_compare_and_exchange(&transport_vol_queued, 0, 1))
+    transport_call(TR_SET_VOLUME, 0);
+}
+
+/* TRUE while playback is routed to a remote device (cheap cached read). */
+static gboolean dz_routed(void) {
+  char *addr = DZConnectedDevice(); /* malloc'd; "" = local */
+  gboolean routed = addr && *addr;
+  if (addr) DZFree(addr);
+  return routed;
 }
 
 /* ---------------------------------------------------------------------------
@@ -888,13 +981,25 @@ static int next_index(App *a, gboolean manual) {
   return nxt;
 }
 
+/* Shared play/pause policy for the bar button and MPRIS Play/PlayPause. When
+ * something is actually playing/paused (a queue track, a podcast episode, a
+ * remote/control-API track) it toggles; toggling a stopped player is a no-op,
+ * so a queue that ran out restarts the current row instead, and an idle queue
+ * starts at the first row. Episodes have no queue row — never fall through to
+ * play_relative for them (that would start an unrelated track). */
+static void transport_play_pause(App *a) {
+  int st = DZState(); /* 0 stopped,1 loading,2 playing,3 paused,4 error */
+  if (st == 2 || st == 3)
+    transport_call(TR_TOGGLE_PAUSE, 0);
+  else if (!a->playing_episode && a->current_index >= 0 && st != 1)
+    play_index(a, a->current_index); /* stopped/errored: restart the last row */
+  else if (!a->playing_episode && a->current_index < 0)
+    play_relative(a, 1); /* nothing playing yet: start the first row */
+}
+
 static void on_play_clicked(GtkButton *b, gpointer data) {
   (void)b;
-  App *a = data;
-  if (a->current_index < 0)
-    play_relative(a, 1); /* nothing playing yet: start the first row */
-  else
-    DZTogglePause();
+  transport_play_pause((App *)data);
 }
 static void on_prev_clicked(GtkButton *b, gpointer data) { (void)b; play_relative(data, -1); }
 static void on_next_clicked(GtkButton *b, gpointer data) {
@@ -1192,6 +1297,332 @@ static AdwPreferencesGroup *build_remote_control_group(void) {
   return remote;
 }
 
+/* ---- Equalizer group (10-band EQ + mono downmix) ----
+ * All state — gains, preset, the band/preset tables, debounced persistence —
+ * lives in the engine (DZEQJSON / DZSetEQJSON); this group only renders
+ * controls, so it is rebuilt from engine truth on every Settings open (another
+ * client may have changed the EQ meanwhile). GtkScale fires value-changed per
+ * pointer move during a drag, so band/preamp writes are coalesced to at most
+ * one engine call per band per ~33 ms (leading edge sent immediately). */
+
+#define EQ_NBANDS 10
+
+typedef struct {
+  GtkWidget *enable_row;             /* AdwSwitchRow */
+  GtkWidget *mono_row;               /* AdwSwitchRow — independent of enable */
+  GtkWidget *preset_row;             /* AdwComboRow; "eq_presets" data = ids */
+  GtkWidget *card;                   /* band sliders + preamp, below the rows */
+  GtkScale  *band_scale[EQ_NBANDS];
+  GtkScale  *preamp_scale;
+  guint      n_presets;              /* engine presets; index n_presets = "Custom" */
+  gboolean   updating;               /* programmatic widget writes — mute handlers */
+  double     band_pending[EQ_NBANDS];
+  gboolean   band_dirty[EQ_NBANDS];
+  double     preamp_pending;
+  gboolean   preamp_dirty;
+  guint      flush_id;               /* pending coalesced-write timeout, 0 if none */
+} EqWidgets;
+
+static void eq_send_band(int idx, double db) {
+  char num[G_ASCII_DTOSTR_BUF_SIZE];
+  g_ascii_dtostr(num, sizeof(num), db); /* JSON needs '.' whatever the locale */
+  char *js = g_strdup_printf("{\"band\":{\"index\":%d,\"gainDb\":%s}}", idx, num);
+  DZSetEQJSON(js);
+  g_free(js);
+}
+
+static void eq_send_preamp(double db) {
+  char num[G_ASCII_DTOSTR_BUF_SIZE];
+  g_ascii_dtostr(num, sizeof(num), db);
+  char *js = g_strdup_printf("{\"preampDb\":%s}", num);
+  DZSetEQJSON(js);
+  g_free(js);
+}
+
+static void eq_flush_pending(EqWidgets *ew) {
+  for (int i = 0; i < EQ_NBANDS; i++) {
+    if (!ew->band_dirty[i]) continue;
+    ew->band_dirty[i] = FALSE;
+    eq_send_band(i, ew->band_pending[i]);
+  }
+  if (ew->preamp_dirty) {
+    ew->preamp_dirty = FALSE;
+    eq_send_preamp(ew->preamp_pending);
+  }
+}
+
+static gboolean eq_flush_cb(gpointer data) {
+  EqWidgets *ew = data;
+  ew->flush_id = 0;
+  eq_flush_pending(ew);
+  return G_SOURCE_REMOVE;
+}
+
+/* Send now if idle, else leave the value pending for the running timeout —
+ * caps the UI -> engine rate at ~30 calls/s while a slider is dragged. */
+static void eq_throttle(EqWidgets *ew) {
+  if (ew->flush_id != 0) return;
+  eq_flush_pending(ew);
+  ew->flush_id = g_timeout_add(33, eq_flush_cb, ew);
+}
+
+/* Sync every control (values + preset selection + sensitivity) from DZEQJSON.
+ * Called on build and after a preset apply (presets rewrite every band). */
+static void eq_refresh(EqWidgets *ew) {
+  char *j = DZEQJSON();
+  if (!j) return;
+  JsonParser *p = json_parser_new();
+  if (json_parser_load_from_data(p, j, -1, NULL)) {
+    JsonNode *root = json_parser_get_root(p);
+    if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+      JsonObject *o = json_node_get_object(root);
+      ew->updating = TRUE;
+      gboolean on = jbool(o, "enabled");
+      adw_switch_row_set_active(ADW_SWITCH_ROW(ew->enable_row), on);
+      adw_switch_row_set_active(ADW_SWITCH_ROW(ew->mono_row), jbool(o, "mono"));
+      gtk_range_set_value(GTK_RANGE(ew->preamp_scale), jdouble(o, "preampDb"));
+      if (json_object_has_member(o, "gainsDb")) {
+        JsonArray *arr = json_object_get_array_member(o, "gainsDb");
+        for (guint i = 0; i < json_array_get_length(arr) && i < EQ_NBANDS; i++)
+          gtk_range_set_value(GTK_RANGE(ew->band_scale[i]),
+                              json_array_get_double_element(arr, i));
+      }
+      /* select the active preset; anything unknown (incl. "custom") shows Custom */
+      char *preset = jstr(o, "preset");
+      GPtrArray *ids = g_object_get_data(G_OBJECT(ew->preset_row), "eq_presets");
+      guint sel = ew->n_presets;
+      for (guint i = 0; ids && i < ids->len; i++)
+        if (g_strcmp0(g_ptr_array_index(ids, i), preset) == 0) { sel = i; break; }
+      adw_combo_row_set_selected(ADW_COMBO_ROW(ew->preset_row), sel);
+      g_free(preset);
+      /* mono is a plain downmix, independent of the EQ — always sensitive */
+      gtk_widget_set_sensitive(ew->preset_row, on);
+      gtk_widget_set_sensitive(ew->card, on);
+      ew->updating = FALSE;
+    }
+  }
+  g_object_unref(p);
+  DZFree(j);
+}
+
+/* The engine flips the preset to "custom" on any manual band edit — mirror
+ * that in the combo without re-reading the whole state mid-drag. */
+static void eq_show_custom(EqWidgets *ew) {
+  if (adw_combo_row_get_selected(ADW_COMBO_ROW(ew->preset_row)) == ew->n_presets)
+    return;
+  ew->updating = TRUE;
+  adw_combo_row_set_selected(ADW_COMBO_ROW(ew->preset_row), ew->n_presets);
+  ew->updating = FALSE;
+}
+
+static void on_eq_enabled_toggled(GObject *row, GParamSpec *ps, gpointer data) {
+  (void)ps;
+  EqWidgets *ew = data;
+  if (ew->updating) return;
+  gboolean on = adw_switch_row_get_active(ADW_SWITCH_ROW(row));
+  DZSetEQJSON((char *)(on ? "{\"enabled\":true}" : "{\"enabled\":false}"));
+  gtk_widget_set_sensitive(ew->preset_row, on);
+  gtk_widget_set_sensitive(ew->card, on);
+  toastf(APP, "Equalizer %s", on ? "on" : "off");
+}
+
+static void on_eq_mono_toggled(GObject *row, GParamSpec *ps, gpointer data) {
+  (void)ps;
+  EqWidgets *ew = data;
+  if (ew->updating) return;
+  gboolean on = adw_switch_row_get_active(ADW_SWITCH_ROW(row));
+  DZSetEQJSON((char *)(on ? "{\"mono\":true}" : "{\"mono\":false}"));
+  toastf(APP, "Mono audio %s", on ? "on" : "off");
+}
+
+static void on_eq_preset_selected(GObject *row, GParamSpec *ps, gpointer data) {
+  (void)ps;
+  EqWidgets *ew = data;
+  if (ew->updating) return;
+  guint idx = adw_combo_row_get_selected(ADW_COMBO_ROW(row));
+  GPtrArray *ids = g_object_get_data(G_OBJECT(row), "eq_presets");
+  if (!ids || idx >= ids->len) return; /* "Custom" — nothing to apply */
+  char *js = g_strdup_printf("{\"preset\":\"%s\"}", (char *)g_ptr_array_index(ids, idx));
+  if (DZSetEQJSON(js) != 1) toast(APP, "Couldn't apply the preset");
+  g_free(js);
+  eq_refresh(ew); /* presets rewrite every band — sync the sliders */
+}
+
+static void on_eq_band_changed(GtkRange *r, gpointer data) {
+  EqWidgets *ew = data;
+  if (ew->updating) return;
+  int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(r), "eq_band"));
+  ew->band_pending[idx] = gtk_range_get_value(r);
+  ew->band_dirty[idx] = TRUE;
+  eq_show_custom(ew);
+  eq_throttle(ew);
+}
+
+static void on_eq_preamp_changed(GtkRange *r, gpointer data) {
+  EqWidgets *ew = data;
+  if (ew->updating) return;
+  ew->preamp_pending = gtk_range_get_value(r);
+  ew->preamp_dirty = TRUE;
+  eq_throttle(ew);
+}
+
+static void eq_widgets_free(gpointer p) {
+  EqWidgets *ew = p;
+  if (ew->flush_id) {
+    g_source_remove(ew->flush_id);
+    eq_flush_pending(ew); /* don't drop the tail of a drag on dialog close */
+  }
+  g_free(ew);
+}
+
+/* "bass-boost" -> "Bass Boost" for the preset combo. */
+static char *eq_preset_label(const char *id) {
+  char *s = g_strdup(id);
+  gboolean up = TRUE;
+  for (char *c = s; *c; c++) {
+    if (*c == '-') { *c = ' '; up = TRUE; }
+    else if (up)   { *c = g_ascii_toupper(*c); up = FALSE; }
+  }
+  return s;
+}
+
+/* 31.5 -> "31.5", 16000 -> "16k" for the labels under the sliders. */
+static char *eq_band_label(double hz) {
+  return (hz >= 1000) ? g_strdup_printf("%gk", hz / 1000) : g_strdup_printf("%g", hz);
+}
+
+/* Build the group, reading current state from DZEQJSON. */
+static AdwPreferencesGroup *build_equalizer_group(void) {
+  AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+  adw_preferences_group_set_title(grp, "Equalizer");
+
+  EqWidgets *ew = g_new0(EqWidgets, 1);
+
+  ew->enable_row = adw_switch_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->enable_row), "Enable");
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(ew->enable_row),
+                              "Shape the sound with a 10-band graphic equalizer");
+
+  ew->preset_row = adw_combo_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->preset_row), "Preset");
+
+  ew->mono_row = adw_switch_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->mono_row), "Mono audio");
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(ew->mono_row),
+                              "Mix both stereo channels into one");
+
+  /* Band centers and preset names come from the engine so the UIs never
+   * hardcode them; the preset ids are stashed on the row, parallel to the
+   * visible names, the same way build_device_row keeps its device ids. */
+  double bands[EQ_NBANDS] = {31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+  GtkStringList *names = gtk_string_list_new(NULL);
+  GPtrArray *ids = g_ptr_array_new_with_free_func(g_free);
+  char *j = DZEQJSON();
+  if (j) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, j, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+        JsonObject *o = json_node_get_object(root);
+        if (json_object_has_member(o, "presets")) {
+          JsonArray *arr = json_object_get_array_member(o, "presets");
+          for (guint i = 0; i < json_array_get_length(arr); i++) {
+            const char *id = json_array_get_string_element(arr, i);
+            if (!id) continue;
+            char *label = eq_preset_label(id);
+            gtk_string_list_append(names, label);
+            g_ptr_array_add(ids, g_strdup(id)); /* parallel to names */
+            g_free(label);
+          }
+        }
+        if (json_object_has_member(o, "bands")) {
+          JsonArray *arr = json_object_get_array_member(o, "bands");
+          for (guint i = 0; i < json_array_get_length(arr) && i < EQ_NBANDS; i++)
+            bands[i] = json_array_get_double_element(arr, i);
+        }
+      }
+    }
+    g_object_unref(p);
+    DZFree(j);
+  }
+  gtk_string_list_append(names, "Custom"); /* implicit engine preset, always last */
+  ew->n_presets = ids->len;
+  adw_combo_row_set_model(ADW_COMBO_ROW(ew->preset_row), G_LIST_MODEL(names));
+  g_object_unref(names); /* set_model is transfer-none — drop our creation ref */
+  g_object_set_data_full(G_OBJECT(ew->preset_row), "eq_presets", ids,
+                         (GDestroyNotify)g_ptr_array_unref);
+
+  /* the band sliders + preamp live in a card below the rows */
+  ew->card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+  gtk_widget_add_css_class(ew->card, "card");
+  gtk_widget_set_margin_top(ew->card, 12);
+
+  GtkWidget *bands_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_box_set_homogeneous(GTK_BOX(bands_box), TRUE);
+  gtk_widget_set_margin_top(bands_box, 12);
+  gtk_widget_set_margin_start(bands_box, 6);
+  gtk_widget_set_margin_end(bands_box, 6);
+  for (int i = 0; i < EQ_NBANDS; i++) {
+    GtkWidget *col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *s = gtk_scale_new_with_range(GTK_ORIENTATION_VERTICAL, -12, 12, 0.5);
+    gtk_scale_set_draw_value(GTK_SCALE(s), FALSE);
+    gtk_range_set_inverted(GTK_RANGE(s), TRUE); /* +12 dB at the top */
+    gtk_scale_add_mark(GTK_SCALE(s), 0, GTK_POS_RIGHT, NULL); /* 0 dB detent */
+    gtk_widget_set_size_request(s, -1, 140);
+    gtk_widget_set_halign(s, GTK_ALIGN_CENTER);
+    gtk_range_set_value(GTK_RANGE(s), 0); /* a new scale sits at its minimum */
+    g_object_set_data(G_OBJECT(s), "eq_band", GINT_TO_POINTER(i));
+    g_signal_connect(s, "value-changed", G_CALLBACK(on_eq_band_changed), ew);
+    ew->band_scale[i] = GTK_SCALE(s);
+    gtk_box_append(GTK_BOX(col), s);
+    char *hz = eq_band_label(bands[i]);
+    GtkWidget *lbl = gtk_label_new(hz);
+    g_free(hz);
+    gtk_widget_add_css_class(lbl, "caption");
+    gtk_widget_add_css_class(lbl, "dim-label");
+    gtk_box_append(GTK_BOX(col), lbl);
+    gtk_box_append(GTK_BOX(bands_box), col);
+  }
+  gtk_box_append(GTK_BOX(ew->card), bands_box);
+
+  /* preamp: one horizontal slider under the bands */
+  GtkWidget *pre_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  gtk_widget_set_margin_start(pre_box, 12);
+  gtk_widget_set_margin_end(pre_box, 12);
+  gtk_widget_set_margin_bottom(pre_box, 6);
+  GtkWidget *pre_lbl = gtk_label_new("Preamp");
+  gtk_widget_add_css_class(pre_lbl, "dim-label");
+  gtk_box_append(GTK_BOX(pre_box), pre_lbl);
+  GtkWidget *pre = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -12, 12, 0.5);
+  gtk_scale_set_draw_value(GTK_SCALE(pre), FALSE);
+  gtk_scale_add_mark(GTK_SCALE(pre), 0, GTK_POS_BOTTOM, NULL);
+  gtk_widget_set_hexpand(pre, TRUE);
+  gtk_range_set_value(GTK_RANGE(pre), 0); /* a new scale sits at its minimum */
+  g_signal_connect(pre, "value-changed", G_CALLBACK(on_eq_preamp_changed), ew);
+  ew->preamp_scale = GTK_SCALE(pre);
+  gtk_box_append(GTK_BOX(pre_box), pre);
+  gtk_box_append(GTK_BOX(ew->card), pre_box);
+
+  /* populate from current engine state before wiring the row signals, to avoid
+   * a spurious write-back (consistent with build_remote_control_group); the
+   * band/preamp handlers are already connected but muted via ew->updating */
+  eq_refresh(ew);
+
+  g_signal_connect(ew->enable_row, "notify::active", G_CALLBACK(on_eq_enabled_toggled), ew);
+  g_signal_connect(ew->mono_row, "notify::active", G_CALLBACK(on_eq_mono_toggled), ew);
+  g_signal_connect(ew->preset_row, "notify::selected", G_CALLBACK(on_eq_preset_selected), ew);
+
+  /* ew's lifetime follows the group: freed once its children go away with it
+   * (same pattern as the remote-control group's CtrlWidgets) */
+  g_object_set_data_full(G_OBJECT(grp), "eq", ew, eq_widgets_free);
+
+  adw_preferences_group_add(grp, ew->enable_row);
+  adw_preferences_group_add(grp, ew->preset_row);
+  adw_preferences_group_add(grp, ew->mono_row);
+  adw_preferences_group_add(grp, ew->card); /* non-row: rendered below the list */
+  return grp;
+}
+
 /* ---------------------------------------------------------------------------
  * update check: GitHub releases, once per launch in the background (never
  * blocks startup — see check_update_async called from on_activate) plus an
@@ -1400,6 +1831,9 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_preferences_group_add(audio, xfade);
 
   adw_preferences_page_add(page, audio);
+
+  /* ---- Equalizer (10-band EQ + mono downmix, all state engine-side) ---- */
+  adw_preferences_page_add(page, build_equalizer_group());
 
   /* ---- Behaviour ---- */
   AdwPreferencesGroup *behave = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
@@ -2034,6 +2468,7 @@ static void attach_playlist_menu(GtkWidget *row, const char *plid, const char *p
 static void on_addpl_closed(AdwDialog *d, gpointer data) {
   (void)d;
   App *a = data;
+  a->addpl_gen++; /* drop any in-flight fetch for this dialog instance */
   a->addpl_dialog = NULL;
   a->addpl_list = NULL;
   g_clear_pointer(&a->addpl_track_id, g_free);
@@ -2058,8 +2493,9 @@ static void on_addpl_row(GtkListBox *box, GtkListBoxRow *row, gpointer data) {
 
 static void addpl_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
+  guint gen = GPOINTER_TO_UINT(g_task_get_task_data(G_TASK(res)));
   char *json = g_task_propagate_pointer(G_TASK(res), NULL);
-  if (json && APP->addpl_list) {
+  if (json && APP->addpl_list && gen == APP->addpl_gen) {
     JsonParser *p = json_parser_new();
     if (json_parser_load_from_data(p, json, -1, NULL)) {
       JsonNode *root = json_parser_get_root(p);
@@ -2135,8 +2571,11 @@ static void open_add_to_playlist(App *a, const char *track_id, const char *track
   g_signal_connect(a->addpl_dialog, "closed", G_CALLBACK(on_addpl_closed), a);
   adw_dialog_present(a->addpl_dialog, GTK_WIDGET(a->win));
 
-  /* fetch the user's playlists on a worker, append rows in addpl_done */
+  /* fetch the user's playlists on a worker, append rows in addpl_done (the gen
+   * snapshot drops results that outlive this dialog instance) */
+  a->addpl_gen++;
   GTask *t = g_task_new(NULL, NULL, addpl_done, NULL);
+  g_task_set_task_data(t, GUINT_TO_POINTER(a->addpl_gen), NULL);
   g_task_run_in_thread(t, playlists_worker);
   g_object_unref(t);
 }
@@ -2282,9 +2721,9 @@ static gboolean mpris_set_prop(GDBusConnection *c, const char *sender, const cha
   if (!g_strcmp0(prop, "Volume")) {
     double v = g_variant_get_double(value);
     if (v < 0) v = 0; if (v > 1) v = 1;
-    DZSetVolume(v);
+    transport_set_volume(v);
     if (a->volume) gtk_range_set_value(GTK_RANGE(a->volume), v); /* keeps UI in sync */
-    mpris_notify_volume(a);
+    mpris_notify_volume(a, v);
     return TRUE;
   }
   if (!g_strcmp0(prop, "Rate")) return TRUE; /* fixed at 1.0, accept silently */
@@ -2309,17 +2748,21 @@ static void mpris_player_method(GDBusConnection *c, const char *sender, const ch
   (void)c; (void)sender; (void)path; (void)iface;
   App *a = u;
   if (!g_strcmp0(method, "PlayPause")) {
-    if (a->current_index < 0) play_relative(a, 1); else DZTogglePause();
+    transport_play_pause(a); /* same policy as the bar button */
   } else if (!g_strcmp0(method, "Play")) {
     int st = DZState();
-    if (st == 3) DZResume();
-    else if (st != 2) { if (a->current_index < 0) play_relative(a, 1); else DZResume(); }
+    if (st == 3) transport_call(TR_RESUME, 0);
+    else if ((st == 0 || st == 4) && !a->playing_episode) {
+      if (a->current_index >= 0) play_index(a, a->current_index);
+      else play_relative(a, 1);
+    }
   } else if (!g_strcmp0(method, "Pause")) {
-    DZPause();
+    transport_call(TR_PAUSE, 0);
   } else if (!g_strcmp0(method, "Stop")) {
-    DZStop();
+    transport_call(TR_STOP, 0);
   } else if (!g_strcmp0(method, "Next")) {
-    play_relative(a, 1);
+    int idx = next_index(a, TRUE); /* same policy as the Next button */
+    if (idx >= 0) play_index(a, idx);
   } else if (!g_strcmp0(method, "Previous")) {
     play_relative(a, -1);
   } else if (!g_strcmp0(method, "Seek")) {
@@ -2327,14 +2770,14 @@ static void mpris_player_method(GDBusConnection *c, const char *sender, const ch
     g_variant_get(params, "(x)", &off);           /* µs, may be negative */
     gint64 np = DZPositionMS() + off / 1000;       /* engine works in ms */
     if (np < 0) np = 0;
-    DZSeek((long long)np);
+    transport_call(TR_SEEK, (long long)np);
     mpris_emit_seeked(a, np);
   } else if (!g_strcmp0(method, "SetPosition")) {
     const char *tid = NULL; gint64 pos = 0;
     g_variant_get(params, "(&ox)", &tid, &pos);
     gint64 np = pos / 1000;
     if (np < 0) np = 0;
-    DZSeek((long long)np);
+    transport_call(TR_SEEK, (long long)np);
     mpris_emit_seeked(a, np);
   }
   /* OpenUri is unsupported — fall through to an empty reply */
@@ -2372,11 +2815,13 @@ static void mpris_notify_status(App *a, const char *status) {
       g_variant_new("(sa{sv}as)", MPRIS_PLAYER_IFC, &b, NULL), NULL);
 }
 
-static void mpris_notify_volume(App *a) {
+/* vol is passed explicitly: the engine applies volume asynchronously (see
+ * transport_set_volume), so DZVolume() may still report the previous value. */
+static void mpris_notify_volume(App *a, double vol) {
   if (!a->bus) return;
   GVariantBuilder b;
   g_variant_builder_init(&b, G_VARIANT_TYPE("a{sv}"));
-  g_variant_builder_add(&b, "{sv}", "Volume", g_variant_new_double(DZVolume()));
+  g_variant_builder_add(&b, "{sv}", "Volume", g_variant_new_double(vol));
   g_dbus_connection_emit_signal(
       a->bus, NULL, MPRIS_OBJ_PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged",
       g_variant_new("(sa{sv}as)", MPRIS_PLAYER_IFC, &b, NULL), NULL);
@@ -2560,18 +3005,21 @@ static void on_seek_released(GtkGestureClick *g, int n, double x, double y, gpoi
   App *a = data;
   a->seeking = FALSE;
   gint64 pos = (gint64)gtk_range_get_value(GTK_RANGE(a->seek));
-  DZSeek((long long)pos);
+  transport_call(TR_SEEK, (long long)pos);
   mpris_emit_seeked(a, pos); /* discontinuous jump: tell MPRIS clients */
 }
 static gboolean on_seek_change(GtkRange *r, GtkScrollType s, double value, gpointer data) {
   (void)r; (void)s; (void)data;
-  DZSeek((long long)value); /* live seek while dragging */
+  /* live seek while dragging — but not while routed to a remote, where every
+   * seek is an HTTP round-trip; on_seek_released issues the one final seek */
+  if (!dz_routed()) transport_call(TR_SEEK, (long long)value);
   return FALSE;
 }
 static void on_volume_changed(GtkRange *r, gpointer data) {
   App *a = data;
-  DZSetVolume(gtk_range_get_value(r));
-  mpris_notify_volume(a);
+  double v = gtk_range_get_value(r);
+  transport_set_volume(v);
+  mpris_notify_volume(a, v);
 }
 
 /* ---------------------------------------------------------------------------
@@ -3183,7 +3631,7 @@ static void on_repeat_clicked(GtkButton *b, gpointer data) {
   (void)b;
   App *a = data;
   a->repeat_mode = (a->repeat_mode + 1) % 3; /* off=0 → all=1 → one=2 → off */
-  DZSetRepeat(a->repeat_mode);
+  transport_call(TR_SET_REPEAT, a->repeat_mode);
   /* swap the icon for repeat-one, keep the same icon (dimmed vs. accent) for off/all */
   gtk_button_set_icon_name(a->repeat_btn,
       a->repeat_mode == 2 ? "media-playlist-repeat-song-symbolic"
@@ -3198,7 +3646,7 @@ static void on_shuffle_clicked(GtkButton *b, gpointer data) {
   (void)b;
   App *a = data;
   a->shuffle_on = !a->shuffle_on;
-  DZSetShuffle(a->shuffle_on ? 1 : 0);
+  transport_call(TR_SET_SHUFFLE, a->shuffle_on ? 1 : 0);
   if (a->shuffle_on)
     gtk_widget_add_css_class(GTK_WIDGET(a->shuffle_btn), "dz-active");
   else
@@ -4114,18 +4562,24 @@ static gboolean tick(gpointer data) {
         if (*id && g_strcmp0(id, a->np_id) != 0) {
           char *name = jstr(o, "name"), *artist = jstr(o, "artistLine"),
                *art = jstr(o, "artworkUrl");
-          gtk_label_set_label(a->np_title, name);
-          if (a->np_explicit) gtk_widget_set_visible(a->np_explicit, jbool(o, "explicit"));
-          gtk_label_set_label(a->np_subtitle, artist);
-          /* only reload artwork when it actually changes; remote tracks report no
-           * artworkUrl, so keep the last cover rather than clearing it */
-          if (*art && g_strcmp0(art, a->np_art) != 0) {
-            start_cover_fetch(a, art);
-            g_free(a->np_art);
-            a->np_art = g_strdup(art);
+          /* the engine reports {id, duration} first and enriches name/artist
+           * asynchronously — skip this tick until the metadata lands (np_id
+           * stays unchanged, so the sync re-fires on a later tick) instead of
+           * blanking the title for the rest of the track */
+          if (*name) {
+            gtk_label_set_label(a->np_title, name);
+            if (a->np_explicit) gtk_widget_set_visible(a->np_explicit, jbool(o, "explicit"));
+            gtk_label_set_label(a->np_subtitle, artist);
+            /* only reload artwork when it actually changes; remote tracks report no
+             * artworkUrl, so keep the last cover rather than clearing it */
+            if (*art && g_strcmp0(art, a->np_art) != 0) {
+              start_cover_fetch(a, art);
+              g_free(a->np_art);
+              a->np_art = g_strdup(art);
+            }
+            g_free(a->np_id);
+            a->np_id = g_strdup(id);
           }
-          g_free(a->np_id);
-          a->np_id = g_strdup(id);
           g_free(name); g_free(artist); g_free(art);
         }
         g_free(id);
@@ -4461,7 +4915,9 @@ static void on_free_block_switch(GtkButton *b, gpointer data) {
   open_login_window((App *)data); /* a Premium login from here unblocks the app */
 }
 static void show_free_block(App *a) {
-  DZStop(); /* never leave a previous (Premium) session playing under the gate */
+  /* never leave a previous (Premium) session playing under the gate; routed
+   * through the transport pool — DZStop blocks when a remote is connected */
+  transport_call(TR_STOP, 0);
 
   AdwStatusPage *sp = ADW_STATUS_PAGE(adw_status_page_new());
   adw_status_page_set_icon_name(sp, "dialog-warning-symbolic");
@@ -4546,6 +5002,10 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
   InitCtx *ic = g_task_get_task_data(G_TASK(res)); /* alive until the task finalizes */
   if (g_task_propagate_boolean(G_TASK(res), NULL)) {
     if (ic && ic->persist) save_arl(ic->arl);  /* remember the working ARL for next launch */
+    /* re-arm the login flow — a later "Switch account…" reuses these flags and
+     * on_login_manual bails out silently while login_busy is still set */
+    APP->login_busy = FALSE;
+    APP->login_captured = FALSE;
     login_dismiss(APP);                         /* tear down the login window if it is open */
     DZSetQuality(APP->quality);                /* apply persisted quality once logged in */
     DZSetReplayGain(APP->replaygain ? 1 : 0);  /* apply persisted ReplayGain */
@@ -4616,7 +5076,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.6.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.7.0");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -4627,7 +5087,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "1.6.0",
+      "version", "1.7.0",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -4827,15 +5287,27 @@ static void on_connect_device_clicked(GtkButton *b, gpointer data) {
   if (a->connect_btn) gtk_menu_button_popdown(a->connect_btn);
   if (addr && *addr) connect_to_device(a, addr, name);
 }
+/* DZDisconnectDevice posts a Stop to the remote before clearing the route, so
+ * it blocks like DZConnectDevice does — run it on a worker too. */
+static void disconn_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)data; (void)c;
+  DZDisconnectDevice();
+  g_task_return_boolean(task, TRUE);
+}
+static void disconn_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)res; (void)data;
+  connect_reflect(APP);
+  toast(APP, "Playing on this computer");
+}
 static void on_connect_local_clicked(GtkButton *b, gpointer data) {
   (void)b;
   App *a = data;
   if (a->connect_btn) gtk_menu_button_popdown(a->connect_btn);
-  DZDisconnectDevice();
   g_free(a->connect_name);
   a->connect_name = g_strdup("");
-  connect_reflect(a);
-  toast(a, "Playing on this computer");
+  GTask *t = g_task_new(NULL, NULL, disconn_done, NULL);
+  g_task_run_in_thread(t, disconn_worker);
+  g_object_unref(t);
 }
 
 /* discovery: DZDiscoverDevices blocks (~700ms), so run it on a worker */

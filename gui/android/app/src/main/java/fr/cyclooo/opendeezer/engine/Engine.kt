@@ -3,6 +3,7 @@ package fr.cyclooo.opendeezer.engine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import odmobile.Odmobile
+import org.json.JSONObject
 
 /**
  * Thin Kotlin facade over the gomobile-bound [Odmobile] static methods.
@@ -41,6 +42,11 @@ object Engine {
         runCatching { Odmobile.setClientInfo(client, device) }
     }
 
+    // Tears the engine session down: stops playback, closes the control server
+    // and Connect-host advertising, and forgets the Deezer client so a later
+    // init starts fresh. Suspend — it closes network listeners.
+    suspend fun logout() = io { runCatching { Odmobile.logout() }.let {} }
+
     // Checks GitHub for a newer release. Network-bound and best-effort — a
     // failure (offline, rate-limited, etc.) just yields null, never a crash.
     suspend fun checkUpdate(): UpdateInfo? = io { Json.updateInfo(runCatching { Odmobile.checkUpdate() }.getOrNull()) }
@@ -65,13 +71,29 @@ object Engine {
     suspend fun podcastEpisodes(id: String): List<Episode> = io { Json.episodes(Odmobile.podcastEpisodes(id)) }
     suspend fun lyrics(id: String): Lyrics = io { Json.lyrics(Odmobile.lyrics(id)) }
 
+    // Failure-aware variants: null when the engine returned an {"error":...}
+    // payload (or nothing), so "couldn't load" is distinguishable from "empty"
+    // and retry UIs can actually trigger.
+    suspend fun homeOrNull(): HomeData? =
+        io { raw(runCatching { Odmobile.home() }.getOrNull())?.let(Json::home) }
+    suspend fun chartsOrNull(): SearchResults? =
+        io { raw(runCatching { Odmobile.charts() }.getOrNull())?.let(Json::search) }
+    suspend fun flowOrNull(): List<Track>? =
+        io { raw(runCatching { Odmobile.flow() }.getOrNull())?.let(Json::tracks) }
+    suspend fun favoritesOrNull(): List<Track>? =
+        io { raw(runCatching { Odmobile.favorites() }.getOrNull())?.let(Json::tracks) }
+    suspend fun playlistsOrNull(): List<Playlist>? =
+        io { raw(runCatching { Odmobile.playlists() }.getOrNull())?.let(Json::playlists) }
+
+    private fun raw(s: String?): String? = if (Json.hasError(s)) null else s
+
     // ---- playback ----
 
     suspend fun play(trackId: String, durationMs: Long): Boolean =
         io { runCatching { Odmobile.play(trackId, durationMs) }.getOrDefault(false) }
 
-    suspend fun playEpisode(id: String): Boolean =
-        io { runCatching { Odmobile.playEpisode(id) }.getOrDefault(false) }
+    suspend fun playEpisode(id: String, durationMs: Long = 0L): Boolean =
+        io { runCatching { Odmobile.playEpisodeMS(id, durationMs) }.getOrDefault(false) }
 
     fun pause() = runCatching { Odmobile.pause() }.let {}
     fun resume() = runCatching { Odmobile.resume() }.let {}
@@ -79,6 +101,10 @@ object Engine {
     fun stop() = runCatching { Odmobile.stop() }.let {}
     fun seek(ms: Long) = runCatching { Odmobile.seek(ms) }.let {}
     fun setVolume(v: Double) = runCatching { Odmobile.setVolume(v) }.let {}
+
+    // Suspends/resumes the local OS audio device without touching playback
+    // state — used for audio-focus handling (e.g. release audio during calls).
+    fun setOutputSuspended(on: Boolean) = runCatching { Odmobile.setOutputSuspended(on) }.let {}
 
     fun volume(): Double = runCatching { Odmobile.volume() }.getOrDefault(1.0)
     fun state(): Int = runCatching { Odmobile.state().toInt() }.getOrDefault(STOPPED)
@@ -98,6 +124,19 @@ object Engine {
     fun gapless(): Boolean = runCatching { Odmobile.gapless() }.getOrDefault(true)
     fun setCrossfadeMs(ms: Int) = runCatching { Odmobile.setCrossfadeMS(ms.toLong()) }.let {}
     fun crossfadeMs(): Int = runCatching { Odmobile.crossfadeMS().toInt() }.getOrDefault(0)
+
+    // ---- equalizer + mono downmix ----
+    // The engine owns all EQ state and persistence (manual band edits flip the
+    // preset to "custom" engine-side); these only read state / forward changes.
+
+    fun eqState(): EqState? = Json.eqState(runCatching { Odmobile.eqjson() }.getOrNull())
+    fun setEqEnabled(on: Boolean) = setEq("""{"enabled":$on}""")
+    fun setEqMono(on: Boolean) = setEq("""{"mono":$on}""")
+    fun setEqPreset(name: String) = setEq("""{"preset":${JSONObject.quote(name)}}""")
+    fun setEqBand(index: Int, gainDb: Double) = setEq("""{"band":{"index":$index,"gainDb":$gainDb}}""")
+    fun setEqPreamp(db: Double) = setEq("""{"preampDb":$db}""")
+
+    private fun setEq(js: String) = runCatching { Odmobile.setEQJSON(js) }.let {}
 
     // ---- sleep timer ----
     // Pause after [minutes] (auto fade-out), or when the current track ends when
@@ -128,7 +167,8 @@ object Engine {
         io { Json.devices(Odmobile.discoverDevices(timeoutMs)) }
     suspend fun connectDevice(addr: String): Boolean =
         io { runCatching { Odmobile.connectDevice(addr) }.getOrDefault(false) }
-    fun disconnectDevice() = runCatching { Odmobile.disconnectDevice() }.let {}
+    // Suspend: sends a final Stop to the remote over HTTP, so keep it off main.
+    suspend fun disconnectDevice() = io { runCatching { Odmobile.disconnectDevice() }.let {} }
     fun connectedDevice(): String = runCatching { Odmobile.connectedDevice() }.getOrDefault("")
 
     // ---- repeat / shuffle (forwarded to remote when a Connect device is active) ----

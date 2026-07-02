@@ -26,6 +26,7 @@ import fr.cyclooo.opendeezer.ui.components.UpdateBanner
 import fr.cyclooo.opendeezer.ui.screens.ChartsScreen
 import fr.cyclooo.opendeezer.ui.screens.ConnectDialog
 import fr.cyclooo.opendeezer.ui.screens.EpisodesScreen
+import fr.cyclooo.opendeezer.ui.screens.EqualizerScreen
 import fr.cyclooo.opendeezer.ui.screens.HomeScreen
 import fr.cyclooo.opendeezer.ui.screens.LoginScreen
 import fr.cyclooo.opendeezer.ui.screens.LyricsScreen
@@ -54,7 +55,7 @@ fun OpenDeezerApp(vm: AppViewModel) {
                 AuthStage.NEEDS_LOGIN -> LoginScreen(
                     busy = vm.busy,
                     error = vm.loginError,
-                    onArl = { vm.login(it) },
+                    onArl = { arl, auto -> vm.login(arl, auto = auto) },
                 )
 
                 AuthStage.NEEDS_PREMIUM -> PremiumGateScreen(
@@ -181,7 +182,15 @@ private fun MainScaffold(vm: AppViewModel) {
                 QueueScreen(player = player, onBack = back)
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(account = vm.account, onBack = back, onLogout = vm::logout)
+                SettingsScreen(
+                    account = vm.account,
+                    onBack = back,
+                    onEqualizer = { nav(Routes.EQUALIZER) },
+                    onLogout = vm::logout,
+                )
+            }
+            composable(Routes.EQUALIZER) {
+                EqualizerScreen(onBack = back)
             }
         }
     }

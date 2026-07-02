@@ -13,12 +13,14 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/ui"
+	version_ "github.com/Cycl0o0/OpenDeezer/internal/version"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// version is set at build time via -ldflags "-X main.version=...".
-var version = "1.6.0"
+// version defaults to the release number in internal/version and can be
+// overridden at build time via -ldflags "-X main.version=...".
+var version = version_.Number
 
 func main() {
 	saveARL := flag.String("save-arl", "", "save this ARL to ~/.config/opendeezer/arl.txt and exit")

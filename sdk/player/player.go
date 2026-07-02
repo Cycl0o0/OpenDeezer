@@ -184,3 +184,51 @@ func (pl *Player) SetDevice(id string) error { return pl.p.SetDevice(id) }
 // CurrentDevice returns the id of the currently selected output device, or ""
 // for the system default.
 func (pl *Player) CurrentDevice() string { return pl.p.CurrentDevice() }
+
+// ---- equalizer + mono downmix ----
+
+// EQPresetNames lists the built-in equalizer presets, in display order.
+// "custom" is implicit: any manual band edit switches the preset to it.
+func EQPresetNames() []string {
+	return append([]string(nil), internalaudio.EQPresetNames...)
+}
+
+// SetEQEnabled turns the 10-band equalizer on or off (mono downmix is
+// independent). The EQ state persists engine-side, shared by every client.
+func (pl *Player) SetEQEnabled(on bool) { pl.p.SetEQEnabled(on) }
+
+// EQEnabled reports whether the equalizer is on.
+func (pl *Player) EQEnabled() bool { return pl.p.EQEnabled() }
+
+// SetMonoDownmix folds stereo to mono (accessibility / single-speaker setups).
+func (pl *Player) SetMonoDownmix(on bool) { pl.p.SetMonoDownmix(on) }
+
+// MonoDownmix reports whether mono downmix is on.
+func (pl *Player) MonoDownmix() bool { return pl.p.MonoDownmix() }
+
+// SetEQGain sets one band's gain in dB (clamped to ±12; band 0..9). The preset
+// becomes "custom".
+func (pl *Player) SetEQGain(band int, db float64) error { return pl.p.SetEQGain(band, db) }
+
+// SetEQGains sets all 10 band gains in dB (clamped to ±12). The preset becomes
+// "custom".
+func (pl *Player) SetEQGains(db []float64) error { return pl.p.SetEQGains(db) }
+
+// EQGains returns the 10 band gains in dB.
+func (pl *Player) EQGains() []float64 { return pl.p.EQGains() }
+
+// SetEQPreamp sets the output preamp in dB (clamped to ±12), for taming
+// clipping when several bands are boosted.
+func (pl *Player) SetEQPreamp(db float64) { pl.p.SetEQPreamp(db) }
+
+// EQPreampDB returns the preamp in dB.
+func (pl *Player) EQPreampDB() float64 { return pl.p.EQPreampDB() }
+
+// SetEQPreset applies a named preset (see [EQPresetNames]).
+func (pl *Player) SetEQPreset(name string) error { return pl.p.SetEQPreset(name) }
+
+// EQPreset returns the current preset name ("custom" after manual edits).
+func (pl *Player) EQPreset() string { return pl.p.EQPreset() }
+
+// EQBands returns the band center frequencies in Hz (31.5 Hz .. 16 kHz).
+func (pl *Player) EQBands() []float64 { return pl.p.EQBands() }

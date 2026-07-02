@@ -7,28 +7,28 @@
 class Opendeezer < Formula
   desc "Terminal Deezer client — browse and stream with your Premium ARL"
   homepage "https://github.com/Cycl0o0/OpenDeezer"
-  version "1.0.0"
+  version "1.7.0"
   license "AGPL-3.0-or-later"
 
   on_macos do
     on_arm do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-darwin-arm64"
-      sha256 "REPLACE_WITH_DARWIN_ARM64_SHA256"
+      sha256 "REPLACE_WITH_DARWIN_ARM64_SHA256" # TODO: update at release
     end
     on_intel do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-darwin-amd64"
-      sha256 "REPLACE_WITH_DARWIN_AMD64_SHA256"
+      sha256 "REPLACE_WITH_DARWIN_AMD64_SHA256" # TODO: update at release
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-linux-arm64"
-      sha256 "REPLACE_WITH_LINUX_ARM64_SHA256"
+      sha256 "REPLACE_WITH_LINUX_ARM64_SHA256" # TODO: update at release
     end
     on_intel do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-linux-amd64"
-      sha256 "REPLACE_WITH_LINUX_AMD64_SHA256"
+      sha256 "REPLACE_WITH_LINUX_AMD64_SHA256" # TODO: update at release
     end
   end
 

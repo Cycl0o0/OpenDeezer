@@ -141,16 +141,24 @@ func (m *Model) handleRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+c", "Q":
-		m.player.Stop()
-		if m.media != nil {
-			m.media.Close()
-		}
-		if m.ctrl != nil {
-			m.ctrl.Close()
-		}
+		m.shutdown() // same cleanup + resume-save as the other quit paths
 		return m, tea.Quit
 	case " ":
 		return m, remoteCmd(rc.PlayPause)
+	case "l":
+		// Show the connected peer's now-playing lyrics (the peer drives position).
+		if m.remoteState.Track == nil {
+			return m, nil
+		}
+		t := remoteTrack(m.remoteState.Track)
+		m.toggleScreen(screenLyrics)
+		if m.screen == screenLyrics && (m.lyrics == nil || m.lyricsTrack != t.ID) {
+			m.lyricsTrack = t.ID
+			m.loading = true
+			m.status = "Loading…"
+			return m, m.lyricsCmd(t)
+		}
+		return m, nil
 	case "n":
 		return m, remoteCmd(rc.Next)
 	case "p":

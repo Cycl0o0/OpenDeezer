@@ -39,6 +39,7 @@ cc -O2 -o "$DIST/opendeezer" "$HERE/launcher.c" -ldl -Wl,-rpath,'$ORIGIN'
 
 echo "==> [5/5] desktop entry + icon"
 cp "$HERE/org.opendeezer.OpenDeezer.desktop" "$DIST/"
-cp "$ROOT/assets/icon.png" "$DIST/opendeezer.png"
+# Basename must match the desktop file's Icon= key for icon-theme lookup.
+cp "$ROOT/assets/icon.png" "$DIST/org.opendeezer.OpenDeezer.png"
 
 echo "==> done -> $DIST  (run: $DIST/opendeezer)"

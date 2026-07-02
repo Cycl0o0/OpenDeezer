@@ -135,6 +135,18 @@ data class ConnectHostInfo(
     val name: String,
 )
 
+// Mirrors the engine's EQJSON wire shape:
+// {enabled, mono, preampDb, gainsDb: [10], preset, bands: [10], presets: [...]}.
+data class EqState(
+    val enabled: Boolean,
+    val mono: Boolean,
+    val preampDb: Double,
+    val gainsDb: List<Double>,
+    val preset: String,
+    val bands: List<Double>,
+    val presets: List<String>,
+)
+
 // Mirrors the engine's update.Info JSON: {current, latest, hasUpdate, url, notes}.
 data class UpdateInfo(
     val current: String,
@@ -164,6 +176,12 @@ object Json {
         } catch (_: Throwable) {
             null
         }
+
+    /** True when the payload is missing/unparseable or an {"error":...} envelope. */
+    fun hasError(s: String?): Boolean {
+        val o = obj(s) ?: return true
+        return o.has("error")
+    }
 
     private fun JSONObject.artists(key: String): List<Artist> {
         val arr = optJSONArray(key) ?: return emptyList()
@@ -359,6 +377,26 @@ object Json {
             topTracks = tracksOf(o.optJSONArray("topTracks")),
             topAlbums = albumsOf(o.optJSONArray("topAlbums")),
             playlists = playlistsOf(o.optJSONArray("playlists")),
+        )
+    }
+
+    private fun doublesOf(arr: JSONArray?): List<Double> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map { arr.optDouble(it, 0.0) }
+    }
+
+    fun eqState(s: String?): EqState? {
+        val o = obj(s) ?: return null
+        if (o.has("error")) return null
+        val presets = o.optJSONArray("presets")
+        return EqState(
+            enabled = o.optBoolean("enabled"),
+            mono = o.optBoolean("mono"),
+            preampDb = o.optDouble("preampDb", 0.0),
+            gainsDb = doublesOf(o.optJSONArray("gainsDb")),
+            preset = o.optString("preset"),
+            bands = doublesOf(o.optJSONArray("bands")),
+            presets = if (presets == null) emptyList() else (0 until presets.length()).map { presets.optString(it) },
         )
     }
 

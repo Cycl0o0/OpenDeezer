@@ -10,9 +10,11 @@
 package audio
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -33,6 +35,13 @@ type output interface {
 	devices() ([]Device, error)
 	setDevice(id string) error
 	currentDevice() string
+	// suspend releases (on=true) / restores (on=false) the OS output without
+	// tearing down the backend context; safe to call from any goroutine.
+	suspend(on bool) error
+	// setLostHandler registers a callback the backend invokes when the selected
+	// device disappears and cannot be recovered (no-op on backends that reroute
+	// themselves, e.g. oto).
+	setLostHandler(func(string))
 	close()
 }
 
@@ -94,18 +103,50 @@ type pcmStream interface {
 	Seek(offset int64, whence int) (int64, error)
 }
 
+// streamHTTPClient fetches audio bodies. It sets connect/TLS/response-header
+// timeouts so a stalled handshake or dead server fails fast, but deliberately
+// has no Client.Timeout — that would abort long (multi-minute) track/podcast
+// streams. A stalled mid-body read is unblocked instead by cancelling the
+// per-source context in kill().
+var streamHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     true,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		IdleConnTimeout:       90 * time.Second,
+	},
+}
+
 // source is one track's pipeline: download+decrypt -> streamBuffer -> decoder ->
 // pcmRing. The download and decode each run on their own goroutine.
 type source struct {
 	plan   *deezer.StreamPlan
 	durMS  int64
 	format string
+	rgFac  float64 // ReplayGain amplitude factor (immutable; read from RT callback)
 	sb     *streamBuffer
 	ring   *pcmRing
 	eof    atomic.Bool  // decoder reached end and ring will not grow
 	seekTo atomic.Int64 // pending PCM-byte seek target, or -1
 	dead   atomic.Bool
 	errMsg atomic.Value // string: download/decode error, if any
+
+	// xfadeConsumed counts bytes of this source's ring drained by the crossfade
+	// path while it is the incoming ("next") track, so the swap can resume it at
+	// the position already played instead of restarting from 0. RT-incremented.
+	xfadeConsumed atomic.Int64
+
+	// mu/cond let the decode goroutine park after decoder EOF and wake on a seek
+	// or kill (so seeking back into a finished-decoding track still works).
+	mu   sync.Mutex
+	cond *sync.Cond
+
+	// ctx is cancelled by kill() to unblock a stalled Body.Read in download().
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func (s *source) setErr(err error) {
@@ -157,6 +198,15 @@ type Player struct {
 	sleepAtNS  atomic.Int64  // wall-clock deadline (UnixNano) for duration mode
 	sleepGain  atomic.Uint64 // float64 bits: fade-out envelope, 1.0 when not fading
 
+	// Equalizer + mono downmix (core-owned DSP; see eq.go). eqCfg is rebuilt and
+	// swapped whole by the setters; eqPrev/eqZ are filter memory touched only
+	// from the RT callback.
+	eqCfg       atomic.Pointer[eqConfig]
+	eqPrev      *eqConfig
+	eqZ         [channels][eqBands][2]float64
+	eqSaveMu    sync.Mutex
+	eqSaveTimer *time.Timer
+
 	stopMgr chan struct{}
 	mgrOnce sync.Once
 }
@@ -206,16 +256,22 @@ func volumeTaper(v float64) float64 {
 	return v * v * v
 }
 
+// sleepGainClamped reads the sleep-timer fade envelope (1.0 when not fading),
+// treating an uninitialized/garbage value as full volume.
+func (p *Player) sleepGainClamped() float64 {
+	sg := math.Float64frombits(p.sleepGain.Load())
+	if sg < 0 || sg > 1 { // uninitialized (0 bits) or garbage -> full
+		return 1
+	}
+	return sg
+}
+
 func (p *Player) effectiveVolume() float64 {
 	f := math.Float64frombits(p.gainFac.Load())
 	if f == 0 {
 		f = 1
 	}
-	sg := math.Float64frombits(p.sleepGain.Load())
-	if sg < 0 || sg > 1 { // uninitialized (0 bits) or garbage -> full
-		sg = 1
-	}
-	return volumeTaper(p.Volume()) * f * sg
+	return volumeTaper(p.Volume()) * f * p.sleepGainClamped()
 }
 
 // SetGapless enables/disables gapless transitions between tracks.
@@ -242,6 +298,10 @@ func (p *Player) SetSleepTimer(d time.Duration, endOfTrack bool) {
 		p.CancelSleepTimer()
 		return
 	}
+	// Disarm first so a manage() tick can't observe armed with a half-updated
+	// mode/deadline (e.g. armed && !EOT while sleepAtNS is still the old 0 from a
+	// previous EOT arm), which would fire the expiry branch and pause instantly.
+	p.sleepArmed.Store(false)
 	p.sleepGain.Store(math.Float64bits(1))
 	p.sleepEOT.Store(endOfTrack)
 	if !endOfTrack {
@@ -249,7 +309,7 @@ func (p *Player) SetSleepTimer(d time.Duration, endOfTrack bool) {
 	} else {
 		p.sleepAtNS.Store(0)
 	}
-	p.sleepArmed.Store(true)
+	p.sleepArmed.Store(true) // arm last, once mode + deadline are consistent
 }
 
 // CancelSleepTimer disarms the sleep timer and restores full volume.
@@ -302,6 +362,8 @@ func NewPlayer() (*Player, error) {
 	p.sleepGain.Store(math.Float64bits(1))
 	p.gapless.Store(true)
 	p.setVolume(1.0)
+	p.loadEQ()
+	p.out.setLostHandler(p.onDeviceLost)
 	if err := p.out.start(p.readPCM); err != nil {
 		p.out.close()
 		return nil, err
@@ -309,6 +371,20 @@ func NewPlayer() (*Player, error) {
 	go p.manage()
 	return p, nil
 }
+
+// onDeviceLost is invoked by the output backend when the selected device
+// disappears and it could not fall back to the system default. Surfaces the
+// failure so clients stop showing a frozen 'Playing' state.
+func (p *Player) onDeviceLost(msg string) {
+	p.lastErr.Store(msg)
+	p.state.Store(int32(Errored))
+}
+
+// SetOutputSuspended releases (on=true) or restores (on=false) the OS audio
+// output without tearing down playback state (decoder, ring, position). Use it
+// on audio-focus loss/interruption (e.g. iOS): playback resumes where it left
+// off. Safe to call from any goroutine.
+func (p *Player) SetOutputSuspended(on bool) error { return p.out.suspend(on) }
 
 // readPCM fills out with the next PCM for the device (zeroing any tail it can't
 // produce) and returns the bytes actually written. Called from the backend's
@@ -328,6 +404,7 @@ func (p *Player) readPCM(out []byte) int {
 	}
 
 	n := cur.ring.read(out)
+	gainApplied := false
 
 	// Crossfade: within the crossfade window of the end, with a next source
 	// ready, mix in next (fading in) while cur fades out.
@@ -344,22 +421,41 @@ func (p *Player) readPCM(out []byte) int {
 				mix[i] = 0
 			}
 			m := next.ring.read(mix)
+			// Remember how much of next we've already played so the swap resumes
+			// it here instead of restarting (which double-books crossfadeMS).
+			next.xfadeConsumed.Add(int64(m))
 			fade := float64(pos-(total-xfadeMS)) / float64(xfadeMS)
 			if fade < 0 {
 				fade = 0
 			} else if fade > 1 {
 				fade = 1
 			}
-			mixPCM(out[:n], out[:n], 1-fade)
-			mixPCM(mix[:m], mix[:m], fade)
+			// Apply each track's own ReplayGain inside the window (the swap no
+			// longer switches gains, which stepped the level between tracks whose
+			// gains differ); the shared volume/sleep gain is folded in too.
+			vs := volumeTaper(p.Volume()) * p.sleepGainClamped()
+			curG, nextG := vs, vs
+			if p.rgOn.Load() {
+				curG *= cur.rgFac
+				nextG *= next.rgFac
+			}
+			mixPCM(out[:n], out[:n], curG*(1-fade))
+			mixPCM(mix[:m], mix[:m], nextG*fade)
 			addPCM(out, mix)
 			if m > n {
 				n = m
 			}
+			gainApplied = true
 		}
 	}
 
-	applyGain(out[:n], p.effectiveVolume())
+	if !gainApplied {
+		applyGain(out[:n], p.effectiveVolume())
+	}
+	// Equalizer + mono downmix (no-op when both are off). Linear DSP commutes
+	// with the scalar gains above; runs before the fade-in ramp so the ramp
+	// shapes the final signal.
+	p.applyEQ(out[:n])
 	// Anti-click: ramp the first few ms up after a discontinuity (start / resume /
 	// seek) so the cut into a fresh waveform doesn't pop.
 	if fl := p.fadeLeft.Load(); fl > 0 {
@@ -520,7 +616,13 @@ func (p *Player) manage() {
 			if cur == nil {
 				continue
 			}
-			if cur.eof.Load() && cur.ring.buffered() == 0 {
+			// Finished = decoder hit EOF, the ring has drained, AND no seek is
+			// pending. The seekTo guard closes a race with tail seeks: SeekMS
+			// flushes the ring synchronously (buffered()==0 at once) but the
+			// parked decode goroutine only clears eof after it wakes — without
+			// the guard a tick landing in that window would skip the track,
+			// discarding the seek.
+			if cur.eof.Load() && cur.ring.buffered() == 0 && cur.seekTo.Load() < 0 {
 				if e := cur.lastErr(); e != "" {
 					p.lastErr.Store(e)
 				}
@@ -538,11 +640,21 @@ func (p *Player) manage() {
 					continue
 				}
 				if next != nil {
-					// Seamless swap to the preloaded next track.
-					p.cur.Store(next)
-					p.next.Store(nil)
+					// Seamless swap to the preloaded next track. Use CAS so a
+					// concurrent Play/Stop/ClearPreload that swapped these pointers
+					// (and killed the sources) can't be clobbered: claim next, then
+					// install it as cur only if cur is unchanged.
+					if !p.next.CompareAndSwap(next, nil) {
+						continue // preload was cleared/replaced under us
+					}
+					if !p.cur.CompareAndSwap(cur, next) {
+						next.kill() // we own next now; cur changed, so release it
+						continue
+					}
 					cur.kill()
-					p.played.Store(0)
+					// Crossfade already played next.xfadeConsumed bytes at real time;
+					// resume from there (0 for a plain gapless transition).
+					p.played.Store(next.xfadeConsumed.Load())
 					p.totalMS.Store(next.durMS)
 					p.format.Store(next.format)
 					// Recompute the per-track ReplayGain for the swapped-in track;
@@ -556,6 +668,12 @@ func (p *Player) manage() {
 						p.onFinish()
 					}
 				} else {
+					// No preload: finish. Guard against a concurrent Play/Stop that
+					// swapped in a new cur so we don't wedge it into Stopped.
+					if !p.cur.CompareAndSwap(cur, nil) {
+						continue
+					}
+					cur.kill() // release the decode goroutine parked after EOF
 					p.state.Store(int32(Stopped))
 					if p.onFinish != nil {
 						p.onFinish()
@@ -580,9 +698,16 @@ func (p *Player) SeekMS(ms int64) {
 	}
 	off := ms * bytesPerSec / 1000
 	off -= off % frameBytes
-	p.played.Store(off)
-	p.fadeLeft.Store(fadeInFrames) // anti-click ramp after the scrub
+	// Set the seek target, then flush the ring synchronously so pre-seek PCM
+	// stops playing immediately (the decode goroutine's own flush can lag by a
+	// device period while it's blocked in ring.write). requestSeek before flush
+	// so the decoder re-checks the target instead of refilling the flushed ring
+	// with pre-seek PCM. The ring is now empty, so fadeLeft is spent on the first
+	// post-seek PCM (the real discontinuity), not on stale audio.
 	cur.requestSeek(off)
+	cur.ring.flush()
+	p.played.Store(off)
+	p.fadeLeft.Store(fadeInFrames) // anti-click ramp on the first post-seek PCM
 }
 
 func (p *Player) Pause() {
@@ -624,6 +749,14 @@ func (p *Player) stopSources() {
 func (p *Player) Close() {
 	p.mgrOnce.Do(func() { close(p.stopMgr) })
 	p.stopSources()
+	// Flush a pending debounced EQ save so a change made just before quit
+	// isn't lost.
+	p.eqSaveMu.Lock()
+	pending := p.eqSaveTimer != nil && p.eqSaveTimer.Stop()
+	p.eqSaveMu.Unlock()
+	if pending {
+		p.saveEQNow()
+	}
 	if p.out != nil {
 		p.out.close()
 	}
@@ -647,9 +780,12 @@ func newSource(plan *deezer.StreamPlan, durMS int64) *source {
 		plan:   plan,
 		durMS:  durMS,
 		format: plan.Format,
+		rgFac:  dbToFactor(plan.GainDB),
 		sb:     newStreamBuffer(),
 		ring:   newPCMRing(ringMax),
 	}
+	s.cond = sync.NewCond(&s.mu)
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.seekTo.Store(-1)
 	return s
 }
@@ -657,7 +793,7 @@ func newSource(plan *deezer.StreamPlan, durMS int64) *source {
 // download fetches the CDN body, decrypting BF_CBC_STRIPE chunks (encrypted
 // streams) or passing through plain streams (podcasts), into the streamBuffer.
 func (s *source) download() {
-	req, err := http.NewRequest(http.MethodGet, s.plan.CDNURL, nil)
+	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, s.plan.CDNURL, nil)
 	if err != nil {
 		s.setErr(err)
 		s.sb.finish(err)
@@ -665,11 +801,14 @@ func (s *source) download() {
 	}
 	// A browser User-Agent: Deezer's own CDN is permissive, but third-party
 	// podcast hosts (e.g. Acast for direct-stream episodes) reject the default Go
-	// agent with 403. http.DefaultClient follows the redirects those hosts use.
+	// agent with 403. streamHTTPClient follows the redirects those hosts use and
+	// cancels (via s.ctx) when the source is killed, unblocking a stalled read.
 	req.Header.Set("User-Agent", streamUserAgent)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := streamHTTPClient.Do(req)
 	if err != nil {
-		s.setErr(err)
+		if !s.dead.Load() {
+			s.setErr(err)
+		}
 		s.sb.finish(err)
 		return
 	}
@@ -689,8 +828,8 @@ func (s *source) download() {
 				s.sb.append(buf[:n])
 			}
 			if err != nil {
-				if err != io.EOF {
-					s.setErr(err)
+				if err != io.EOF && !s.dead.Load() {
+					s.setErr(err) // a kill()-induced cancel is not a track error
 				}
 				s.sb.finish(eofToNil(err))
 				return
@@ -720,8 +859,8 @@ func (s *source) download() {
 			if len(out) > 0 {
 				s.sb.append(out)
 			}
-			if rerr != io.EOF {
-				s.setErr(rerr)
+			if rerr != io.EOF && !s.dead.Load() {
+				s.setErr(rerr) // a kill()-induced cancel is not a track error
 			}
 			s.sb.finish(eofToNil(rerr))
 			return
@@ -760,12 +899,17 @@ func (s *source) decode() {
 		var md *mp3.Decoder
 		md, err = mp3.NewDecoder(s.sb)
 		if err == nil {
-			// Diagnostics: the device runs at 44100 stereo and the pipeline
-			// assumes the decoder matches. A mismatch here (rate != 44100, or a
-			// mono source) would make MP3 playback sound choppy/wrong while FLAC
-			// (always 44100, mono duplicated to stereo) stays fine.
-			odlog.Debug("mp3 decode: sampleRate=%d deviceRate=%d format=%s", md.SampleRate(), sampleRate, s.format)
-			dec = md
+			// go-mp3 always emits 2ch s16 but at the FILE's native rate, while the
+			// output device is fixed at 44100. Deezer tracks are 44.1k, but the
+			// plain-stream path also serves third-party podcast MP3s (48k/24k/22.05k);
+			// left unresampled they'd play at the wrong speed and pitch. Wrap the
+			// decoder in a linear resampler when the rate differs.
+			if r := md.SampleRate(); r != sampleRate {
+				odlog.Debug("mp3 decode: resampling %dHz -> %dHz format=%s", r, sampleRate, s.format)
+				dec = newResampleStream(md, r)
+			} else {
+				dec = md
+			}
 		}
 	}
 	if err != nil {
@@ -773,6 +917,14 @@ func (s *source) decode() {
 			s.setErr(err)
 		}
 		s.eof.Store(true)
+		// There is no decoder to service seeks, and manage()'s finish check
+		// treats a pending seek as "not finished" — so park here swallowing any
+		// seek requests until the source is killed. Returning immediately
+		// instead would let a SeekMS on this errored source leave seekTo set
+		// forever, wedging manage() out of ever finishing/advancing.
+		for s.waitSeekOrDead() {
+			s.seekTo.Store(-1)
+		}
 		return
 	}
 	buf := make([]byte, decodeChunk)
@@ -781,34 +933,73 @@ func (s *source) decode() {
 		if s.dead.Load() {
 			return
 		}
-		if to := s.seekTo.Swap(-1); to >= 0 {
-			func() {
-				defer func() { _ = recover() }()
-				_, _ = dec.Seek(to, io.SeekStart)
-			}()
-			seq = s.ring.flush()
+		if s.seekTo.Load() >= 0 {
+			// Clear eof BEFORE consuming the seek target: manage()'s finish check
+			// is `eof && ring empty && no pending seek`, so the "not finished"
+			// signal must hand off from seekTo to eof without a gap. Swapping
+			// seekTo first would open a window (seekTo=-1, eof still true) in
+			// which manage() could finish and skip the track.
+			s.eof.Store(false) // seeking back into the track: PCM will grow again
+			if to := s.seekTo.Swap(-1); to >= 0 {
+				func() {
+					defer func() { _ = recover() }()
+					_, _ = dec.Seek(to, io.SeekStart)
+				}()
+				seq = s.ring.flush()
+			}
 		}
 		n, rerr := dec.Read(buf)
 		if n > 0 {
 			if !s.ring.write(buf[:n], seq) {
-				// flushed (seek) or closed; refresh seq and continue/stop.
+				// The ring was flushed/closed under us (a seek, from here or from
+				// SeekMS). Drop this chunk and loop so a pending seek is re-checked
+				// at the top before we decode more — otherwise pre-seek PCM decoded
+				// before the Seek executes could be written into the flushed ring.
 				if s.dead.Load() {
 					return
 				}
 				seq = s.ring.seq()
+				continue
 			}
 		}
 		if rerr != nil {
+			// Decoder EOF, but the source is still alive: the ring may hold several
+			// seconds of PCM and the user can still seek back into the track. Mark
+			// eof (so manage() finishes once the ring drains) and park until a seek
+			// or kill wakes us, then resume decoding.
 			s.eof.Store(true)
-			return
+			if !s.waitSeekOrDead() {
+				return
+			}
 		}
 	}
 }
 
-func (s *source) requestSeek(pcmOffset int64) { s.seekTo.Store(pcmOffset) }
+// waitSeekOrDead blocks until a seek is requested or the source is killed.
+// Returns true if a seek is pending, false if the source is dead.
+func (s *source) waitSeekOrDead() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for s.seekTo.Load() < 0 && !s.dead.Load() {
+		s.cond.Wait()
+	}
+	return s.seekTo.Load() >= 0
+}
+
+func (s *source) requestSeek(pcmOffset int64) {
+	s.seekTo.Store(pcmOffset)
+	s.mu.Lock()
+	s.cond.Broadcast() // wake the decode goroutine if it parked after EOF
+	s.mu.Unlock()
+}
 
 func (s *source) kill() {
 	s.dead.Store(true)
+	s.eof.Store(true) // a killed source is finished: never let manage() wait on it
+	s.cancel()        // unblock a stalled Body.Read in download()
+	s.mu.Lock()
+	s.cond.Broadcast() // wake the decode goroutine if it parked after EOF
+	s.mu.Unlock()
 	s.sb.close()
 	s.ring.close()
 }

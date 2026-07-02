@@ -38,4 +38,13 @@ final class RemoteHostStore: ObservableObject {
         if connectHostEnabled { Engine.connectHostSetEnabled(true) }
         if phoneRemoteEnabled { Engine.webRemoteSetEnabled(true) }
     }
+
+    /// Tear down both hosts on logout so the logged-out account can't keep
+    /// being controlled/streamed over the network. didSet fires on every
+    /// assignment (even false -> false), so this always stops the engine-side
+    /// servers.
+    func disableAll() {
+        connectHostEnabled = false
+        phoneRemoteEnabled = false
+    }
 }

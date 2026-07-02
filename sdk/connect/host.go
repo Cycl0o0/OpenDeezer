@@ -1,12 +1,19 @@
 package connect
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 
 	sdkcontrol "github.com/Cycl0o0/OpenDeezer/sdk/control"
 	sdkdeezer "github.com/Cycl0o0/OpenDeezer/sdk/deezer"
 )
+
+// ErrAdvertise is wrapped into the error returned by [Host.Start] when the
+// control endpoint bound successfully but LAN advertising failed. The endpoint
+// is left serving (reachable by address); callers must still call [Host.Close].
+var ErrAdvertise = errors.New("connect: control endpoint is serving but LAN advertising failed")
 
 // This file is the inbound ("in") side of OpenDeezer Connect: making this
 // process a device that other OpenDeezer clients can discover on the LAN and
@@ -33,6 +40,9 @@ type HostConfig struct {
 	Name string
 	// Client is the advertised client/platform id (e.g. "myapp").
 	Client string
+	// Device is the human device label reported by [RemoteClient.Whoami]
+	// (e.g. "Kitchen Speaker"). Defaults to Client when empty.
+	Device string
 	// Version is the advertised OpenDeezer/app version.
 	Version string
 }
@@ -45,12 +55,13 @@ type HostConfig struct {
 // Construct one with [NewHost], call [Host.Start] to bind and advertise, and
 // [Host.Close] to stop. Host is safe for concurrent use once started.
 type Host struct {
-	srv     *sdkcontrol.Server
-	resp    *Responder
-	account func() Account
-	name    string
-	client  string
-	version string
+	srv             *sdkcontrol.Server
+	resp            *Responder
+	account         func() Account
+	name            string
+	client          string
+	version         string
+	sameAccountOnly bool
 }
 
 // NewHost builds a Connect host.
@@ -58,9 +69,12 @@ type Host struct {
 //   - cfg     — control bind/auth + advertised identity
 //   - status  — playback snapshot provider (race-free reads)
 //   - account — logged-in identity provider; its Name is preferred for the
-//               advertised name. Pass nil to advertise cfg.Name only.
+//     advertised name. It is also the same-account auth credential
+//     source: with Control.SameAccountOnly set, account must be
+//     non-nil or [Host.Start] fails (every request would 401). Pass
+//     nil only when SameAccountOnly is off, to advertise cfg.Name.
 //   - cmds    — the actions remote controllers can dispatch (same command set
-//               a [RemoteClient] sends)
+//     a [RemoteClient] sends)
 //   - dz      — Deezer client for the endpoint's browse routes; nil to disable
 func NewHost(
 	cfg HostConfig,
@@ -69,15 +83,20 @@ func NewHost(
 	cmds Commands,
 	dz *sdkdeezer.Client,
 ) *Host {
+	device := cfg.Device
+	if device == "" {
+		device = cfg.Client
+	}
 	srv := sdkcontrol.NewServer(cfg.Control, status, account, cmds, dz)
-	srv.SetClientInfo(cfg.Client, cfg.Version) // device label defaults to client id
+	srv.SetClientInfo(cfg.Client, device)
 	srv.SetVersion(cfg.Version)
 	return &Host{
-		srv:     srv,
-		account: account,
-		name:    cfg.Name,
-		client:  cfg.Client,
-		version: cfg.Version,
+		srv:             srv,
+		account:         account,
+		name:            cfg.Name,
+		client:          cfg.Client,
+		version:         cfg.Version,
+		sameAccountOnly: cfg.Control.SameAccountOnly,
 	}
 }
 
@@ -96,7 +115,18 @@ func (h *Host) Addr() string { return h.srv.Addr() }
 // Advertising is only useful when the control endpoint binds a LAN-reachable
 // (non-loopback) address; a loopback bind is advertised but reachable only on
 // this machine.
+//
+// When advertising fails, Start leaves the control endpoint serving (reachable
+// by address) and returns an error wrapping [ErrAdvertise]; the caller must
+// still call [Host.Close] to release it. Any other error means nothing is
+// running.
 func (h *Host) Start() error {
+	if h.sameAccountOnly && h.account == nil {
+		// SameAccountOnly rejects every request when there is no account to
+		// compare against, so the host would be uncontrollable. Fail loudly
+		// rather than serving a dead endpoint.
+		return fmt.Errorf("connect: Control.SameAccountOnly requires a non-nil account provider")
+	}
 	if err := h.srv.Start(); err != nil {
 		return err
 	}
@@ -105,7 +135,7 @@ func (h *Host) Start() error {
 		// The control endpoint is up; surface the advertising error but keep it
 		// serving so a caller on a multicast-less network can still reach this
 		// device by address.
-		return err
+		return fmt.Errorf("%w: %v", ErrAdvertise, err)
 	}
 	h.resp = resp
 	return nil

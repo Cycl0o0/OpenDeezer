@@ -62,6 +62,20 @@ internal sealed class HomeData { public List<Track> TopTracks = new(); public Li
 // DZCheckUpdateJSON -> {"current","latest","hasUpdate","url","notes"}.
 internal sealed class UpdateInfo { public string Current = "", Latest = "", Url = "", Notes = ""; public bool HasUpdate; }
 
+// DZEQJSON -> {enabled,mono,preampDb,gainsDb:[10],preset,bands:[10],presets:[...]}.
+// Live engine state (persisted engine-side in eq.json, NEVER in settings.json);
+// Preset is "custom" whenever any band was edited by hand. Mono is independent
+// of Enabled. Gains/preamp are dB in -12..+12.
+internal sealed class EQState
+{
+    public bool Enabled, Mono;
+    public double PreampDb;
+    public double[] GainsDb = new double[10];
+    public double[] Bands = { 31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
+    public string Preset = "flat";
+    public List<string> Presets = new();
+}
+
 // Persisted settings. quality: 0 Normal,1 High,2 HiFi. audioDevice "" = default. crossfadeMs 0 = off.
 internal sealed class Settings
 {
@@ -90,6 +104,13 @@ internal static class JsonExt
             if (v.TryGetInt64(out var l)) return l;
             if (v.TryGetDouble(out var d)) return (long)d;
         }
+        return def;
+    }
+
+    public static double Dbl(this JsonElement e, string name, double def = 0)
+    {
+        if (e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d))
+            return d;
         return def;
     }
 
@@ -127,6 +148,20 @@ internal static class Wire
     {
         if (n <= 0) return "";
         return n.ToString("N0", CultureInfo.InvariantCulture) + " fans";
+    }
+
+    // EQ band-center label: 31.5 -> "31", 500 -> "500", 1000 -> "1k", 16000 -> "16k".
+    public static string BandText(double hz) =>
+        hz >= 1000 ? (hz / 1000).ToString("0.#", CultureInfo.InvariantCulture) + "k"
+                   : ((long)hz).ToString(CultureInfo.InvariantCulture);
+
+    // EQ preset id -> display label: "bass-boost" -> "Bass Boost", "flat" -> "Flat".
+    public static string PresetLabel(string id)
+    {
+        var parts = (id ?? "").Split('-');
+        for (int i = 0; i < parts.Length; i++)
+            if (parts[i].Length > 0) parts[i] = char.ToUpperInvariant(parts[i][0]) + parts[i].Substring(1);
+        return string.Join(" ", parts);
     }
 
     // Map a discovery client/platform id to a friendly device type for the picker.
@@ -375,6 +410,39 @@ internal static class Wire
         u.Url = o.Str("url");
         u.Notes = o.Str("notes");
         return u;
+    }
+
+    public static EQState ParseEQ(string json)
+    {
+        var eq = new EQState();
+        using var doc = TryParse(json);
+        if (doc == null) return eq;
+        var o = doc.RootElement;
+        eq.Enabled = o.Bool("enabled");
+        eq.Mono = o.Bool("mono");
+        eq.PreampDb = o.Dbl("preampDb");
+        eq.Preset = o.Str("preset", eq.Preset);
+        FillDoubles(o.Arr("gainsDb"), eq.GainsDb);
+        FillDoubles(o.Arr("bands"), eq.Bands); // keep the built-in centers if absent
+        var presets = o.Arr("presets");
+        if (presets.ValueKind == JsonValueKind.Array)
+            foreach (var v in presets.EnumerateArray())
+                if (v.ValueKind == JsonValueKind.String) eq.Presets.Add(v.GetString() ?? "");
+        return eq;
+    }
+
+    // Copy a JSON number array into a fixed-size buffer (extra elements ignored,
+    // missing/short arrays leave the defaults in place).
+    private static void FillDoubles(JsonElement arr, double[] dst)
+    {
+        if (arr.ValueKind != JsonValueKind.Array) return;
+        int i = 0;
+        foreach (var v in arr.EnumerateArray())
+        {
+            if (i >= dst.Length) break;
+            if (v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d)) dst[i] = d;
+            i++;
+        }
     }
 
     public static HomeData ParseHome(string json)

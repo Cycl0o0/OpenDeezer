@@ -24,6 +24,18 @@ func startControl(t *testing.T) (string, *int) {
 		control.Commands{PlayPause: func() { played++ }},
 		nil,
 	)
+	// Fake EQ bridge: echoes mutations back through State like the real engine.
+	eq := control.EQState{Preset: "flat", GainsDB: make([]float64, 10),
+		Bands:   []float64{31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000},
+		Presets: []string{"flat", "rock"}}
+	srv.SetEQ(&control.EQ{
+		State:      func() control.EQState { return eq },
+		SetEnabled: func(on bool) { eq.Enabled = on },
+		SetMono:    func(on bool) { eq.Mono = on },
+		SetPreamp:  func(db float64) { eq.PreampDB = db },
+		SetPreset:  func(name string) error { eq.Preset = name; return nil },
+		SetBand:    func(band int, db float64) error { eq.GainsDB[band] = db; eq.Preset = "custom"; return nil },
+	})
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +115,28 @@ func TestToolCallValidationError(t *testing.T) {
 		res := r.Result.(map[string]any)
 		if res["isError"] != true {
 			t.Fatalf("expected isError for %v", res)
+		}
+	}
+}
+
+func TestToolCallEQ(t *testing.T) {
+	base, _ := startControl(t)
+	resps := run(t, base,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_eq","arguments":{"enabled":true,"band":3,"gain_db":4.5}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_eq","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_eq","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_eq","arguments":{"band":3}}}`,
+	)
+	if len(resps) != 4 {
+		t.Fatalf("got %d responses, want 4", len(resps))
+	}
+	text := contentText(t, resps[1])
+	if !strings.Contains(text, `"enabled": true`) || !strings.Contains(text, `"preset": "custom"`) || !strings.Contains(text, "4.5") {
+		t.Fatalf("get_eq text = %s", text)
+	}
+	for _, r := range resps[2:] { // no args / band without gain_db must error
+		if r.Result.(map[string]any)["isError"] != true {
+			t.Fatalf("expected isError, got %v", r.Result)
 		}
 	}
 }

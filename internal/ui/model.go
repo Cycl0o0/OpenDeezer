@@ -73,6 +73,17 @@ type Model struct {
 	q       *queue.Queue
 	playing bool // a track is loaded/playing
 
+	// browse holds the tracks of the list currently being browsed (album, liked
+	// songs, search results, episodes). It is committed to the play queue only on
+	// an explicit play (see activate), so browsing never clobbers the live queue.
+	browse []deezer.Track
+
+	// device-picker snapshot: the list the picker temporarily replaced, restored
+	// when the picker closes (the picker reuses m.list).
+	devSavedItems []list.Item
+	devSavedTitle string
+	devSavedIndex int
+
 	// lyrics for the current track (lazily fetched on the lyrics screen)
 	lyrics      *deezer.Lyrics
 	lyricsTrack string
@@ -116,7 +127,7 @@ type Model struct {
 	remoteVersion string               // peer OpenDeezer version (from /whoami)
 	advertiser    *discovery.Responder // LAN advertisement (when our control API is LAN-bound)
 
-	finished chan struct{} // signalled by player onFinish
+	finished chan bool // signalled by player onFinish; true = gapless swap, false = stop
 }
 
 // peerDevice is a discovered Connect device + what it's currently playing.
@@ -283,6 +294,15 @@ func (m *Model) StartControl(send func(tea.Msg)) error {
 	)
 	m.ctrl.SetVersion(Version)
 	m.ctrl.SetClientInfo("tui", "OpenDeezer TUI")
+	// EQ setters are atomic-swap on the player, safe to call straight from the
+	// HTTP goroutine (no round-trip through the update loop needed).
+	pl := m.player
+	m.ctrl.SetEQ(control.PlayerEQ(func() control.EQController {
+		if pl != nil {
+			return pl
+		}
+		return nil
+	}, audio.EQPresetNames))
 	if err := m.ctrl.Start(); err != nil {
 		m.ctrl = nil
 		return err
@@ -449,11 +469,15 @@ func New(client *deezer.Client, player *audio.Player) *Model {
 		status:   "Logging in…",
 		loading:  true,
 		q:        queue.New(),
-		finished: make(chan struct{}, 1),
+		finished: make(chan bool, 1),
 	}
 	player.SetOnFinish(func() {
+		// Capture whether this is a gapless swap (still Playing) or a stop, at the
+		// instant of the signal — the UI must not re-sample the live state later,
+		// which user input racing the finish could have changed.
+		swapped := player.State() == audio.Playing
 		select {
-		case m.finished <- struct{}{}:
+		case m.finished <- swapped:
 		default:
 		}
 	})
@@ -500,12 +524,17 @@ type streamReadyMsg struct {
 type errMsg struct{ err error }
 type statusMsg struct{ text string }
 type preloadMsg struct {
-	plan *deezer.StreamPlan
-	dur  int64
+	plan    *deezer.StreamPlan
+	dur     int64
+	trackID string // the queue's PeekNext at request time; drop if it changed
 }
 type devicesMsg struct{ devices []audio.Device }
 type tickMsg time.Time
-type trackFinishedMsg struct{}
+
+// trackFinishedMsg reports a track finishing. swapped is captured at the finish
+// signal: true when the player gaplessly swapped in the preloaded next track,
+// false when it stopped.
+type trackFinishedMsg struct{ swapped bool }
 type artMsg struct {
 	trackID string
 	img     image.Image
@@ -524,8 +553,7 @@ func tickCmd() tea.Cmd {
 // waitFinish blocks on the player's finish channel.
 func (m *Model) waitFinish() tea.Cmd {
 	return func() tea.Msg {
-		<-m.finished
-		return trackFinishedMsg{}
+		return trackFinishedMsg{swapped: <-m.finished}
 	}
 }
 
@@ -682,7 +710,7 @@ func (m *Model) preloadNextCmd() tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		return preloadMsg{plan: plan, dur: t.DurationMS}
+		return preloadMsg{plan: plan, dur: t.DurationMS, trackID: t.ID}
 	}
 }
 

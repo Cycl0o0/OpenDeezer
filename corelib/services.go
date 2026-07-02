@@ -23,13 +23,14 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/discord"
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/internal/version"
 )
 
 var (
 	servicesOnce sync.Once
 	dp           discord.Presence
 	ctrlSrv      *control.Server
-	coreVersion  = "1.5.2"
+	coreVersion  = version.Number
 
 	curMu    sync.Mutex
 	curTrack deezer.Track
@@ -70,6 +71,16 @@ func fetchTrackMeta(c *deezer.Client, id string) {
 
 // startServices starts Discord RP + the control API once, after a successful
 // login. The just-logged-in client is passed in; closures read globals lazily.
+// engineEQ bridges the control API's /eq endpoint to the engine player.
+func engineEQ() *control.EQ {
+	return control.PlayerEQ(func() control.EQController {
+		if p := curPlayer(); p != nil {
+			return p
+		}
+		return nil
+	}, audio.EQPresetNames)
+}
+
 func startServices(c *deezer.Client) {
 	servicesOnce.Do(func() {
 		appID := config.LoadDiscordAppID()
@@ -82,7 +93,10 @@ func startServices(c *deezer.Client) {
 
 		if cfg := config.LoadControl(); cfg.Enabled {
 			id, dev := clientInfo()
-			ctrlSrv = control.New(
+			// Build + Start on a local var, then publish under mu: the exported
+			// control funcs read/write ctrlSrv on the UI thread while this runs on
+			// a DZInit worker, and a reader must never see a not-yet-listening srv.
+			srv := control.New(
 				control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount},
 				engineState,
 				engineAccount,
@@ -90,22 +104,26 @@ func startServices(c *deezer.Client) {
 				c,
 			)
 			// Set identity BEFORE Start so the serving goroutine never races these.
-			ctrlSrv.SetVersion(coreVersion)
-			ctrlSrv.SetClientInfo(id, dev)
+			srv.SetVersion(coreVersion)
+			srv.SetClientInfo(id, dev)
+			srv.SetEQ(engineEQ())
 			if cfg.SameAccount && cfg.Token == "" {
 				odlog.Warn("control api: LAN-exposed with same-account auth only; the Deezer " +
 					"user id is not a strong secret. Set OPENDEEZER_CONTROL_TOKEN for a real " +
 					"credential on untrusted networks.")
 			}
-			if err := ctrlSrv.Start(); err != nil {
+			if err := srv.Start(); err != nil {
 				odlog.Warn("control api: %v", err)
-				ctrlSrv = nil
 			} else {
-				odlog.Info("control api on %s", ctrlSrv.Addr())
+				addr := srv.Addr()
+				mu.Lock()
+				ctrlSrv = srv
+				mu.Unlock()
+				odlog.Info("control api on %s", addr)
 				// Advertise on the LAN (OpenDeezer Connect) only when bound to a
 				// reachable (non-loopback) address.
 				if !config.IsLoopbackAddr(cfg.Addr) {
-					if _, port, err := net.SplitHostPort(ctrlSrv.Addr()); err == nil {
+					if _, port, err := net.SplitHostPort(addr); err == nil {
 						if p, e := strconv.Atoi(port); e == nil {
 							if _, e := discovery.Advertise(advertInfo, p); e == nil {
 								odlog.Info("discovery advertising control port %d", p)
@@ -133,6 +151,30 @@ func serviceTicker() {
 
 func publishDiscord(p *audio.Player) {
 	if dp == nil {
+		return
+	}
+	// When routed to a remote device local playback is stopped, so the local
+	// player would report "stopped" and Update() would clear the presence. Derive
+	// it from the remote snapshot instead (matches the now-playing / lyrics sync
+	// remotePoller already keeps) so RP reflects the remote track.
+	if routedRemote() != nil {
+		st := remoteSnapshot()
+		ds := discord.State{PositionMS: st.PositionMS, DurationMS: st.DurationMS}
+		if st.Track != nil {
+			ds.Title, ds.Artist, ds.Album = st.Track.Title, st.Track.Artist, st.Track.Album
+			if st.Track.DurationMS > 0 {
+				ds.DurationMS = st.Track.DurationMS
+			}
+		}
+		switch st.State {
+		case "playing":
+			ds.Status = "playing"
+		case "paused":
+			ds.Status = "paused"
+		default:
+			ds.Status = "stopped"
+		}
+		dp.Update(ds)
 		return
 	}
 	cur := currentTrack()

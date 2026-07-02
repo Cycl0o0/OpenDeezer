@@ -90,8 +90,13 @@ type RemoteClient struct {
 //
 //   - token auth     → token="<bearer>", accountID=""
 //   - account auth   → token="", accountID="<your Deezer user id>"
-//   - session auth   → use the session token obtained by pairing
 //   - none           → token="", accountID=""
+//
+// A device reporting "session" auth (WebRemote mode) is driveable only from its
+// embedded browser SPA, which authenticates with a paired session token sent in
+// the X-OpenDeezer-Session header (stored in the browser's localStorage, not a
+// cookie); RemoteClient has no way to supply that credential and cannot control
+// such a device.
 func NewRemoteClient(addr, token, accountID string) *RemoteClient {
 	return &RemoteClient{c: internalcontrol.NewClient("http://"+addr, token, accountID)}
 }

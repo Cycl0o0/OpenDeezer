@@ -29,6 +29,10 @@ func (r Repeat) String() string {
 	}
 }
 
+// maxHistory bounds the visited-index history so an endless shuffle+RepeatAll
+// session can't grow it without limit.
+const maxHistory = 500
+
 // Queue holds an ordered track list plus a cursor, shuffle/repeat state and a
 // visited-index history (so Prev under shuffle retraces the real path). The zero
 // value is a valid empty queue. Not safe for concurrent use; callers serialize.
@@ -38,6 +42,13 @@ type Queue struct {
 	repeat  Repeat
 	shuffle bool
 	history []int
+
+	// order is a shuffled permutation of track indices (a full no-replacement
+	// traversal) and pos is the current track's position within it, so shuffle
+	// plays every track exactly once per cycle. Maintained only while shuffle is
+	// on; the invariant is order[pos] == index.
+	order []int
+	pos   int
 
 	// intn is rand.Intn by default; tests override for determinism.
 	intn func(n int) int
@@ -53,11 +64,72 @@ func (q *Queue) rnd(n int) int {
 	return q.intn(n)
 }
 
+// pushHistory records a visited index, keeping history bounded by maxHistory.
+func (q *Queue) pushHistory(i int) {
+	q.history = append(q.history, i)
+	if len(q.history) > maxHistory {
+		// Drop the oldest entries into a fresh backing array so memory is bounded.
+		q.history = append(q.history[:0:0], q.history[len(q.history)-maxHistory:]...)
+	}
+}
+
+// shuffleOrder rebuilds order as a random permutation of all track indices with
+// `first` pinned at position 0 (when 0 <= first < len), and resets pos to 0 so
+// order[pos] is the current track. A negative/out-of-range first shuffles the
+// whole set freely.
+func (q *Queue) shuffleOrder(first int) {
+	n := len(q.tracks)
+	q.order = make([]int, 0, n)
+	pinned := first >= 0 && first < n
+	if pinned {
+		q.order = append(q.order, first)
+	}
+	for i := 0; i < n; i++ {
+		if pinned && i == first {
+			continue
+		}
+		q.order = append(q.order, i)
+	}
+	// Fisher–Yates over the tail, leaving a pinned first element in place.
+	k := 0
+	if pinned {
+		k = 1
+	}
+	for i := len(q.order) - 1; i > k; i-- {
+		j := k + q.rnd(i-k+1)
+		q.order[i], q.order[j] = q.order[j], q.order[i]
+	}
+	q.pos = 0
+}
+
+// ensureOrder rebuilds the shuffle permutation if it has drifted out of sync
+// with the track list (e.g. after Append).
+func (q *Queue) ensureOrder() {
+	if len(q.order) != len(q.tracks) {
+		q.shuffleOrder(q.index)
+	}
+}
+
+// syncPos repositions pos onto the current index within order after the cursor
+// moved outside of Next (Prev history retrace, manual pick).
+func (q *Queue) syncPos() {
+	if !q.shuffle {
+		return
+	}
+	for i, idx := range q.order {
+		if idx == q.index {
+			q.pos = i
+			return
+		}
+	}
+}
+
 // Set replaces the queue contents and positions the cursor at start (clamped).
 // History is cleared.
 func (q *Queue) Set(tracks []deezer.Track, start int) {
 	q.tracks = tracks
 	q.history = nil
+	q.order = nil
 	if len(tracks) == 0 {
 		q.index = -1
 		return
@@ -68,6 +140,9 @@ func (q *Queue) Set(tracks []deezer.Track, start int) {
 		start = len(tracks) - 1
 	}
 	q.index = start
+	if q.shuffle {
+		q.shuffleOrder(q.index)
+	}
 }
 
 // Append adds tracks to the end without moving the cursor.
@@ -91,17 +166,30 @@ func (q *Queue) Current() (deezer.Track, bool) {
 }
 
 // SetIndex moves the cursor (clamped); use when the user picks a row directly.
+// The previous position is recorded so Prev retraces to the track that was
+// actually playing before the pick.
 func (q *Queue) SetIndex(i int) {
-	if i < 0 || i >= len(q.tracks) {
+	if i < 0 || i >= len(q.tracks) || i == q.index {
 		return
 	}
+	if q.index >= 0 {
+		q.pushHistory(q.index)
+	}
 	q.index = i
+	q.syncPos()
 }
 
 // Shuffle / Repeat accessors.
-func (q *Queue) Shuffle() bool       { return q.shuffle }
-func (q *Queue) SetShuffle(on bool)  { q.shuffle = on }
-func (q *Queue) ToggleShuffle() bool { q.shuffle = !q.shuffle; return q.shuffle }
+func (q *Queue) Shuffle() bool { return q.shuffle }
+func (q *Queue) SetShuffle(on bool) {
+	q.shuffle = on
+	if on {
+		q.shuffleOrder(q.index)
+	} else {
+		q.order = nil
+	}
+}
+func (q *Queue) ToggleShuffle() bool { q.SetShuffle(!q.shuffle); return q.shuffle }
 func (q *Queue) Repeat() Repeat      { return q.repeat }
 func (q *Queue) SetRepeat(r Repeat)  { q.repeat = r }
 func (q *Queue) CycleRepeat() Repeat { q.repeat = (q.repeat + 1) % 3; return q.repeat }
@@ -114,14 +202,26 @@ func (q *Queue) Next() bool {
 	if len(q.tracks) == 0 {
 		return false
 	}
-	q.history = append(q.history, q.index)
-	switch {
-	case q.shuffle && len(q.tracks) > 1:
-		next := q.index
-		for next == q.index {
-			next = q.rnd(len(q.tracks))
+	if q.shuffle && len(q.tracks) > 1 {
+		q.ensureOrder()
+		if q.pos+1 < len(q.order) {
+			q.pushHistory(q.index)
+			q.pos++
+			q.index = q.order[q.pos]
+			return true
 		}
-		q.index = next
+		// End of the shuffled cycle: stop under RepeatOff (matching linear
+		// semantics), reshuffle and continue under RepeatAll.
+		if q.repeat != RepeatAll {
+			return false
+		}
+		q.pushHistory(q.index)
+		q.reshuffleWrap()
+		q.index = q.order[q.pos]
+		return true
+	}
+	q.pushHistory(q.index)
+	switch {
 	case q.index+1 < len(q.tracks):
 		q.index++
 	case q.repeat == RepeatAll:
@@ -133,6 +233,16 @@ func (q *Queue) Next() bool {
 	return true
 }
 
+// reshuffleWrap builds a fresh shuffled cycle for RepeatAll, avoiding an
+// immediate repeat of the track that just finished.
+func (q *Queue) reshuffleWrap() {
+	prev := q.index
+	q.shuffleOrder(-1)
+	if len(q.order) > 1 && q.order[0] == prev {
+		q.order[0], q.order[1] = q.order[1], q.order[0]
+	}
+}
+
 // Prev steps back, retracing shuffle history when present.
 func (q *Queue) Prev() bool {
 	if len(q.tracks) == 0 {
@@ -141,10 +251,12 @@ func (q *Queue) Prev() bool {
 	if n := len(q.history); n > 0 {
 		q.index = q.history[n-1]
 		q.history = q.history[:n-1]
+		q.syncPos()
 		return true
 	}
 	if q.index > 0 {
 		q.index--
+		q.syncPos()
 		return true
 	}
 	return false
@@ -188,8 +300,9 @@ func (q *Queue) AdvanceLinear() bool {
 	if ni < 0 {
 		return false
 	}
-	q.history = append(q.history, q.index)
+	q.pushHistory(q.index)
 	q.index = ni
+	q.syncPos()
 	return true
 }
 

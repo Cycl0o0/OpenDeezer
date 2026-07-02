@@ -252,7 +252,11 @@ func (cl *Client) PodcastEpisodeStream(episodeID string) (*StreamPlan, error) {
 func FormatLabel(raw string) string { return internaldeezer.FormatLabel(raw) }
 
 // TrackIDOf extracts the numeric Deezer track id from a URI
-// ("deezer:track:123"), a URL, or a bare numeric string.
+// ("deezer:track:123"), a URL, or a bare numeric string. Any query string or
+// fragment is ignored, so share links carrying utm_* params (including
+// utm_content=track-<id>, whose digits would otherwise be concatenated onto the
+// id) resolve correctly. Trailing slashes are tolerated, and negative ids
+// (user-upload SNG_IDs) are preserved. Returns "" when no valid id is present.
 func TrackIDOf(uri string) string { return internaldeezer.TrackIDOf(uri) }
 
 // BlowfishKey derives the per-track Blowfish key used for BF_CBC_STRIPE

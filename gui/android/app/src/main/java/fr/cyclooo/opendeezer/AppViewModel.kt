@@ -1,6 +1,8 @@
 package fr.cyclooo.opendeezer
 
 import android.app.Application
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,6 +12,7 @@ import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
+import fr.cyclooo.opendeezer.player.PlaybackService
 import fr.cyclooo.opendeezer.player.PlayerController
 import kotlinx.coroutines.launch
 
@@ -31,6 +34,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var updateInfo by mutableStateOf<UpdateInfo?>(null)
         private set
 
+    // The last ARL that failed Engine.init — the WebView auto-capture must not
+    // retry it in a loop (the login page would reset every few seconds).
+    private var lastFailedArl: String? = null
+
     init {
         // Advertise this client to OpenDeezer Connect peers.
         Engine.setClientInfo("android", "OpenDeezer (Android)")
@@ -42,6 +49,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Non-intrusive: one background check per launch, never blocks startup.
         checkForUpdate()
+
+        // Foreground playback service: runs while a track is loaded so audio
+        // survives backgrounding and lock-screen controls are available.
+        PlaybackService.controller = player
+        viewModelScope.launch {
+            var running = false
+            player.state.collect { st ->
+                // Keep the service across the brief STOPPED gap between queue
+                // tracks — background FGS restarts are rejected on Android 12+.
+                val idle = st.queue.isEmpty() && (st.state == Engine.STOPPED || st.state == Engine.ERROR)
+                val want = st.current != null && !idle
+                if (want && !running) {
+                    PlaybackService.start(getApplication())
+                    running = true
+                } else if (!want && running) {
+                    PlaybackService.stop(getApplication())
+                    running = false
+                }
+            }
+        }
     }
 
     /** Silently checks GitHub for a newer release; surfaces it via [updateInfo] if found. */
@@ -56,7 +83,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         updateInfo = null
     }
 
-    fun login(arl: String, persist: Boolean = true) {
+    /** [auto] marks a WebView-captured ARL: a token that already failed is ignored. */
+    fun login(arl: String, persist: Boolean = true, auto: Boolean = false) {
+        if (auto && arl == lastFailedArl) return
         if (arl.isBlank()) {
             loginError = "Empty ARL"
             stage = AuthStage.NEEDS_LOGIN
@@ -69,6 +98,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val ok = Engine.init(arl)
             if (!ok) {
                 busy = false
+                lastFailedArl = arl
                 loginError = "Login failed — check your ARL and connection."
                 stage = AuthStage.NEEDS_LOGIN
                 if (persist) prefs.clear()
@@ -80,11 +110,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             busy = false
             when {
                 acct == null || !acct.loggedIn -> {
+                    lastFailedArl = arl
                     loginError = "Could not load account."
                     stage = AuthStage.NEEDS_LOGIN
                 }
                 !acct.premium -> stage = AuthStage.NEEDS_PREMIUM
                 else -> {
+                    lastFailedArl = null
                     stage = AuthStage.READY
                     player.start()
                     applyRemoteHosts()
@@ -113,7 +145,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.clear()
         player.stop()
         player.stopPlayback()
-        Engine.disconnectDevice()
+        // Stop serving/advertising for the signed-out account: the Connect host
+        // and web remote would otherwise keep accepting commands with its ARL.
+        Engine.setConnectHostEnabled(false)
+        Engine.setWebRemoteEnabled(false)
+        viewModelScope.launch {
+            Engine.disconnectDevice()
+            // Tear the engine session down too — without this the Go core keeps
+            // the old account's client (and its ARL) alive in memory.
+            Engine.logout()
+        }
+        // Drop the WebView session too, or web sign-in silently re-captures the
+        // old account's arl cookie and undoes the sign-out.
+        runCatching {
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            WebStorage.getInstance().deleteAllData()
+        }
         account = null
         stage = AuthStage.NEEDS_LOGIN
     }

@@ -15,6 +15,7 @@ object Routes {
     const val LYRICS = "lyrics"
     const val QUEUE = "queue"
     const val SETTINGS = "settings"
+    const val EQUALIZER = "equalizer"
 
     const val PLAYLIST = "playlist/{id}/{name}"
     const val ALBUM = "album/{id}/{name}"

@@ -252,6 +252,30 @@ jobs:
           gomobile init
           mkdir -p gui/android/app/libs
           gomobile bind -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
+      - name: Install stable signing keystore (optional)
+        # Without this, Gradle debug-signs with the runner's auto-generated
+        # ~/.android/debug.keystore, whose key is random per runner — so APKs
+        # from different releases carry different signatures and Android
+        # refuses to upgrade (INSTALL_FAILED_UPDATE_INCOMPATIBLE).
+        # Set the ANDROID_DEBUG_KEYSTORE_BASE64 repo secret to a base64-encoded
+        # keystore with the standard debug credentials so every release signs
+        # with the same key. Generate it once with:
+        #   keytool -genkeypair -keystore debug.keystore -alias androiddebugkey \
+        #     -storepass android -keypass android -keyalg RSA -keysize 2048 \
+        #     -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        #   base64 -w0 debug.keystore   # -> secret value
+        # If the secret is unset the build still works, but keeps today's
+        # per-run key (users must uninstall/reinstall to upgrade).
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Installed persistent debug keystore from secret."
+          else
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 not set — APKs get an ephemeral per-run signing key; upgrades across releases will fail."
+          fi
       - name: Assemble debug APKs (phone + TV)
         working-directory: gui/android
         run: |
@@ -337,6 +361,9 @@ jobs:
           gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" || true
       - name: Generate SHA256SUMS
         run: |
+          # On re-runs the download above includes the previously published
+          # SHA256SUMS.txt — drop it so the sums file never references itself.
+          rm -f dist/SHA256SUMS.txt
           cd dist && sha256sum * > ../SHA256SUMS.txt || true
           cat ../SHA256SUMS.txt || true
       - name: Upload checksums

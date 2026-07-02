@@ -208,17 +208,13 @@ struct Lyrics: Decodable {
     enum CodingKeys: String, CodingKey { case plain = "Plain", synced = "Synced" }
 }
 
-// Podcasts (raw Podcast/Episode structs — capitalized keys).
+// Podcasts (documented lowercase wire contract, same keys as odmobile/corelib).
 struct Podcast: Decodable, Hashable, Identifiable {
     let id: String
     let name: String
     let description: String
     let artworkUrl: String
     let episodeCount: Int
-    enum CodingKeys: String, CodingKey {
-        case id = "ID", name = "Name", description = "Description"
-        case artworkUrl = "ArtworkURL", episodeCount = "EpisodeCount"
-    }
 }
 struct PodcastsResponse: Decodable { let podcasts: [Podcast] }
 
@@ -230,10 +226,6 @@ struct Episode: Decodable, Hashable, Identifiable {
     let durationMs: Int64
     let releaseDate: String
     let podcastName: String
-    enum CodingKeys: String, CodingKey {
-        case id = "ID", title = "Title", description = "Description", artworkUrl = "ArtworkURL"
-        case durationMs = "DurationMS", releaseDate = "ReleaseDate", podcastName = "PodcastName"
-    }
     var durationText: String { Track.timeText(durationMs) }
 }
 struct EpisodesResponse: Decodable { let episodes: [Episode] }
@@ -306,6 +298,19 @@ struct UpdateInfo: Decodable {
     let hasUpdate: Bool
     let url: String
     let notes: String
+}
+
+// Equalizer + mono-downmix state (OdmobileEQJSON — tagged lowerCamelCase,
+// same wire shape on every client). `gainsDb` has exactly 10 values matching
+// the band centers in `bands`; `preset` is one of `presets` or "custom".
+struct EQState: Decodable {
+    let enabled: Bool
+    let mono: Bool
+    let preampDb: Double
+    let gainsDb: [Double]
+    let preset: String
+    let bands: [Double]
+    let presets: [String]
 }
 
 // PlayerState mirrors audio.State in the Go core.

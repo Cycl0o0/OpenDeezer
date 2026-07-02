@@ -33,7 +33,6 @@ struct DeezerWebView: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKHTTPCookieStoreObserver {
         let onARL: (String) -> Void
-        private var captured = false
         init(onARL: @escaping (String) -> Void) { self.onARL = onARL }
 
         // Live cookie-store change — re-scan for a non-empty arl.
@@ -46,15 +45,16 @@ struct DeezerWebView: NSViewRepresentable {
             scan(webView.configuration.websiteDataStore.httpCookieStore)
         }
 
-        // Look for the `arl` cookie on a .deezer.com domain and report it once.
+        // Look for the `arl` cookie on a .deezer.com domain and report it.
+        // No one-shot latch here: de-duping lives in AppState.webLoginCaptured
+        // (webLoginAttempted/busy), which resets on a failed DZInit so the user
+        // can retry inside the same sheet — a latch would swallow that retry.
         private func scan(_ store: WKHTTPCookieStore) {
-            guard !captured else { return }
             store.getAllCookies { [weak self] cookies in
-                guard let self, !self.captured else { return }
+                guard let self else { return }
                 guard let arl = cookies.first(where: {
                     $0.name == "arl" && $0.domain.contains("deezer.com")
                 }), !arl.value.isEmpty else { return }
-                self.captured = true
                 self.onARL(arl.value)
             }
         }

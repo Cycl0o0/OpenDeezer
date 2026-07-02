@@ -273,6 +273,121 @@ body {
   border-color: var(--accent);
 }
 
+/* ---- Equalizer panel ---- */
+#eq-panel {
+  display: none;
+  flex-direction: column;
+  gap: 0.9rem;
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.eq-toggle-row {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+#eq-preset {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--surface2);
+  color: var(--text);
+  border: 2px solid var(--surface2);
+  border-radius: 10px;
+  outline: none;
+  cursor: pointer;
+}
+#eq-preset:focus { border-color: var(--accent); }
+#eq-bands {
+  display: flex;
+  width: 100%;
+}
+.eq-band {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+.eq-slider-wrap {
+  position: relative;
+  width: 100%;
+  height: 110px;
+}
+.eq-slider {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 110px;
+  height: 4px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 2px;
+  background: var(--surface2);
+  outline: none;
+  cursor: pointer;
+}
+.eq-band-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.eq-preamp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.eq-preamp-row label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+#eq-preamp-val {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5em;
+  text-align: right;
+  flex-shrink: 0;
+}
+#eq-preamp {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface2);
+  outline: none;
+  cursor: pointer;
+}
+.eq-slider::-webkit-slider-thumb, #eq-preamp::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+}
+.eq-slider::-moz-range-thumb, #eq-preamp::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  border: none;
+  cursor: pointer;
+}
+#eq-error {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+#eq-error:empty { display: none; }
+
 /* State badge */
 #state-badge {
   font-size: 0.75rem;
@@ -333,6 +448,25 @@ body {
     <button id="sleep-btn" class="ctrl-btn" title="Sleep timer">&#9790; Sleep</button>
   </div>
 
+  <div class="extra-controls">
+    <button id="eq-btn" class="ctrl-btn" title="Equalizer">&#9776; Equalizer</button>
+  </div>
+
+  <div id="eq-panel">
+    <div class="eq-toggle-row">
+      <button id="eq-enable-btn" class="ctrl-btn">EQ: off</button>
+      <button id="eq-mono-btn" class="ctrl-btn">Mono: off</button>
+    </div>
+    <select id="eq-preset" title="Preset"></select>
+    <div id="eq-bands"></div>
+    <div class="eq-preamp-row">
+      <label for="eq-preamp">Preamp</label>
+      <input id="eq-preamp" type="range" min="-12" max="12" step="0.5" value="0">
+      <span id="eq-preamp-val">0 dB</span>
+    </div>
+    <div id="eq-error"></div>
+  </div>
+
   <div id="state-badge"></div>
 </div>
 
@@ -370,6 +504,15 @@ var repeatBtn   = document.getElementById('repeat-btn');
 var shuffleBtn  = document.getElementById('shuffle-btn');
 var sleepBtn    = document.getElementById('sleep-btn');
 var stateBadge  = document.getElementById('state-badge');
+var eqBtn       = document.getElementById('eq-btn');
+var eqPanel     = document.getElementById('eq-panel');
+var eqEnableBtn = document.getElementById('eq-enable-btn');
+var eqMonoBtn   = document.getElementById('eq-mono-btn');
+var eqPreset    = document.getElementById('eq-preset');
+var eqBands     = document.getElementById('eq-bands');
+var eqPreamp    = document.getElementById('eq-preamp');
+var eqPreampVal = document.getElementById('eq-preamp-val');
+var eqError     = document.getElementById('eq-error');
 
 // ---- View switching ----
 function showPair() {
@@ -619,6 +762,137 @@ sleepBtn.addEventListener('click', function() {
   var path = (v === 0) ? '/sleep?cancel=1'
     : (v < 0 ? '/sleep?eot=1' : '/sleep?minutes=' + v);
   api('POST', path).then(applyState).catch(function() {});
+});
+
+// ---- Equalizer ----
+// State lives in the engine (GET/POST /eq); this panel only renders it. It is
+// re-read every time the panel opens so changes from other clients show up.
+var eqState        = null; // last snapshot from the server
+var eqSliders      = [];   // the 10 band inputs, built from the first snapshot
+var eqDragBand     = -1;   // band being dragged (don't overwrite it from polls)
+var eqSendTimer    = null; // coalesces drag events to <=30 calls/s
+var eqPendingBands = {};
+
+function fmtBandHz(hz) {
+  return hz >= 1000 ? (hz / 1000) + 'k' : Math.round(hz) + '';
+}
+
+function buildEQBands(bands) {
+  eqBands.innerHTML = '';
+  eqSliders = [];
+  bands.forEach(function(hz, i) {
+    var col  = document.createElement('div');
+    col.className = 'eq-band';
+    var wrap = document.createElement('div');
+    wrap.className = 'eq-slider-wrap';
+    var s = document.createElement('input');
+    s.type = 'range';
+    s.className = 'eq-slider';
+    s.min = -12; s.max = 12; s.step = 0.5; s.value = 0;
+    s.addEventListener('input',  function() { onBandInput(i, parseFloat(s.value)); });
+    s.addEventListener('change', function() { onBandChange(i, parseFloat(s.value)); });
+    wrap.appendChild(s);
+    var lbl = document.createElement('div');
+    lbl.className = 'eq-band-label';
+    lbl.textContent = fmtBandHz(hz);
+    col.appendChild(wrap);
+    col.appendChild(lbl);
+    eqBands.appendChild(col);
+    eqSliders.push(s);
+  });
+}
+
+function buildEQPresets(presets) {
+  eqPreset.innerHTML = '';
+  presets.forEach(function(name) {
+    var o = document.createElement('option');
+    o.value = name;
+    o.textContent = name.replace(/-/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    eqPreset.appendChild(o);
+  });
+  // "custom" is shown when a band was hand-edited but is not user-selectable.
+  var custom = document.createElement('option');
+  custom.value = 'custom';
+  custom.textContent = 'Custom';
+  custom.disabled = true;
+  eqPreset.appendChild(custom);
+}
+
+function applyEQ(eq) {
+  eqState = eq;
+  eqError.textContent = '';
+  if (eqSliders.length === 0 && eq.bands) buildEQBands(eq.bands);
+  if (eqPreset.options.length === 0 && eq.presets) buildEQPresets(eq.presets);
+  eqEnableBtn.className = 'ctrl-btn' + (eq.enabled ? ' active' : '');
+  eqEnableBtn.textContent = 'EQ: ' + (eq.enabled ? 'on' : 'off');
+  eqMonoBtn.className = 'ctrl-btn' + (eq.mono ? ' active' : '');
+  eqMonoBtn.textContent = 'Mono: ' + (eq.mono ? 'on' : 'off');
+  eqPreset.value = eq.preset || 'flat';
+  (eq.gainsDb || []).forEach(function(db, i) {
+    if (i !== eqDragBand && eqSliders[i]) eqSliders[i].value = db;
+  });
+  var pre = eq.preampDb || 0;
+  eqPreamp.value = pre;
+  eqPreampVal.textContent = (pre > 0 ? '+' : '') + pre + ' dB';
+}
+
+function refreshEQ() {
+  api('GET', '/eq').then(applyEQ).catch(function() {
+    eqError.textContent = 'Equalizer unavailable on this device.';
+  });
+}
+
+eqBtn.addEventListener('click', function() {
+  var open = eqPanel.style.display === 'flex';
+  eqPanel.style.display = open ? 'none' : 'flex';
+  eqBtn.className = 'ctrl-btn' + (open ? '' : ' active');
+  if (!open) refreshEQ();
+});
+
+eqEnableBtn.addEventListener('click', function() {
+  var on = (eqState && eqState.enabled) ? '0' : '1';
+  api('POST', '/eq?on=' + on).then(applyEQ).catch(function() {});
+});
+
+eqMonoBtn.addEventListener('click', function() {
+  var on = (eqState && eqState.mono) ? '0' : '1';
+  api('POST', '/eq?mono=' + on).then(applyEQ).catch(function() {});
+});
+
+eqPreset.addEventListener('change', function() {
+  api('POST', '/eq?preset=' + encodeURIComponent(this.value)).then(applyEQ).catch(function() {});
+});
+
+// Band drags: show "Custom" immediately, coalesce sends to <=30/s. The engine
+// debounces persistence itself; this only caps HTTP chatter during a drag.
+function onBandInput(i, db) {
+  eqDragBand = i;
+  eqPreset.value = 'custom';
+  eqPendingBands[i] = db;
+  if (!eqSendTimer) eqSendTimer = setTimeout(flushEQBands, 33);
+}
+
+function flushEQBands() {
+  eqSendTimer = null;
+  var pend = eqPendingBands;
+  eqPendingBands = {};
+  Object.keys(pend).forEach(function(i) {
+    api('POST', '/eq?band=' + i + '&db=' + pend[i]).catch(function() {});
+  });
+}
+
+function onBandChange(i, db) {
+  eqDragBand = -1;
+  delete eqPendingBands[i]; // the final value goes out right away
+  api('POST', '/eq?band=' + i + '&db=' + db).then(applyEQ).catch(function() {});
+}
+
+eqPreamp.addEventListener('input', function() {
+  var v = parseFloat(this.value);
+  eqPreampVal.textContent = (v > 0 ? '+' : '') + v + ' dB';
+});
+eqPreamp.addEventListener('change', function() {
+  api('POST', '/eq?preamp=' + this.value).then(applyEQ).catch(function() {});
 });
 
 // ---- Init ----

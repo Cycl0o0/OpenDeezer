@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/Cycl0o0/OpenDeezer/sdk/connect"
@@ -35,6 +36,11 @@ func main() {
 	fmt.Printf("Logged in as %s (%s)\n", acc.Name, acc.Offer)
 
 	// Simulated playback state. Wire these to your real player.
+	//
+	// The control server calls the status snapshot and the command callbacks
+	// from independent HTTP handler goroutines (one per remote request), so
+	// shared state must be synchronized; mu guards `state`.
+	var mu sync.Mutex
 	state := connect.State{State: "stopped", Volume: 1.0, Repeat: "off"}
 
 	host := connect.NewHost(
@@ -47,13 +53,19 @@ func main() {
 			Client:  "example",
 			Version: "1.0.0",
 		},
-		func() connect.State { return state },
+		func() connect.State {
+			mu.Lock()
+			defer mu.Unlock()
+			return state
+		},
 		func() connect.Account {
 			a := client.Account()
 			return connect.Account{UserID: a.UserID, Name: a.Name, Offer: a.Offer}
 		},
 		connect.Commands{
 			PlayPause: func() {
+				mu.Lock()
+				defer mu.Unlock()
 				if state.State == "playing" {
 					state.State = "paused"
 				} else {
@@ -61,9 +73,21 @@ func main() {
 				}
 				fmt.Println("controller: PlayPause →", state.State)
 			},
-			Stop:      func() { state.State = "stopped"; fmt.Println("controller: Stop") },
-			SetVolume: func(v float64) { state.Volume = v; fmt.Printf("controller: Volume %.0f%%\n", v*100) },
+			Stop: func() {
+				mu.Lock()
+				defer mu.Unlock()
+				state.State = "stopped"
+				fmt.Println("controller: Stop")
+			},
+			SetVolume: func(v float64) {
+				mu.Lock()
+				defer mu.Unlock()
+				state.Volume = v
+				fmt.Printf("controller: Volume %.0f%%\n", v*100)
+			},
 			PlayTrack: func(id string) {
+				mu.Lock()
+				defer mu.Unlock()
 				state.State = "playing"
 				state.Track = &connect.Track{ID: id, Title: "Track " + id}
 				fmt.Println("controller: PlayTrack", id)

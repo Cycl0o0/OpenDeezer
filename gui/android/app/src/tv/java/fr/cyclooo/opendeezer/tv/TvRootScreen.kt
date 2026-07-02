@@ -183,11 +183,20 @@ private fun TvBrowse(
 
     LaunchedEffect(reload) {
         failed = false
-        runCatching {
-            home = Engine.home()
-            charts = Engine.charts()
-            flow = Engine.flow()
-        }.onFailure { failed = true }
+        // The engine reports failures as error payloads (the calls never throw),
+        // so use the null-on-error variants; the hero/shelves need home data.
+        // Odmobile.Home() additionally swallows the underlying Charts error and
+        // returns an empty payload with no "error" key, so an all-empty home is
+        // also a failure: global charts are never legitimately empty for a
+        // logged-in account.
+        val h = Engine.homeOrNull()
+        if (h == null || (h.topTracks.isEmpty() && h.topAlbums.isEmpty() && h.playlists.isEmpty())) {
+            failed = true
+        } else {
+            home = h
+            charts = Engine.chartsOrNull()
+            flow = Engine.flowOrNull().orEmpty()
+        }
     }
 
     if (failed && home == null) { TvLoadError { reload++ }; return }
@@ -341,10 +350,14 @@ private fun TvLibrary(
 
     LaunchedEffect(reload) {
         failed = false
-        runCatching {
-            liked = Engine.favorites()
-            playlists = Engine.playlists()
-        }.onFailure { failed = true }
+        val l = Engine.favoritesOrNull()
+        val p = Engine.playlistsOrNull()
+        if (l == null && p == null) {
+            failed = true
+        } else {
+            liked = l.orEmpty()
+            playlists = p.orEmpty()
+        }
     }
 
     if (failed && liked == null) { TvLoadError { reload++ }; return }

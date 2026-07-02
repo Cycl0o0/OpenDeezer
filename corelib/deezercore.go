@@ -862,6 +862,7 @@ type jEpisode struct {
 	ArtworkURL  string `json:"artworkUrl"`
 	DurationMS  int64  `json:"durationMs"`
 	ReleaseDate string `json:"releaseDate"`
+	PodcastName string `json:"podcastName"`
 }
 
 // DZSearchPodcastsJSON returns {podcasts:[...]} for a query.
@@ -897,7 +898,7 @@ func DZPodcastEpisodesJSON(podcastID *C.char) *C.char {
 	}
 	out := make([]jEpisode, len(es))
 	for i, e := range es {
-		out[i] = jEpisode{ID: e.ID, Title: e.Title, Description: e.Description, ArtworkURL: e.ArtworkURL, DurationMS: e.DurationMS, ReleaseDate: e.ReleaseDate}
+		out[i] = jEpisode{ID: e.ID, Title: e.Title, Description: e.Description, ArtworkURL: e.ArtworkURL, DurationMS: e.DurationMS, ReleaseDate: e.ReleaseDate, PodcastName: e.PodcastName}
 	}
 	return jsonStr(map[string]any{"episodes": out}, nil)
 }
@@ -1079,3 +1080,96 @@ func DZPlayEpisode(episodeID *C.char, durationMS C.longlong) C.int {
 	go fetchEpisodeMeta(c, id)
 	return 1
 }
+
+// ---- equalizer + mono downmix (v1.7) ----
+
+// jEQState is the full EQ snapshot shared by every GUI: current settings plus
+// the core-owned band/preset tables so the UIs never hardcode them.
+type jEQState struct {
+	Enabled  bool      `json:"enabled"`
+	Mono     bool      `json:"mono"`
+	PreampDB float64   `json:"preampDb"`
+	GainsDB  []float64 `json:"gainsDb"`
+	Preset   string    `json:"preset"`
+	Bands    []float64 `json:"bands"`
+	Presets  []string  `json:"presets"`
+}
+
+// DZEQJSON returns the equalizer state:
+// {enabled,mono,preampDb,gainsDb:[10],preset,bands:[10],presets:[...]}.
+//
+//export DZEQJSON
+func DZEQJSON() *C.char {
+	var st jEQState
+	withPlayer(func(p *audio.Player) {
+		st = jEQState{
+			Enabled:  p.EQEnabled(),
+			Mono:     p.MonoDownmix(),
+			PreampDB: p.EQPreampDB(),
+			GainsDB:  p.EQGains(),
+			Preset:   p.EQPreset(),
+			Bands:    p.EQBands(),
+			Presets:  audio.EQPresetNames,
+		}
+	})
+	return jsonStr(st, nil)
+}
+
+// DZSetEQJSON applies a partial EQ update. Recognized keys (all optional):
+// enabled (bool), mono (bool), preampDb (number), gainsDb ([10]number),
+// preset (string), band ({"index":N,"gainDb":X}). Returns 1 on success, 0 if
+// any present key failed to apply (unknown preset, bad band index/length).
+//
+//export DZSetEQJSON
+func DZSetEQJSON(js *C.char) C.int {
+	var req struct {
+		Enabled  *bool      `json:"enabled"`
+		Mono     *bool      `json:"mono"`
+		PreampDB *float64   `json:"preampDb"`
+		GainsDB  *[]float64 `json:"gainsDb"`
+		Preset   *string    `json:"preset"`
+		Band     *struct {
+			Index  int     `json:"index"`
+			GainDB float64 `json:"gainDb"`
+		} `json:"band"`
+	}
+	if err := json.Unmarshal([]byte(C.GoString(js)), &req); err != nil {
+		return 0
+	}
+	ok := C.int(0)
+	withPlayer(func(p *audio.Player) {
+		ok = 1
+		if req.Enabled != nil {
+			p.SetEQEnabled(*req.Enabled)
+		}
+		if req.Mono != nil {
+			p.SetMonoDownmix(*req.Mono)
+		}
+		if req.PreampDB != nil {
+			p.SetEQPreamp(*req.PreampDB)
+		}
+		if req.Preset != nil {
+			if err := p.SetEQPreset(*req.Preset); err != nil {
+				ok = 0
+			}
+		}
+		if req.GainsDB != nil {
+			if err := p.SetEQGains(*req.GainsDB); err != nil {
+				ok = 0
+			}
+		}
+		if req.Band != nil {
+			if err := p.SetEQGain(req.Band.Index, req.Band.GainDB); err != nil {
+				ok = 0
+			}
+		}
+	})
+	return ok
+}
+
+// DZClearPreload discards a preloaded next track. Call when the upcoming track
+// is no longer determined (shuffle/repeat toggled after a preload was armed) so
+// a stale preload can't be gaplessly swapped in.
+//
+//export DZClearPreload
+func DZClearPreload() { withPlayer(func(p *audio.Player) { p.ClearPreload() }) }

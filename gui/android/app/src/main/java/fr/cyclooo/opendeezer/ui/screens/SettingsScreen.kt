@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) {
+fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Unit, onLogout: () -> Unit) {
     var quality by remember { mutableIntStateOf(Engine.quality()) }
     var replayGain by remember { mutableStateOf(Engine.replayGain()) }
     var gapless by remember { mutableStateOf(Engine.gapless()) }
@@ -181,6 +181,14 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onLogout: () -> Unit) 
                     steps = 11,
                 )
             }
+
+            HorizontalDivider()
+
+            SettingAction(
+                title = "Equalizer",
+                subtitle = "10-band EQ, presets and mono audio",
+                onClick = onEqualizer,
+            )
 
             HorizontalDivider()
 

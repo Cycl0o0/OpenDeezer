@@ -41,6 +41,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +97,90 @@ type Commands struct {
 	CancelSleepTimer func()                             // disarm it
 }
 
+// EQState is the equalizer snapshot returned by GET /eq (same wire shape as
+// corelib's DZEQJSON / odmobile's EQJSON, so every controller renders one UI).
+type EQState struct {
+	Enabled  bool      `json:"enabled"`
+	Mono     bool      `json:"mono"`
+	PreampDB float64   `json:"preampDb"`
+	GainsDB  []float64 `json:"gainsDb"`
+	Preset   string    `json:"preset"`
+	Bands    []float64 `json:"bands"`
+	Presets  []string  `json:"presets"`
+}
+
+// EQ is the optional equalizer bridge; when nil the /eq endpoints 404. Hosts
+// wire the funcs to the audio player (each may be nil individually).
+type EQ struct {
+	State      func() EQState
+	SetEnabled func(on bool)
+	SetMono    func(on bool)
+	SetPreamp  func(db float64)
+	SetPreset  func(name string) error
+	SetBand    func(band int, db float64) error
+}
+
+// EQController is the player subset the /eq endpoint drives; *audio.Player
+// satisfies it (declared here so this package needn't import the engine).
+type EQController interface {
+	EQEnabled() bool
+	MonoDownmix() bool
+	EQPreampDB() float64
+	EQGains() []float64
+	EQPreset() string
+	EQBands() []float64
+	SetEQEnabled(on bool)
+	SetMonoDownmix(on bool)
+	SetEQPreamp(db float64)
+	SetEQPreset(name string) error
+	SetEQGain(band int, db float64) error
+}
+
+// PlayerEQ builds the /eq bridge from a live player getter (get may return nil
+// while the engine is starting) and the core's preset-name list.
+func PlayerEQ(get func() EQController, presets []string) *EQ {
+	return &EQ{
+		State: func() EQState {
+			p := get()
+			if p == nil {
+				return EQState{Preset: "flat", Presets: presets}
+			}
+			return EQState{
+				Enabled: p.EQEnabled(), Mono: p.MonoDownmix(), PreampDB: p.EQPreampDB(),
+				GainsDB: p.EQGains(), Preset: p.EQPreset(), Bands: p.EQBands(),
+				Presets: presets,
+			}
+		},
+		SetEnabled: func(on bool) {
+			if p := get(); p != nil {
+				p.SetEQEnabled(on)
+			}
+		},
+		SetMono: func(on bool) {
+			if p := get(); p != nil {
+				p.SetMonoDownmix(on)
+			}
+		},
+		SetPreamp: func(db float64) {
+			if p := get(); p != nil {
+				p.SetEQPreamp(db)
+			}
+		},
+		SetPreset: func(name string) error {
+			if p := get(); p != nil {
+				return p.SetEQPreset(name)
+			}
+			return errors.New("player not ready")
+		},
+		SetBand: func(band int, db float64) error {
+			if p := get(); p != nil {
+				return p.SetEQGain(band, db)
+			}
+			return errors.New("player not ready")
+		},
+	}
+}
+
 // Config configures the control server.
 type Config struct {
 	Addr            string // host:port ("127.0.0.1:7654" localhost, ":7654" LAN)
@@ -131,6 +216,7 @@ type Server struct {
 	status      func() State
 	account     func() Account // identity snapshot (auth + /whoami)
 	cmds        Commands
+	eq          *EQ // optional equalizer bridge (nil → /eq is 404)
 	client      *deezer.Client
 	token       string
 	sameAccount bool
@@ -171,6 +257,9 @@ func (s *Server) SetVersion(v string) { s.version = v }
 
 // SetClientInfo records the client/platform id + device label for /whoami.
 func (s *Server) SetClientInfo(client, device string) { s.clientID, s.device = client, device }
+
+// SetEQ wires the equalizer bridge (call before Start).
+func (s *Server) SetEQ(eq *EQ) { s.eq = eq }
 
 // Addr returns the actual listen address (valid after Start).
 func (s *Server) Addr() string {
@@ -236,7 +325,7 @@ func (s *Server) Start() error {
 	// Conservative timeouts + a small header cap: this can be LAN-exposed, so
 	// bound every phase of a request to resist slowloris / resource exhaustion.
 	s.srv = &http.Server{
-		Handler:           mux,
+		Handler:           s.checkHost(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -277,6 +366,15 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/play/track", s.post(s.handlePlayTrack))
 	mux.HandleFunc("/play/playlist", s.post(s.handlePlayPlaylist))
 	mux.HandleFunc("/sleep", s.post(s.handleSleep))
+	if s.eq != nil {
+		mux.HandleFunc("/eq", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				s.get(s.handleEQGet, true)(w, r)
+				return
+			}
+			s.post(s.handleEQSet)(w, r)
+		})
+	}
 }
 
 func call(fn func()) {
@@ -486,6 +584,44 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"token": tok})
 }
 
+// checkHost wraps the mux with a DNS-rebinding guard. A browser tricked into
+// re-resolving attacker.com to a loopback/LAN address still sends
+// Host: attacker.com, which we reject — closing the read-exfiltration path in
+// the open "none" mode. It fronts every route so the web-remote SPA and /pair
+// flow are covered too (they are reached by localhost or LAN IP, which pass).
+func (s *Server) checkHost(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowedHost(r.Host) {
+			http.Error(w, `{"error":"invalid host"}`, http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// allowedHost reports whether the request Host header is safe to serve. Accepted:
+// an empty Host (non-browser HTTP/1.0 clients omit it), localhost, any literal IP
+// (LAN clients connect by IP, and an IP literal cannot be DNS-rebound), and the
+// configured bind host. Any other DNS name is rejected as a rebinding attempt.
+func (s *Server) allowedHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	} else {
+		// Bare "[::1]" (no port) leaves brackets that SplitHostPort won't strip.
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	if host == "" || host == "localhost" {
+		return true
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if bindHost, _, err := net.SplitHostPort(s.addr); err == nil && bindHost != "" && host == bindHost {
+		return true
+	}
+	return false
+}
+
 // isLoopbackAddr reports whether a host:port binds only the loopback interface.
 func isLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
@@ -549,6 +685,82 @@ func (s *Server) act(fn func()) http.HandlerFunc {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.status()) }
+
+// handleEQGet handles GET /eq.
+func (s *Server) handleEQGet(w http.ResponseWriter, r *http.Request) {
+	if s.eq.State == nil {
+		http.Error(w, `{"error":"not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, s.eq.State())
+}
+
+// handleEQSet handles POST /eq. Query params (each optional, applied in this
+// order): preset=name, band=N&db=X, on=0|1, mono=0|1, preamp=dB.
+func (s *Server) handleEQSet(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	touched := false
+	if v := q.Get("preset"); v != "" {
+		touched = true
+		if s.eq.SetPreset == nil {
+			http.Error(w, `{"error":"not available"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.eq.SetPreset(v); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
+	if v := q.Get("band"); v != "" {
+		touched = true
+		band, err1 := strconv.Atoi(v)
+		db, err2 := strconv.ParseFloat(q.Get("db"), 64)
+		if err1 != nil || err2 != nil {
+			http.Error(w, `{"error":"band (int) and db (number) required"}`, http.StatusBadRequest)
+			return
+		}
+		if s.eq.SetBand == nil {
+			http.Error(w, `{"error":"not available"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.eq.SetBand(band, db); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
+	if v := q.Get("on"); v != "" {
+		touched = true
+		if s.eq.SetEnabled != nil {
+			s.eq.SetEnabled(v == "1" || strings.EqualFold(v, "true"))
+		}
+	}
+	if v := q.Get("mono"); v != "" {
+		touched = true
+		if s.eq.SetMono != nil {
+			s.eq.SetMono(v == "1" || strings.EqualFold(v, "true"))
+		}
+	}
+	if v := q.Get("preamp"); v != "" {
+		touched = true
+		db, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			http.Error(w, `{"error":"preamp must be a number"}`, http.StatusBadRequest)
+			return
+		}
+		if s.eq.SetPreamp != nil {
+			s.eq.SetPreamp(db)
+		}
+	}
+	if !touched {
+		http.Error(w, `{"error":"no eq parameter given"}`, http.StatusBadRequest)
+		return
+	}
+	if s.eq.State != nil {
+		writeJSON(w, s.eq.State())
+		return
+	}
+	writeJSON(w, s.status())
+}
 
 func (s *Server) handleSeek(w http.ResponseWriter, r *http.Request) {
 	ms, err := strconv.ParseInt(r.URL.Query().Get("ms"), 10, 64)

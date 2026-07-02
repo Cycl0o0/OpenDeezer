@@ -6,6 +6,7 @@ import (
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/internal/version"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -92,8 +93,9 @@ func (m *Model) searchView() string {
 // Credits text, shown on the credits screen.
 const creditsAuthor = "Cycl0o0"
 
-// Version is the app version, set from main at startup.
-var Version = "1.6.0"
+// Version is the app version, set from main at startup (defaults to the
+// release number so library users get the right value without main).
+var Version = version.Number
 
 func (m *Model) creditsView() string {
 	lines := []string{
@@ -285,7 +287,14 @@ func (m *Model) queueView() string {
 // lyricsView shows lyrics; synced lyrics auto-scroll with playback position and
 // highlight the current line.
 func (m *Model) lyricsView() string {
+	// When driving a remote peer, show its now-playing track and position (the
+	// local queue/player are unrelated to what the peer is playing).
 	t, ok := m.q.Current()
+	pos := m.player.PositionMS()
+	if m.remote != nil && m.remoteState.Track != nil {
+		t, ok = remoteTrack(m.remoteState.Track), true
+		pos = m.remoteState.PositionMS
+	}
 	if !ok {
 		return padTo([]string{dim.Render("Nothing playing.")}, max(1, m.height-footerHeight))
 	}
@@ -296,7 +305,6 @@ func (m *Model) lyricsView() string {
 	rows := max(3, m.height-footerHeight-2)
 
 	if m.lyrics.IsSynced() {
-		pos := m.player.PositionMS()
 		active := 0
 		for i, ln := range m.lyrics.Synced {
 			if ln.TimeMS <= pos {
@@ -342,6 +350,8 @@ func (m *Model) helpView() string {
 		{"r", "cycle repeat (off → all → one)"},
 		{"h", "cycle quality (Normal → High → HiFi)"},
 		{"R", "toggle ReplayGain (loudness normalization)"},
+		{"E", "toggle equalizer · ctrl+e cycle preset"},
+		{"M", "toggle mono downmix"},
 		{"d", "choose output device"},
 		{"x", "cycle crossfade (off/3/6/12s)"},
 		{"ctrl+g", "toggle gapless"},

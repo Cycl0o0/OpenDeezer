@@ -203,6 +203,12 @@ func (c *Client) Login() error {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return fmt.Errorf("parse getUserData: %w", err)
 	}
+	// A populated error envelope with empty results is a gateway/quota failure,
+	// not an auth one — don't misreport it as an expired ARL (unless it actually
+	// asks for auth).
+	if gwErr := gwError(body); gwErr != "" && !strings.Contains(gwErr, "AUTH") {
+		return fmt.Errorf("deezer gw deezer.getUserData: %s", gwErr)
+	}
 	apiToken := parsed.Results.CheckForm
 	userID := parsed.Results.User.UserID.String()
 	licenseToken := parsed.Results.User.Options.LicenseToken
@@ -304,6 +310,13 @@ func gwError(body []byte) string {
 	return s
 }
 
+// jsonEsc renders s as a JSON string literal so caller-supplied ids can never
+// break out of a gw body built with Sprintf (quotes/backslashes get escaped).
+func jsonEsc(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
 // gw calls a gw method, transparently re-logging in once if the API token has
 // expired (Deezer rotates it), and returns an error on a non-empty envelope.
 func (c *Client) gw(method, jsonBody string) ([]byte, error) {
@@ -329,7 +342,9 @@ func (c *Client) gw(method, jsonBody string) ([]byte, error) {
 	return body, nil
 }
 
-// restGet calls the public REST API (no auth needed).
+// restGet calls the public REST API (no auth needed). REST reports failures as
+// an HTTP-200 body with an "error" envelope ({"error":{"type":...,"code":...}}),
+// so that is surfaced as a Go error rather than decoding to empty results.
 func (c *Client) restGet(path string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, restURL+path, nil)
 	if err != nil {
@@ -341,7 +356,29 @@ func (c *Client) restGet(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("deezer rest %s: HTTP %d", path, resp.StatusCode)
+	}
+	var env struct {
+		Error *struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(b, &env) == nil && env.Error != nil &&
+		(env.Error.Type != "" || env.Error.Message != "" || env.Error.Code != 0) {
+		msg := env.Error.Message
+		if msg == "" {
+			msg = env.Error.Type
+		}
+		return nil, fmt.Errorf("deezer rest %s: %s (code %d)", path, msg, env.Error.Code)
+	}
+	return b, nil
 }
 
 // gwCover builds a 250x250 cover URL from an md5 image hash.
@@ -410,12 +447,24 @@ func (g gwTrackDTO) toTrack() Track {
 	}
 }
 
-// Search queries tracks, albums and playlists.
+// Search queries tracks, albums and playlists. A failing sub-search is
+// tolerated as long as at least one succeeds; if all four fail, the first
+// error is returned so callers can tell "no matches" from "request failed".
 func (c *Client) Search(query string) (*SearchResults, error) {
 	enc := url.QueryEscape(query)
 	sr := &SearchResults{}
+	var firstErr error
+	failed := 0
+	fail := func(err error) {
+		failed++
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 
-	if b, err := c.restGet("/search?q=" + enc + "&limit=40"); err == nil {
+	if b, err := c.restGet("/search?q=" + enc + "&limit=40"); err != nil {
+		fail(err)
+	} else {
 		var r struct {
 			Data []restTrackDTO `json:"data"`
 		}
@@ -425,7 +474,9 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 			}
 		}
 	}
-	if b, err := c.restGet("/search/album?q=" + enc + "&limit=20"); err == nil {
+	if b, err := c.restGet("/search/album?q=" + enc + "&limit=20"); err != nil {
+		fail(err)
+	} else {
 		var r struct {
 			Data []struct {
 				ID          json.Number `json:"id"`
@@ -445,7 +496,9 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 			}
 		}
 	}
-	if b, err := c.restGet("/search/artist?q=" + enc + "&limit=20"); err == nil {
+	if b, err := c.restGet("/search/artist?q=" + enc + "&limit=20"); err != nil {
+		fail(err)
+	} else {
 		var r struct {
 			Data []struct {
 				ID            json.Number `json:"id"`
@@ -465,7 +518,9 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 			}
 		}
 	}
-	if b, err := c.restGet("/search/playlist?q=" + enc + "&limit=20"); err == nil {
+	if b, err := c.restGet("/search/playlist?q=" + enc + "&limit=20"); err != nil {
+		fail(err)
+	} else {
 		var r struct {
 			Data []struct {
 				ID            json.Number           `json:"id"`
@@ -486,6 +541,9 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 				})
 			}
 		}
+	}
+	if failed == 4 {
+		return nil, firstErr
 	}
 	return sr, nil
 }
@@ -559,13 +617,13 @@ func (c *Client) gwTrackAll(method, extra string) ([]Track, error) {
 
 // PlaylistTracks lists a playlist's tracks (gw, works for private playlists).
 func (c *Client) PlaylistTracks(id string) ([]Track, error) {
-	return c.gwTrackAll("playlist.getSongs", fmt.Sprintf(`"playlist_id":"%s"`, id))
+	return c.gwTrackAll("playlist.getSongs", fmt.Sprintf(`"playlist_id":%s`, jsonEsc(id)))
 }
 
 // Track fetches a single track's metadata by id (gw song.getData). Used by the
 // control API / MCP to "play track <id>".
 func (c *Client) Track(id string) (Track, error) {
-	b, err := c.gw("song.getData", fmt.Sprintf(`{"sng_id":"%s"}`, id))
+	b, err := c.gw("song.getData", fmt.Sprintf(`{"sng_id":%s}`, jsonEsc(id)))
 	if err != nil {
 		return Track{}, err
 	}
@@ -584,12 +642,12 @@ func (c *Client) Track(id string) (Track, error) {
 
 // Favorites lists the user's liked songs (gw).
 func (c *Client) Favorites() ([]Track, error) {
-	return c.gwTrackAll("favorite_song.getList", fmt.Sprintf(`"user_id":"%s"`, c.uid()))
+	return c.gwTrackAll("favorite_song.getList", fmt.Sprintf(`"user_id":%s`, jsonEsc(c.uid())))
 }
 
 // Playlists lists the user's own playlists (gw pageProfile).
 func (c *Client) Playlists() ([]Playlist, error) {
-	body := fmt.Sprintf(`{"user_id":"%s","tab":"playlists","nb":100}`, c.uid())
+	body := fmt.Sprintf(`{"user_id":%s,"tab":"playlists","nb":100}`, jsonEsc(c.uid()))
 	b, err := c.gw("deezer.pageProfile", body)
 	if err != nil {
 		return nil, err
@@ -628,7 +686,7 @@ func (c *Client) Playlists() ([]Playlist, error) {
 // the track's ReplayGain (dB) so playback can be loudness-normalized. GAIN is
 // already present in the song.getData payload, so this costs no extra request.
 func (c *Client) trackToken(trackID string) (token string, gainDB float64, err error) {
-	b, err := c.gw("song.getData", fmt.Sprintf(`{"sng_id":"%s"}`, trackID))
+	b, err := c.gw("song.getData", fmt.Sprintf(`{"sng_id":%s}`, jsonEsc(trackID)))
 	if err != nil {
 		return "", 0, err
 	}
@@ -654,7 +712,10 @@ type StreamPlan struct {
 	Encrypted bool    // false for plain CDN streams (e.g. podcast episodes)
 }
 
-// resolveMediaURL turns a track token into an encrypted CDN URL.
+// resolveMediaURL turns a track token into an encrypted CDN URL. get_url can
+// reject with an error payload (e.g. an expired license token, which Deezer
+// rotates while the gw session stays valid), so on a rejection it re-logins
+// once to refresh the license token and retries, mirroring the gw() pattern.
 func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err error) {
 	licenseToken := c.licTok()
 	if licenseToken == "" || trackToken == "" {
@@ -672,26 +733,59 @@ func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err 
 	case QualityLossless:
 		formats = fflac + "," + f320 + "," + f128 // HiFi, fall back to MP3
 	}
+
+	urlStr, format, apiErr, err := c.getMediaURL(licenseToken, trackToken, formats)
+	if err != nil {
+		return "", "", err
+	}
+	if urlStr == "" && apiErr != "" {
+		if err := c.Login(); err != nil {
+			return "", "", fmt.Errorf("get_url: %s (re-login: %w)", apiErr, err)
+		}
+		urlStr, format, apiErr, err = c.getMediaURL(c.licTok(), trackToken, formats)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if urlStr == "" {
+		if apiErr != "" {
+			return "", "", fmt.Errorf("get_url: %s", apiErr)
+		}
+		return "", "", fmt.Errorf("no media source (track unavailable for this account)")
+	}
+	return urlStr, format, nil
+}
+
+// getMediaURL performs one media get_url call. apiErr carries Deezer's own
+// rejection (data[0].errors or a non-2xx status); err is transport/decode only.
+func (c *Client) getMediaURL(licenseToken, trackToken, formats string) (urlStr, format, apiErr string, err error) {
 	body := fmt.Sprintf(`{"license_token":"%s","media":[{"type":"FULL","formats":[%s]}],`+
 		`"track_tokens":["%s"]}`, licenseToken, formats, trackToken)
 
 	req, err := http.NewRequest(http.MethodPost, mediaURL, bytes.NewReader([]byte(body)))
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", "", fmt.Sprintf("HTTP %d", resp.StatusCode), nil
 	}
 	var r struct {
 		Data []struct {
+			Errors []struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"errors"`
 			Media []struct {
 				Format  string `json:"format"`
 				Sources []struct {
@@ -701,13 +795,17 @@ func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err 
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(b, &r); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	if len(r.Data) == 0 || len(r.Data[0].Media) == 0 || len(r.Data[0].Media[0].Sources) == 0 {
-		return "", "", fmt.Errorf("no media source (track unavailable for this account)")
+	if len(r.Data) > 0 && len(r.Data[0].Media) > 0 && len(r.Data[0].Media[0].Sources) > 0 {
+		m := r.Data[0].Media[0]
+		return m.Sources[0].URL, m.Format, "", nil
 	}
-	m := r.Data[0].Media[0]
-	return m.Sources[0].URL, m.Format, nil
+	if len(r.Data) > 0 && len(r.Data[0].Errors) > 0 {
+		e := r.Data[0].Errors[0]
+		return "", "", fmt.Sprintf("%s (code %d)", e.Message, e.Code), nil
+	}
+	return "", "", "", nil
 }
 
 // PrepareStream resolves a track id to a playable encrypted CDN URL.
@@ -727,15 +825,27 @@ func (c *Client) PrepareStream(trackID string) (*StreamPlan, error) {
 }
 
 // TrackIDOf extracts a numeric id from "deezer:track:123", a URL, or "123".
+// Returns "" when no valid id is present.
 func TrackIDOf(uri string) string {
+	uri = strings.TrimSpace(uri)
+	// Drop query/fragment first: share URLs append params whose digits would
+	// otherwise pollute the id (e.g. ?utm_content=track-<id>, ?host=0).
+	if i := strings.IndexAny(uri, "?#"); i >= 0 {
+		uri = uri[:i]
+	}
+	uri = strings.TrimSuffix(uri, "/")
 	if i := strings.LastIndexAny(uri, ":/"); i >= 0 {
 		uri = uri[i+1:]
 	}
-	var sb strings.Builder
-	for _, r := range uri {
-		if r >= '0' && r <= '9' {
-			sb.WriteRune(r)
+	// Valid ids are all digits, optionally with a leading '-' (user uploads).
+	digits := strings.TrimPrefix(uri, "-")
+	if digits == "" {
+		return ""
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return ""
 		}
 	}
-	return sb.String()
+	return uri
 }

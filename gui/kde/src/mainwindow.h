@@ -15,6 +15,7 @@
 #include <QHash>
 #include <QSet>
 #include <QString>
+#include <atomic>
 #include <functional>
 
 QT_BEGIN_NAMESPACE
@@ -86,6 +87,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow() override;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -324,6 +326,11 @@ private:
     int  m_playGen    = 0;              // bumped per track start; guards now-playing cover
     bool m_shuffle    = false;
     int  m_repeat     = 0;              // 0 off, 1 all, 2 one
+
+    // Volume sender state (see setVolume): latest requested percent + whether
+    // a sender worker is alive. Atomics — read/written from worker threads.
+    std::atomic<int>  m_pendingVol{100};
+    std::atomic<bool> m_volInFlight{false};
 
     // ---- OS integration state ----
     MprisController *m_mpris       = nullptr;   // session-bus media controls

@@ -2,3 +2,4 @@
 /opendeezer
 /opendeezer.exe
 *.test
+hs_err_pid*.log

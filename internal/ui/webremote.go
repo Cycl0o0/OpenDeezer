@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -34,6 +35,8 @@ func (m *Model) webRemoteEnableCmd() tea.Cmd {
 	statusFn := m.ctrlState.Load
 	acctFn := m.acctSnap.Load
 	client := m.client
+	pl := m.player
+	ctrlCfg := LoadControl() // carry the configured token/same-account to the new server
 
 	buildCmds := func() control.Commands {
 		if send == nil {
@@ -84,12 +87,24 @@ func (m *Model) webRemoteEnableCmd() tea.Cmd {
 		}
 
 		startNew := func(addr string) *control.Server {
+			// Carry the persisted credentials so token/same-account clients (MCP,
+			// other OpenDeezer clients) keep working after the loopback rebind —
+			// auth() checks the token branch before the web-remote branch.
 			s := control.New(
-				control.Config{Addr: addr, WebRemote: true},
+				control.Config{
+					Addr: addr, Token: ctrlCfg.Token,
+					SameAccountOnly: ctrlCfg.SameAccount, WebRemote: true,
+				},
 				statusSnap, acctSnap, buildCmds(), client,
 			)
 			s.SetVersion(Version)
 			s.SetClientInfo("tui", "OpenDeezer TUI")
+			s.SetEQ(control.PlayerEQ(func() control.EQController {
+				if pl != nil {
+					return pl
+				}
+				return nil
+			}, audio.EQPresetNames))
 			if err := s.Start(); err != nil {
 				return nil
 			}
@@ -240,28 +255,15 @@ func (m *Model) handleWebRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, nil
 	case "ctrl+c", "q":
-		m.saveResume()
-		m.player.Stop()
-		if m.media != nil {
-			m.media.Close()
-		}
-		if m.discord != nil {
-			m.discord.Close()
-		}
-		if m.ctrl != nil {
-			m.ctrl.Close()
-		}
-		if m.webRemoteSrv != nil && m.webRemoteSrv != m.ctrl {
-			m.webRemoteSrv.Close()
-		}
-		if m.advertiser != nil {
-			m.advertiser.Close()
-		}
+		m.shutdown()
 		return m, tea.Quit
 	case "enter", " ":
 		if m.webRemoteActive {
 			m.status = "Disabling web remote…"
 			return m, m.webRemoteDisableCmd()
+		}
+		if m.loading {
+			return m, nil // an enable is already in flight — don't leak a second server
 		}
 		m.loading = true
 		m.status = "Starting web remote…"

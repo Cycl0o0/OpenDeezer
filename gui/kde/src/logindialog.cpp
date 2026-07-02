@@ -128,11 +128,18 @@ void LoginDialog::runHelper() {
 
     m_helper = new QProcess(this);
     m_helper->setProgram(helper);
-    connect(m_helper, &QProcess::finished, this,
-            [this](int code, QProcess::ExitStatus) {
-                const QString out = QString::fromUtf8(m_helper->readAllStandardOutput()).trimmed();
-                m_helper->deleteLater();
-                m_helper = nullptr;
+    // Capture the process pointer: on a helper crash Qt emits
+    // errorOccurred(Crashed) *before* finished(), so the handlers must not
+    // assume m_helper is still set. The crash path is handled solely by
+    // finished(); errorOccurred only covers FailedToStart (where finished()
+    // is never emitted).
+    QProcess *proc = m_helper;
+    connect(proc, &QProcess::finished, this,
+            [this, proc](int code, QProcess::ExitStatus) {
+                const QString out = QString::fromUtf8(proc->readAllStandardOutput()).trimmed();
+                proc->deleteLater();
+                if (m_helper == proc)
+                    m_helper = nullptr;
                 if (code == 0 && !out.isEmpty()) {
                     tryArl(out);
                 } else {
@@ -140,11 +147,12 @@ void LoginDialog::runHelper() {
                     m_status->setVisible(false); // user closed it / no capture
                 }
             });
-    connect(m_helper, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
-        if (!m_helper)
+    connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError err) {
+        if (err != QProcess::FailedToStart)
             return;
-        m_helper->deleteLater();
-        m_helper = nullptr;
+        proc->deleteLater();
+        if (m_helper == proc)
+            m_helper = nullptr;
         setBusy(false);
         showError(QStringLiteral("Couldn't start the login helper. Paste your ARL below instead."));
     });

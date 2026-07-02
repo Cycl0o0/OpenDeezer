@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import fr.cyclooo.opendeezer.player.PlayerController
 import fr.cyclooo.opendeezer.ui.components.CenteredMessage
 import fr.cyclooo.opendeezer.ui.components.TrackRow
@@ -42,11 +43,11 @@ fun QueueScreen(player: PlayerController, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             if (state.queue.isEmpty()) {
                 CenteredMessage("The queue is empty.")
             } else {
-                LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+                LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(state.queue, key = { i, t -> "$i-${t.id}" }) { index, track ->
                         val isCurrent = index == state.index
                         TrackRow(
