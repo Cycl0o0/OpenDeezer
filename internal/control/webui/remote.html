@@ -645,13 +645,13 @@ function fmtTime(ms) {
 function applyState(st) {
   currentState = st;
 
-  // Track info
-  var t = st.track;
-  if (t && t.title) {
-    trackTitle.textContent  = t.title;
-    trackArtist.textContent = t.artist || '';
-    if (t.artworkUrl) {
-      artworkImg.src = t.artworkUrl;
+  // Track info (local var must NOT shadow the module-level translator t())
+  var tr = st.track;
+  if (tr && tr.title) {
+    trackTitle.textContent  = tr.title;
+    trackArtist.textContent = tr.artist || '';
+    if (tr.artworkUrl) {
+      artworkImg.src = tr.artworkUrl;
       artworkImg.style.display = 'block';
       artworkPlh.style.display = 'none';
     } else {
@@ -667,7 +667,7 @@ function applyState(st) {
 
   // Progress
   var pos = st.positionMs || 0;
-  var dur = st.durationMs || (t && t.durationMs) || 0;
+  var dur = st.durationMs || (tr && tr.durationMs) || 0;
   if (dur > 0) {
     progressFill.style.width = Math.min(100, (pos / dur) * 100) + '%';
     timePos.textContent = fmtTime(pos);

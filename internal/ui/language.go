@@ -20,10 +20,9 @@ func applyLanguage(code string) {
 	i18n.SetLocale(code)
 }
 
-// currentLanguageName is the native display name for the persisted language
-// setting, or "Auto" when unset.
-func currentLanguageName() string {
-	code := config.LoadLanguage()
+// languageName is the native display name for a locale code, or "Auto" when the
+// code is empty.
+func languageName(code string) string {
 	if code == "" {
 		return i18n.T("Auto")
 	}
@@ -35,10 +34,19 @@ func currentLanguageName() string {
 	return code
 }
 
+// currentLanguageName is the native display name for the Language menu's own
+// persisted selection (the file, not $OPENDEEZER_LANG), or "Auto" when unset.
+func currentLanguageName() string {
+	return languageName(config.LanguageSetting())
+}
+
 // cycleLanguage advances to the next language in languageOrder, persists it,
-// applies it live, and returns the new native display name.
+// applies it live, and returns its native display name. It anchors on the menu's
+// persisted selection (config.LanguageSetting) rather than LoadLanguage so a set
+// $OPENDEEZER_LANG cannot freeze the cycle, and it names `next` directly so the
+// label always matches the locale applyLanguage just applied.
 func (m *Model) cycleLanguage() string {
-	cur := config.LoadLanguage()
+	cur := config.LanguageSetting()
 	idx := 0
 	for i, c := range languageOrder {
 		if c == cur {
@@ -49,5 +57,5 @@ func (m *Model) cycleLanguage() string {
 	next := languageOrder[(idx+1)%len(languageOrder)]
 	_ = config.SaveLanguage(next)
 	applyLanguage(next)
-	return currentLanguageName()
+	return languageName(next)
 }
