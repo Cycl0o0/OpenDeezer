@@ -157,7 +157,7 @@ func TestEQPresetTablesMatchBandCount(t *testing.T) {
 
 func TestEQDisabledIsPassthrough(t *testing.T) {
 	p := newTestPlayer(t)
-	p.SetEQGain(5, 12)
+	_ = p.SetEQGain(5, 12)
 	p.SetEQEnabled(false)
 	in := sineS16(1000, 4410, 0.5)
 	want := append([]byte(nil), in...)

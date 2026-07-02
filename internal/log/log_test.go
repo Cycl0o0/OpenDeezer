@@ -37,12 +37,17 @@ func TestParseLevel(t *testing.T) {
 		"debug": LevelDebug, "INFO": LevelInfo, "warn": LevelWarn,
 		"error": LevelError, "off": LevelOff, "bogus": LevelInfo,
 		"Debug": LevelDebug, "Warn": LevelWarn, "WARNING": LevelWarn,
-		"Off": LevelOff, " info ": LevelInfo,
+		"Off": LevelOff,
 	}
 	for in, want := range cases {
 		if got := ParseLevel(in); got != want {
 			t.Errorf("ParseLevel(%q) = %v, want %v", in, got, want)
 		}
+	}
+	// Surrounding whitespace is trimmed (kept out of the map above so the
+	// linter doesn't flag a whitespace-only-differing key).
+	if got := ParseLevel(" info "); got != LevelInfo {
+		t.Errorf("ParseLevel with surrounding spaces = %v, want %v", got, LevelInfo)
 	}
 }
 

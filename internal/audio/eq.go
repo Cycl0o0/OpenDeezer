@@ -6,6 +6,7 @@
 // is touched only from the realtime callback, so the hot path stays lock-free
 // and allocation-free. State persists engine-side (config.SaveEQ), so every
 // client shares one set of settings, like the sleep timer shares one clock.
+
 package audio
 
 import (

@@ -614,7 +614,7 @@ func Stop() {
 // mobile. Local-only: it never routes to a Connect device.
 func SetOutputSuspended(on bool) {
 	if p := curPlayer(); p != nil {
-		p.SetOutputSuspended(on)
+		_ = p.SetOutputSuspended(on)
 	}
 }
 func Seek(ms int64) {
