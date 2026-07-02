@@ -20,9 +20,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.player.PlayerController
 import fr.cyclooo.opendeezer.ui.components.CenteredMessage
 import fr.cyclooo.opendeezer.ui.components.TrackRow
@@ -34,10 +36,10 @@ fun QueueScreen(player: PlayerController, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Queue") },
+                title = { Text(stringResource(R.string.queue_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Back")
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -45,7 +47,7 @@ fun QueueScreen(player: PlayerController, onBack: () -> Unit) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             if (state.queue.isEmpty()) {
-                CenteredMessage("The queue is empty.")
+                CenteredMessage(stringResource(R.string.queue_empty))
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(state.queue, key = { i, t -> "$i-${t.id}" }) { index, track ->
@@ -62,7 +64,7 @@ fun QueueScreen(player: PlayerController, onBack: () -> Unit) {
                                 {
                                     Icon(
                                         Icons.Filled.VolumeUp,
-                                        contentDescription = "Now playing",
+                                        contentDescription = stringResource(R.string.cd_now_playing),
                                         tint = MaterialTheme.colorScheme.primary,
                                     )
                                 }

@@ -29,9 +29,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.ui.theme.DeezerPurple
 
 private const val LOGIN_URL = "https://www.deezer.com/login"
@@ -65,12 +67,12 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "OpenDeezer",
+                stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineSmall,
                 color = DeezerPurple,
             )
             Text(
-                if (manual) "Paste your Deezer ARL token" else "Sign in to Deezer",
+                if (manual) stringResource(R.string.login_manual_prompt) else stringResource(R.string.login_web_prompt),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -103,14 +105,13 @@ fun LoginScreen(
                     onClick = { onArl(arlField.trim(), false) },
                     enabled = !busy && arlField.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Log in") }
+                ) { Text(stringResource(R.string.action_login)) }
                 OutlinedButton(
                     onClick = { manual = false },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Use the web sign-in instead") }
+                ) { Text(stringResource(R.string.login_use_web)) }
                 Text(
-                    "A long token from your Deezer session cookie. " +
-                        "Web sign-in reads it automatically.",
+                    stringResource(R.string.login_manual_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -155,7 +156,7 @@ fun LoginScreen(
             OutlinedButton(
                 onClick = { manual = true },
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-            ) { Text("Paste ARL manually") }
+            ) { Text(stringResource(R.string.login_paste_manual)) }
         }
     }
 }

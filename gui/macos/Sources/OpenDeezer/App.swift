@@ -19,11 +19,11 @@ struct OpenDeezerApp: App {
         .commands {
             // Replace the default "About OpenDeezer" panel with our credits.
             CommandGroup(replacing: .appInfo) {
-                Button("About OpenDeezer") { app.showCredits = true }
+                Button(L("About OpenDeezer")) { app.showCredits = true }
             }
             // Standard ⌘, opens our Settings sheet.
             CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { app.showSettings = true }
+                Button(L("Settings…")) { app.showSettings = true }
                     .keyboardShortcut(",", modifiers: .command)
             }
             // Re-open the existing Deezer login flow on demand so an already
@@ -31,7 +31,7 @@ struct OpenDeezerApp: App {
             // web-login + manual-ARL sheet (beginWebLogin → DeezerLoginSheet),
             // which runs DZInit and refreshes the session on success.
             CommandGroup(after: .appSettings) {
-                Button("Log in / Switch account…") { app.beginWebLogin() }
+                Button(L("Log in / Switch account…")) { app.beginWebLogin() }
             }
         }
     }
@@ -88,18 +88,18 @@ struct UpdateBanner: View {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 15)).foregroundStyle(DZ.accent)
-                Text("OpenDeezer \(info.latest) is available")
+                Text(Lf("OpenDeezer %@ is available", info.latest))
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
                 Spacer()
                 if !info.notes.isEmpty {
-                    Button(showNotes ? "Hide notes" : "Release notes") {
+                    Button(showNotes ? L("Hide notes") : L("Release notes")) {
                         withAnimation { showNotes.toggle() }
                     }
                     .buttonStyle(.plain).font(.caption).foregroundStyle(DZ.textSec)
                 }
-                Button("Download") { app.openUpdateURL() }
+                Button(L("Download")) { app.openUpdateURL() }
                     .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.small)
-                Button("Later") { app.dismissUpdateBanner() }
+                Button(L("Later")) { app.dismissUpdateBanner() }
                     .buttonStyle(.plain).font(.caption).foregroundStyle(DZ.textSec)
             }
             if showNotes {
@@ -129,28 +129,28 @@ struct LoginGate: View {
             Text("OpenDeezer").font(.system(size: 34, weight: .bold)).foregroundStyle(DZ.textPri)
 
             if app.busy {
-                ProgressView("Logging in…").tint(DZ.accent)
+                ProgressView(L("Logging in…")).tint(DZ.accent)
             } else {
                 // Primary: open the embedded Deezer login webview. The arl cookie
                 // is captured automatically once the user signs in.
                 Button { app.beginWebLogin() } label: {
-                    Label("Log in with Deezer", systemImage: "person.crop.circle")
+                    Label(L("Log in with Deezer"), systemImage: "person.crop.circle")
                         .frame(maxWidth: 260)
                 }
                 .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
 
                 // Fallback: paste an ARL by hand.
-                Button(showManual ? "Hide manual ARL" : "Enter ARL manually") {
+                Button(showManual ? L("Hide manual ARL") : L("Enter ARL manually")) {
                     withAnimation { showManual.toggle() }
                 }
                 .buttonStyle(.plain).font(.callout).foregroundStyle(DZ.textSec)
 
                 if showManual {
                     VStack(spacing: 8) {
-                        SecureField("Paste your ARL cookie", text: $app.manualARL)
+                        SecureField(L("Paste your ARL cookie"), text: $app.manualARL)
                             .textFieldStyle(.roundedBorder).frame(maxWidth: 320)
                             .onSubmit { app.loginWithManualARL() }
-                        Button("Sign in") { app.loginWithManualARL() }
+                        Button(L("Sign in")) { app.loginWithManualARL() }
                             .buttonStyle(.glass).tint(DZ.accent)
                             .disabled(app.manualARL.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
@@ -185,12 +185,11 @@ struct FreeAccountBlockedView: View {
                 .font(.system(size: 52)).foregroundStyle(DZ.accent)
             Text("OpenDeezer").font(.system(size: 22, weight: .bold)).foregroundStyle(DZ.textPri)
 
-            Text("Premium required")
+            Text(L("Premium required"))
                 .font(.system(size: 26, weight: .bold)).foregroundStyle(DZ.textPri)
                 .multilineTextAlignment(.center)
 
-            Text("OpenDeezer needs a Deezer Premium subscription to stream. "
-                 + "Your account: \(offer). Subscribe at deezer.com, then restart OpenDeezer.")
+            Text(Lf("OpenDeezer needs a Deezer Premium subscription to stream. Your account: %@. Subscribe at deezer.com, then restart OpenDeezer.", offer))
                 .font(.title3).foregroundStyle(DZ.textSec)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
@@ -199,12 +198,12 @@ struct FreeAccountBlockedView: View {
                 // Allow switching to a Premium account without leaving the block:
                 // a successful Premium login clears accountBlocked and opens the app.
                 Button { app.beginWebLogin() } label: {
-                    Label("Log in with a different account", systemImage: "person.crop.circle")
+                    Label(L("Log in with a different account"), systemImage: "person.crop.circle")
                 }
                 .buttonStyle(.glass).tint(DZ.accent).controlSize(.large)
 
                 Button { NSApplication.shared.terminate(nil) } label: {
-                    Label("Quit OpenDeezer", systemImage: "power").frame(minWidth: 140)
+                    Label(L("Quit OpenDeezer"), systemImage: "power").frame(minWidth: 140)
                 }
                 .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
             }
@@ -225,7 +224,7 @@ struct ExplicitBadge: View {
             .foregroundStyle(DZ.textSec)
             .frame(width: 14, height: 14)
             .background(DZ.textSec.opacity(0.22), in: RoundedRectangle(cornerRadius: 3))
-            .accessibilityLabel("Explicit")
+            .accessibilityLabel(L("Explicit"))
     }
 }
 
@@ -249,17 +248,17 @@ struct Sidebar: View {
                     case .search, .podcasts: break
                     }
                 })) {
-                SidebarLabel("Home", "house.fill", .home)
-                SidebarLabel("Search", "magnifyingglass", .search)
+                SidebarLabel(L("Home"), "house.fill", .home)
+                SidebarLabel(L("Search"), "magnifyingglass", .search)
 
                 SwiftUI.Section {
                     SidebarLabel("Flow", "infinity", .flow)
-                    SidebarLabel("Liked Songs", "heart.fill", .liked)
-                    SidebarLabel("Playlists", "music.note.list", .playlists)
-                    SidebarLabel("Charts", "chart.bar.fill", .charts)
-                    SidebarLabel("Podcasts", "mic.fill", .podcasts)
+                    SidebarLabel(L("Liked Songs"), "heart.fill", .liked)
+                    SidebarLabel(L("Playlists"), "music.note.list", .playlists)
+                    SidebarLabel(L("Charts"), "chart.bar.fill", .charts)
+                    SidebarLabel(L("Podcasts"), "mic.fill", .podcasts)
                 } header: {
-                    Text("Library")
+                    Text(L("Library"))
                         .font(.system(size: 11, weight: .bold)).textCase(.uppercase)
                         .foregroundStyle(DZ.textSec)
                 }
@@ -301,7 +300,7 @@ struct AccountRow: View {
     }
     private var accountSubtitle: String {
         if let a = app.account, !a.offer.isEmpty { return a.offer }
-        return userID.isEmpty ? "—" : "user \(userID)"
+        return userID.isEmpty ? "—" : Lf("user %@", userID)
     }
 
     var body: some View {
@@ -320,15 +319,15 @@ struct AccountRow: View {
             Button { app.beginWebLogin() } label: {
                 Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(DZ.textSec)
             }
-            .buttonStyle(.plain).help("Log in / Switch account…")
+            .buttonStyle(.plain).help(L("Log in / Switch account…"))
             Button { app.showSettings = true } label: {
                 Image(systemName: "gearshape").foregroundStyle(DZ.textSec)
             }
-            .buttonStyle(.plain).help("Settings")
+            .buttonStyle(.plain).help(L("Settings"))
             Button { app.showCredits = true } label: {
                 Image(systemName: "info.circle").foregroundStyle(DZ.textSec)
             }
-            .buttonStyle(.plain).help("About OpenDeezer")
+            .buttonStyle(.plain).help(L("About OpenDeezer"))
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .overlay(Divider().overlay(DZ.hairline), alignment: .top)
@@ -348,23 +347,23 @@ struct CreditsView: View {
             Image(systemName: "heart.fill")
                 .font(.system(size: 52)).foregroundStyle(DZ.accent)
             Text("OpenDeezer").font(.system(size: 26, weight: .bold)).foregroundStyle(DZ.textPri)
-            Text("v\(version) · An open source reimplementation of Deezer")
+            Text(Lf("v%@ · An open source reimplementation of Deezer", version))
                 .font(.callout).foregroundStyle(DZ.textSec)
-            Text("by Cycl0o0").font(.body).foregroundStyle(DZ.accent)
+            Text(L("by Cycl0o0")).font(.body).foregroundStyle(DZ.accent)
 
             if app.loggedIn {
-                Text("Signed in as \(app.accountLabel)")
+                Text(Lf("Signed in as %@", app.accountLabel))
                     .font(.caption).foregroundStyle(DZ.textSec)
             }
 
             Divider().frame(width: 240)
 
             VStack(spacing: 4) {
-                Text("Built with SwiftUI + a Go engine").foregroundStyle(DZ.textPri)
+                Text(L("Built with SwiftUI + a Go engine")).foregroundStyle(DZ.textPri)
                 Text("go-mp3 + oto · x/crypto/blowfish").foregroundStyle(DZ.textSec)
-                Text("Audio decrypted + decoded locally — your ARL never leaves your machine.")
+                Text(L("Audio decrypted + decoded locally — your ARL never leaves your machine."))
                     .foregroundStyle(DZ.textSec).multilineTextAlignment(.center)
-                Text("AGPL-3.0 · Not affiliated with Deezer.").foregroundStyle(DZ.textSec)
+                Text(L("AGPL-3.0 · Not affiliated with Deezer.")).foregroundStyle(DZ.textSec)
             }
             .font(.caption).frame(maxWidth: 320)
 
@@ -374,7 +373,7 @@ struct CreditsView: View {
                 Button {
                     app.checkForUpdates(manual: true)
                 } label: {
-                    Label(app.checkingUpdate ? "Checking…" : "Check for Updates",
+                    Label(app.checkingUpdate ? L("Checking…") : L("Check for Updates"),
                           systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.glass).tint(DZ.accent)
@@ -384,13 +383,13 @@ struct CreditsView: View {
                     Text(status).font(.caption).foregroundStyle(DZ.textSec)
                 }
                 if let info = app.updateInfo, info.hasUpdate {
-                    Button("Download v\(info.latest)") { app.openUpdateURL() }
+                    Button(Lf("Download v%@", info.latest)) { app.openUpdateURL() }
                         .buttonStyle(.plain).font(.caption).foregroundStyle(DZ.accent)
                 }
             }
             .padding(.top, 2)
 
-            Button("Done") { app.showCredits = false }
+            Button(L("Done")) { app.showCredits = false }
                 .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
                 .padding(.top, 4)
         }
@@ -456,7 +455,7 @@ struct HeroHeader: View {
     @EnvironmentObject var app: AppState
 
     private var subtitle: String {
-        app.listIsLiked ? "\(app.tracks.count) songs" : app.listSubtitle
+        app.listIsLiked ? Lp("%d songs", app.tracks.count) : app.listSubtitle
     }
 
     var body: some View {
@@ -490,11 +489,11 @@ struct HeroHeader: View {
                         .font(.title3).foregroundStyle(DZ.textPri.opacity(0.9))
                     HStack(spacing: 12) {
                         Button { app.playAll() } label: {
-                            Label("Play", systemImage: "play.fill")
+                            Label(L("Play"), systemImage: "play.fill")
                         }
                         .buttonStyle(.glassProminent).tint(DZ.accent)
                         Button { app.shuffleAll() } label: {
-                            Label("Shuffle", systemImage: "shuffle")
+                            Label(L("Shuffle"), systemImage: "shuffle")
                         }
                         .buttonStyle(.glass)
                     }
@@ -531,9 +530,9 @@ struct TrackTable: View {
             // column header
             HStack(spacing: 12) {
                 Text("#").frame(width: 28, alignment: .center)
-                Text("Title").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Album").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Time").frame(width: 56, alignment: .trailing)
+                Text(L("Title")).frame(maxWidth: .infinity, alignment: .leading)
+                Text(L("Album")).frame(maxWidth: .infinity, alignment: .leading)
+                Text(L("Time")).frame(width: 56, alignment: .trailing)
             }
             .font(.system(size: 11, weight: .semibold)).textCase(.uppercase)
             .foregroundStyle(DZ.textSec)
@@ -596,17 +595,17 @@ struct TrackRowView: View {
         .onTapGesture(perform: onPlay)
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .contextMenu {
-            Button { onPlay() } label: { Label("Play", systemImage: "play.fill") }
+            Button { onPlay() } label: { Label(L("Play"), systemImage: "play.fill") }
             Button { app.toggleLike(track) } label: {
-                Label(app.isLiked(track) ? "Unlike" : "Like",
+                Label(app.isLiked(track) ? L("Unlike") : L("Like"),
                       systemImage: app.isLiked(track) ? "heart.fill" : "heart")
             }
             Button { app.beginAddToPlaylist(track) } label: {
-                Label("Add to Playlist…", systemImage: "text.badge.plus")
+                Label(L("Add to Playlist…"), systemImage: "text.badge.plus")
             }
             if let aid = track.artists.first?.id {
                 Button { app.openArtist(aid) } label: {
-                    Label("Go to Artist", systemImage: "music.mic")
+                    Label(L("Go to Artist"), systemImage: "music.mic")
                 }
             }
         }
@@ -628,11 +627,11 @@ struct PlaylistGrid: View {
     var body: some View {
         ScrollView {
             HStack {
-                Text("Playlists").font(.system(size: 26, weight: .bold))
+                Text(L("Playlists")).font(.system(size: 26, weight: .bold))
                     .foregroundStyle(DZ.textPri)
                 Spacer()
                 Button { createText = ""; app.showCreatePlaylist = true } label: {
-                    Label("New Playlist", systemImage: "plus")
+                    Label(L("New Playlist"), systemImage: "plus")
                 }
                 .buttonStyle(.glass).tint(DZ.accent)
             }
@@ -649,37 +648,37 @@ struct PlaylistGrid: View {
         .scrollContentBackground(.hidden)
         .background(DZ.windowBG)
         // Create
-        .alert("New Playlist", isPresented: $app.showCreatePlaylist) {
-            TextField("Playlist name", text: $createText)
-            Button("Create") { app.createPlaylist(title: createText) }
+        .alert(L("New Playlist"), isPresented: $app.showCreatePlaylist) {
+            TextField(L("Playlist name"), text: $createText)
+            Button(L("Create")) { app.createPlaylist(title: createText) }
                 .disabled(createText.trimmingCharacters(in: .whitespaces).isEmpty)
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("Name your new playlist.") }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: { Text(L("Name your new playlist.")) }
         // Rename
-        .alert("Rename Playlist",
+        .alert(L("Rename Playlist"),
                isPresented: Binding(get: { app.renameTarget != nil },
                                     set: { if !$0 { app.renameTarget = nil } })) {
-            TextField("Playlist name", text: $renameText)
-            Button("Save") {
+            TextField(L("Playlist name"), text: $renameText)
+            Button(L("Save")) {
                 if let p = app.renameTarget { app.renamePlaylist(p, to: renameText) }
                 app.renameTarget = nil
             }
             .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
-            Button("Cancel", role: .cancel) { app.renameTarget = nil }
-        } message: { Text("Enter a new name.") }
+            Button(L("Cancel"), role: .cancel) { app.renameTarget = nil }
+        } message: { Text(L("Enter a new name.")) }
         .onChange(of: app.renameTarget) { _, p in renameText = p?.name ?? "" }
         // Delete (confirm)
         .confirmationDialog(
-            "Delete \u{201C}\(app.deleteTarget?.name ?? "")\u{201D}?",
+            Lf("Delete “%@”?", app.deleteTarget?.name ?? ""),
             isPresented: Binding(get: { app.deleteTarget != nil },
                                  set: { if !$0 { app.deleteTarget = nil } }),
             titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+            Button(L("Delete"), role: .destructive) {
                 if let p = app.deleteTarget { app.deletePlaylist(p) }
                 app.deleteTarget = nil
             }
-            Button("Cancel", role: .cancel) { app.deleteTarget = nil }
-        } message: { Text("This can't be undone.") }
+            Button(L("Cancel"), role: .cancel) { app.deleteTarget = nil }
+        } message: { Text(L("This can't be undone.")) }
     }
 }
 
@@ -704,17 +703,17 @@ struct PlaylistCard: View {
                 }
                 Text(playlist.name).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(DZ.textPri).lineLimit(1)
-                Text("\(playlist.trackCount) tracks").font(.caption).foregroundStyle(DZ.textSec)
+                Text(Lp("%d tracks", playlist.trackCount)).font(.caption).foregroundStyle(DZ.textSec)
             }
         }
         .buttonStyle(.plain)
         .scaleEffect(hover ? 1.03 : 1)
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
         .contextMenu {
-            Button { onOpen() } label: { Label("Open", systemImage: "play.fill") }
-            Button { app.beginRename(playlist) } label: { Label("Rename…", systemImage: "pencil") }
+            Button { onOpen() } label: { Label(L("Open"), systemImage: "play.fill") }
+            Button { app.beginRename(playlist) } label: { Label(L("Rename…"), systemImage: "pencil") }
             Button(role: .destructive) { app.deleteTarget = playlist } label: {
-                Label("Delete…", systemImage: "trash")
+                Label(L("Delete…"), systemImage: "trash")
             }
         }
     }
@@ -728,7 +727,7 @@ struct SearchView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(DZ.textSec)
-                TextField("Search tracks, albums, playlists", text: $app.query)
+                TextField(L("Search tracks, albums, playlists"), text: $app.query)
                     .textFieldStyle(.plain).foregroundStyle(DZ.textPri)
                     .onSubmit { app.runSearch() }
             }
@@ -738,7 +737,7 @@ struct SearchView: View {
 
             List {
                 if !app.searchTracks.isEmpty {
-                    searchSection("Tracks") {
+                    searchSection(L("Tracks")) {
                         ForEach(Array(app.searchTracks.enumerated()), id: \.element.id) { i, t in
                             TrackRowView(index: i, track: t,
                                          isCurrent: app.current?.id == t.id) {
@@ -750,17 +749,17 @@ struct SearchView: View {
                     }
                 }
                 if !app.searchArtists.isEmpty {
-                    searchSection("Artists") {
+                    searchSection(L("Artists")) {
                         ForEach(app.searchArtists) { ar in
                             CompactRow(url: ar.artworkUrl, title: ar.name,
-                                       sub: ar.nbFans > 0 ? "\(ar.nbFans.formatted()) fans" : "Artist") {
+                                       sub: ar.nbFans > 0 ? Lp("%d fans", ar.nbFans) : L("Artist")) {
                                 app.openArtist(ar.id)
                             }
                         }
                     }
                 }
                 if !app.searchAlbums.isEmpty {
-                    searchSection("Albums") {
+                    searchSection(L("Albums")) {
                         ForEach(app.searchAlbums) { a in
                             CompactRow(url: a.artworkUrl, title: a.name, sub: a.artistLine) {
                                 app.openAlbum(a)
@@ -769,9 +768,9 @@ struct SearchView: View {
                     }
                 }
                 if !app.searchPlaylists.isEmpty {
-                    searchSection("Playlists") {
+                    searchSection(L("Playlists")) {
                         ForEach(app.searchPlaylists) { p in
-                            CompactRow(url: p.artworkUrl, title: p.name, sub: "\(p.trackCount) tracks") {
+                            CompactRow(url: p.artworkUrl, title: p.name, sub: Lp("%d tracks", p.trackCount)) {
                                 app.openPlaylist(p)
                             }
                         }

@@ -105,7 +105,7 @@ struct Device: Codable, Hashable, Identifiable {
         case "darwin", "macos": return "macOS"
         case "windows": return "Windows"
         case "linux", "gnome", "kde": return "Linux"
-        default: return client.isEmpty ? "Device" : client.capitalized
+        default: return client.isEmpty ? L("Device") : client.capitalized
         }
     }
 

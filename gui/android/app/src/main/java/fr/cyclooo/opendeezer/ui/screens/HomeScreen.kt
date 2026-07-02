@@ -40,9 +40,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.Routes
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.HomeData
@@ -73,33 +76,37 @@ fun HomeScreen(
 
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val timeGreeting = when {
-        hour < 12 -> "Good morning"
-        hour < 17 -> "Good afternoon"
-        else -> "Good evening"
+        hour < 12 -> stringResource(R.string.greeting_morning)
+        hour < 17 -> stringResource(R.string.greeting_afternoon)
+        else -> stringResource(R.string.greeting_evening)
     }
-    val greeting = if (accountName.isNotBlank()) "$timeGreeting, $accountName" else timeGreeting
+    val greeting = if (accountName.isNotBlank()) {
+        stringResource(R.string.greeting_named, timeGreeting, accountName)
+    } else {
+        timeGreeting
+    }
 
     val quickPicks = listOf(
-        QuickPick("Liked Songs", Icons.Filled.Favorite, Routes.LIKED),
+        QuickPick(stringResource(R.string.home_liked), Icons.Filled.Favorite, Routes.LIKED),
         QuickPick("Flow", Icons.Filled.Stream, Routes.FLOW),
-        QuickPick("Charts", Icons.Filled.BarChart, Routes.CHARTS),
-        QuickPick("Podcasts", Icons.Filled.Podcasts, Routes.PODCASTS),
+        QuickPick(stringResource(R.string.charts_title), Icons.Filled.BarChart, Routes.CHARTS),
+        QuickPick(stringResource(R.string.podcasts_title), Icons.Filled.Podcasts, Routes.PODCASTS),
     )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("OpenDeezer", color = DeezerPurple) },
+                title = { Text(stringResource(R.string.app_name), color = DeezerPurple) },
                 actions = {
                     IconButton(onClick = onCast) {
                         Icon(
                             if (connected) Icons.Filled.CastConnected else Icons.Filled.Cast,
-                            contentDescription = "Connect",
+                            contentDescription = stringResource(R.string.cd_connect),
                             tint = if (connected) DeezerPurple else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                     IconButton(onClick = onSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings_title))
                     }
                 },
             )
@@ -178,7 +185,7 @@ fun HomeScreen(
             } else {
                 // 3. Top Tracks horizontal rail
                 if (data.topTracks.isNotEmpty()) {
-                    item { SectionHeader("Top Tracks") }
+                    item { SectionHeader(stringResource(R.string.section_top_tracks)) }
                     item {
                         LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
                             itemsIndexed(
@@ -199,13 +206,17 @@ fun HomeScreen(
 
                 // 4. Your Playlists horizontal rail
                 if (data.playlists.isNotEmpty()) {
-                    item { SectionHeader("Your Playlists") }
+                    item { SectionHeader(stringResource(R.string.section_your_playlists)) }
                     item {
                         LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
                             items(data.playlists, key = { "hp-${it.id}" }) { pl ->
                                 MediaCard(
                                     title = pl.name,
-                                    subtitle = if (pl.trackCount > 0) "${pl.trackCount} tracks" else pl.owner,
+                                    subtitle = if (pl.trackCount > 0) {
+                                        pluralStringResource(R.plurals.n_tracks, pl.trackCount, pl.trackCount)
+                                    } else {
+                                        pl.owner
+                                    },
                                     artworkUrl = pl.artworkUrl,
                                     onClick = { onPlaylist(pl) },
                                 )

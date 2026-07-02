@@ -1,0 +1,198 @@
+/* OpenDeezer — Русский */
+
+/* Sidebar / navigation */
+"Home" = "Главная";
+"Search" = "Поиск";
+"Library" = "Медиатека";
+"Liked Songs" = "Любимые треки";
+"Playlists" = "Плейлисты";
+"Charts" = "Чарты";
+"Podcasts" = "Подкасты";
+
+/* App menu / account row */
+"About OpenDeezer" = "Об OpenDeezer";
+"Settings…" = "Настройки…";
+"Log in / Switch account…" = "Войти / Сменить аккаунт…";
+"Settings" = "Настройки";
+
+/* Update banner */
+"OpenDeezer %@ is available" = "Доступна версия OpenDeezer %@";
+"Hide notes" = "Скрыть заметки";
+"Release notes" = "Список изменений";
+"Download" = "Скачать";
+"Later" = "Позже";
+
+/* Login gate */
+"Logging in…" = "Вход…";
+"Log in with Deezer" = "Войти через Deezer";
+"Hide manual ARL" = "Скрыть ручной ARL";
+"Enter ARL manually" = "Ввести ARL вручную";
+"Paste your ARL cookie" = "Вставьте свой cookie ARL";
+"Sign in" = "Войти";
+
+/* Free-account gate */
+"Premium required" = "Требуется Premium";
+"OpenDeezer needs a Deezer Premium subscription to stream. Your account: %@. Subscribe at deezer.com, then restart OpenDeezer." = "Для потоковой передачи OpenDeezer нужна подписка Deezer Premium. Ваш аккаунт: %@. Оформите подписку на deezer.com и перезапустите OpenDeezer.";
+"Log in with a different account" = "Войти с другим аккаунтом";
+"Quit OpenDeezer" = "Выйти из OpenDeezer";
+
+/* Explicit badge */
+"Explicit" = "Ненормативный контент";
+
+/* Account label */
+"user %@" = "пользователь %@";
+
+/* Credits / About */
+"v%@ · An open source reimplementation of Deezer" = "v%@ · Реализация Deezer с открытым исходным кодом";
+"by Cycl0o0" = "автор Cycl0o0";
+"Signed in as %@" = "Выполнен вход: %@";
+"Built with SwiftUI + a Go engine" = "Создано на SwiftUI + движок на Go";
+"Audio decrypted + decoded locally — your ARL never leaves your machine." = "Аудио расшифровывается и декодируется локально — ваш ARL никогда не покидает устройство.";
+"AGPL-3.0 · Not affiliated with Deezer." = "AGPL-3.0 · Не связано с Deezer.";
+"Checking…" = "Проверка…";
+"Check for Updates" = "Проверить обновления";
+"Download v%@" = "Скачать v%@";
+"Done" = "Готово";
+
+/* Hero header + track table */
+"Play" = "Воспроизвести";
+"Shuffle" = "Перемешать";
+"Title" = "Название";
+"Album" = "Альбом";
+"Time" = "Время";
+"Unlike" = "Убрать из любимых";
+"Like" = "В любимые";
+"Add to Playlist…" = "Добавить в плейлист…";
+"Go to Artist" = "Перейти к исполнителю";
+
+/* Playlist grid + create/rename/delete */
+"New Playlist" = "Новый плейлист";
+"Open" = "Открыть";
+"Rename…" = "Переименовать…";
+"Delete…" = "Удалить…";
+"Playlist name" = "Название плейлиста";
+"Create" = "Создать";
+"Cancel" = "Отмена";
+"Name your new playlist." = "Дайте название новому плейлисту.";
+"Rename Playlist" = "Переименовать плейлист";
+"Save" = "Сохранить";
+"Enter a new name." = "Введите новое название.";
+"Delete “%@”?" = "Удалить «%@»?";
+"Delete" = "Удалить";
+"This can't be undone." = "Это действие нельзя отменить.";
+
+/* Search */
+"Search tracks, albums, playlists" = "Поиск треков, альбомов, плейлистов";
+"Tracks" = "Треки";
+"Artists" = "Исполнители";
+"Artist" = "Исполнитель";
+"Albums" = "Альбомы";
+
+/* Settings — audio */
+"Audio Quality" = "Качество звука";
+"Normal · MP3 128" = "Обычное · MP3 128";
+"High · MP3 320" = "Высокое · MP3 320";
+"HiFi · FLAC lossless" = "HiFi · FLAC без потерь";
+"Applied immediately and on next launch." = "Применяется сразу и при следующем запуске.";
+"Output Device" = "Устройство вывода";
+"System Default" = "Как в системе";
+"%@ (System Default)" = "%@ (как в системе)";
+"Choose where audio plays. Switching takes effect on the next track or seek." = "Выберите, где воспроизводить звук. Смена вступит в силу со следующего трека или перемотки.";
+"Gapless playback" = "Воспроизведение без пауз";
+"Preloads the next track so albums play with no silence between songs." = "Предзагружает следующий трек, чтобы альбомы играли без тишины между песнями.";
+"Crossfade" = "Кроссфейд";
+"Off" = "Выкл.";
+"Fades the end of one track into the start of the next." = "Плавно сводит конец одного трека с началом следующего.";
+"Sleep timer" = "Таймер сна";
+"%d min" = "%d мин";
+"End of track" = "В конце трека";
+"Volume normalization" = "Нормализация громкости";
+"Evens out loudness differences between tracks (ReplayGain)." = "Выравнивает разницу громкости между треками (ReplayGain).";
+"Equalizer" = "Эквалайзер";
+"Custom" = "Свой";
+"Preamp" = "Предусиление";
+"Mono audio" = "Монозвук";
+"Plays both channels as one — helpful with a single speaker or hearing in one ear." = "Сводит оба канала в один — удобно с одним динамиком или при прослушивании одним ухом.";
+"Keep playing in background" = "Продолжать в фоне";
+"Closing the window hides it to the menu bar instead of quitting." = "При закрытии окно скрывается в строку меню, а не завершает работу.";
+
+/* Settings — remote control */
+"Remote control" = "Удалённое управление";
+"Lets other devices control playback over the network." = "Позволяет другим устройствам управлять воспроизведением по сети.";
+"Enable" = "Включить";
+"Allow on local network (LAN)" = "Разрешить в локальной сети (LAN)";
+"Access token" = "Токен доступа";
+"None" = "Нет";
+"Phone Remote" = "Пульт на телефоне";
+"Scan with your phone (same Wi-Fi), then enter the code." = "Отсканируйте телефоном (та же Wi-Fi), затем введите код.";
+"Stored in %@" = "Хранится в %@";
+
+/* Settings — sleep timer captions */
+"Playback pauses when the current track ends." = "Воспроизведение остановится по окончании текущего трека.";
+"Fades out and pauses in %@." = "Затихнет и остановится через %@.";
+"Automatically pause playback after a set time." = "Автоматически ставит воспроизведение на паузу через заданное время.";
+
+/* Player bar */
+"Nothing playing" = "Ничего не играет";
+"Lyrics" = "Текст песни";
+"Connected — choose a device" = "Подключено — выберите устройство";
+"Connect to a device" = "Подключиться к устройству";
+
+/* Lyrics / artist */
+"No lyrics available" = "Текст недоступен";
+"Couldn't load this artist." = "Не удалось загрузить исполнителя.";
+"Top Tracks" = "Популярные треки";
+"Related Artists" = "Похожие исполнители";
+
+/* Podcasts */
+"Search podcasts" = "Поиск подкастов";
+"Search for podcasts" = "Найдите подкасты";
+"Podcast" = "Подкаст";
+
+/* Charts */
+"Top Albums" = "Топ альбомов";
+"Top Artists" = "Топ исполнителей";
+"Top Playlists" = "Топ плейлистов";
+
+/* Device picker */
+"Connect to a Device" = "Подключиться к устройству";
+"Play on another device on your network" = "Воспроизводить на другом устройстве в вашей сети";
+"Refresh" = "Обновить";
+"This computer" = "Этот компьютер";
+"Play here" = "Играть здесь";
+"Looking for devices…" = "Поиск устройств…";
+"No devices found on your network." = "В вашей сети устройства не найдены.";
+"Devices" = "Устройства";
+"Device" = "Устройство";
+
+/* Add to playlist */
+"Add to Playlist" = "Добавить в плейлист";
+"New playlist…" = "Новый плейлист…";
+"Your Playlists" = "Ваши плейлисты";
+
+/* Home greeting */
+"Good morning" = "Доброе утро";
+"Good afternoon" = "Добрый день";
+"Good evening" = "Добрый вечер";
+
+/* Login sheet */
+"Signing in…" = "Вход…";
+
+/* Tray menu */
+"Show OpenDeezer" = "Показать OpenDeezer";
+"Play / Pause" = "Воспроизвести / Пауза";
+"Next" = "Следующий";
+"Previous" = "Предыдущий";
+
+/* AppState — status / errors / list subtitles */
+"Login failed — invalid or expired ARL." = "Не удалось войти — ARL недействителен или устарел.";
+"OpenDeezer %@ is available." = "Доступна версия OpenDeezer %@.";
+"You're up to date." = "У вас последняя версия.";
+"plan" = "тариф";
+"%@ plan" = "тариф %@";
+"Your %@ doesn't include HiFi (FLAC)." = "Ваш %@ не включает HiFi (FLAC).";
+"Your %@ doesn't include High (MP3 320)." = "Ваш %@ не включает High (MP3 320).";
+"Playlist" = "Плейлист";
+"Playlist · %@" = "Плейлист · %@";
+"Top worldwide" = "Топ по всему миру";
+"Album · %@" = "Альбом · %@";

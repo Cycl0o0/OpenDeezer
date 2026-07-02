@@ -9,6 +9,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	qrcode "github.com/skip2/go-qrcode"
@@ -120,7 +121,7 @@ func (m *Model) webRemoteEnableCmd() tea.Cmd {
 				newSrv = startNew("0.0.0.0:0")
 			}
 			if newSrv == nil {
-				return webRemoteMsg{errStr: "failed to bind web remote server"}
+				return webRemoteMsg{errStr: i18n.T("failed to bind web remote server")}
 			}
 			newSrv.EnablePairing()
 			return buildWebRemoteMsg(newSrv, true) // replaced ctrl
@@ -132,7 +133,7 @@ func (m *Model) webRemoteEnableCmd() tea.Cmd {
 			newSrv = startNew("0.0.0.0:0")
 		}
 		if newSrv == nil {
-			return webRemoteMsg{errStr: "failed to bind web remote server"}
+			return webRemoteMsg{errStr: i18n.T("failed to bind web remote server")}
 		}
 		newSrv.EnablePairing()
 		return buildWebRemoteMsg(newSrv, true)
@@ -214,11 +215,11 @@ func (m *Model) handleWebRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.search.Blur()
 			m.search.EchoMode = textinput.EchoNormal
 			if err := config.SaveControlToken(tok); err != nil {
-				m.status = "Couldn't save token: " + err.Error()
+				m.status = i18n.Tf("Couldn't save token: %s", err.Error())
 			} else if tok == "" {
-				m.status = "Token cleared — restart to apply"
+				m.status = i18n.T("Token cleared — restart to apply")
 			} else {
-				m.status = "Token saved — restart to apply"
+				m.status = i18n.T("Token saved — restart to apply")
 			}
 			return m, nil
 		}
@@ -232,11 +233,11 @@ func (m *Model) handleWebRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cfg := LoadControl()
 		enable := !cfg.Enabled
 		if err := config.SaveControlEnabled(enable, cfg.Addr); err != nil {
-			m.status = "Couldn't save: " + err.Error()
+			m.status = i18n.Tf("Couldn't save: %s", err.Error())
 		} else if enable {
-			m.status = "Control API on (" + cfg.Addr + ") — restart to apply"
+			m.status = i18n.Tf("Control API on (%s) — restart to apply", cfg.Addr)
 		} else {
-			m.status = "Control API off — restart to apply"
+			m.status = i18n.T("Control API off — restart to apply")
 		}
 		return m, nil
 	case "t":
@@ -259,14 +260,14 @@ func (m *Model) handleWebRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter", " ":
 		if m.webRemoteActive {
-			m.status = "Disabling web remote…"
+			m.status = i18n.T("Disabling web remote…")
 			return m, m.webRemoteDisableCmd()
 		}
 		if m.loading {
 			return m, nil // an enable is already in flight — don't leak a second server
 		}
 		m.loading = true
-		m.status = "Starting web remote…"
+		m.status = i18n.T("Starting web remote…")
 		return m, m.webRemoteEnableCmd()
 	}
 	return m, nil
@@ -275,21 +276,21 @@ func (m *Model) handleWebRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // webRemoteView renders the Web Remote screen.
 func (m *Model) webRemoteView() string {
 	lines := []string{
-		accent.Render("📱 Web Remote") + dim.Render("  — control from your phone"),
+		accent.Render("📱 "+i18n.T("Web Remote")) + dim.Render("  — "+i18n.T("control from your phone")),
 		"",
 	}
 	if !m.webRemoteActive {
 		lines = append(lines,
-			"Web remote is off.",
+			i18n.T("Web remote is off."),
 			"",
-			dim.Render("Press enter to enable. Your phone must be on the same Wi-Fi."),
+			dim.Render(i18n.T("Press enter to enable. Your phone must be on the same Wi-Fi.")),
 			"",
 		)
 	} else {
 		lines = append(lines,
-			"Scan with your phone (same Wi-Fi), then enter the code.",
+			i18n.T("Scan with your phone (same Wi-Fi), then enter the code."),
 			"",
-			"Code:  "+accent.Render(m.webRemoteCode),
+			i18n.T("Code")+":  "+accent.Render(m.webRemoteCode),
 			"URL:   "+dim.Render(m.webRemoteURL),
 			"",
 		)
@@ -302,32 +303,32 @@ func (m *Model) webRemoteView() string {
 	// Control API: the persisted setting used for the remote-control feature and
 	// MCP, separate from (but shareable with) the ad-hoc pairing above.
 	cfg := LoadControl()
-	apiStatus := "off"
+	apiStatus := i18n.T("off")
 	if cfg.Enabled {
-		apiStatus = "on · " + cfg.Addr
+		apiStatus = i18n.T("on") + " · " + cfg.Addr
 	}
-	tokenStatus := "not set"
+	tokenStatus := i18n.T("not set")
 	if cfg.Token != "" {
-		tokenStatus = "set"
+		tokenStatus = i18n.T("set")
 	}
 	lines = append(lines,
 		dim.Render("Control API"),
-		"  Status: "+apiStatus,
-		"  Token:  "+tokenStatus,
+		"  "+i18n.T("Status")+": "+apiStatus,
+		"  "+i18n.T("Token")+":  "+tokenStatus,
 		"",
 	)
 
 	if m.ctrlEditToken {
 		lines = append(lines,
-			"Token: "+m.search.View(),
-			dim.Render("enter save · esc cancel"),
+			i18n.T("Token")+": "+m.search.View(),
+			dim.Render(i18n.T("enter save · esc cancel")),
 		)
 	} else {
-		toggle := "enter enable"
+		toggle := i18n.T("enter enable")
 		if m.webRemoteActive {
-			toggle = "enter disable"
+			toggle = i18n.T("enter disable")
 		}
-		lines = append(lines, dim.Render(toggle+" · a control API on/off · t set token · esc back · q quit"))
+		lines = append(lines, dim.Render(i18n.Tf("%s · a control API on/off · t set token · esc back · q quit", toggle)))
 	}
 
 	if m.status != "" {

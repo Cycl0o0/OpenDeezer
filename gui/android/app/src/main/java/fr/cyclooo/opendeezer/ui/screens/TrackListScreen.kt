@@ -26,7 +26,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Track
 import fr.cyclooo.opendeezer.player.PlayerController
 import fr.cyclooo.opendeezer.ui.components.CenteredMessage
@@ -50,7 +52,7 @@ fun TrackListScreen(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -61,7 +63,7 @@ fun TrackListScreen(
                 ExtendedFloatingActionButton(
                     onClick = { player.playQueue(list, 0) },
                     icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                    text = { Text("Play all") },
+                    text = { Text(stringResource(R.string.action_play_all)) },
                 )
             }
         },
@@ -72,7 +74,7 @@ fun TrackListScreen(
                     CircularProgressIndicator()
                 }
                 else -> if (list.isEmpty()) {
-                    CenteredMessage("Nothing here yet.")
+                    CenteredMessage(stringResource(R.string.tracklist_empty))
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { index, track ->

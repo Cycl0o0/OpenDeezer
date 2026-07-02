@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenDeezer</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_close">Закрыть</string>
+    <string name="action_download">Скачать</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_refresh">Обновить</string>
+    <string name="action_ok">ОК</string>
+    <string name="action_sign_out">Выйти из аккаунта</string>
+    <string name="action_play">Воспроизвести</string>
+    <string name="action_pause">Пауза</string>
+    <string name="action_next">Следующий</string>
+    <string name="action_previous">Предыдущий</string>
+    <string name="action_play_all">Воспроизвести все</string>
+    <string name="action_login">Войти</string>
+    <string name="common_enable">Включить</string>
+    <string name="common_off">Выкл.</string>
+    <string name="unknown_title">Неизвестно</string>
+
+    <string name="cd_connect">Подключиться</string>
+    <string name="cd_like">Нравится</string>
+    <string name="cd_play_pause">Воспроизведение/Пауза</string>
+    <string name="cd_shuffle">Перемешать</string>
+    <string name="cd_repeat">Повтор</string>
+    <string name="cd_volume">Громкость</string>
+    <string name="cd_connected">Подключено</string>
+    <string name="cd_now_playing">Сейчас играет</string>
+    <string name="cd_explicit">Ненормативный контент</string>
+    <string name="cd_dismiss">Скрыть</string>
+    <string name="cd_qr_code">QR-код</string>
+    <string name="cd_remote_qr">QR-код пульта</string>
+
+    <string name="notif_channel_playback">Воспроизведение</string>
+
+    <string name="login_error_empty_arl">Пустой ARL</string>
+    <string name="login_error_failed">Ошибка входа — проверьте ARL и подключение.</string>
+    <string name="login_error_account">Не удалось загрузить аккаунт.</string>
+
+    <string name="device_type_terminal">Терминал</string>
+    <string name="device_type_generic">Устройство</string>
+
+    <string name="settings_title">Настройки</string>
+    <string name="queue_title">Очередь</string>
+    <string name="lyrics_title">Текст песни</string>
+    <string name="charts_title">Чарты</string>
+    <string name="search_title">Поиск</string>
+    <string name="now_playing_title">Сейчас играет</string>
+    <string name="playlists_title">Мои плейлисты</string>
+    <string name="podcasts_title">Подкасты</string>
+    <string name="equalizer_title">Эквалайзер</string>
+
+    <string name="greeting_morning">Доброе утро</string>
+    <string name="greeting_afternoon">Добрый день</string>
+    <string name="greeting_evening">Добрый вечер</string>
+    <string name="greeting_named">%1$s, %2$s</string>
+    <string name="home_liked">Любимые треки</string>
+    <string name="section_top_tracks">Топ треков</string>
+    <string name="section_your_playlists">Ваши плейлисты</string>
+
+    <string name="settings_audio_quality">Качество звука</string>
+    <string name="quality_normal">Обычное</string>
+    <string name="quality_high">Высокое</string>
+    <string name="quality_desc_flac">FLAC · без потерь</string>
+    <string name="quality_desc_high">MP3 · 320 кбит/с</string>
+    <string name="quality_desc_normal">MP3 · 128 кбит/с</string>
+    <string name="setting_replaygain_sub">Выравнивать громкость между треками</string>
+    <string name="setting_gapless_title">Воспроизведение без пауз</string>
+    <string name="setting_gapless_sub">Без тишины между треками</string>
+    <string name="settings_crossfade">Кроссфейд</string>
+    <string name="crossfade_seconds">%1$d с</string>
+    <string name="settings_eq_sub">10-полосный эквалайзер, пресеты и моно</string>
+    <string name="settings_sleep_timer">Таймер сна</string>
+    <string name="sleep_end">Конец</string>
+    <string name="sleep_desc_off">Воспроизведение не будет останавливаться автоматически</string>
+    <string name="sleep_desc_end">Останавливается по окончании текущего трека</string>
+    <string name="connect_reachable_title">Сделать это устройство доступным</string>
+    <string name="connect_reachable_sub">Разрешите другим приложениям OpenDeezer находить это устройство и управлять им</string>
+    <string name="reachable_at">Доступно по адресу %1$s</string>
+    <string name="settings_phone_remote">Пульт на телефоне</string>
+    <string name="phone_remote_sub">Открыть страницу пульта в локальной сети Wi-Fi</string>
+    <string name="phone_remote_scan">Отсканируйте телефоном (та же Wi-Fi), затем введите код.</string>
+    <string name="settings_about">О приложении</string>
+    <string name="update_check_title">Проверить обновления</string>
+    <string name="update_checking">Проверка…</string>
+    <string name="update_check_sub">Проверяет наличие новой версии на GitHub</string>
+    <string name="settings_account">Аккаунт</string>
+    <string name="plan_label">Тариф: %1$s</string>
+    <string name="plan_free">Бесплатный</string>
+    <string name="update_uptodate_title">У вас последняя версия</string>
+    <string name="update_latest_generic">Это последняя версия.</string>
+    <string name="update_latest_named">OpenDeezer v%1$s — последняя версия.</string>
+    <string name="update_available_title">Доступна OpenDeezer %1$s</string>
+    <string name="update_available_generic">На GitHub доступна новая версия.</string>
+    <string name="update_failed_title">Не удалось проверить обновления</string>
+    <string name="update_failed_body">Проверьте подключение и повторите попытку.</string>
+
+    <string name="login_manual_prompt">Вставьте свой токен ARL от Deezer</string>
+    <string name="login_web_prompt">Войти в Deezer</string>
+    <string name="login_use_web">Использовать вход через веб</string>
+    <string name="login_manual_help">Длинный токен из cookie сессии Deezer. Вход через веб считывает его автоматически.</string>
+    <string name="login_paste_manual">Вставить ARL вручную</string>
+
+    <string name="np_nothing_playing">Ничего не воспроизводится.</string>
+    <string name="np_playing_on">Воспроизводится на %1$s</string>
+
+    <string name="queue_empty">Очередь пуста.</string>
+
+    <string name="lyrics_none">Текст недоступен.</string>
+
+    <string name="charts_unavailable">Чарты недоступны.</string>
+
+    <string name="episodes_none">Нет выпусков.</string>
+
+    <string name="eq_unavailable">Эквалайзер недоступен</string>
+    <string name="eq_enable_sub">Применять 10-полосный эквалайзер к воспроизведению</string>
+    <string name="eq_preset">Пресет</string>
+    <string name="eq_custom">Свой</string>
+    <string name="eq_preamp">Предусиление</string>
+    <string name="eq_mono_title">Монозвук</string>
+    <string name="eq_mono_sub">Свести стерео в один канал</string>
+
+    <string name="playlists_empty">У вас пока нет плейлистов.</string>
+
+    <string name="podcasts_search_hint">Поиск передач</string>
+    <string name="podcasts_empty_prompt">Ищите подкасты Deezer.</string>
+    <string name="podcasts_no_results">Передачи не найдены.</string>
+
+    <string name="premium_required">Требуется Premium</string>
+    <string name="premium_body_named">Для воспроизведения по запросу нужен платный тариф Deezer. Ваш аккаунт (%1$s) на тарифе «%2$s».</string>
+    <string name="premium_body_anon">Для воспроизведения по запросу нужен платный тариф Deezer. Ваш аккаунт на тарифе «%1$s».</string>
+
+    <string name="search_hint">Треки, альбомы, исполнители, плейлисты</string>
+    <string name="search_empty_prompt">Ищите в каталоге Deezer.</string>
+    <string name="search_no_results">Ничего не найдено.</string>
+
+    <string name="section_tracks">Треки</string>
+    <string name="section_albums">Альбомы</string>
+    <string name="section_artists">Исполнители</string>
+    <string name="section_playlists">Плейлисты</string>
+
+    <string name="tracklist_empty">Здесь пока пусто.</string>
+
+    <string name="update_release_notes">Список изменений</string>
+
+    <string name="connect_this_device">Это устройство</string>
+    <string name="connect_no_devices">В вашей сети устройства не найдены.</string>
+
+    <string name="tv_premium_body">Для прослушивания в OpenDeezer нужен аккаунт Deezer Premium.</string>
+    <string name="tv_use_another_account">Использовать другой аккаунт</string>
+    <string name="nav_home">Главная</string>
+    <string name="nav_library">Медиатека</string>
+
+    <string name="tv_load_error">Не удалось загрузить — проверьте подключение.</string>
+    <string name="tv_flow_mix">Flow · ваш микс</string>
+    <string name="tv_made_for_you">Создано для вас</string>
+    <string name="tv_your_library">Ваша медиатека</string>
+    <string name="tv_liked_songs">Любимые треки</string>
+    <string name="tv_your_playlists">Ваши плейлисты</string>
+    <string name="tv_nothing_saved">Пока ничего не сохранено.</string>
+    <string name="tv_search_hint">Поиск треков, альбомов, плейлистов</string>
+    <string name="tv_featured">РЕКОМЕНДУЕМ</string>
+
+    <string name="tv_login_manual_prompt">Вставьте свой ARL от Deezer</string>
+    <string name="tv_login_web_prompt">Войдите в Deezer — ARL будет получен автоматически</string>
+    <string name="tv_login_paste_instead">Вставить ARL вместо этого</string>
+    <string name="tv_login_signing_in">Вход…</string>
+    <string name="tv_login_use_web">Использовать вход через веб</string>
+    <string name="tv_login_manual_help">Вход через веб считывает ARL автоматически — вставляйте его здесь только если токен уже есть.</string>
+
+    <string name="tv_section_audio">Звук</string>
+    <string name="tv_quality">Качество</string>
+    <string name="tv_hifi_needs_plan">Для HiFi нужен тариф Deezer HiFi.</string>
+    <string name="tv_high_hifi_needs_plan">Для High/HiFi нужен тариф Deezer HQ или HiFi.</string>
+    <string name="eq_custom_edited">Свой — полосы изменены вручную</string>
+    <string name="eq_adjust_hint">Влево/вправо на полосе ниже меняет её на 1 dB</string>
+    <string name="tv_connect_reachable_sub">Разрешите другим приложениям OpenDeezer управлять этим ТВ</string>
+    <string name="tv_phone_remote">Пульт на телефоне</string>
+    <string name="tv_phone_remote_sub">Открыть браузерный пульт в сети Wi-Fi (сканируйте QR)</string>
+    <string name="tv_remote_scan">Отсканируйте телефоном (та же Wi-Fi), затем введите код:</string>
+    <string name="tv_play_on_device">Воспроизвести на другом устройстве</string>
+    <string name="tv_searching_network">Поиск в вашей сети…</string>
+    <string name="connected_to">Подключено к %1$s</string>
+    <string name="tv_playing_here">Играет здесь · откройте, чтобы выбрать устройство</string>
+    <string name="tv_no_other_devices">В вашей сети нет других устройств.</string>
+    <string name="tv_rescan">Сканировать заново</string>
+    <string name="tv_searching">Поиск…</string>
+    <string name="tv_rescan_sub">Искать устройства снова</string>
+    <string name="tv_update_failed">Не удалось проверить — повторите</string>
+    <string name="tv_update_available">Доступно обновление: %1$s</string>
+    <string name="tv_up_to_date">Актуальная версия (v%1$s)</string>
+    <string name="tv_toggle_on">ВКЛ</string>
+    <string name="tv_toggle_off">ВЫКЛ</string>
+
+    <plurals name="n_tracks">
+        <item quantity="one">%1$d трек</item>
+        <item quantity="few">%1$d трека</item>
+        <item quantity="many">%1$d треков</item>
+        <item quantity="other">%1$d трека</item>
+    </plurals>
+    <plurals name="n_episodes">
+        <item quantity="one">%1$d выпуск</item>
+        <item quantity="few">%1$d выпуска</item>
+        <item quantity="many">%1$d выпусков</item>
+        <item quantity="other">%1$d выпуска</item>
+    </plurals>
+    <plurals name="n_fans">
+        <item quantity="one">%1$d поклонник</item>
+        <item quantity="few">%1$d поклонника</item>
+        <item quantity="many">%1$d поклонников</item>
+        <item quantity="other">%1$d поклонника</item>
+    </plurals>
+    <plurals name="pauses_in_minutes">
+        <item quantity="one">Пауза через %1$d минуту</item>
+        <item quantity="few">Пауза через %1$d минуты</item>
+        <item quantity="many">Пауза через %1$d минут</item>
+        <item quantity="other">Пауза через %1$d минуты</item>
+    </plurals>
+</resources>

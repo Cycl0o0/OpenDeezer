@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/Cycl0o0/OpenDeezer/internal/deezer"
+import (
+	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
+)
 
 // rowKind identifies what a list row represents.
 type rowKind int
@@ -31,6 +34,7 @@ const (
 	actRemote
 	actRemoteManual // enter a device address by hand
 	actWebRemote    // phone web remote (QR + pairing code)
+	actLanguage     // cycle the UI language
 )
 
 // row is a single list entry. It implements bubbles/list.Item.
@@ -64,7 +68,7 @@ func trackRow(t deezer.Track) row {
 func playlistRow(p deezer.Playlist) row {
 	d := p.Owner
 	if d == "" {
-		d = "playlist"
+		d = i18n.T("playlist")
 	}
 	return row{kind: rowPlaylist, title: p.Name, desc: d, playlist: p}
 }
@@ -78,27 +82,27 @@ func albumRow(a deezer.Album) row {
 }
 
 func artistRow(a deezer.ArtistInfo) row {
-	return row{kind: rowArtist, title: "♪ " + a.Name, desc: "artist", artist: a}
+	return row{kind: rowArtist, title: "♪ " + a.Name, desc: i18n.T("artist"), artist: a}
 }
 
 func podcastRow(p deezer.Podcast) row {
-	return row{kind: rowPodcast, title: "🎙 " + p.Name, desc: "podcast", podcast: p}
+	return row{kind: rowPodcast, title: "🎙 " + p.Name, desc: i18n.T("podcast"), podcast: p}
 }
 
 func episodeRow(e deezer.Episode) row {
 	d := e.ReleaseDate
 	if d == "" {
-		d = "episode"
+		d = i18n.T("episode")
 	}
 	return row{kind: rowEpisode, title: e.Title, desc: d, episode: e}
 }
 
 func deviceRow(id, name string, current bool) row {
 	title := name
-	desc := "output device"
+	desc := i18n.T("output device")
 	if current {
 		title = "● " + name
-		desc = "current"
+		desc = i18n.T("current")
 	}
 	return row{kind: rowDevice, title: title, desc: desc, deviceID: id}
 }
@@ -121,7 +125,7 @@ func peerRow(p peerDevice) row {
 func deviceTypeLabel(client string) string {
 	switch client {
 	case "tui":
-		return "Terminal"
+		return i18n.T("Terminal")
 	case "darwin", "macos":
 		return "macOS"
 	case "windows":

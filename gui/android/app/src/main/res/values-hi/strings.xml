@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenDeezer</string>
+
+    <string name="action_back">वापस</string>
+    <string name="action_close">बंद करें</string>
+    <string name="action_download">डाउनलोड करें</string>
+    <string name="action_retry">पुनः प्रयास करें</string>
+    <string name="action_refresh">ताज़ा करें</string>
+    <string name="action_ok">ठीक है</string>
+    <string name="action_sign_out">साइन आउट करें</string>
+    <string name="action_play">चलाएँ</string>
+    <string name="action_pause">पॉज़ करें</string>
+    <string name="action_next">अगला</string>
+    <string name="action_previous">पिछला</string>
+    <string name="action_play_all">सभी चलाएँ</string>
+    <string name="action_login">लॉग इन करें</string>
+    <string name="common_enable">सक्षम करें</string>
+    <string name="common_off">बंद</string>
+    <string name="unknown_title">अज्ञात</string>
+
+    <string name="cd_connect">कनेक्ट करें</string>
+    <string name="cd_like">पसंद करें</string>
+    <string name="cd_play_pause">चलाएँ/पॉज़ करें</string>
+    <string name="cd_shuffle">शफ़ल</string>
+    <string name="cd_repeat">दोहराएँ</string>
+    <string name="cd_volume">वॉल्यूम</string>
+    <string name="cd_connected">कनेक्ट किया गया</string>
+    <string name="cd_now_playing">अभी चल रहा है</string>
+    <string name="cd_explicit">अश्लील सामग्री</string>
+    <string name="cd_dismiss">खारिज करें</string>
+    <string name="cd_qr_code">QR कोड</string>
+    <string name="cd_remote_qr">रिमोट QR</string>
+
+    <string name="notif_channel_playback">प्लेबैक</string>
+
+    <string name="login_error_empty_arl">ARL खाली है</string>
+    <string name="login_error_failed">लॉगिन विफल — अपना ARL और कनेक्शन जाँचें।</string>
+    <string name="login_error_account">खाता लोड नहीं हो सका।</string>
+
+    <string name="device_type_terminal">टर्मिनल</string>
+    <string name="device_type_generic">डिवाइस</string>
+
+    <string name="settings_title">सेटिंग्स</string>
+    <string name="queue_title">क्यू</string>
+    <string name="lyrics_title">बोल</string>
+    <string name="charts_title">चार्ट</string>
+    <string name="search_title">खोजें</string>
+    <string name="now_playing_title">अभी चल रहा है</string>
+    <string name="playlists_title">मेरी प्लेलिस्ट</string>
+    <string name="podcasts_title">पॉडकास्ट</string>
+    <string name="equalizer_title">इक्वलाइज़र</string>
+
+    <string name="greeting_morning">सुप्रभात</string>
+    <string name="greeting_afternoon">शुभ दोपहर</string>
+    <string name="greeting_evening">शुभ संध्या</string>
+    <string name="greeting_named">%1$s, %2$s</string>
+    <string name="home_liked">पसंदीदा गाने</string>
+    <string name="section_top_tracks">टॉप ट्रैक</string>
+    <string name="section_your_playlists">आपकी प्लेलिस्ट</string>
+
+    <string name="settings_audio_quality">ऑडियो गुणवत्ता</string>
+    <string name="quality_normal">सामान्य</string>
+    <string name="quality_high">उच्च</string>
+    <string name="quality_desc_flac">FLAC · लॉसलेस</string>
+    <string name="quality_desc_high">MP3 · 320 kbps</string>
+    <string name="quality_desc_normal">MP3 · 128 kbps</string>
+    <string name="setting_replaygain_sub">सभी ट्रैक में लाउडनेस को एक समान करें</string>
+    <string name="setting_gapless_title">गैपलेस प्लेबैक</string>
+    <string name="setting_gapless_sub">ट्रैक के बीच कोई खामोशी नहीं</string>
+    <string name="settings_crossfade">क्रॉसफ़ेड</string>
+    <string name="crossfade_seconds">%1$d सेकंड</string>
+    <string name="settings_eq_sub">10-बैंड EQ, प्रीसेट और मोनो ऑडियो</string>
+    <string name="settings_sleep_timer">स्लीप टाइमर</string>
+    <string name="sleep_end">समाप्त</string>
+    <string name="sleep_desc_off">प्लेबैक अपने आप पॉज़ नहीं होगा</string>
+    <string name="sleep_desc_end">मौजूदा ट्रैक खत्म होने पर पॉज़ होगा</string>
+    <string name="connect_reachable_title">इस डिवाइस को पहुँच योग्य बनाएँ</string>
+    <string name="connect_reachable_sub">अपने अन्य OpenDeezer ऐप्स को इस डिवाइस को ढूँढने और नियंत्रित करने दें</string>
+    <string name="reachable_at">%1$s पर उपलब्ध</string>
+    <string name="settings_phone_remote">फ़ोन रिमोट</string>
+    <string name="phone_remote_sub">अपने लोकल Wi-Fi पर एक रिमोट कंट्रोल पेज प्रदान करें</string>
+    <string name="phone_remote_scan">अपने फ़ोन से स्कैन करें (वही Wi-Fi), फिर कोड डालें।</string>
+    <string name="settings_about">परिचय</string>
+    <string name="update_check_title">अपडेट जाँचें</string>
+    <string name="update_checking">जाँचा जा रहा है…</string>
+    <string name="update_check_sub">नए रिलीज़ के लिए GitHub जाँचता है</string>
+    <string name="settings_account">खाता</string>
+    <string name="plan_label">प्लान: %1$s</string>
+    <string name="plan_free">निःशुल्क</string>
+    <string name="update_uptodate_title">आप अपडेटेड हैं</string>
+    <string name="update_latest_generic">यह नवीनतम संस्करण है।</string>
+    <string name="update_latest_named">OpenDeezer v%1$s नवीनतम संस्करण है।</string>
+    <string name="update_available_title">OpenDeezer %1$s उपलब्ध है</string>
+    <string name="update_available_generic">GitHub पर एक नया संस्करण उपलब्ध है।</string>
+    <string name="update_failed_title">अपडेट जाँच नहीं सका</string>
+    <string name="update_failed_body">अपना कनेक्शन जाँचें और फिर से प्रयास करें।</string>
+
+    <string name="login_manual_prompt">अपना Deezer ARL टोकन पेस्ट करें</string>
+    <string name="login_web_prompt">Deezer में साइन इन करें</string>
+    <string name="login_use_web">इसके बजाय वेब साइन-इन का उपयोग करें</string>
+    <string name="login_manual_help">आपकी Deezer सेशन कुकी से एक लंबा टोकन। वेब साइन-इन इसे अपने आप पढ़ लेता है।</string>
+    <string name="login_paste_manual">ARL मैन्युअल रूप से पेस्ट करें</string>
+
+    <string name="np_nothing_playing">कुछ भी नहीं चल रहा है।</string>
+    <string name="np_playing_on">%1$s पर चल रहा है</string>
+
+    <string name="queue_empty">क्यू खाली है।</string>
+
+    <string name="lyrics_none">कोई बोल उपलब्ध नहीं।</string>
+
+    <string name="charts_unavailable">चार्ट उपलब्ध नहीं।</string>
+
+    <string name="episodes_none">कोई एपिसोड नहीं।</string>
+
+    <string name="eq_unavailable">इक्वलाइज़र उपलब्ध नहीं</string>
+    <string name="eq_enable_sub">प्लेबैक पर 10-बैंड EQ लागू करें</string>
+    <string name="eq_preset">प्रीसेट</string>
+    <string name="eq_custom">कस्टम</string>
+    <string name="eq_preamp">प्रीएम्प</string>
+    <string name="eq_mono_title">मोनो ऑडियो</string>
+    <string name="eq_mono_sub">स्टीरियो को एक ही चैनल में मिलाएँ</string>
+
+    <string name="playlists_empty">आपके पास अभी कोई प्लेलिस्ट नहीं है।</string>
+
+    <string name="podcasts_search_hint">शो खोजें</string>
+    <string name="podcasts_empty_prompt">Deezer के पॉडकास्ट खोजें।</string>
+    <string name="podcasts_no_results">कोई शो नहीं मिला।</string>
+
+    <string name="premium_required">Premium आवश्यक</string>
+    <string name="premium_body_named">ऑन-डिमांड स्ट्रीमिंग के लिए एक सशुल्क Deezer प्लान चाहिए। आपका खाता (%1$s) “%2$s” पर है।</string>
+    <string name="premium_body_anon">ऑन-डिमांड स्ट्रीमिंग के लिए एक सशुल्क Deezer प्लान चाहिए। आपका खाता “%1$s” पर है।</string>
+
+    <string name="search_hint">ट्रैक, एल्बम, कलाकार, प्लेलिस्ट</string>
+    <string name="search_empty_prompt">Deezer की कैटलॉग खोजें।</string>
+    <string name="search_no_results">कोई परिणाम नहीं।</string>
+
+    <string name="section_tracks">ट्रैक</string>
+    <string name="section_albums">एल्बम</string>
+    <string name="section_artists">कलाकार</string>
+    <string name="section_playlists">प्लेलिस्ट</string>
+
+    <string name="tracklist_empty">यहाँ अभी कुछ नहीं है।</string>
+
+    <string name="update_release_notes">रिलीज़ नोट्स</string>
+
+    <string name="connect_this_device">यह डिवाइस</string>
+    <string name="connect_no_devices">आपके नेटवर्क पर कोई डिवाइस नहीं मिला।</string>
+
+    <string name="tv_premium_body">OpenDeezer स्ट्रीम के लिए एक Deezer Premium खाता चाहिए।</string>
+    <string name="tv_use_another_account">दूसरा खाता उपयोग करें</string>
+    <string name="nav_home">होम</string>
+    <string name="nav_library">लाइब्रेरी</string>
+
+    <string name="tv_load_error">लोड नहीं हो सका — अपना कनेक्शन जाँचें।</string>
+    <string name="tv_flow_mix">Flow · आपका मिक्स</string>
+    <string name="tv_made_for_you">आपके लिए बनाया गया</string>
+    <string name="tv_your_library">आपकी लाइब्रेरी</string>
+    <string name="tv_liked_songs">पसंदीदा गाने</string>
+    <string name="tv_your_playlists">आपकी प्लेलिस्ट</string>
+    <string name="tv_nothing_saved">अभी कुछ भी सहेजा नहीं गया।</string>
+    <string name="tv_search_hint">ट्रैक, एल्बम, प्लेलिस्ट खोजें</string>
+    <string name="tv_featured">फ़ीचर्ड</string>
+
+    <string name="tv_login_manual_prompt">अपना Deezer ARL पेस्ट करें</string>
+    <string name="tv_login_web_prompt">Deezer में साइन इन करें — ARL अपने आप कैप्चर हो जाता है</string>
+    <string name="tv_login_paste_instead">इसके बजाय ARL पेस्ट करें</string>
+    <string name="tv_login_signing_in">साइन इन हो रहा है…</string>
+    <string name="tv_login_use_web">वेब साइन-इन उपयोग करें</string>
+    <string name="tv_login_manual_help">वेब साइन-इन ARL को अपने आप पढ़ लेता है — इसे यहाँ केवल तभी पेस्ट करें जब आपके पास पहले से टोकन हो।</string>
+
+    <string name="tv_section_audio">ऑडियो</string>
+    <string name="tv_quality">गुणवत्ता</string>
+    <string name="tv_hifi_needs_plan">HiFi के लिए Deezer HiFi प्लान चाहिए।</string>
+    <string name="tv_high_hifi_needs_plan">High/HiFi के लिए Deezer HQ या HiFi प्लान चाहिए।</string>
+    <string name="eq_custom_edited">कस्टम — बैंड मैन्युअल रूप से बदले गए</string>
+    <string name="eq_adjust_hint">नीचे किसी बैंड पर बाएँ/दाएँ से उसे 1 dB समायोजित करें</string>
+    <string name="tv_connect_reachable_sub">अपने अन्य OpenDeezer ऐप्स को इस TV को नियंत्रित करने दें</string>
+    <string name="tv_phone_remote">फ़ोन रिमोट</string>
+    <string name="tv_phone_remote_sub">अपने Wi-Fi पर ब्राउज़र रिमोट प्रदान करें (QR स्कैन करें)</string>
+    <string name="tv_remote_scan">अपने फ़ोन से स्कैन करें (वही Wi-Fi), फिर कोड डालें:</string>
+    <string name="tv_play_on_device">दूसरे डिवाइस पर चलाएँ</string>
+    <string name="tv_searching_network">आपका नेटवर्क खोजा जा रहा है…</string>
+    <string name="connected_to">%1$s से कनेक्ट किया गया</string>
+    <string name="tv_playing_here">यहीं चल रहा है · डिवाइस चुनने के लिए खोलें</string>
+    <string name="tv_no_other_devices">आपके नेटवर्क पर कोई अन्य डिवाइस नहीं।</string>
+    <string name="tv_rescan">फिर से स्कैन करें</string>
+    <string name="tv_searching">खोजा जा रहा है…</string>
+    <string name="tv_rescan_sub">डिवाइस फिर से खोजें</string>
+    <string name="tv_update_failed">जाँच नहीं सका — फिर से प्रयास करें</string>
+    <string name="tv_update_available">अपडेट उपलब्ध: %1$s</string>
+    <string name="tv_up_to_date">अपडेटेड (v%1$s)</string>
+    <string name="tv_toggle_on">चालू</string>
+    <string name="tv_toggle_off">बंद</string>
+
+    <plurals name="n_tracks">
+        <item quantity="one">%1$d ट्रैक</item>
+        <item quantity="other">%1$d ट्रैक</item>
+    </plurals>
+    <plurals name="n_episodes">
+        <item quantity="one">%1$d एपिसोड</item>
+        <item quantity="other">%1$d एपिसोड</item>
+    </plurals>
+    <plurals name="n_fans">
+        <item quantity="one">%1$d फ़ैन</item>
+        <item quantity="other">%1$d फ़ैन्स</item>
+    </plurals>
+    <plurals name="pauses_in_minutes">
+        <item quantity="one">%1$d मिनट में पॉज़ होगा</item>
+        <item quantity="other">%1$d मिनट में पॉज़ होगा</item>
+    </plurals>
+</resources>

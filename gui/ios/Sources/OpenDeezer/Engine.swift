@@ -9,7 +9,7 @@ enum EngineError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .server(let message): return message
-        case .decode(let message): return "Couldn't read the server's response (\(message))."
+        case .decode(let message): return String(localized: "Couldn't read the server's response (\(message)).")
         }
     }
 }

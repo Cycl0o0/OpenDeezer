@@ -16,8 +16,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.ui.theme.DeezerPurple
 
 @Composable
@@ -35,19 +37,22 @@ fun PremiumGateScreen(accountName: String, offer: String, onLogout: () -> Unit) 
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "Premium required",
+            stringResource(R.string.premium_required),
             style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.height(8.dp))
+        val planName = offer.ifBlank { stringResource(R.string.plan_free) }
         Text(
-            "On-demand streaming needs a paid Deezer plan. " +
-                "Your account${if (accountName.isNotBlank()) " ($accountName)" else ""} " +
-                "is on \"${offer.ifBlank { "Free" }}\".",
+            if (accountName.isNotBlank()) {
+                stringResource(R.string.premium_body_named, accountName, planName)
+            } else {
+                stringResource(R.string.premium_body_anon, planName)
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
-        OutlinedButton(onClick = onLogout) { Text("Sign out") }
+        OutlinedButton(onClick = onLogout) { Text(stringResource(R.string.action_sign_out)) }
     }
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/internal/discord"
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/mpris"
 	"github.com/Cycl0o0/OpenDeezer/internal/queue"
@@ -396,16 +397,16 @@ func (m *Model) cycleSleepTimer() {
 // sleepStatus renders a human-readable sleep-timer status line.
 func sleepStatus(p *audio.Player) string {
 	if !p.SleepActive() {
-		return "Sleep timer off"
+		return i18n.T("Sleep timer off")
 	}
 	if p.SleepEndOfTrack() {
-		return "Sleep: at end of track"
+		return i18n.T("Sleep: at end of track")
 	}
 	rem := p.SleepRemainingMS() / 1000
 	if rem >= 60 {
-		return "Sleep: pausing in " + strconv.Itoa(int((rem+59)/60)) + " min"
+		return i18n.Tf("Sleep: pausing in %d min", int((rem+59)/60))
 	}
-	return "Sleep: pausing in " + strconv.Itoa(int(rem)) + "s"
+	return i18n.Tf("Sleep: pausing in %ds", int(rem))
 }
 
 // publishAccount stores the identity snapshot the control HTTP goroutine reads
@@ -449,7 +450,7 @@ func remoteTrack(t *control.Track) deezer.Track {
 // New builds the root model.
 func New(client *deezer.Client, player *audio.Player) *Model {
 	ti := textinput.New()
-	ti.Placeholder = "Search Deezer…"
+	ti.Placeholder = i18n.T("Search Deezer…")
 	ti.CharLimit = 120
 
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
@@ -571,7 +572,7 @@ func (m *Model) favoritesCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return tracksMsg{title: "❤  Liked Songs", tracks: ts}
+		return tracksMsg{title: "❤  " + i18n.T("Liked Songs"), tracks: ts}
 	}
 }
 
@@ -581,7 +582,7 @@ func (m *Model) playlistsCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return playlistsMsg{title: "≡  My Playlists", playlists: ps}
+		return playlistsMsg{title: "≡  " + i18n.T("My Playlists"), playlists: ps}
 	}
 }
 
@@ -660,7 +661,7 @@ func (m *Model) podcastSearchCmd(q string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return podcastsMsg{title: "🎙 Podcasts", podcasts: ps}
+		return podcastsMsg{title: "🎙 " + i18n.T("Podcasts"), podcasts: ps}
 	}
 }
 
@@ -691,7 +692,7 @@ func (m *Model) likeCurrentCmd(t deezer.Track) tea.Cmd {
 		if err := m.client.AddFavoriteTrack(t.ID); err != nil {
 			return errMsg{err}
 		}
-		return statusMsg{"❤ Liked: " + t.Name}
+		return statusMsg{"❤ " + i18n.Tf("Liked: %s", t.Name)}
 	}
 }
 

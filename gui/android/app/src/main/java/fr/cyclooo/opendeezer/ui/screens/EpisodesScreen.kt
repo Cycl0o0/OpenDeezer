@@ -29,8 +29,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.Episode
 import fr.cyclooo.opendeezer.player.PlayerController
@@ -55,7 +57,7 @@ fun EpisodesScreen(
                 title = { Text(podcastName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -67,7 +69,7 @@ fun EpisodesScreen(
                     CircularProgressIndicator()
                 }
                 else -> if (list.isEmpty()) {
-                    CenteredMessage("No episodes.")
+                    CenteredMessage(stringResource(R.string.episodes_none))
                 } else {
                     val asTracks = list.map { it.asTrack() }
                     LazyColumn(Modifier.fillMaxSize()) {
@@ -103,7 +105,7 @@ fun EpisodesScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Icon(
                                     Icons.Filled.PlayCircle,
-                                    contentDescription = "Play",
+                                    contentDescription = stringResource(R.string.action_play),
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }

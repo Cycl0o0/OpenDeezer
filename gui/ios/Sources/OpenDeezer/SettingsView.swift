@@ -14,9 +14,9 @@ private enum SleepOption: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var label: String {
         switch self {
-        case .off: return "Off"
-        case .endOfTrack: return "End of Track"
-        default: return "\(rawValue) min"
+        case .off: return String(localized: "Off")
+        case .endOfTrack: return String(localized: "End of Track")
+        default: return String(localized: "\(rawValue) min")
         }
     }
 }
@@ -37,7 +37,7 @@ struct SettingsView: View {
     @State private var qrImage: UIImage?
     @State private var connectInfo: ConnectHostInfo?
 
-    private let qualities = [
+    private let qualities: [(Int, LocalizedStringKey, String)] = [
         (0, "Normal", "MP3 · 128 kbps"),
         (1, "High", "MP3 · 320 kbps"),
         (2, "HiFi", "HiFi · FLAC"),
@@ -88,7 +88,7 @@ struct SettingsView: View {
                         HStack {
                             Text("Crossfade")
                             Spacer()
-                            Text(crossfadeMs == 0 ? "Off" : "\(Int(crossfadeMs / 1000))s")
+                            Text(crossfadeMs == 0 ? String(localized: "Off") : String(localized: "\(Int(crossfadeMs / 1000))s"))
                                 .foregroundStyle(.secondary)
                         }
                         Slider(value: $crossfadeMs, in: 0...12000, step: 1000)
@@ -176,7 +176,7 @@ struct SettingsView: View {
                             if updates.isChecking {
                                 ProgressView()
                             } else if let info = updates.info {
-                                Text(info.hasUpdate ? "\(info.latest) available" : "Up to date")
+                                Text(info.hasUpdate ? String(localized: "\(info.latest) available") : String(localized: "Up to date"))
                                     .foregroundStyle(.secondary)
                             }
                         }

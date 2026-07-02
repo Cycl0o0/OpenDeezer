@@ -23,9 +23,9 @@ struct DevicePickerView: View {
             Image(systemName: "rectangle.connected.to.line.below")
                 .font(.system(size: 22)).foregroundStyle(DZ.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Connect to a Device")
+                Text(L("Connect to a Device"))
                     .font(.system(size: 16, weight: .bold)).foregroundStyle(DZ.textPri)
-                Text("Play on another device on your network")
+                Text(L("Play on another device on your network"))
                     .font(.system(size: 12)).foregroundStyle(DZ.textSec).lineLimit(1)
             }
             Spacer()
@@ -33,8 +33,8 @@ struct DevicePickerView: View {
             Button { app.discoverDevices() } label: {
                 Image(systemName: "arrow.clockwise").foregroundStyle(DZ.accent)
             }
-            .buttonStyle(.plain).help("Refresh").disabled(app.devicesLoading)
-            Button("Done") { app.showDevicePicker = false }
+            .buttonStyle(.plain).help(L("Refresh")).disabled(app.devicesLoading)
+            Button(L("Done")) { app.showDevicePicker = false }
                 .buttonStyle(.glass).tint(DZ.accent)
         }
         .padding(16)
@@ -44,8 +44,8 @@ struct DevicePickerView: View {
         List {
             // This computer — local playback / disconnect from a remote device.
             SwiftUI.Section {
-                deviceRow(symbol: "laptopcomputer", title: "This computer",
-                          subtitle: "Play here", connected: !app.isConnectedRemote) {
+                deviceRow(symbol: "laptopcomputer", title: L("This computer"),
+                          subtitle: L("Play here"), connected: !app.isConnectedRemote) {
                     app.disconnectDevice()
                 }
             }
@@ -54,12 +54,12 @@ struct DevicePickerView: View {
                 if app.devicesLoading {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small).tint(DZ.accent)
-                        Text("Looking for devices…")
+                        Text(L("Looking for devices…"))
                             .font(.system(size: 13)).foregroundStyle(DZ.textSec)
                     }
                     .listRowBackground(Color.clear)
                 } else if app.devices.isEmpty {
-                    Text("No devices found on your network.")
+                    Text(L("No devices found on your network."))
                         .font(.system(size: 13)).foregroundStyle(DZ.textSec)
                         .listRowBackground(Color.clear)
                 } else {
@@ -73,7 +73,7 @@ struct DevicePickerView: View {
                     }
                 }
             } header: {
-                Text("Devices")
+                Text(L("Devices"))
                     .font(.system(size: 12, weight: .bold)).foregroundStyle(DZ.textSec)
             }
         }

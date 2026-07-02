@@ -106,19 +106,9 @@ data class ConnectDevice(
     val addr: String,
     val client: String,
     val version: String,
-) {
-    // Mirrors the desktop GUIs' client-id -> device-type mapping.
-    val typeLabel: String
-        get() = when (client.lowercase()) {
-            "tui" -> "Terminal"
-            "darwin", "macos" -> "macOS"
-            "windows" -> "Windows"
-            "linux", "gnome", "kde" -> "Linux"
-            "android" -> "Android"
-            "" -> "Device"
-            else -> client
-        }
-}
+)
+// The client-id -> localized device-type label lives in a @Composable helper
+// (ui.components.deviceTypeLabel) so it can resolve string resources.
 
 data class WebRemoteInfo(
     val enabled: Boolean,

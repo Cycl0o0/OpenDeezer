@@ -7,9 +7,19 @@
 # -lasound -lpthread -ldl -lm AFTER the archive (left-to-right resolution).
 
 project('opendeezer-gnome', 'c',
-  version: '1.7.0',
+  version: '1.8.0',
   meson_version: '>=0.59.0',
   default_options: ['c_std=c11', 'warning_level=1'])
+
+# Localization (GNU gettext). GETTEXT_PACKAGE names the message catalog
+# (opendeezer-gnome.mo); LOCALEDIR is where the installed .mo files live and is
+# passed to bindtextdomain() in opendeezer_run(). The i18n module drives the
+# po/ subdir (catalog compile/install) and the .desktop translation merge.
+i18n = import('i18n')
+add_project_arguments(
+  '-DGETTEXT_PACKAGE="opendeezer-gnome"',
+  '-DLOCALEDIR="@0@"'.format(get_option('prefix') / get_option('localedir')),
+  language: 'c')
 
 deps = [
   # gtk_picture_set_content_fit is 4.8+; CSS string loader guarded for 4.12.
@@ -26,6 +36,9 @@ deps = [
   # (libsoup-3.0 is pulled in by webkitgtk-6.0; declared here for its symbols).
   dependency('libsoup-3.0'),
 ]
+
+# Translations: builds + installs the per-locale message catalogs from po/.
+subdir('po')
 
 # Embedded resources (app icon) compiled into the binary.
 gnome = import('gnome')
@@ -50,7 +63,15 @@ shared_library('opendeezer-gtk',
   dependencies: deps + [dzcore],
   install: true)
 
-install_data('data/org.opendeezer.OpenDeezer.desktop',
+# Desktop entry: translations (Name/GenericName/Comment/Keywords) are merged in
+# from po/ by msgfmt --desktop. The installed filename stays byte-for-byte the
+# same (org.opendeezer.OpenDeezer.desktop) so nothing that references it breaks.
+i18n.merge_file(
+  input: 'data/org.opendeezer.OpenDeezer.desktop.in',
+  output: 'org.opendeezer.OpenDeezer.desktop',
+  type: 'desktop',
+  po_dir: 'po',
+  install: true,
   install_dir: get_option('datadir') / 'applications')
 
 # App icon (matches the .desktop Icon= name so the shell + window pick it up).

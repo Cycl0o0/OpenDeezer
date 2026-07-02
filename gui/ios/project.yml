@@ -29,8 +29,9 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources/OpenDeezer
-    resources:
       - path: Resources/Assets.xcassets
+      - path: Resources/Localizable.xcstrings
+      - path: Resources/InfoPlist.xcstrings
     dependencies:
       - framework: Odmobile.xcframework
         embed: false
@@ -50,8 +51,8 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": "NO"
         SWIFT_VERSION: "5.0"
-        MARKETING_VERSION: "1.7.0"
-        CURRENT_PROJECT_VERSION: "3"
+        MARKETING_VERSION: "1.8.0"
+        CURRENT_PROJECT_VERSION: "4"
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         LD_RUNPATH_SEARCH_PATHS:

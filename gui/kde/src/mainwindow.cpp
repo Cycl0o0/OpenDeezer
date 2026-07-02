@@ -288,7 +288,7 @@ QVector<ConnectDevice> parseDevices(const QByteArray &json) {
 
 // Friendly device type from a client id (mirrors the engine + the other GUIs).
 QString deviceTypeLabel(const QString &client) {
-    if (client == QLatin1String("tui"))     return QStringLiteral("Terminal");
+    if (client == QLatin1String("tui"))     return QCoreApplication::translate("MainWindow", "Terminal");
     if (client == QLatin1String("darwin") || client == QLatin1String("macos"))
         return QStringLiteral("macOS");
     if (client == QLatin1String("windows")) return QStringLiteral("Windows");
@@ -424,7 +424,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setupTray();    // background playback + close-to-tray
     checkForUpdates(); // once per launch, background, non-intrusive (no login needed)
 
-    statusBar()->showMessage("Logging in…");
+    statusBar()->showMessage(tr("Logging in…"));
     // Defer to the event loop: startLogin() may exec() the modal login dialog,
     // and running that nested loop from inside the constructor (before the main
     // window is shown / app.exec() runs) blocks construction so no window ever
@@ -500,14 +500,14 @@ void MainWindow::setupTray() {
     m_tray->setToolTip(QStringLiteral("OpenDeezer"));
 
     auto *menu = new QMenu(this);
-    auto *restore = menu->addAction(QStringLiteral("Show OpenDeezer"));
+    auto *restore = menu->addAction(tr("Show OpenDeezer"));
     connect(restore, &QAction::triggered, this, [this] {
         showNormal();
         raise();
         activateWindow();
     });
     menu->addSeparator();
-    auto *quit = menu->addAction(QStringLiteral("Quit"));
+    auto *quit = menu->addAction(tr("Quit"));
     connect(quit, &QAction::triggered, this, &MainWindow::quitApp);
     m_tray->setContextMenu(menu);
 
@@ -568,12 +568,12 @@ void MainWindow::openSettings() {
 // current. Disabled by default; LAN-only; no data leaves the local network.
 void MainWindow::openPhoneRemote() {
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("Phone Remote"));
+    dlg.setWindowTitle(tr("Phone Remote"));
     dlg.setMinimumWidth(360);
     auto *v = new QVBoxLayout(&dlg);
     v->setSpacing(10);
 
-    auto *toggle = new QCheckBox(QStringLiteral("Enable Phone Remote"));
+    auto *toggle = new QCheckBox(tr("Enable Phone Remote"));
     v->addWidget(toggle);
 
     // Container for QR / code / URL — shown only when the remote is enabled.
@@ -611,7 +611,7 @@ void MainWindow::openPhoneRemote() {
     rv->addWidget(urlLabel, 0, Qt::AlignHCenter);
 
     auto *hint = new QLabel(
-        QStringLiteral("Scan with your phone (same Wi-Fi), then enter the code."));
+        tr("Scan with your phone (same Wi-Fi), then enter the code."));
     hint->setAlignment(Qt::AlignHCenter);
     hint->setWordWrap(true);
     rv->addWidget(hint, 0, Qt::AlignHCenter);
@@ -702,19 +702,19 @@ void MainWindow::showUpdateBanner(const QString &latest, const QString &url,
     auto *h = new QHBoxLayout(bar);
     h->setContentsMargins(14, 6, 8, 6);
 
-    auto *label = new QLabel(QStringLiteral("OpenDeezer %1 available").arg(latest));
+    auto *label = new QLabel(tr("OpenDeezer %1 available").arg(latest));
     h->addWidget(label);
     h->addStretch(1);
 
     if (!notes.isEmpty()) {
-        auto *notesBtn = new QPushButton(QStringLiteral("Release notes"));
+        auto *notesBtn = new QPushButton(tr("Release notes"));
         connect(notesBtn, &QPushButton::clicked, this, [this, latest, notes] {
             QMessageBox::information(this, QStringLiteral("OpenDeezer %1").arg(latest), notes);
         });
         h->addWidget(notesBtn);
     }
 
-    auto *download = new QPushButton(QStringLiteral("Download"));
+    auto *download = new QPushButton(tr("Download"));
     connect(download, &QPushButton::clicked, this,
             [url] { QDesktopServices::openUrl(QUrl(url)); });
     h->addWidget(download);
@@ -750,16 +750,16 @@ void MainWindow::applyAccount(const QByteArray &json) {
 void MainWindow::applyQuality(int level) {
     m_quality = level;
     DZSetQuality(level);
-    const char *names[] = {"Normal (MP3 128)", "High (MP3 320)", "HiFi (FLAC)"};
-    QString msg = QStringLiteral("Quality: ") +
-                  names[level < 0 ? 0 : (level > 2 ? 2 : level)];
+    const QString names[] = {tr("Normal (MP3 128)"), tr("High (MP3 320)"),
+                             tr("HiFi (FLAC)")};
+    QString msg = tr("Quality: %1").arg(names[level < 0 ? 0 : (level > 2 ? 2 : level)]);
     // Note when the chosen tier exceeds the account's entitlement; the engine
     // transparently falls back, so this is informational only.
     if (m_haveAccount) {
         if (level >= 2 && !m_canHifi)
-            msg += QStringLiteral(" — your plan has no HiFi; the engine will fall back");
+            msg += tr(" — your plan has no HiFi; the engine will fall back");
         else if (level >= 1 && !m_canHq)
-            msg += QStringLiteral(" — your plan has no High quality; the engine will fall back");
+            msg += tr(" — your plan has no High quality; the engine will fall back");
     }
     statusBar()->showMessage(msg, 4000);
 }
@@ -767,8 +767,8 @@ void MainWindow::applyQuality(int level) {
 void MainWindow::applyReplayGain(bool on) {
     m_replayGain = on;
     DZSetReplayGain(on ? 1 : 0);
-    statusBar()->showMessage(on ? QStringLiteral("ReplayGain: on")
-                                : QStringLiteral("ReplayGain: off"), 3000);
+    statusBar()->showMessage(on ? tr("ReplayGain: on")
+                                : tr("ReplayGain: off"), 3000);
 }
 
 // Switching the output device reinitialises the audio backend, which can briefly
@@ -778,8 +778,8 @@ void MainWindow::applyAudioDevice(const QString &deviceId) {
     QtConcurrent::run([this, idb] {
         const int ok = DZSetAudioDevice(cstr(idb));
         QMetaObject::invokeMethod(this, [this, ok] {
-            statusBar()->showMessage(ok ? QStringLiteral("Output device changed")
-                                        : QStringLiteral("Couldn't change output device"),
+            statusBar()->showMessage(ok ? tr("Output device changed")
+                                        : tr("Couldn't change output device"),
                                      3000);
         }, Qt::QueuedConnection);
     });
@@ -788,8 +788,8 @@ void MainWindow::applyAudioDevice(const QString &deviceId) {
 void MainWindow::applyGapless(bool on) {
     m_gapless = on;
     DZSetGapless(on ? 1 : 0);
-    statusBar()->showMessage(on ? QStringLiteral("Gapless: on")
-                                : QStringLiteral("Gapless: off"), 3000);
+    statusBar()->showMessage(on ? tr("Gapless: on")
+                                : tr("Gapless: off"), 3000);
     // Keep the next-track preload in sync with the new setting.
     preloadNext();
 }
@@ -798,8 +798,8 @@ void MainWindow::applyCrossfade(int ms) {
     m_crossfadeMs = ms;
     DZSetCrossfadeMS(ms);
     statusBar()->showMessage(ms > 0
-        ? QStringLiteral("Crossfade: %1s").arg(ms / 1000)
-        : QStringLiteral("Crossfade: off"), 3000);
+        ? tr("Crossfade: %1s").arg(ms / 1000)
+        : tr("Crossfade: off"), 3000);
     preloadNext();
 }
 
@@ -818,7 +818,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         event->ignore();
         if (!m_trayHintShown) {
             m_tray->showMessage(QStringLiteral("OpenDeezer"),
-                                QStringLiteral("Still playing in the background."),
+                                tr("Still playing in the background."),
                                 appIcon(), 4000);
             m_trayHintShown = true;
         }
@@ -834,35 +834,35 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 // ---- menu -----------------------------------------------------------------
 
 void MainWindow::buildMenu() {
-    auto *file = menuBar()->addMenu("&File");
+    auto *file = menuBar()->addMenu(tr("&File"));
     // Reachable even when already auto-logged-in from a stored ARL — opens the
     // Deezer web-login dialog on demand (sign in / switch account).
-    auto *login = file->addAction("&Log in / Switch account…");
+    auto *login = file->addAction(tr("&Log in / Switch account…"));
     connect(login, &QAction::triggered, this, [this] { promptLogin(); });
     file->addSeparator();
-    auto *settings = file->addAction("&Settings…");
+    auto *settings = file->addAction(tr("&Settings…"));
     settings->setShortcut(QKeySequence::Preferences);
     connect(settings, &QAction::triggered, this, &MainWindow::openSettings);
-    auto *phoneRemote = file->addAction("Phone &Remote…");
+    auto *phoneRemote = file->addAction(tr("Phone &Remote…"));
     connect(phoneRemote, &QAction::triggered, this, &MainWindow::openPhoneRemote);
     file->addSeparator();
-    auto *quit = file->addAction("&Quit");
+    auto *quit = file->addAction(tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &MainWindow::quitApp);
 
-    auto *help = menuBar()->addMenu("&Help");
-    auto *about = help->addAction("&About OpenDeezer");
+    auto *help = menuBar()->addMenu(tr("&Help"));
+    auto *about = help->addAction(tr("&About OpenDeezer"));
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            "<h3>OpenDeezer 1.7.0</h3>"
-            "<p>A Deezer client for the desktop.</p>";
+            QStringLiteral("<h3>OpenDeezer 1.8.0</h3><p>") +
+            tr("A Deezer client for the desktop.") + QStringLiteral("</p>");
         // Show the signed-in account tier (from DZAccountJSON) when available.
         if (m_haveAccount && !m_accountName.isEmpty())
-            text += QStringLiteral("<p>Signed in as <b>%1</b> · %2</p>")
+            text += tr("<p>Signed in as <b>%1</b> · %2</p>")
                         .arg(m_accountName.toHtmlEscaped(),
                              m_accountOffer.toHtmlEscaped());
-        text += "<p>By <b>Cycl0o0</b>.<br>Licensed under <b>AGPL-3.0</b>.</p>";
-        QMessageBox::about(this, "About OpenDeezer", text);
+        text += tr("<p>By <b>Cycl0o0</b>.<br>Licensed under <b>AGPL-3.0</b>.</p>");
+        QMessageBox::about(this, tr("About OpenDeezer"), text);
     });
 }
 
@@ -871,13 +871,13 @@ void MainWindow::buildMenu() {
 void MainWindow::buildSidebar() {
     m_sidebar = new QListWidget;
     m_sidebar->setMaximumWidth(240);
-    m_sidebar->addItem(QStringLiteral("⌂  Home"));         // 0
-    m_sidebar->addItem(QStringLiteral("♥  Liked Songs")); // 1
+    m_sidebar->addItem(QStringLiteral("⌂  ") + tr("Home"));         // 0
+    m_sidebar->addItem(QStringLiteral("♥  ") + tr("Liked Songs")); // 1
     m_sidebar->addItem(QStringLiteral("⚡  Flow"));         // 2
-    m_sidebar->addItem(QStringLiteral("☰  Playlists"));    // 3
-    m_sidebar->addItem(QStringLiteral("⌕  Search"));       // 4
-    m_sidebar->addItem(QStringLiteral("★  Charts"));       // 5
-    m_sidebar->addItem(QStringLiteral("◉  Podcasts"));     // 6
+    m_sidebar->addItem(QStringLiteral("☰  ") + tr("Playlists"));    // 3
+    m_sidebar->addItem(QStringLiteral("⌕  ") + tr("Search"));       // 4
+    m_sidebar->addItem(QStringLiteral("★  ") + tr("Charts"));       // 5
+    m_sidebar->addItem(QStringLiteral("◉  ") + tr("Podcasts"));     // 6
     connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainWindow::onSidebarChanged);
 }
 
@@ -936,9 +936,9 @@ QWidget *MainWindow::buildHomePage() {
     // --- Time-based greeting (large, bold) ---
     {
         const int h = QTime::currentTime().hour();
-        const QString greet = h < 12 ? QStringLiteral("Good morning")
-                            : h < 18 ? QStringLiteral("Good afternoon")
-                                     : QStringLiteral("Good evening");
+        const QString greet = h < 12 ? tr("Good morning")
+                            : h < 18 ? tr("Good afternoon")
+                                     : tr("Good evening");
         m_homeGreeting = new QLabel(greet);
         QFont f = m_homeGreeting->font();
         f.setPointSize(f.pointSize() + 12);
@@ -952,25 +952,25 @@ QWidget *MainWindow::buildHomePage() {
     // Each button triggers the same sidebar action the nav items already use, so
     // the sidebar selection stays in sync.
     {
-        auto *sectionLabel = new QLabel(QStringLiteral("Quick pick"));
+        auto *sectionLabel = new QLabel(tr("Quick pick"));
         QFont sf = sectionLabel->font();
         sf.setPointSize(sf.pointSize() + 2);
         sf.setBold(true);
         sectionLabel->setFont(sf);
         v->addWidget(sectionLabel);
 
-        struct QuickCard { const char *label; int sidebarRow; };
-        static const QuickCard kQuickCards[] = {
-            { "\xe2\x99\xa5  Liked Songs", 1 },   // ♥
-            { "\xe2\x9a\xa1  Flow",         2 },   // ⚡
-            { "\xe2\x98\x85  Charts",       5 },   // ★
-            { "\xe2\x97\x89  Podcasts",     6 },   // ◉
+        struct QuickCard { const char *emoji; QString label; int sidebarRow; };
+        const QuickCard kQuickCards[] = {
+            { "\xe2\x99\xa5", tr("Liked Songs"), 1 },   // ♥
+            { "\xe2\x9a\xa1", QStringLiteral("Flow"), 2 },   // ⚡ (Flow: brand, never translated)
+            { "\xe2\x98\x85", tr("Charts"),      5 },   // ★
+            { "\xe2\x97\x89", tr("Podcasts"),    6 },   // ◉
         };
         auto *row = new QHBoxLayout;
         row->setSpacing(12);
         for (const QuickCard &c : kQuickCards) {
             auto *btn = new QToolButton;
-            btn->setText(QString::fromUtf8(c.label));
+            btn->setText(QString::fromUtf8(c.emoji) + QStringLiteral("  ") + c.label);
             btn->setToolButtonStyle(Qt::ToolButtonTextOnly);
             btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
             btn->setMinimumHeight(48);
@@ -998,7 +998,7 @@ QWidget *MainWindow::buildHomePage() {
     // --- Top Tracks horizontal rail ---
     // Single-row, left-to-right, horizontal scroll; activating an item plays it.
     {
-        auto *sectionLabel = new QLabel(QStringLiteral("Top Tracks"));
+        auto *sectionLabel = new QLabel(tr("Top Tracks"));
         QFont sf = sectionLabel->font();
         sf.setPointSize(sf.pointSize() + 2);
         sf.setBold(true);
@@ -1029,7 +1029,7 @@ QWidget *MainWindow::buildHomePage() {
     // --- Your Playlists horizontal rail ---
     // Same icon-card style as the Playlists page; activating one opens it.
     {
-        auto *sectionLabel = new QLabel(QStringLiteral("Your Playlists"));
+        auto *sectionLabel = new QLabel(tr("Your Playlists"));
         QFont sf = sectionLabel->font();
         sf.setPointSize(sf.pointSize() + 2);
         sf.setBold(true);
@@ -1070,11 +1070,11 @@ void MainWindow::loadHome() {
     // Refresh the greeting in case the time of day has changed since construction.
     if (m_homeGreeting) {
         const int h = QTime::currentTime().hour();
-        m_homeGreeting->setText(h < 12 ? QStringLiteral("Good morning")
-                              : h < 18 ? QStringLiteral("Good afternoon")
-                                       : QStringLiteral("Good evening"));
+        m_homeGreeting->setText(h < 12 ? tr("Good morning")
+                              : h < 18 ? tr("Good afternoon")
+                                       : tr("Good evening"));
     }
-    statusBar()->showMessage(QStringLiteral("Loading…"));
+    statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         const QByteArray j = takeJson(DZHomeJSON());
         QMetaObject::invokeMethod(this, [this, j] {
@@ -1088,7 +1088,7 @@ void MainWindow::loadHome() {
             m_homeTracksRail->clear();
             if (m_homeTracks.isEmpty()) {
                 m_homeTracksRail->addItem(
-                    new QListWidgetItem(QStringLiteral("No tracks available.")));
+                    new QListWidgetItem(tr("No tracks available.")));
             } else {
                 for (int i = 0; i < m_homeTracks.size(); ++i) {
                     const Track &t = m_homeTracks[i];
@@ -1113,7 +1113,7 @@ void MainWindow::loadHome() {
             m_homePlaylistsRail->clear();
             if (m_homePlaylists.isEmpty()) {
                 m_homePlaylistsRail->addItem(
-                    new QListWidgetItem(QStringLiteral("No playlists available.")));
+                    new QListWidgetItem(tr("No playlists available.")));
             } else {
                 for (int i = 0; i < m_homePlaylists.size(); ++i) {
                     const Playlist &p = m_homePlaylists[i];
@@ -1131,14 +1131,14 @@ void MainWindow::loadHome() {
                 }
             }
 
-            statusBar()->showMessage(QStringLiteral("Home"), 3000);
+            statusBar()->showMessage(tr("Home"), 3000);
         }, Qt::QueuedConnection);
     });
 }
 
 QTableWidget *MainWindow::makeTrackTable() {
     auto *t = new QTableWidget(0, 4);
-    t->setHorizontalHeaderLabels({"Title", "Artist", "Album", "Duration"});
+    t->setHorizontalHeaderLabels({tr("Title"), tr("Artist"), tr("Album"), tr("Duration")});
     t->verticalHeader()->setVisible(false);
     t->verticalHeader()->setDefaultSectionSize(48);
     t->setIconSize(QSize(40, 40));
@@ -1158,7 +1158,7 @@ QTableWidget *MainWindow::makeTrackTable() {
 QWidget *MainWindow::buildTracksPage() {
     auto *w = new QWidget;
     auto *v = new QVBoxLayout(w);
-    m_tracksHeader = new QLabel("Liked Songs");
+    m_tracksHeader = new QLabel(tr("Liked Songs"));
     QFont f = m_tracksHeader->font();
     f.setPointSize(f.pointSize() + 6);
     f.setBold(true);
@@ -1179,14 +1179,14 @@ QWidget *MainWindow::buildPlaylistsPage() {
     auto *v = new QVBoxLayout(w);
 
     auto *head = new QHBoxLayout;
-    auto *title = new QLabel("Your Playlists");
+    auto *title = new QLabel(tr("Your Playlists"));
     QFont f = title->font();
     f.setPointSize(f.pointSize() + 6);
     f.setBold(true);
     title->setFont(f);
     head->addWidget(title);
     head->addStretch(1);
-    auto *newBtn = new QPushButton(QStringLiteral("＋ New Playlist"));
+    auto *newBtn = new QPushButton(QStringLiteral("＋ ") + tr("New Playlist"));
     connect(newBtn, &QPushButton::clicked, this, &MainWindow::createPlaylist);
     head->addWidget(newBtn);
     v->addLayout(head);
@@ -1215,9 +1215,9 @@ QWidget *MainWindow::buildPlaylistsPage() {
                     return;
                 const Playlist p = m_playlists[idx];
                 QMenu menu(this);
-                QAction *open = menu.addAction(QStringLiteral("Open"));
-                QAction *ren  = menu.addAction(QStringLiteral("Rename…"));
-                QAction *del  = menu.addAction(QStringLiteral("Delete…"));
+                QAction *open = menu.addAction(tr("Open"));
+                QAction *ren  = menu.addAction(tr("Rename…"));
+                QAction *del  = menu.addAction(tr("Delete…"));
                 QAction *chosen = menu.exec(m_playlistGrid->viewport()->mapToGlobal(pos));
                 if (chosen == open)      openPlaylist(p);
                 else if (chosen == ren)  renamePlaylist(p);
@@ -1233,20 +1233,20 @@ QWidget *MainWindow::buildSearchPage() {
 
     auto *top = new QHBoxLayout;
     m_searchEdit = new QLineEdit;
-    m_searchEdit->setPlaceholderText("Search Deezer…");
-    auto *btn = new QPushButton("Search");
+    m_searchEdit->setPlaceholderText(tr("Search Deezer…"));
+    auto *btn = new QPushButton(tr("Search"));
     top->addWidget(m_searchEdit, 1);
     top->addWidget(btn);
     v->addLayout(top);
 
-    v->addWidget(new QLabel("Tracks"));
+    v->addWidget(new QLabel(tr("Tracks")));
     m_searchTrackTable = makeTrackTable();
     connect(m_searchTrackTable, &QTableWidget::cellActivated, this,
             [this](int row, int) { playFrom(m_searchTracks, row); });
     installTrackMenu(m_searchTrackTable, &m_searchTracks);
     v->addWidget(m_searchTrackTable, 2);
 
-    v->addWidget(new QLabel("Albums & Playlists"));
+    v->addWidget(new QLabel(tr("Albums & Playlists")));
     m_searchResults = new QListWidget;
     m_searchResults->setViewMode(QListView::IconMode);
     m_searchResults->setIconSize(QSize(110, 110));
@@ -1293,7 +1293,7 @@ QWidget *MainWindow::buildTransport() {
     m_explicitBadge->setVisible(false);
     h->addWidget(m_explicitBadge);
 
-    m_nowPlaying = new QLabel("Not playing");
+    m_nowPlaying = new QLabel(tr("Not playing"));
     m_nowPlaying->setMinimumWidth(180);
     h->addWidget(m_nowPlaying, 0);
 
@@ -1310,7 +1310,7 @@ QWidget *MainWindow::buildTransport() {
     lyricsBtn->setText(QString());
     lyricsBtn->setIconSize(QSize(22, 22));
     lyricsBtn->setAutoRaise(true);
-    lyricsBtn->setToolTip(QStringLiteral("Lyrics"));
+    lyricsBtn->setToolTip(tr("Lyrics"));
     connect(lyricsBtn, &QToolButton::clicked, this, &MainWindow::openLyrics);
     h->addWidget(lyricsBtn);
 
@@ -1326,7 +1326,7 @@ QWidget *MainWindow::buildTransport() {
     artistBtn->setText(QString());
     artistBtn->setIconSize(QSize(22, 22));
     artistBtn->setAutoRaise(true);
-    artistBtn->setToolTip(QStringLiteral("Artist"));
+    artistBtn->setToolTip(tr("Artist"));
     connect(artistBtn, &QToolButton::clicked, this, &MainWindow::openArtistForCurrent);
     h->addWidget(artistBtn);
 
@@ -1377,7 +1377,7 @@ QWidget *MainWindow::buildTransport() {
     m_shuffleBtn->setIconSize(QSize(22, 22));
     m_shuffleBtn->setCheckable(true);
     m_shuffleBtn->setAutoRaise(true);
-    m_shuffleBtn->setToolTip(QStringLiteral("Shuffle"));
+    m_shuffleBtn->setToolTip(tr("Shuffle"));
     connect(m_shuffleBtn, &QToolButton::toggled, this, [this](bool on) {
         m_shuffle = on;
         QtConcurrent::run([on] { DZSetShuffle(on ? 1 : 0); });
@@ -1391,16 +1391,16 @@ QWidget *MainWindow::buildTransport() {
     m_repeatBtn->setCheckable(true);
     m_repeatBtn->setChecked(false);
     m_repeatBtn->setAutoRaise(true);
-    m_repeatBtn->setToolTip(QStringLiteral("Repeat: off"));
+    m_repeatBtn->setToolTip(tr("Repeat: off"));
     connect(m_repeatBtn, &QToolButton::clicked, this, [this] {
         m_repeat = (m_repeat + 1) % 3;
         m_repeatBtn->setIcon(QIcon::fromTheme(
             m_repeat == 2 ? QStringLiteral("media-playlist-repeat-song")
                           : QStringLiteral("media-playlist-repeat")));
         m_repeatBtn->setChecked(m_repeat != 0);
-        m_repeatBtn->setToolTip(m_repeat == 0 ? QStringLiteral("Repeat: off")
-                                : m_repeat == 1 ? QStringLiteral("Repeat: all")
-                                                : QStringLiteral("Repeat: one"));
+        m_repeatBtn->setToolTip(m_repeat == 0 ? tr("Repeat: off")
+                                : m_repeat == 1 ? tr("Repeat: all")
+                                                : tr("Repeat: one"));
         const int mode = m_repeat;
         QtConcurrent::run([mode] { DZSetRepeat(mode); });
     });
@@ -1417,7 +1417,7 @@ QWidget *MainWindow::buildTransport() {
     m_connectBtn->setText(QString());
     m_connectBtn->setIconSize(QSize(22, 22));
     m_connectBtn->setAutoRaise(true);
-    m_connectBtn->setToolTip(QStringLiteral("Connect to a device"));
+    m_connectBtn->setToolTip(tr("Connect to a device"));
     connect(m_connectBtn, &QToolButton::clicked, this, &MainWindow::openConnectPicker);
     h->addWidget(m_connectBtn);
 
@@ -1425,7 +1425,7 @@ QWidget *MainWindow::buildTransport() {
         auto *volLabel = new QLabel;
         volLabel->setPixmap(
             QIcon::fromTheme(QStringLiteral("audio-volume-high")).pixmap(16, 16));
-        volLabel->setToolTip(QStringLiteral("Volume"));
+        volLabel->setToolTip(tr("Volume"));
         h->addWidget(volLabel);
     }
     m_vol = new QSlider(Qt::Horizontal);
@@ -1473,7 +1473,7 @@ void MainWindow::startLogin() {
             } else {
                 // The stored ARL is stale — fall back to the login dialog so the
                 // user can re-authenticate without editing files by hand.
-                statusBar()->showMessage("Session expired — sign in again", 4000);
+                statusBar()->showMessage(tr("Session expired — sign in again"), 4000);
                 promptLogin();
             }
         }, Qt::QueuedConnection);
@@ -1484,12 +1484,12 @@ void MainWindow::startLogin() {
 // manual ARL entry). The dialog verifies + persists the ARL with DZInit itself,
 // so on Accepted the engine is already logged in; we just bring the app up.
 void MainWindow::promptLogin() {
-    statusBar()->showMessage("Log in to continue");
+    statusBar()->showMessage(tr("Log in to continue"));
     LoginDialog dlg(arlConfigPath(), this);
     if (dlg.exec() == QDialog::Accepted) {
         finishLogin(takeJson(DZAccountJSON()));
     } else {
-        statusBar()->showMessage("Not logged in");
+        statusBar()->showMessage(tr("Not logged in"));
     }
 }
 
@@ -1536,7 +1536,7 @@ void MainWindow::finishLogin(const QByteArray &acct) {
     loadHome();
     const QString conn = (m_haveAccount && !m_accountName.isEmpty())
         ? m_accountName + " · " + m_accountOffer
-        : QStringLiteral("Connected");
+        : tr("Connected");
     statusBar()->showMessage(conn, 4000);
 }
 
@@ -1553,9 +1553,9 @@ void MainWindow::showFreeAccountBlock() {
     const QString offer = m_accountOffer.isEmpty()
         ? QStringLiteral("Deezer Free") : m_accountOffer;
     const QString body =
-        QStringLiteral("OpenDeezer streams on demand, which needs Deezer Premium. "
-                       "You're on %1 — subscribe at deezer.com, then restart "
-                       "OpenDeezer.").arg(offer);
+        tr("OpenDeezer streams on demand, which needs Deezer Premium. "
+           "You're on %1 — subscribe at deezer.com, then restart "
+           "OpenDeezer.").arg(offer);
 
     // Build the page once; refresh the offer line on later (re-)logins.
     if (!m_blockPage) {
@@ -1563,7 +1563,7 @@ void MainWindow::showFreeAccountBlock() {
         auto *outer = new QVBoxLayout(m_blockPage);
         outer->addStretch(1);
 
-        auto *title = new QLabel(QStringLiteral("Premium required"));
+        auto *title = new QLabel(tr("Premium required"));
         title->setAlignment(Qt::AlignCenter);
         title->setWordWrap(true);
         QFont tf = title->font();
@@ -1588,7 +1588,7 @@ void MainWindow::showFreeAccountBlock() {
 
         outer->addSpacing(24);
 
-        auto *quitBtn = new QPushButton(QStringLiteral("Quit OpenDeezer"));
+        auto *quitBtn = new QPushButton(tr("Quit OpenDeezer"));
         connect(quitBtn, &QPushButton::clicked, this, &MainWindow::quitApp);
         auto *btnRow = new QHBoxLayout;
         btnRow->addStretch(1);
@@ -1604,7 +1604,7 @@ void MainWindow::showFreeAccountBlock() {
 
     m_rootStack->setCurrentWidget(m_blockPage);
     statusBar()->showMessage(
-        QStringLiteral("Premium required — %1 can't stream on-demand").arg(offer));
+        tr("Premium required — %1 can't stream on-demand").arg(offer));
 }
 
 // ---- browse ---------------------------------------------------------------
@@ -1612,9 +1612,9 @@ void MainWindow::showFreeAccountBlock() {
 void MainWindow::loadFavorites() {
     if (!m_loggedIn)
         return;
-    m_tracksHeader->setText("Liked Songs");
+    m_tracksHeader->setText(tr("Liked Songs"));
     m_currentPlaylistId.clear();
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         const QVector<Track> tracks = parseTracks(takeJson(DZFavoritesJSON()));
         QMetaObject::invokeMethod(this, [this, tracks] {
@@ -1625,7 +1625,7 @@ void MainWindow::loadFavorites() {
                 m_likedIds.insert(t.id);
             refreshLikeButton();
             fillTrackTable(m_trackTable, tracks, gen);
-            statusBar()->showMessage(QString("Liked Songs — %1 tracks").arg(tracks.size()), 3000);
+            statusBar()->showMessage(tr("Liked Songs — %n track(s)", "", int(tracks.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
@@ -1635,16 +1635,16 @@ void MainWindow::loadFavorites() {
 void MainWindow::loadFlow() {
     if (!m_loggedIn)
         return;
-    m_tracksHeader->setText("Flow");
+    m_tracksHeader->setText(QStringLiteral("Flow"));
     m_currentPlaylistId.clear();
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         const QVector<Track> tracks = parseTracks(takeJson(DZFlowJSON()));
         QMetaObject::invokeMethod(this, [this, tracks] {
             const int gen = ++m_artGen;
             m_tableTracks = tracks;
             fillTrackTable(m_trackTable, tracks, gen);
-            statusBar()->showMessage(QString("Flow — %1 tracks").arg(tracks.size()), 3000);
+            statusBar()->showMessage(QStringLiteral("Flow — ") + tr("%n track(s)", "", int(tracks.size())), 3000);
             if (!tracks.isEmpty())
                 playFrom(tracks, 0); // Flow auto-plays
         }, Qt::QueuedConnection);
@@ -1656,7 +1656,7 @@ void MainWindow::loadFlow() {
 void MainWindow::loadCharts() {
     if (!m_loggedIn)
         return;
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         const QByteArray j = takeJson(DZChartsJSON());
         QMetaObject::invokeMethod(this, [this, j] {
@@ -1697,14 +1697,14 @@ void MainWindow::loadCharts() {
                 addTile(m_chartsAlbums[i].name + "\n" + m_chartsAlbums[i].artistLine,
                         m_chartsAlbums[i].artworkUrl, 0, i);
             for (int i = 0; i < m_chartsArtists.size(); ++i)
-                addTile(m_chartsArtists[i].name + "\n" + QStringLiteral("Artist"),
+                addTile(m_chartsArtists[i].name + "\n" + tr("Artist"),
                         m_chartsArtists[i].artworkUrl, 2, i);
             for (int i = 0; i < m_chartsPlaylists.size(); ++i)
                 addTile(m_chartsPlaylists[i].name + "\n" + m_chartsPlaylists[i].owner,
                         m_chartsPlaylists[i].artworkUrl, 1, i);
 
             statusBar()->showMessage(
-                QString("Charts — %1 tracks").arg(m_chartsTracks.size()), 3000);
+                tr("Charts — %n track(s)", "", int(m_chartsTracks.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
@@ -1712,7 +1712,7 @@ void MainWindow::loadCharts() {
 void MainWindow::loadPlaylists() {
     if (!m_loggedIn)
         return;
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         QVector<Playlist> ps;
         const QJsonObject obj = QJsonDocument::fromJson(takeJson(DZPlaylistsJSON())).object();
@@ -1726,7 +1726,7 @@ void MainWindow::loadPlaylists() {
                 const Playlist &p = ps[i];
                 auto *it = new QListWidgetItem(
                     QIcon(placeholderPix(120)),
-                    p.name + "\n" + QString::number(p.trackCount) + " tracks");
+                    p.name + "\n" + tr("%n track(s)", "", p.trackCount));
                 it->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
                 it->setData(Qt::UserRole, i);
                 m_playlistGrid->addItem(it);
@@ -1736,13 +1736,13 @@ void MainWindow::loadPlaylists() {
                             120, 120, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
                     });
             }
-            statusBar()->showMessage(QString("%1 playlists").arg(ps.size()), 3000);
+            statusBar()->showMessage(tr("%n playlist(s)", "", int(ps.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
 
 void MainWindow::openPlaylist(const Playlist &p) {
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     m_tracksHeader->setText(p.owner.isEmpty() ? p.name : p.name + "   ·   " + p.owner);
     m_currentPlaylistId = p.id; // enables "Remove from this playlist" in the track menu
     const QByteArray id = p.id.toUtf8();
@@ -1753,13 +1753,13 @@ void MainWindow::openPlaylist(const Playlist &p) {
             m_tableTracks = tracks;
             fillTrackTable(m_trackTable, tracks, gen);
             m_stack->setCurrentIndex(1); // track table page
-            statusBar()->showMessage(QString("%1 tracks").arg(tracks.size()), 3000);
+            statusBar()->showMessage(tr("%n track(s)", "", int(tracks.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
 
 void MainWindow::openAlbum(const Album &a) {
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     m_tracksHeader->setText(a.artistLine.isEmpty() ? a.name : a.name + "   ·   " + a.artistLine);
     m_currentPlaylistId.clear(); // album is not a removable-from playlist
     const QByteArray id = a.id.toUtf8();
@@ -1770,7 +1770,7 @@ void MainWindow::openAlbum(const Album &a) {
             m_tableTracks = tracks;
             fillTrackTable(m_trackTable, tracks, gen);
             m_stack->setCurrentIndex(1); // track table page
-            statusBar()->showMessage(QString("%1 tracks").arg(tracks.size()), 3000);
+            statusBar()->showMessage(tr("%n track(s)", "", int(tracks.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
@@ -1781,7 +1781,7 @@ void MainWindow::runSearch() {
     const QString q = m_searchEdit->text().trimmed();
     if (q.isEmpty())
         return;
-    statusBar()->showMessage("Searching…");
+    statusBar()->showMessage(tr("Searching…"));
     const QByteArray qb = q.toUtf8();
     QtConcurrent::run([this, qb] {
         const QByteArray j = takeJson(DZSearchJSON(cstr(qb)));
@@ -1849,8 +1849,8 @@ void MainWindow::setLikeButton(bool liked) {
     m_likeBtn->setChecked(liked);
     m_likeBtn->setStyleSheet(liked ? QString("QToolButton{color:%1;}").arg(kAccent)
                                    : QString());
-    m_likeBtn->setToolTip(liked ? QStringLiteral("Remove from Liked Songs")
-                                : QStringLiteral("Add to Liked Songs"));
+    m_likeBtn->setToolTip(liked ? tr("Remove from Liked Songs")
+                                : tr("Add to Liked Songs"));
 }
 
 // Refresh the heart from the local liked-state mirror for the current track.
@@ -1863,11 +1863,11 @@ void MainWindow::refreshLikeButton() {
 // the intended state is shown immediately and reconciled from the result.
 void MainWindow::toggleLikeCurrent() {
     if (!m_hasCurrent || m_current.id.isEmpty()) {
-        statusBar()->showMessage(QStringLiteral("Nothing is playing"), 3000);
+        statusBar()->showMessage(tr("Nothing is playing"), 3000);
         return;
     }
     if (m_currentIsEpisode) {
-        statusBar()->showMessage(QStringLiteral("Podcast episodes can't be liked"), 3000);
+        statusBar()->showMessage(tr("Podcast episodes can't be liked"), 3000);
         return;
     }
     const bool like = !m_likedIds.contains(m_current.id);
@@ -1888,11 +1888,11 @@ void MainWindow::likeTrack(const QString &trackId, bool like) {
                     m_likedIds.insert(trackId);
                 else
                     m_likedIds.remove(trackId);
-                statusBar()->showMessage(like ? QStringLiteral("Added to Liked Songs")
-                                              : QStringLiteral("Removed from Liked Songs"),
+                statusBar()->showMessage(like ? tr("Added to Liked Songs")
+                                              : tr("Removed from Liked Songs"),
                                          3000);
             } else {
-                statusBar()->showMessage(QStringLiteral("Couldn't update Liked Songs"), 3000);
+                statusBar()->showMessage(tr("Couldn't update Liked Songs"), 3000);
             }
             if (m_hasCurrent && m_current.id == trackId)
                 refreshLikeButton(); // paint the true state (also reverts a failed toggle)
@@ -1906,7 +1906,7 @@ void MainWindow::likeTrack(const QString &trackId, bool like) {
 void MainWindow::addTrackToPlaylist(const Track &t) {
     if (!m_loggedIn || t.id.isEmpty())
         return;
-    statusBar()->showMessage("Loading…");
+    statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this, t] {
         QVector<Playlist> ps;
         const QJsonObject obj =
@@ -1922,11 +1922,11 @@ void MainWindow::addTrackToPlaylist(const Track &t) {
 
 void MainWindow::showAddToPlaylistPicker(const Track &t, const QVector<Playlist> &ps) {
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("Add to Playlist"));
+    dlg.setWindowTitle(tr("Add to Playlist"));
     auto *v = new QVBoxLayout(&dlg);
-    v->addWidget(new QLabel(QStringLiteral("Add \"%1\" to:").arg(t.name)));
+    v->addWidget(new QLabel(tr("Add \"%1\" to:").arg(t.name)));
     auto *list = new QListWidget;
-    auto *newItem = new QListWidgetItem(QStringLiteral("＋  New playlist…"));
+    auto *newItem = new QListWidgetItem(QStringLiteral("＋  ") + tr("New playlist…"));
     newItem->setData(Qt::UserRole, -1);
     list->addItem(newItem);
     for (int i = 0; i < ps.size(); ++i) {
@@ -1952,7 +1952,7 @@ void MainWindow::showAddToPlaylistPicker(const Track &t, const QVector<Playlist>
         // "New playlist…": prompt, create, then add the track to the new id.
         bool ok = false;
         const QString name = QInputDialog::getText(
-            this, QStringLiteral("New Playlist"), QStringLiteral("Playlist name:"),
+            this, tr("New Playlist"), tr("Playlist name:"),
             QLineEdit::Normal, QString(), &ok).trimmed();
         if (!ok || name.isEmpty())
             return;
@@ -1968,11 +1968,11 @@ void MainWindow::showAddToPlaylistPicker(const Track &t, const QVector<Playlist>
             }
             QMetaObject::invokeMethod(this, [this, name, pid, added] {
                 if (pid.isEmpty())
-                    statusBar()->showMessage(QStringLiteral("Couldn't create playlist"), 3000);
+                    statusBar()->showMessage(tr("Couldn't create playlist"), 3000);
                 else
                     statusBar()->showMessage(added
-                        ? QStringLiteral("Added to new playlist \"%1\"").arg(name)
-                        : QStringLiteral("Created \"%1\" but couldn't add the track").arg(name),
+                        ? tr("Added to new playlist \"%1\"").arg(name)
+                        : tr("Created \"%1\" but couldn't add the track").arg(name),
                         3000);
             }, Qt::QueuedConnection);
         });
@@ -1988,8 +1988,8 @@ void MainWindow::showAddToPlaylistPicker(const Track &t, const QVector<Playlist>
         const int added = DZAddToPlaylist(cstr(pid), cstr(tid));
         QMetaObject::invokeMethod(this, [this, added, plName] {
             statusBar()->showMessage(added
-                ? QStringLiteral("Added to \"%1\"").arg(plName)
-                : QStringLiteral("Couldn't add to \"%1\"").arg(plName), 3000);
+                ? tr("Added to \"%1\"").arg(plName)
+                : tr("Couldn't add to \"%1\"").arg(plName), 3000);
         }, Qt::QueuedConnection);
     });
 }
@@ -2005,10 +2005,10 @@ void MainWindow::removeFromCurrentPlaylist(const Track &t, int row) {
         const int okRes = DZRemoveFromPlaylist(cstr(pid), cstr(tid));
         QMetaObject::invokeMethod(this, [this, okRes, plid, tid2, row] {
             if (!okRes) {
-                statusBar()->showMessage(QStringLiteral("Couldn't remove from playlist"), 3000);
+                statusBar()->showMessage(tr("Couldn't remove from playlist"), 3000);
                 return;
             }
-            statusBar()->showMessage(QStringLiteral("Removed from playlist"), 3000);
+            statusBar()->showMessage(tr("Removed from playlist"), 3000);
             // Drop the row locally if the table still shows this playlist + track.
             if (m_currentPlaylistId == plid && row >= 0 && row < m_tableTracks.size() &&
                 m_tableTracks[row].id == tid2) {
@@ -2027,7 +2027,7 @@ void MainWindow::createPlaylist() {
         return;
     bool ok = false;
     const QString name = QInputDialog::getText(
-        this, QStringLiteral("New Playlist"), QStringLiteral("Playlist name:"),
+        this, tr("New Playlist"), tr("Playlist name:"),
         QLineEdit::Normal, QString(), &ok).trimmed();
     if (!ok || name.isEmpty())
         return;
@@ -2037,9 +2037,9 @@ void MainWindow::createPlaylist() {
         const QString id = QJsonDocument::fromJson(j).object().value("id").toString();
         QMetaObject::invokeMethod(this, [this, name, id] {
             if (id.isEmpty()) {
-                statusBar()->showMessage(QStringLiteral("Couldn't create playlist"), 3000);
+                statusBar()->showMessage(tr("Couldn't create playlist"), 3000);
             } else {
-                statusBar()->showMessage(QStringLiteral("Created \"%1\"").arg(name), 3000);
+                statusBar()->showMessage(tr("Created \"%1\"").arg(name), 3000);
                 loadPlaylists(); // refresh the grid
             }
         }, Qt::QueuedConnection);
@@ -2051,7 +2051,7 @@ void MainWindow::renamePlaylist(const Playlist &p) {
         return;
     bool ok = false;
     const QString name = QInputDialog::getText(
-        this, QStringLiteral("Rename Playlist"), QStringLiteral("New name:"),
+        this, tr("Rename Playlist"), tr("New name:"),
         QLineEdit::Normal, p.name, &ok).trimmed();
     if (!ok || name.isEmpty() || name == p.name)
         return;
@@ -2061,8 +2061,8 @@ void MainWindow::renamePlaylist(const Playlist &p) {
         const int okRes = DZRenamePlaylist(cstr(idb), cstr(nb));
         QMetaObject::invokeMethod(this, [this, okRes, name] {
             statusBar()->showMessage(okRes
-                ? QStringLiteral("Renamed to \"%1\"").arg(name)
-                : QStringLiteral("Couldn't rename playlist"), 3000);
+                ? tr("Renamed to \"%1\"").arg(name)
+                : tr("Couldn't rename playlist"), 3000);
             if (okRes)
                 loadPlaylists();
         }, Qt::QueuedConnection);
@@ -2072,16 +2072,16 @@ void MainWindow::renamePlaylist(const Playlist &p) {
 void MainWindow::deletePlaylist(const Playlist &p) {
     if (!m_loggedIn || p.id.isEmpty())
         return;
-    if (QMessageBox::question(this, QStringLiteral("Delete Playlist"),
-            QStringLiteral("Delete \"%1\"? This cannot be undone.").arg(p.name))
+    if (QMessageBox::question(this, tr("Delete Playlist"),
+            tr("Delete \"%1\"? This cannot be undone.").arg(p.name))
         != QMessageBox::Yes)
         return;
     const QByteArray idb = p.id.toUtf8();
     QtConcurrent::run([this, idb] {
         const int okRes = DZDeletePlaylist(cstr(idb));
         QMetaObject::invokeMethod(this, [this, okRes] {
-            statusBar()->showMessage(okRes ? QStringLiteral("Playlist deleted")
-                                           : QStringLiteral("Couldn't delete playlist"),
+            statusBar()->showMessage(okRes ? tr("Playlist deleted")
+                                           : tr("Couldn't delete playlist"),
                                      3000);
             if (okRes)
                 loadPlaylists();
@@ -2104,15 +2104,15 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                     return;
                 const Track t = src->at(row);
                 QMenu menu(this);
-                QAction *goArtist = menu.addAction(QStringLiteral("Go to Artist"));
+                QAction *goArtist = menu.addAction(tr("Go to Artist"));
                 goArtist->setEnabled(!t.artistId.isEmpty());
-                QAction *showLy = menu.addAction(QStringLiteral("Show Lyrics"));
+                QAction *showLy = menu.addAction(tr("Show Lyrics"));
                 menu.addSeparator();
-                QAction *like  = menu.addAction(QStringLiteral("Add to Liked Songs"));
-                QAction *addPl = menu.addAction(QStringLiteral("Add to Playlist…"));
+                QAction *like  = menu.addAction(tr("Add to Liked Songs"));
+                QAction *addPl = menu.addAction(tr("Add to Playlist…"));
                 QAction *removePl = nullptr;
                 if (table == m_trackTable && !m_currentPlaylistId.isEmpty())
-                    removePl = menu.addAction(QStringLiteral("Remove from this playlist"));
+                    removePl = menu.addAction(tr("Remove from this playlist"));
                 QAction *chosen = menu.exec(table->viewport()->mapToGlobal(pos));
                 if (chosen == goArtist)
                     openArtist(t.artistId);
@@ -2142,12 +2142,12 @@ QWidget *MainWindow::buildLyricsPage() {
 
     auto *top = new QHBoxLayout;
     auto *back = new QToolButton;
-    back->setText(QStringLiteral("‹ Back"));
+    back->setText(QStringLiteral("‹ ") + tr("Back"));
     back->setAutoRaise(true);
     connect(back, &QToolButton::clicked, this,
             [this] { m_stack->setCurrentIndex(m_returnPage); });
     top->addWidget(back);
-    m_lyricsTitle = new QLabel(QStringLiteral("Lyrics"));
+    m_lyricsTitle = new QLabel(tr("Lyrics"));
     QFont tf = m_lyricsTitle->font();
     tf.setPointSize(tf.pointSize() + 4);
     tf.setBold(true);
@@ -2170,7 +2170,7 @@ QWidget *MainWindow::buildArtistPage() {
 
     auto *top = new QHBoxLayout;
     auto *back = new QToolButton;
-    back->setText(QStringLiteral("‹ Back"));
+    back->setText(QStringLiteral("‹ ") + tr("Back"));
     back->setAutoRaise(true);
     connect(back, &QToolButton::clicked, this,
             [this] { m_stack->setCurrentIndex(m_returnPage); });
@@ -2186,7 +2186,7 @@ QWidget *MainWindow::buildArtistPage() {
     m_artistAvatar->setPixmap(placeholderPix(72));
     head->addWidget(m_artistAvatar);
     auto *names = new QVBoxLayout;
-    m_artistName = new QLabel(QStringLiteral("Artist"));
+    m_artistName = new QLabel(tr("Artist"));
     QFont nf = m_artistName->font();
     nf.setPointSize(nf.pointSize() + 6);
     nf.setBold(true);
@@ -2198,14 +2198,14 @@ QWidget *MainWindow::buildArtistPage() {
     head->addLayout(names, 1);
     v->addLayout(head);
 
-    v->addWidget(new QLabel(QStringLiteral("Top Tracks")));
+    v->addWidget(new QLabel(tr("Top Tracks")));
     m_artistTopTable = makeTrackTable();
     connect(m_artistTopTable, &QTableWidget::cellActivated, this,
             [this](int row, int) { playFrom(m_artistTopTracks, row); });
     installTrackMenu(m_artistTopTable, &m_artistTopTracks);
     v->addWidget(m_artistTopTable, 2);
 
-    v->addWidget(new QLabel(QStringLiteral("Albums")));
+    v->addWidget(new QLabel(tr("Albums")));
     m_artistAlbumsGrid = new QListWidget;
     m_artistAlbumsGrid->setViewMode(QListView::IconMode);
     m_artistAlbumsGrid->setIconSize(QSize(110, 110));
@@ -2221,7 +2221,7 @@ QWidget *MainWindow::buildArtistPage() {
             });
     v->addWidget(m_artistAlbumsGrid, 1);
 
-    v->addWidget(new QLabel(QStringLiteral("Related Artists")));
+    v->addWidget(new QLabel(tr("Related Artists")));
     m_artistRelatedGrid = new QListWidget;
     m_artistRelatedGrid->setViewMode(QListView::IconMode);
     m_artistRelatedGrid->setIconSize(QSize(110, 110));
@@ -2244,21 +2244,21 @@ QWidget *MainWindow::buildArtistPage() {
 QWidget *MainWindow::buildChartsPage() {
     auto *w = new QWidget;
     auto *v = new QVBoxLayout(w);
-    auto *title = new QLabel(QStringLiteral("Charts"));
+    auto *title = new QLabel(tr("Charts"));
     QFont f = title->font();
     f.setPointSize(f.pointSize() + 6);
     f.setBold(true);
     title->setFont(f);
     v->addWidget(title);
 
-    v->addWidget(new QLabel(QStringLiteral("Top Tracks")));
+    v->addWidget(new QLabel(tr("Top Tracks")));
     m_chartsTrackTable = makeTrackTable();
     connect(m_chartsTrackTable, &QTableWidget::cellActivated, this,
             [this](int row, int) { playFrom(m_chartsTracks, row); });
     installTrackMenu(m_chartsTrackTable, &m_chartsTracks);
     v->addWidget(m_chartsTrackTable, 2);
 
-    v->addWidget(new QLabel(QStringLiteral("Albums, Artists & Playlists")));
+    v->addWidget(new QLabel(tr("Albums, Artists & Playlists")));
     m_chartsResults = new QListWidget;
     m_chartsResults->setViewMode(QListView::IconMode);
     m_chartsResults->setIconSize(QSize(110, 110));
@@ -2285,7 +2285,7 @@ QWidget *MainWindow::buildChartsPage() {
 QWidget *MainWindow::buildPodcastsPage() {
     auto *w = new QWidget;
     auto *v = new QVBoxLayout(w);
-    auto *title = new QLabel(QStringLiteral("Podcasts"));
+    auto *title = new QLabel(tr("Podcasts"));
     QFont f = title->font();
     f.setPointSize(f.pointSize() + 6);
     f.setBold(true);
@@ -2294,8 +2294,8 @@ QWidget *MainWindow::buildPodcastsPage() {
 
     auto *top = new QHBoxLayout;
     m_podcastSearchEdit = new QLineEdit;
-    m_podcastSearchEdit->setPlaceholderText(QStringLiteral("Search podcasts…"));
-    auto *btn = new QPushButton(QStringLiteral("Search"));
+    m_podcastSearchEdit->setPlaceholderText(tr("Search podcasts…"));
+    auto *btn = new QPushButton(tr("Search"));
     top->addWidget(m_podcastSearchEdit, 1);
     top->addWidget(btn);
     v->addLayout(top);
@@ -2325,12 +2325,12 @@ QWidget *MainWindow::buildPodcastEpisodesPage() {
 
     auto *top = new QHBoxLayout;
     auto *back = new QToolButton;
-    back->setText(QStringLiteral("‹ Back"));
+    back->setText(QStringLiteral("‹ ") + tr("Back"));
     back->setAutoRaise(true);
     connect(back, &QToolButton::clicked, this,
             [this] { m_stack->setCurrentIndex(7); }); // back to the shows grid
     top->addWidget(back);
-    m_podcastTitle = new QLabel(QStringLiteral("Episodes"));
+    m_podcastTitle = new QLabel(tr("Episodes"));
     QFont tf = m_podcastTitle->font();
     tf.setPointSize(tf.pointSize() + 4);
     tf.setBold(true);
@@ -2359,7 +2359,7 @@ void MainWindow::runPodcastSearch() {
     const QString q = m_podcastSearchEdit->text().trimmed();
     if (q.isEmpty())
         return;
-    statusBar()->showMessage("Searching…");
+    statusBar()->showMessage(tr("Searching…"));
     const QByteArray qb = q.toUtf8();
     QtConcurrent::run([this, qb] {
         const QByteArray j = takeJson(DZSearchPodcastsJSON(cstr(qb)));
@@ -2374,7 +2374,7 @@ void MainWindow::runPodcastSearch() {
                 const Podcast &p = m_podcasts[i];
                 auto *it = new QListWidgetItem(
                     QIcon(placeholderPix(110)),
-                    p.name + "\n" + QString::number(p.episodeCount) + " episodes");
+                    p.name + "\n" + tr("%n episode(s)", "", p.episodeCount));
                 it->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
                 it->setData(Qt::UserRole, i);
                 m_podcastGrid->addItem(it);
@@ -2385,7 +2385,7 @@ void MainWindow::runPodcastSearch() {
                     });
             }
             statusBar()->showMessage(
-                QString("%1 podcasts").arg(m_podcasts.size()), 3000);
+                tr("%n podcast(s)", "", int(m_podcasts.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
@@ -2397,8 +2397,8 @@ void MainWindow::openPodcast(const Podcast &p) {
     m_episodes.clear();
     ++m_artGen; // clear() deletes the old items; drop their in-flight art now
     m_episodeList->clear();
-    m_episodeList->addItem(new QListWidgetItem(QStringLiteral("Loading…")));
-    statusBar()->showMessage("Loading…");
+    m_episodeList->addItem(new QListWidgetItem(tr("Loading…")));
+    statusBar()->showMessage(tr("Loading…"));
     const QByteArray idb = p.id.toUtf8();
     QtConcurrent::run([this, idb] {
         const QByteArray j = takeJson(DZPodcastEpisodesJSON(cstr(idb)));
@@ -2429,9 +2429,9 @@ void MainWindow::openPodcast(const Podcast &p) {
                     });
             }
             if (m_episodes.isEmpty())
-                m_episodeList->addItem(new QListWidgetItem(QStringLiteral("No episodes.")));
+                m_episodeList->addItem(new QListWidgetItem(tr("No episodes.")));
             statusBar()->showMessage(
-                QString("%1 episodes").arg(m_episodes.size()), 3000);
+                tr("%n episode(s)", "", int(m_episodes.size())), 3000);
         }, Qt::QueuedConnection);
     });
 }
@@ -2480,7 +2480,7 @@ void MainWindow::openLyrics() {
                 np = parseTrack(QJsonDocument::fromJson(npJson).object());
             if (np.id.isEmpty()) {
                 statusBar()->showMessage(
-                    QStringLiteral("Nothing is playing on the remote device"), 3000);
+                    tr("Nothing is playing on the remote device"), 3000);
                 return;
             }
             m_lyricsFollowsPlayback = true;
@@ -2493,7 +2493,7 @@ void MainWindow::openLyrics() {
     }
     // Local path: use the known current track.
     if (!m_hasCurrent) {
-        statusBar()->showMessage(QStringLiteral("Nothing is playing"), 3000);
+        statusBar()->showMessage(tr("Nothing is playing"), 3000);
         return;
     }
     m_lyricsFollowsPlayback = true;
@@ -2531,7 +2531,7 @@ void MainWindow::loadLyrics(const QString &trackId, const QString &title) {
     m_lyricsActiveRow = -1;
     m_lyricsIsSynced  = false;
     m_lyricsShownId.clear();
-    m_lyricsList->addItem(new QListWidgetItem(QStringLiteral("Loading…")));
+    m_lyricsList->addItem(new QListWidgetItem(tr("Loading…")));
 
     const int gen = ++m_lyricsGen;
     const QByteArray idb = trackId.toUtf8();
@@ -2570,7 +2570,7 @@ void MainWindow::renderLyrics(const QString &trackId, const QString &title,
     const QString plain = d.plain.trimmed();
     if (plain.isEmpty()) {
         m_lyricsList->addItem(
-            new QListWidgetItem(QStringLiteral("No lyrics available.")));
+            new QListWidgetItem(tr("No lyrics available.")));
         return;
     }
     const QStringList lines = plain.split('\n');
@@ -2630,12 +2630,12 @@ void MainWindow::openArtistForCurrent() {
                 np = parseTrack(QJsonDocument::fromJson(npJson).object());
             if (np.id.isEmpty()) {
                 statusBar()->showMessage(
-                    QStringLiteral("Nothing is playing on the remote device"), 3000);
+                    tr("Nothing is playing on the remote device"), 3000);
                 return;
             }
             if (np.artistId.isEmpty()) {
                 statusBar()->showMessage(
-                    QStringLiteral("Artist unavailable for this track"), 3000);
+                    tr("Artist unavailable for this track"), 3000);
                 return;
             }
             openArtist(np.artistId);
@@ -2644,12 +2644,12 @@ void MainWindow::openArtistForCurrent() {
     }
     // Local path: use the known current track.
     if (!m_hasCurrent) {
-        statusBar()->showMessage(QStringLiteral("Nothing is playing"), 3000);
+        statusBar()->showMessage(tr("Nothing is playing"), 3000);
         return;
     }
     if (m_current.artistId.isEmpty()) {
         statusBar()->showMessage(
-            QStringLiteral("Artist unavailable for this track"), 3000);
+            tr("Artist unavailable for this track"), 3000);
         return;
     }
     openArtist(m_current.artistId);
@@ -2660,10 +2660,10 @@ void MainWindow::openArtist(const QString &artistId) {
         return;
     rememberReturnPage();
     m_stack->setCurrentIndex(5);
-    statusBar()->showMessage(QStringLiteral("Loading…"));
+    statusBar()->showMessage(tr("Loading…"));
 
     // Reset the page to a loading state.
-    m_artistName->setText(QStringLiteral("Loading…"));
+    m_artistName->setText(tr("Loading…"));
     m_artistFans->clear();
     m_artistAvatar->setPixmap(placeholderPix(72));
     m_artistTopTracks.clear();
@@ -2689,15 +2689,15 @@ void MainWindow::renderArtist(const QByteArray &json, int gen) {
         return; // a newer load (another artist / list reload) took over
     const QJsonObject obj = QJsonDocument::fromJson(json).object();
     if (obj.contains("error")) {
-        m_artistName->setText(QStringLiteral("Artist unavailable"));
-        statusBar()->showMessage(QStringLiteral("Couldn't load artist"), 3000);
+        m_artistName->setText(tr("Artist unavailable"));
+        statusBar()->showMessage(tr("Couldn't load artist"), 3000);
         return;
     }
 
     const ArtistInfo info = parseArtistInfo(obj.value("artist").toObject());
-    m_artistName->setText(info.name.isEmpty() ? QStringLiteral("Artist") : info.name);
+    m_artistName->setText(info.name.isEmpty() ? tr("Artist") : info.name);
     m_artistFans->setText(info.nbFans > 0
-        ? QLocale().toString(info.nbFans) + QStringLiteral(" fans")
+        ? tr("%n fan(s)", "", info.nbFans)
         : QString());
     m_artistAvatar->setPixmap(placeholderPix(72));
     if (!info.artworkUrl.isEmpty())
@@ -2962,7 +2962,7 @@ void MainWindow::openConnectPicker() {
     // re-runs here, so every open reflects the current LAN — never a stale list.
     if (m_connectBtn)
         m_connectBtn->setEnabled(false);
-    statusBar()->showMessage(QStringLiteral("Scanning for devices…"));
+    statusBar()->showMessage(tr("Scanning for devices…"));
     QtConcurrent::run([this] {
         const QVector<ConnectDevice> devs = parseDevices(takeJson(DZDiscoverDevices(700)));
         QString connected;
@@ -2987,7 +2987,7 @@ void MainWindow::showConnectPicker(const QVector<ConnectDevice> &devices,
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("OpenDeezer Connect"));
     auto *v = new QVBoxLayout(&dlg);
-    v->addWidget(new QLabel(QStringLiteral("Play on a device:")));
+    v->addWidget(new QLabel(tr("Play on a device:")));
     auto *list = new QListWidget;
 
     // Mark the active entry (bold + accent), matching the lyrics-highlight style.
@@ -2999,7 +2999,7 @@ void MainWindow::showConnectPicker(const QVector<ConnectDevice> &devices,
     };
 
     // "This computer" — selecting it returns playback here (DZDisconnectDevice).
-    auto *here = new QListWidgetItem(QStringLiteral("This computer\nLocal playback"));
+    auto *here = new QListWidgetItem(tr("This computer") + QStringLiteral("\n") + tr("Local playback"));
     here->setData(Qt::UserRole, QString());  // empty addr = local
     list->addItem(here);
     QListWidgetItem *active = here;          // current connection (default: local)
@@ -3021,7 +3021,7 @@ void MainWindow::showConnectPicker(const QVector<ConnectDevice> &devices,
         }
     }
     if (devices.isEmpty()) {
-        auto *none = new QListWidgetItem(QStringLiteral("No devices found."));
+        auto *none = new QListWidgetItem(tr("No devices found."));
         none->setFlags(Qt::NoItemFlags); // a hint, not a selectable row
         list->addItem(none);
     }
@@ -3051,15 +3051,15 @@ void MainWindow::connectDevice(const QString &addr, const QString &name) {
     const QByteArray ab = addr.toUtf8();
     const QString label = name.isEmpty() ? addr : name;
     m_connectName = label;
-    statusBar()->showMessage(QStringLiteral("Connecting to %1…").arg(label));
+    statusBar()->showMessage(tr("Connecting to %1…").arg(label));
     QtConcurrent::run([this, ab, label] {
         const int ok = DZConnectDevice(cstr(ab));
         QMetaObject::invokeMethod(this, [this, ok, label] {
             if (!ok)
                 m_connectName.clear();
             statusBar()->showMessage(ok
-                ? QStringLiteral("Playing on %1").arg(label)
-                : QStringLiteral("Couldn't connect to %1").arg(label), 4000);
+                ? tr("Playing on %1").arg(label)
+                : tr("Couldn't connect to %1").arg(label), 4000);
             refreshConnectButton();
         }, Qt::QueuedConnection);
     });
@@ -3068,12 +3068,12 @@ void MainWindow::connectDevice(const QString &addr, const QString &name) {
 // Return playback to this computer. DZDisconnectDevice sends a synchronous
 // Stop to the remote peer, so it runs on a worker like connectDevice.
 void MainWindow::disconnectDevice() {
-    statusBar()->showMessage(QStringLiteral("Disconnecting…"));
+    statusBar()->showMessage(tr("Disconnecting…"));
     QtConcurrent::run([this] {
         DZDisconnectDevice();
         QMetaObject::invokeMethod(this, [this] {
             m_connectName.clear();
-            statusBar()->showMessage(QStringLiteral("Playing on this computer"), 3000);
+            statusBar()->showMessage(tr("Playing on this computer"), 3000);
             refreshConnectButton();
         }, Qt::QueuedConnection);
     });
@@ -3093,9 +3093,9 @@ void MainWindow::refreshConnectButton() {
     m_connectBtn->setStyleSheet(remote ? QString("QToolButton{color:%1;}").arg(kAccent)
                                        : QString());
     m_connectBtn->setToolTip(remote
-        ? QStringLiteral("Connected to %1 — choose a device")
+        ? tr("Connected to %1 — choose a device")
               .arg(m_connectName.isEmpty() ? connected : m_connectName)
-        : QStringLiteral("Connect to a device"));
+        : tr("Connect to a device"));
 }
 
 // ---- poll loop ------------------------------------------------------------

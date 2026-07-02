@@ -87,7 +87,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun login(arl: String, persist: Boolean = true, auto: Boolean = false) {
         if (auto && arl == lastFailedArl) return
         if (arl.isBlank()) {
-            loginError = "Empty ARL"
+            loginError = getApplication<Application>().getString(R.string.login_error_empty_arl)
             stage = AuthStage.NEEDS_LOGIN
             return
         }
@@ -99,7 +99,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (!ok) {
                 busy = false
                 lastFailedArl = arl
-                loginError = "Login failed — check your ARL and connection."
+                loginError = getApplication<Application>().getString(R.string.login_error_failed)
                 stage = AuthStage.NEEDS_LOGIN
                 if (persist) prefs.clear()
                 return@launch
@@ -111,7 +111,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             when {
                 acct == null || !acct.loggedIn -> {
                     lastFailedArl = arl
-                    loginError = "Could not load account."
+                    loginError = getApplication<Application>().getString(R.string.login_error_account)
                     stage = AuthStage.NEEDS_LOGIN
                 }
                 !acct.premium -> stage = AuthStage.NEEDS_PREMIUM

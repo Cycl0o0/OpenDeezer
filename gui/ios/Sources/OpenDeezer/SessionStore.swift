@@ -39,7 +39,7 @@ final class SessionStore: ObservableObject {
         let ok = await Engine.initEngine(arl: trimmed)
         guard ok else {
             phase = .loggedOut
-            lastError = "Login failed. Check your ARL and try again."
+            lastError = String(localized: "Login failed. Check your ARL and try again.")
             return false
         }
         if persist { KeychainStore.save(key: arlKey, value: trimmed) }

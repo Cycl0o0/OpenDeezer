@@ -35,7 +35,7 @@ char *cstr(const QByteArray &b) { return const_cast<char *>(b.constData()); }
 
 LoginDialog::LoginDialog(QString arlPath, QWidget *parent)
     : QDialog(parent), m_arlPath(std::move(arlPath)) {
-    setWindowTitle(QStringLiteral("Log in — OpenDeezer"));
+    setWindowTitle(tr("Log in — OpenDeezer"));
     setModal(true);
     resize(440, 360);
 
@@ -43,20 +43,20 @@ LoginDialog::LoginDialog(QString arlPath, QWidget *parent)
     v->setContentsMargins(28, 28, 28, 28);
     v->setSpacing(14);
 
-    auto *title = new QLabel(QStringLiteral("Welcome to OpenDeezer"));
+    auto *title = new QLabel(tr("Welcome to OpenDeezer"));
     QFont tf = title->font();
     tf.setPointSize(tf.pointSize() + 6);
     tf.setBold(true);
     title->setFont(tf);
     v->addWidget(title);
 
-    auto *blurb = new QLabel(QStringLiteral(
+    auto *blurb = new QLabel(tr(
         "Sign in with your Deezer account to start listening. A browser window "
         "opens; we capture your session automatically — no copy/paste needed."));
     blurb->setWordWrap(true);
     v->addWidget(blurb);
 
-    m_webBtn = new QPushButton(QStringLiteral("Log in with Deezer"));
+    m_webBtn = new QPushButton(tr("Log in with Deezer"));
     m_webBtn->setDefault(true);
     m_webBtn->setMinimumHeight(40);
     m_webBtn->setStyleSheet(
@@ -74,16 +74,16 @@ LoginDialog::LoginDialog(QString arlPath, QWidget *parent)
     line->setFrameShadow(QFrame::Sunken);
     v->addWidget(line);
 
-    auto *manualLbl = new QLabel(QStringLiteral("Already have an ARL? Paste it here:"));
+    auto *manualLbl = new QLabel(tr("Already have an ARL? Paste it here:"));
     manualLbl->setWordWrap(true);
     v->addWidget(manualLbl);
 
     auto *row = new QHBoxLayout;
     m_manualEdit = new QLineEdit;
-    m_manualEdit->setPlaceholderText(QStringLiteral("ARL token…"));
+    m_manualEdit->setPlaceholderText(tr("ARL token…"));
     m_manualEdit->setEchoMode(QLineEdit::Password);
     connect(m_manualEdit, &QLineEdit::returnPressed, this, &LoginDialog::submitManual);
-    m_manualBtn = new QPushButton(QStringLiteral("Use this ARL"));
+    m_manualBtn = new QPushButton(tr("Use this ARL"));
     connect(m_manualBtn, &QPushButton::clicked, this, &LoginDialog::submitManual);
     row->addWidget(m_manualEdit, 1);
     row->addWidget(m_manualBtn);
@@ -117,13 +117,13 @@ void LoginDialog::runHelper() {
         return;
     const QString helper = helperPath();
     if (!QFileInfo::exists(helper)) {
-        showError(QStringLiteral("Login helper not found (%1). Paste your ARL below instead.")
+        showError(tr("Login helper not found (%1). Paste your ARL below instead.")
                       .arg(helper));
         return;
     }
     setBusy(true);
     m_status->setStyleSheet(QString());
-    m_status->setText(QStringLiteral("Opening Deezer login…"));
+    m_status->setText(tr("Opening Deezer login…"));
     m_status->setVisible(true);
 
     m_helper = new QProcess(this);
@@ -154,7 +154,7 @@ void LoginDialog::runHelper() {
         if (m_helper == proc)
             m_helper = nullptr;
         setBusy(false);
-        showError(QStringLiteral("Couldn't start the login helper. Paste your ARL below instead."));
+        showError(tr("Couldn't start the login helper. Paste your ARL below instead."));
     });
     m_helper->start();
 }
@@ -162,7 +162,7 @@ void LoginDialog::runHelper() {
 void LoginDialog::submitManual() {
     const QString arl = m_manualEdit->text().trimmed();
     if (arl.isEmpty()) {
-        showError(QStringLiteral("Enter an ARL, or use \"Log in with Deezer\"."));
+        showError(tr("Enter an ARL, or use \"Log in with Deezer\"."));
         return;
     }
     tryArl(arl);
@@ -176,7 +176,7 @@ void LoginDialog::tryArl(const QString &arl) {
     m_verifying = true;
     setBusy(true);
     m_status->setStyleSheet(QString());
-    m_status->setText(QStringLiteral("Verifying your account…"));
+    m_status->setText(tr("Verifying your account…"));
     m_status->setVisible(true);
 
     // This dialog is a stack local in MainWindow. setBusy() only disables the
@@ -207,7 +207,7 @@ void LoginDialog::tryArl(const QString &arl) {
                 return;
             }
             setBusy(false);
-            showError(QStringLiteral(
+            showError(tr(
                 "Login failed — the session was invalid or expired. Please try again."));
         }, Qt::QueuedConnection);
     });

@@ -28,7 +28,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 
 /**
@@ -62,21 +64,21 @@ fun UpdateBanner(info: UpdateInfo, onDismiss: () -> Unit, modifier: Modifier = M
             )
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(
-                    "OpenDeezer ${info.latest} available",
+                    stringResource(R.string.update_available_title, info.latest),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 if (info.notes.isNotBlank()) {
                     TextButton(onClick = { showNotes = true }, contentPadding = PaddingValues(0.dp)) {
-                        Text("Release notes", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.update_release_notes), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
-            TextButton(onClick = { openRelease() }) { Text("Download") }
+            TextButton(onClick = { openRelease() }) { Text(stringResource(R.string.action_download)) }
             IconButton(onClick = onDismiss) {
                 Icon(
                     Icons.Filled.Close,
-                    contentDescription = "Dismiss",
+                    contentDescription = stringResource(R.string.cd_dismiss),
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
@@ -87,10 +89,10 @@ fun UpdateBanner(info: UpdateInfo, onDismiss: () -> Unit, modifier: Modifier = M
         AlertDialog(
             onDismissRequest = { showNotes = false },
             confirmButton = {
-                TextButton(onClick = { showNotes = false; openRelease() }) { Text("Download") }
+                TextButton(onClick = { showNotes = false; openRelease() }) { Text(stringResource(R.string.action_download)) }
             },
-            dismissButton = { TextButton(onClick = { showNotes = false }) { Text("Close") } },
-            title = { Text("OpenDeezer ${info.latest}") },
+            dismissButton = { TextButton(onClick = { showNotes = false }) { Text(stringResource(R.string.action_close)) } },
+            title = { Text(stringResource(R.string.update_notes_title, info.latest)) },
             text = {
                 Text(
                     info.notes,

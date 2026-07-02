@@ -7,9 +7,11 @@
 # Usage:  cd gui/gnome && ./build.sh && ./opendeezer-gnome
 #
 # Build deps (Debian/Ubuntu):
-#   golang gcc pkg-config meson ninja-build \
+#   golang gcc pkg-config meson ninja-build gettext \
 #   libgtk-4-dev libadwaita-1-dev libjson-glib-dev libasound2-dev \
 #   libwebkitgtk-6.0-dev    # embedded Deezer login (pulls in libsoup-3.0-dev)
+# (gettext provides msgfmt/xgettext, required by meson's i18n module for the
+#  po/ message catalogs and the localized .desktop file.)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

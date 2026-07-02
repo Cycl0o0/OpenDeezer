@@ -1,5 +1,6 @@
 [Desktop Entry]
 Name=OpenDeezer
+GenericName=Music Player
 Comment=An open source reimplementation of Deezer
 Exec=opendeezer-gnome
 Icon=org.opendeezer.OpenDeezer

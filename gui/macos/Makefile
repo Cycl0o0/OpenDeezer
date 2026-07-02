@@ -35,6 +35,11 @@ app: build
 	cp Info.plist $(APP)/Contents/Info.plist
 	cp .build/apple/Products/$(CONFIG)/$(BIN) $(APP)/Contents/MacOS/$(BIN)
 	cp $(ROOT)/assets/OpenDeezer.icns $(APP)/Contents/Resources/OpenDeezer.icns
+	# Localized resources (Bundle.module). Its generated accessor searches
+	# Bundle.main.resourceURL, so the .bundle must sit in Contents/Resources —
+	# without this copy Bundle.module fatalErrors at runtime.
+	cp -R .build/apple/Products/$(CONFIG)/OpenDeezer_OpenDeezer.bundle \
+		$(APP)/Contents/Resources/
 	@echo "built $(APP) (universal)"
 
 run: app

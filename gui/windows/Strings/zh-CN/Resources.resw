@@ -1,0 +1,577 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Nav_Home" xml:space="preserve">
+    <value>首页</value>
+  </data>
+  <data name="Nav_LikedSongs" xml:space="preserve">
+    <value>喜欢的歌曲</value>
+  </data>
+  <data name="Nav_Flow" xml:space="preserve">
+    <value>Flow</value>
+  </data>
+  <data name="Nav_Playlists" xml:space="preserve">
+    <value>歌单</value>
+  </data>
+  <data name="Nav_Charts" xml:space="preserve">
+    <value>排行榜</value>
+  </data>
+  <data name="Nav_Podcasts" xml:space="preserve">
+    <value>播客</value>
+  </data>
+  <data name="Nav_Search" xml:space="preserve">
+    <value>搜索</value>
+  </data>
+  <data name="Nav_Account" xml:space="preserve">
+    <value>登录 / 切换账户…</value>
+  </data>
+  <data name="Nav_Settings" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="Nav_PhoneRemote" xml:space="preserve">
+    <value>手机遥控</value>
+  </data>
+  <data name="Nav_About" xml:space="preserve">
+    <value>关于</value>
+  </data>
+  <data name="Nav_Artist" xml:space="preserve">
+    <value>艺人</value>
+  </data>
+  <data name="Nav_Lyrics" xml:space="preserve">
+    <value>歌词</value>
+  </data>
+  <data name="Btn_Download" xml:space="preserve">
+    <value>下载</value>
+  </data>
+  <data name="Btn_NewPlaylist" xml:space="preserve">
+    <value>新建歌单</value>
+  </data>
+  <data name="Btn_Add" xml:space="preserve">
+    <value>添加</value>
+  </data>
+  <data name="Btn_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="Btn_OK" xml:space="preserve">
+    <value>确定</value>
+  </data>
+  <data name="Btn_Save" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="Btn_Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="Btn_Quit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="Btn_Delete" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="Btn_LogInWithDeezer" xml:space="preserve">
+    <value>使用 Deezer 登录</value>
+  </data>
+  <data name="Btn_EnterArlManually" xml:space="preserve">
+    <value>手动输入 ARL</value>
+  </data>
+  <data name="Section_TopTracks" xml:space="preserve">
+    <value>热门歌曲</value>
+  </data>
+  <data name="Section_Albums" xml:space="preserve">
+    <value>专辑</value>
+  </data>
+  <data name="Section_Artists" xml:space="preserve">
+    <value>艺人</value>
+  </data>
+  <data name="Section_Playlists" xml:space="preserve">
+    <value>歌单</value>
+  </data>
+  <data name="Section_YourPlaylists" xml:space="preserve">
+    <value>你的歌单</value>
+  </data>
+  <data name="Section_RelatedArtists" xml:space="preserve">
+    <value>相关艺人</value>
+  </data>
+  <data name="Search_Placeholder" xml:space="preserve">
+    <value>搜索 Deezer…</value>
+  </data>
+  <data name="Search_TracksHeader" xml:space="preserve">
+    <value>歌曲</value>
+  </data>
+  <data name="Search_AlbumsPlaylistsHeader" xml:space="preserve">
+    <value>专辑和歌单</value>
+  </data>
+  <data name="Podcast_SearchPlaceholder" xml:space="preserve">
+    <value>搜索播客…</value>
+  </data>
+  <data name="Podcast_ShowsHeader" xml:space="preserve">
+    <value>节目</value>
+  </data>
+  <data name="Greeting_Morning" xml:space="preserve">
+    <value>早上好</value>
+  </data>
+  <data name="Greeting_Afternoon" xml:space="preserve">
+    <value>下午好</value>
+  </data>
+  <data name="Greeting_Evening" xml:space="preserve">
+    <value>晚上好</value>
+  </data>
+  <data name="Tooltip_Like" xml:space="preserve">
+    <value>喜欢 / 取消喜欢</value>
+  </data>
+  <data name="Tooltip_AddToPlaylist" xml:space="preserve">
+    <value>添加到歌单</value>
+  </data>
+  <data name="Tooltip_Shuffle" xml:space="preserve">
+    <value>随机播放</value>
+  </data>
+  <data name="Tooltip_Previous" xml:space="preserve">
+    <value>上一首</value>
+  </data>
+  <data name="Tooltip_PlayPause" xml:space="preserve">
+    <value>播放 / 暂停</value>
+  </data>
+  <data name="Tooltip_Next" xml:space="preserve">
+    <value>下一首</value>
+  </data>
+  <data name="Tooltip_RepeatOff" xml:space="preserve">
+    <value>循环播放：关</value>
+  </data>
+  <data name="Tooltip_RepeatAll" xml:space="preserve">
+    <value>循环播放：全部</value>
+  </data>
+  <data name="Tooltip_RepeatOne" xml:space="preserve">
+    <value>循环播放：单曲</value>
+  </data>
+  <data name="Tooltip_Lyrics" xml:space="preserve">
+    <value>歌词</value>
+  </data>
+  <data name="Tooltip_Artist" xml:space="preserve">
+    <value>艺人</value>
+  </data>
+  <data name="Tooltip_Connect" xml:space="preserve">
+    <value>连接到设备</value>
+  </data>
+  <data name="Tooltip_Explicit" xml:space="preserve">
+    <value>露骨内容</value>
+  </data>
+  <data name="Menu_Like" xml:space="preserve">
+    <value>喜欢</value>
+  </data>
+  <data name="Menu_AddToPlaylist" xml:space="preserve">
+    <value>添加到歌单…</value>
+  </data>
+  <data name="Menu_Rename" xml:space="preserve">
+    <value>重命名…</value>
+  </data>
+  <data name="Menu_Delete" xml:space="preserve">
+    <value>删除…</value>
+  </data>
+  <data name="Status_LoggingIn" xml:space="preserve">
+    <value>正在登录…</value>
+  </data>
+  <data name="Status_LoginFailed" xml:space="preserve">
+    <value>登录失败</value>
+  </data>
+  <data name="Status_CheckingAccount" xml:space="preserve">
+    <value>正在检查账户…</value>
+  </data>
+  <data name="Status_NotPlaying" xml:space="preserve">
+    <value>未在播放</value>
+  </data>
+  <data name="Status_NotSignedIn" xml:space="preserve">
+    <value>未登录</value>
+  </data>
+  <data name="Status_Loading" xml:space="preserve">
+    <value>加载中…</value>
+  </data>
+  <data name="Connect_Title" xml:space="preserve">
+    <value>连接到设备</value>
+  </data>
+  <data name="Connect_SignIn" xml:space="preserve">
+    <value>请登录以使用连接功能。</value>
+  </data>
+  <data name="Connect_Searching" xml:space="preserve">
+    <value>正在搜索设备…</value>
+  </data>
+  <data name="Connect_ThisComputer" xml:space="preserve">
+    <value>这台电脑</value>
+  </data>
+  <data name="Connect_LocalPlayback" xml:space="preserve">
+    <value>本地播放</value>
+  </data>
+  <data name="Connect_NoDevices" xml:space="preserve">
+    <value>在你的网络中未找到其他设备。</value>
+  </data>
+  <data name="Connect_VersionFormat" xml:space="preserve">
+    <value>{0} · OpenDeezer {1}</value>
+  </data>
+  <data name="Connect_PlayingOnFormat" xml:space="preserve">
+    <value>正在 {0} 上播放</value>
+  </data>
+  <data name="ConnectType_Terminal" xml:space="preserve">
+    <value>终端</value>
+  </data>
+  <data name="ConnectType_Device" xml:space="preserve">
+    <value>设备</value>
+  </data>
+  <data name="Lyrics_PlayPrompt" xml:space="preserve">
+    <value>播放歌曲即可查看歌词。</value>
+  </data>
+  <data name="Lyrics_Loading" xml:space="preserve">
+    <value>正在加载歌词…</value>
+  </data>
+  <data name="Lyrics_None" xml:space="preserve">
+    <value>暂无歌词。</value>
+  </data>
+  <data name="Dialog_SignInTitle" xml:space="preserve">
+    <value>登录 Deezer</value>
+  </data>
+  <data name="Dialog_SignInBody" xml:space="preserve">
+    <value>请选择登录方式。</value>
+  </data>
+  <data name="Dialog_WebLoginTitle" xml:space="preserve">
+    <value>使用 Deezer 登录</value>
+  </data>
+  <data name="Dialog_LogInWithArlTitle" xml:space="preserve">
+    <value>使用 ARL 登录</value>
+  </data>
+  <data name="Dialog_PasteArlPlaceholder" xml:space="preserve">
+    <value>粘贴你的 Deezer ARL</value>
+  </data>
+  <data name="Dialog_LoginFailedTitle" xml:space="preserve">
+    <value>登录失败</value>
+  </data>
+  <data name="Dialog_LoginFailedBody" xml:space="preserve">
+    <value>该 ARL 无效或已过期。请重新登录。</value>
+  </data>
+  <data name="Dialog_NoArtistTitle" xml:space="preserve">
+    <value>没有艺人</value>
+  </data>
+  <data name="Dialog_NoArtistBody" xml:space="preserve">
+    <value>播放歌曲即可查看其艺人。</value>
+  </data>
+  <data name="Dialog_NoTrackTitle" xml:space="preserve">
+    <value>没有歌曲</value>
+  </data>
+  <data name="Dialog_NoTrackBody" xml:space="preserve">
+    <value>播放歌曲即可将其添加到歌单。</value>
+  </data>
+  <data name="Dialog_AddToPlaylistTitle" xml:space="preserve">
+    <value>添加到歌单</value>
+  </data>
+  <data name="Dialog_NewPlaylistItem" xml:space="preserve">
+    <value>＋  新建歌单…</value>
+  </data>
+  <data name="Dialog_NewPlaylistTitle" xml:space="preserve">
+    <value>新建歌单</value>
+  </data>
+  <data name="Dialog_PlaylistNamePlaceholder" xml:space="preserve">
+    <value>歌单名称</value>
+  </data>
+  <data name="Dialog_RenamePlaylistTitle" xml:space="preserve">
+    <value>重命名歌单</value>
+  </data>
+  <data name="Dialog_DeletePlaylistTitle" xml:space="preserve">
+    <value>删除歌单</value>
+  </data>
+  <data name="Dialog_DeletePlaylistBodyFormat" xml:space="preserve">
+    <value>确定删除“{0}”吗？此操作无法撤销。</value>
+  </data>
+  <data name="Dialog_CreateFailTitle" xml:space="preserve">
+    <value>无法创建歌单</value>
+  </data>
+  <data name="Dialog_CreateFailBody" xml:space="preserve">
+    <value>无法创建该歌单。</value>
+  </data>
+  <data name="Dialog_AddFailTitle" xml:space="preserve">
+    <value>无法添加到歌单</value>
+  </data>
+  <data name="Dialog_AddFailBody" xml:space="preserve">
+    <value>无法添加该歌曲。</value>
+  </data>
+  <data name="Dialog_RenameFailTitle" xml:space="preserve">
+    <value>无法重命名</value>
+  </data>
+  <data name="Dialog_RenameFailBody" xml:space="preserve">
+    <value>无法重命名该歌单。</value>
+  </data>
+  <data name="Dialog_DeleteFailTitle" xml:space="preserve">
+    <value>无法删除</value>
+  </data>
+  <data name="Dialog_DeleteFailBody" xml:space="preserve">
+    <value>无法删除该歌单。</value>
+  </data>
+  <data name="Dialog_ConnectFailTitle" xml:space="preserve">
+    <value>无法连接</value>
+  </data>
+  <data name="Dialog_ConnectFailBody" xml:space="preserve">
+    <value>无法连接到该设备。</value>
+  </data>
+  <data name="Blocked_Title" xml:space="preserve">
+    <value>需要 Premium</value>
+  </data>
+  <data name="Blocked_BodyFormat" xml:space="preserve">
+    <value>你的账户（{0}）不是 Premium。请在 deezer.com 订阅后重新启动 OpenDeezer。</value>
+  </data>
+  <data name="Update_TitleFormat" xml:space="preserve">
+    <value>OpenDeezer {0} 可用</value>
+  </data>
+  <data name="Update_BodyDefault" xml:space="preserve">
+    <value>有新版本可供下载。</value>
+  </data>
+  <data name="Tray_Open" xml:space="preserve">
+    <value>打开 OpenDeezer</value>
+  </data>
+  <data name="Tray_Quit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="Settings_Title" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="Settings_AudioQuality" xml:space="preserve">
+    <value>音质</value>
+  </data>
+  <data name="Quality_Normal" xml:space="preserve">
+    <value>普通 — MP3 128 kbps</value>
+  </data>
+  <data name="Quality_High" xml:space="preserve">
+    <value>高 — MP3 320 kbps</value>
+  </data>
+  <data name="Quality_HiFi" xml:space="preserve">
+    <value>HiFi — FLAC 无损</value>
+  </data>
+  <data name="Settings_QualityWarnFormat" xml:space="preserve">
+    <value>你的套餐（{0}）可能不支持此音质；播放将自动降级。</value>
+  </data>
+  <data name="Settings_OutputDevice" xml:space="preserve">
+    <value>输出设备</value>
+  </data>
+  <data name="Settings_SystemDefault" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="Settings_DeviceDefaultFormat" xml:space="preserve">
+    <value>{0}（默认）</value>
+  </data>
+  <data name="Settings_NoOutputDevices" xml:space="preserve">
+    <value>没有输出设备</value>
+  </data>
+  <data name="Settings_GaplessPlayback" xml:space="preserve">
+    <value>无缝播放</value>
+  </data>
+  <data name="Settings_GaplessOn" xml:space="preserve">
+    <value>连续播放歌曲，无间断</value>
+  </data>
+  <data name="Settings_GaplessOff" xml:space="preserve">
+    <value>歌曲之间有短暂间隔</value>
+  </data>
+  <data name="Settings_Crossfade" xml:space="preserve">
+    <value>淡入淡出</value>
+  </data>
+  <data name="Common_Off" xml:space="preserve">
+    <value>关</value>
+  </data>
+  <data name="Settings_Equalizer" xml:space="preserve">
+    <value>均衡器</value>
+  </data>
+  <data name="Settings_EqualizerBtn" xml:space="preserve">
+    <value>均衡器…</value>
+  </data>
+  <data name="Settings_EqualizerDesc" xml:space="preserve">
+    <value>10 段均衡器、前置放大和单声道。</value>
+  </data>
+  <data name="Settings_SleepTimer" xml:space="preserve">
+    <value>定时关闭</value>
+  </data>
+  <data name="Settings_EndOfTrack" xml:space="preserve">
+    <value>当前歌曲结束时</value>
+  </data>
+  <data name="Settings_VolumeNormalization" xml:space="preserve">
+    <value>音量标准化</value>
+  </data>
+  <data name="Settings_ReplayGainOn" xml:space="preserve">
+    <value>统一各歌曲的响度（ReplayGain）</value>
+  </data>
+  <data name="Settings_ReplayGainOff" xml:space="preserve">
+    <value>以歌曲原始响度播放</value>
+  </data>
+  <data name="Settings_BackgroundPlayback" xml:space="preserve">
+    <value>后台播放</value>
+  </data>
+  <data name="Settings_TrayOn" xml:space="preserve">
+    <value>关闭窗口后在托盘中继续播放</value>
+  </data>
+  <data name="Settings_TrayOff" xml:space="preserve">
+    <value>关闭窗口即退出 OpenDeezer</value>
+  </data>
+  <data name="Settings_RemoteControl" xml:space="preserve">
+    <value>远程控制</value>
+  </data>
+  <data name="Settings_RemoteDesc" xml:space="preserve">
+    <value>从网络中的另一台设备控制播放。</value>
+  </data>
+  <data name="Settings_RemoteOn" xml:space="preserve">
+    <value>远程控制已开启</value>
+  </data>
+  <data name="Settings_RemoteOff" xml:space="preserve">
+    <value>远程控制已关闭</value>
+  </data>
+  <data name="Settings_RemoteLanOn" xml:space="preserve">
+    <value>可在局域网中访问</value>
+  </data>
+  <data name="Settings_RemoteLanOff" xml:space="preserve">
+    <value>仅限本机</value>
+  </data>
+  <data name="Settings_AccessToken" xml:space="preserve">
+    <value>访问令牌（可选）</value>
+  </data>
+  <data name="Settings_Updates" xml:space="preserve">
+    <value>更新</value>
+  </data>
+  <data name="Settings_UpdateCheckDesc" xml:space="preserve">
+    <value>在 GitHub 上检查是否有新版本。</value>
+  </data>
+  <data name="Settings_CheckForUpdates" xml:space="preserve">
+    <value>检查更新</value>
+  </data>
+  <data name="Settings_Checking" xml:space="preserve">
+    <value>正在检查…</value>
+  </data>
+  <data name="Settings_UpdateAvailFormat" xml:space="preserve">
+    <value>v{0} 可用（你当前为 v{1}）。</value>
+  </data>
+  <data name="Settings_UpdateFail" xml:space="preserve">
+    <value>无法检查更新。请稍后重试。</value>
+  </data>
+  <data name="Settings_UpToDateFormat" xml:space="preserve">
+    <value>已是最新版本（v{0}）。</value>
+  </data>
+  <data name="Settings_Language" xml:space="preserve">
+    <value>语言</value>
+  </data>
+  <data name="Settings_LanguageSystem" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="Settings_LanguageRestart" xml:space="preserve">
+    <value>请重新启动 OpenDeezer 以应用新语言。</value>
+  </data>
+  <data name="EQ_Preset" xml:space="preserve">
+    <value>预设</value>
+  </data>
+  <data name="EQ_Custom" xml:space="preserve">
+    <value>自定义</value>
+  </data>
+  <data name="EQ_Preamp" xml:space="preserve">
+    <value>前置放大</value>
+  </data>
+  <data name="EQ_MonoAudio" xml:space="preserve">
+    <value>单声道</value>
+  </data>
+  <data name="EQ_EnableOn" xml:space="preserve">
+    <value>均衡器已开启</value>
+  </data>
+  <data name="EQ_EnableOff" xml:space="preserve">
+    <value>均衡器已关闭</value>
+  </data>
+  <data name="EQ_MonoOn" xml:space="preserve">
+    <value>两个声道播放相同音频</value>
+  </data>
+  <data name="EQ_MonoOff" xml:space="preserve">
+    <value>立体声</value>
+  </data>
+  <data name="PhoneRemote_Instructions" xml:space="preserve">
+    <value>用手机扫描（需同一 Wi-Fi），然后输入代码。</value>
+  </data>
+  <data name="PhoneRemote_On" xml:space="preserve">
+    <value>手机遥控已启用</value>
+  </data>
+  <data name="PhoneRemote_Off" xml:space="preserve">
+    <value>手机遥控已关闭</value>
+  </data>
+  <data name="About_Title" xml:space="preserve">
+    <value>关于 OpenDeezer</value>
+  </data>
+  <data name="About_Tagline" xml:space="preserve">
+    <value>Deezer 的开源重新实现。</value>
+  </data>
+  <data name="About_Description" xml:space="preserve">
+    <value>原生 Windows 客户端（WinUI 3 · C# · Fluent）。引擎——登录、浏览、Blowfish 解密、MP3 解码、WASAPI 播放——是进程内链接的 Go 核心 libdeezercore.dll。</value>
+  </data>
+  <data name="About_SignedInFormat" xml:space="preserve">
+    <value>已登录：{0} · {1}</value>
+  </data>
+  <data name="About_Credits" xml:space="preserve">
+    <value>由 Cycl0o0 开发。基于 AGPL-3.0 许可。</value>
+  </data>
+  <data name="Tracks_Other" xml:space="preserve">
+    <value>{0} 首歌曲</value>
+  </data>
+  <data name="Episodes_Other" xml:space="preserve">
+    <value>{0} 集</value>
+  </data>
+  <data name="Fans_Other" xml:space="preserve">
+    <value>{0} 粉丝</value>
+  </data>
+  <data name="Minutes_Other" xml:space="preserve">
+    <value>{0} 分钟</value>
+  </data>
+  <data name="Seconds_Other" xml:space="preserve">
+    <value>{0} 秒</value>
+  </data>
+</root>

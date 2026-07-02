@@ -20,7 +20,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.Playlist
 import fr.cyclooo.opendeezer.ui.components.CenteredMessage
@@ -33,10 +36,10 @@ fun PlaylistsScreen(onBack: () -> Unit, onOpen: (Playlist) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("My Playlists") },
+                title = { Text(stringResource(R.string.playlists_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -48,13 +51,17 @@ fun PlaylistsScreen(onBack: () -> Unit, onOpen: (Playlist) -> Unit) {
                     CircularProgressIndicator()
                 }
                 else -> if (list.isEmpty()) {
-                    CenteredMessage("You have no playlists yet.")
+                    CenteredMessage(stringResource(R.string.playlists_empty))
                 } else {
                     LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize()) {
                         items(list, key = { it.id }) { p ->
                             MediaCard(
                                 title = p.name,
-                                subtitle = if (p.trackCount > 0) "${p.trackCount} tracks" else p.owner,
+                                subtitle = if (p.trackCount > 0) {
+                                    pluralStringResource(R.plurals.n_tracks, p.trackCount, p.trackCount)
+                                } else {
+                                    p.owner
+                                },
                                 artworkUrl = p.artworkUrl,
                                 onClick = { onOpen(p) },
                             )

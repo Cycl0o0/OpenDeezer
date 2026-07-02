@@ -3,6 +3,9 @@
 // are restyled Deezer-purple (see MainWindow::buildTransport).
 #include <QApplication>
 #include <QIcon>
+#include <QLibraryInfo>
+#include <QLocale>
+#include <QTranslator>
 
 #include "mainwindow.h"
 
@@ -44,6 +47,21 @@ int opendeezer_run(int argc, char **argv) {
     // Background playback: hiding the window to the tray must not quit the app.
     // Exit happens only on an explicit Quit (MainWindow::quitApp / closeEvent).
     QApplication::setQuitOnLastWindowClosed(false);
+
+    // Localization: install the embedded catalog for the current system locale
+    // (RESOURCE_PREFIX /i18n, filenames opendeezer_<lang>.qm). With no matching
+    // .qm the English source strings are used unchanged. Qt Widgets mirror their
+    // layouts for right-to-left locales once the layout direction is set.
+    auto *translator = new QTranslator(&app);
+    if (translator->load(QLocale(), QStringLiteral("opendeezer"),
+                         QStringLiteral("_"), QStringLiteral(":/i18n")))
+        app.installTranslator(translator);
+    // Stock dialog buttons (OK/Cancel/…) come from Qt's own catalog; best-effort.
+    auto *qtBase = new QTranslator(&app);
+    if (qtBase->load(QLocale(), QStringLiteral("qtbase"), QStringLiteral("_"),
+                     QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+        app.installTranslator(qtBase);
+    QApplication::setLayoutDirection(QLocale().textDirection());
 
     MainWindow w;
     w.resize(1100, 720);

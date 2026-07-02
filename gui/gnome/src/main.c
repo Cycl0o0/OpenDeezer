@@ -20,6 +20,8 @@
 #include <adwaita.h>
 #include <json-glib/json-glib.h>
 #include <stdarg.h>
+#include <locale.h>
+#include <glib/gi18n.h> /* _(), N_(), ngettext() — GNU gettext via GLib */
 
 /* Embedded Deezer login: a WebKitWebView (GTK4 port) shows the real Deezer web
  * login and the arl cookie is read back from the WebKitNetworkSession's cookie
@@ -481,7 +483,7 @@ static GtkWidget *make_explicit_badge(void) {
   GtkWidget *b = gtk_label_new("E");
   gtk_widget_add_css_class(b, "explicit-badge");
   gtk_widget_set_valign(b, GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(b, "Explicit content");
+  gtk_widget_set_tooltip_text(b, _("Explicit content"));
   return b;
 }
 
@@ -563,7 +565,7 @@ static GtkColumnViewColumn *make_title_column(void) {
   GtkListItemFactory *f = gtk_signal_list_item_factory_new();
   g_signal_connect(f, "setup", G_CALLBACK(setup_title), NULL);
   g_signal_connect(f, "bind", G_CALLBACK(bind_title), NULL);
-  GtkColumnViewColumn *col = gtk_column_view_column_new("Title", f);
+  GtkColumnViewColumn *col = gtk_column_view_column_new(_("Title"), f);
   gtk_column_view_column_set_expand(col, TRUE);
   return col;
 }
@@ -607,7 +609,7 @@ static void populate_tracks(App *a, const char *json) {
   JsonParser *p = json_parser_new();
   GError *e = NULL;
   if (!json_parser_load_from_data(p, json, -1, &e)) {
-    toastf(a, "Couldn't parse response: %s", e->message);
+    toastf(a, _("Couldn't parse response: %s"), e->message);
     g_clear_error(&e);
     g_object_unref(p);
     return;
@@ -617,7 +619,7 @@ static void populate_tracks(App *a, const char *json) {
     JsonObject *o = json_node_get_object(root);
     if (json_object_has_member(o, "error")) {
       char *msg = jstr(o, "error");
-      if (*msg) toastf(a, "Deezer: %s", msg);
+      if (*msg) toastf(a, _("Deezer: %s"), msg);
       g_free(msg);
     }
     if (json_object_has_member(o, "tracks")) {
@@ -628,7 +630,7 @@ static void populate_tracks(App *a, const char *json) {
         g_list_store_append(a->track_store, t);
         g_object_unref(t);
       }
-      toastf(a, n == 1 ? "%u track" : "%u tracks", n);
+      toastf(a, ngettext("%u track", "%u tracks", n), n);
     }
   }
   g_object_unref(p);
@@ -724,7 +726,10 @@ static void playlists_done(GObject *src, GAsyncResult *res, gpointer data) {
         for (guint i = 0; i < json_array_get_length(arr); i++) {
           JsonObject *pl = json_array_get_object_element(arr, i);
           char *name = jstr(pl, "name"), *owner = jstr(pl, "owner"), *id = jstr(pl, "id");
-          char *sub = g_strdup_printf("%s · %lld tracks", owner, (long long)jint(pl, "trackCount"));
+          gint64 tc = jint(pl, "trackCount");
+          char *tcs = g_strdup_printf(ngettext("%lld track", "%lld tracks", (gulong)tc), (long long)tc);
+          char *sub = g_strdup_printf("%s · %s", owner, tcs);
+          g_free(tcs);
           GtkWidget *row = make_side_row(name, sub, "view-list-symbolic", ROW_PLAYLIST, id);
           attach_playlist_menu(row, id, name); /* rename / delete */
           gtk_list_box_append(APP->sidebar, row);
@@ -848,7 +853,7 @@ static void play_done(GObject *src, GAsyncResult *res, gpointer data) {
   gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
   /* resync so the natural-finish counter doesn't trigger a spurious skip */
   APP->last_finished = DZFinishedCount();
-  if (!ok) toast(APP, "Couldn't play that track");
+  if (!ok) toast(APP, _("Couldn't play that track"));
 }
 
 /* Push the current track's metadata onto the now-playing bar + OS media
@@ -1077,8 +1082,8 @@ static void on_quality_selected(GObject *row, GParamSpec *ps, gpointer data) {
   a->quality = (int)adw_combo_row_get_selected(ADW_COMBO_ROW(row));
   DZSetQuality(a->quality);
   settings_save(a);
-  const char *names[] = {"Normal (MP3 128)", "High (MP3 320)", "HiFi (FLAC)"};
-  toastf(a, "Audio quality: %s", names[a->quality < 0 ? 0 : (a->quality > 2 ? 2 : a->quality)]);
+  const char *names[] = {_("Normal (MP3 128)"), _("High (MP3 320)"), _("HiFi (FLAC)")};
+  toastf(a, _("Audio quality: %s"), names[a->quality < 0 ? 0 : (a->quality > 2 ? 2 : a->quality)]);
 }
 
 static void on_background_toggled(GObject *row, GParamSpec *ps, gpointer data) {
@@ -1094,7 +1099,7 @@ static void on_replaygain_toggled(GObject *row, GParamSpec *ps, gpointer data) {
   a->replaygain = adw_switch_row_get_active(ADW_SWITCH_ROW(row));
   DZSetReplayGain(a->replaygain ? 1 : 0);
   settings_save(a);
-  toastf(a, "Loudness normalisation %s", a->replaygain ? "on" : "off");
+  toast(a, a->replaygain ? _("Loudness normalization enabled") : _("Loudness normalization disabled"));
 }
 
 static void on_gapless_toggled(GObject *row, GParamSpec *ps, gpointer data) {
@@ -1104,7 +1109,7 @@ static void on_gapless_toggled(GObject *row, GParamSpec *ps, gpointer data) {
   DZSetGapless(a->gapless ? 1 : 0);
   settings_save(a);
   if (a->gapless) maybe_preload_next(a); /* warm up the next track right away */
-  toastf(a, "Gapless playback %s", a->gapless ? "on" : "off");
+  toast(a, a->gapless ? _("Gapless playback enabled") : _("Gapless playback disabled"));
 }
 
 /* crossfade combo options, in milliseconds */
@@ -1118,8 +1123,8 @@ static void on_crossfade_selected(GObject *row, GParamSpec *ps, gpointer data) {
   a->crossfade_ms = CROSSFADE_MS[i];
   DZSetCrossfadeMS(a->crossfade_ms);
   settings_save(a);
-  if (a->crossfade_ms > 0) toastf(a, "Crossfade: %ds", a->crossfade_ms / 1000);
-  else toast(a, "Crossfade off");
+  if (a->crossfade_ms > 0) toastf(a, _("Crossfade: %ds"), a->crossfade_ms / 1000);
+  else toast(a, _("Crossfade off"));
 }
 
 /* sleep-timer combo options: minutes before an auto-fade-out pause. The last
@@ -1135,13 +1140,13 @@ static void on_sleep_timer_selected(GObject *row, GParamSpec *ps, gpointer data)
   if (i >= G_N_ELEMENTS(SLEEP_MIN)) i = 0;
   if (i == 0) {
     DZCancelSleepTimer();
-    toast(a, "Sleep timer off");
+    toast(a, _("Sleep timer off"));
   } else if (i == G_N_ELEMENTS(SLEEP_MIN) - 1) { /* last option = end-of-track */
     DZSetSleepTimer(0, 1);
-    toast(a, "Sleep timer: end of track");
+    toast(a, _("Sleep timer: end of track"));
   } else {
     DZSetSleepTimer(SLEEP_MIN[i], 0);
-    toastf(a, "Sleep timer: %d min", SLEEP_MIN[i]);
+    toastf(a, _("Sleep timer: %d min"), SLEEP_MIN[i]);
   }
 }
 
@@ -1152,11 +1157,11 @@ static void on_device_selected(GObject *row, GParamSpec *ps, gpointer data) {
   guint idx = adw_combo_row_get_selected(ADW_COMBO_ROW(row));
   if (!ids || idx >= ids->len) return;
   const char *id = g_ptr_array_index(ids, idx);
-  if (DZSetAudioDevice((char *)id) != 1) { toast(a, "Couldn't switch output device"); return; }
+  if (DZSetAudioDevice((char *)id) != 1) { toast(a, _("Couldn't switch output device")); return; }
   g_free(a->audio_device);
   a->audio_device = g_strdup(id ? id : "");
   settings_save(a);
-  toast(a, "Output device changed");
+  toast(a, _("Output device changed"));
 }
 
 /* Build the output-device combo from DZAudioDevicesJSON (local enumeration, so
@@ -1164,7 +1169,7 @@ static void on_device_selected(GObject *row, GParamSpec *ps, gpointer data) {
  * the row, parallel to the visible names, so the handler can map index -> id. */
 static GtkWidget *build_device_row(App *a) {
   GtkWidget *row = adw_combo_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), "Output device");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), _("Output device"));
 
   GtkStringList *names = gtk_string_list_new(NULL);
   GPtrArray *ids = g_ptr_array_new_with_free_func(g_free);
@@ -1187,8 +1192,8 @@ static GtkWidget *build_device_row(App *a) {
             JsonObject *d = json_array_get_object_element(arr, i);
             char *id = jstr(d, "id"), *name = jstr(d, "name");
             gboolean def = jbool(d, "isDefault");
-            char *label = (def && *name) ? g_strdup_printf("%s (default)", name)
-                                         : g_strdup(*name ? name : "System default");
+            char *label = (def && *name) ? g_strdup_printf(_("%s (default)"), name)
+                                         : g_strdup(*name ? name : _("System default"));
             gtk_string_list_append(names, label);
             if (g_strcmp0(id, curid) == 0) selected = ids->len;
             g_ptr_array_add(ids, g_strdup(id)); /* parallel to names */
@@ -1203,7 +1208,7 @@ static GtkWidget *build_device_row(App *a) {
   g_free(curid);
 
   if (ids->len == 0) { /* nothing reported — keep a single inert default entry */
-    gtk_string_list_append(names, "System default");
+    gtk_string_list_append(names, _("System default"));
     g_ptr_array_add(ids, g_strdup(""));
   }
 
@@ -1244,20 +1249,20 @@ static void on_ctrl_token_changed(GtkEditable *entry, gpointer data) {
 /* Build the group, reading current state from DZControlConfigJSON. */
 static AdwPreferencesGroup *build_remote_control_group(void) {
   AdwPreferencesGroup *remote = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  adw_preferences_group_set_title(remote, "Remote control");
+  adw_preferences_group_set_title(remote, _("Remote control"));
 
   GtkWidget *enable_row = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(enable_row), "Enable");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(enable_row), _("Enable"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(enable_row),
-                              "Control playback from another device");
+                              _("Control playback from another device"));
 
   GtkWidget *lan_row = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(lan_row), "Allow on local network");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(lan_row), _("Allow on local network"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(lan_row),
-                              "Off restricts connections to this computer only");
+                              _("Off restricts connections to this computer only"));
 
   GtkWidget *token_row = adw_entry_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(token_row), "Access token");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(token_row), _("Access token"));
 
   CtrlWidgets *cw = g_new0(CtrlWidgets, 1);
   cw->enable_row = enable_row;
@@ -1423,7 +1428,7 @@ static void on_eq_enabled_toggled(GObject *row, GParamSpec *ps, gpointer data) {
   DZSetEQJSON((char *)(on ? "{\"enabled\":true}" : "{\"enabled\":false}"));
   gtk_widget_set_sensitive(ew->preset_row, on);
   gtk_widget_set_sensitive(ew->card, on);
-  toastf(APP, "Equalizer %s", on ? "on" : "off");
+  toast(APP, on ? _("Equalizer enabled") : _("Equalizer disabled"));
 }
 
 static void on_eq_mono_toggled(GObject *row, GParamSpec *ps, gpointer data) {
@@ -1432,7 +1437,7 @@ static void on_eq_mono_toggled(GObject *row, GParamSpec *ps, gpointer data) {
   if (ew->updating) return;
   gboolean on = adw_switch_row_get_active(ADW_SWITCH_ROW(row));
   DZSetEQJSON((char *)(on ? "{\"mono\":true}" : "{\"mono\":false}"));
-  toastf(APP, "Mono audio %s", on ? "on" : "off");
+  toast(APP, on ? _("Mono audio enabled") : _("Mono audio disabled"));
 }
 
 static void on_eq_preset_selected(GObject *row, GParamSpec *ps, gpointer data) {
@@ -1443,7 +1448,7 @@ static void on_eq_preset_selected(GObject *row, GParamSpec *ps, gpointer data) {
   GPtrArray *ids = g_object_get_data(G_OBJECT(row), "eq_presets");
   if (!ids || idx >= ids->len) return; /* "Custom" — nothing to apply */
   char *js = g_strdup_printf("{\"preset\":\"%s\"}", (char *)g_ptr_array_index(ids, idx));
-  if (DZSetEQJSON(js) != 1) toast(APP, "Couldn't apply the preset");
+  if (DZSetEQJSON(js) != 1) toast(APP, _("Couldn't apply the preset"));
   g_free(js);
   eq_refresh(ew); /* presets rewrite every band — sync the sliders */
 }
@@ -1494,22 +1499,22 @@ static char *eq_band_label(double hz) {
 /* Build the group, reading current state from DZEQJSON. */
 static AdwPreferencesGroup *build_equalizer_group(void) {
   AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  adw_preferences_group_set_title(grp, "Equalizer");
+  adw_preferences_group_set_title(grp, _("Equalizer"));
 
   EqWidgets *ew = g_new0(EqWidgets, 1);
 
   ew->enable_row = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->enable_row), "Enable");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->enable_row), _("Enable"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(ew->enable_row),
-                              "Shape the sound with a 10-band graphic equalizer");
+                              _("Shape the sound with a 10-band graphic equalizer"));
 
   ew->preset_row = adw_combo_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->preset_row), "Preset");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->preset_row), _("Preset"));
 
   ew->mono_row = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->mono_row), "Mono audio");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ew->mono_row), _("Mono audio"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(ew->mono_row),
-                              "Mix both stereo channels into one");
+                              _("Mix both stereo channels into one"));
 
   /* Band centers and preset names come from the engine so the UIs never
    * hardcode them; the preset ids are stashed on the row, parallel to the
@@ -1545,7 +1550,7 @@ static AdwPreferencesGroup *build_equalizer_group(void) {
     g_object_unref(p);
     DZFree(j);
   }
-  gtk_string_list_append(names, "Custom"); /* implicit engine preset, always last */
+  gtk_string_list_append(names, _("Custom")); /* implicit engine preset, always last */
   ew->n_presets = ids->len;
   adw_combo_row_set_model(ADW_COMBO_ROW(ew->preset_row), G_LIST_MODEL(names));
   g_object_unref(names); /* set_model is transfer-none — drop our creation ref */
@@ -1590,7 +1595,7 @@ static AdwPreferencesGroup *build_equalizer_group(void) {
   gtk_widget_set_margin_start(pre_box, 12);
   gtk_widget_set_margin_end(pre_box, 12);
   gtk_widget_set_margin_bottom(pre_box, 6);
-  GtkWidget *pre_lbl = gtk_label_new("Preamp");
+  GtkWidget *pre_lbl = gtk_label_new(_("Preamp"));
   gtk_widget_add_css_class(pre_lbl, "dim-label");
   gtk_box_append(GTK_BOX(pre_box), pre_lbl);
   GtkWidget *pre = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -12, 12, 0.5);
@@ -1639,7 +1644,7 @@ static void on_uri_launched(GObject *src, GAsyncResult *res, gpointer data) {
   GError *err = NULL;
   gtk_uri_launcher_launch_finish(GTK_URI_LAUNCHER(src), res, &err);
   if (err) {
-    toast(a, "Couldn't open the browser");
+    toast(a, _("Couldn't open the browser"));
     g_error_free(err);
   }
 }
@@ -1700,15 +1705,15 @@ static void update_done(GObject *src, GAsyncResult *res, gpointer data) {
     g_free(APP->update_url);
     APP->update_url = g_strdup(url);
     if (APP->update_banner) {
-      char *title = g_strdup_printf("OpenDeezer %s available", latest);
+      char *title = g_strdup_printf(_("OpenDeezer %s available"), latest);
       adw_banner_set_title(ADW_BANNER(APP->update_banner), title);
       g_free(title);
       adw_banner_set_revealed(ADW_BANNER(APP->update_banner), TRUE);
     }
-    if (x->manual) toastf(APP, "OpenDeezer %s is available", latest);
+    if (x->manual) toastf(APP, _("OpenDeezer %s is available"), latest);
   } else if (x->manual) {
-    if (latest && *latest) toastf(APP, "You're up to date (%s)", latest);
-    else                   toast(APP, "Couldn't check for updates — try again later");
+    if (latest && *latest) toastf(APP, _("You're up to date (%s)"), latest);
+    else                   toast(APP, _("Couldn't check for updates — try again later"));
   }
   /* silent on failure/no-update for the background startup check */
 
@@ -1736,13 +1741,13 @@ static void on_check_update_clicked(GtkButton *btn, gpointer data) {
 /* Build the "Updates" group for Settings: a single on-demand check row. */
 static AdwPreferencesGroup *build_update_group(App *a) {
   AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  adw_preferences_group_set_title(grp, "Updates");
+  adw_preferences_group_set_title(grp, _("Updates"));
 
   GtkWidget *row = adw_action_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), "Check for updates");
-  adw_action_row_set_subtitle(ADW_ACTION_ROW(row), "Look for a newer OpenDeezer release on GitHub");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), _("Check for updates"));
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(row), _("Look for a newer OpenDeezer release on GitHub"));
 
-  GtkWidget *btn = gtk_button_new_with_label("Check Now");
+  GtkWidget *btn = gtk_button_new_with_label(_("Check Now"));
   gtk_widget_set_valign(btn, GTK_ALIGN_CENTER);
   gtk_widget_add_css_class(btn, "flat");
   g_signal_connect(btn, "clicked", G_CALLBACK(on_check_update_clicked), a);
@@ -1758,14 +1763,14 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   App *a = APP;
 
   AdwPreferencesPage *page = ADW_PREFERENCES_PAGE(adw_preferences_page_new());
-  adw_preferences_page_set_title(page, "Settings");
+  adw_preferences_page_set_title(page, _("Settings"));
   adw_preferences_page_set_icon_name(page, "preferences-system-symbolic");
 
   /* ---- Account (tier from DZAccountJSON, filled at login) ---- */
   AdwPreferencesGroup *acct = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  adw_preferences_group_set_title(acct, "Account");
+  adw_preferences_group_set_title(acct, _("Account"));
   GtkWidget *acct_row = adw_action_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(acct_row), "Signed in");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(acct_row), _("Signed in"));
   adw_action_row_add_prefix(ADW_ACTION_ROW(acct_row),
                             gtk_image_new_from_icon_name("avatar-default-symbolic"));
   if (a->acct_name && *a->acct_name) {
@@ -1774,20 +1779,20 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
     adw_action_row_set_subtitle(ADW_ACTION_ROW(acct_row), sub);
     g_free(sub);
   } else {
-    adw_action_row_set_subtitle(ADW_ACTION_ROW(acct_row), "Not signed in");
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(acct_row), _("Not signed in"));
   }
   adw_preferences_group_add(acct, acct_row);
   adw_preferences_page_add(page, acct);
 
   /* ---- Audio ---- */
   AdwPreferencesGroup *audio = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  adw_preferences_group_set_title(audio, "Audio");
+  adw_preferences_group_set_title(audio, _("Audio"));
 
-  const char *const qlabels[] = {"Normal — MP3 128 kbps",
-                                 "High — MP3 320 kbps",
-                                 "HiFi — FLAC lossless", NULL};
+  const char *const qlabels[] = {_("Normal — MP3 128 kbps"),
+                                 _("High — MP3 320 kbps"),
+                                 _("HiFi — FLAC lossless"), NULL};
   GtkWidget *quality = adw_combo_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(quality), "Streaming quality");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(quality), _("Streaming quality"));
   GtkStringList *qmodel = gtk_string_list_new(qlabels);
   adw_combo_row_set_model(ADW_COMBO_ROW(quality), G_LIST_MODEL(qmodel));
   g_object_unref(qmodel); /* set_model is transfer-none — drop our creation ref */
@@ -1796,9 +1801,9 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_preferences_group_add(audio, quality);
 
   GtkWidget *rg = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(rg), "Loudness normalisation");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(rg), _("Loudness normalization"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(rg),
-                              "Even out volume across tracks (ReplayGain)");
+                              _("Even out volume across tracks (ReplayGain)"));
   adw_switch_row_set_active(ADW_SWITCH_ROW(rg), DZReplayGain() != 0);
   g_signal_connect(rg, "notify::active", G_CALLBACK(on_replaygain_toggled), a);
   adw_preferences_group_add(audio, rg);
@@ -1808,17 +1813,17 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
 
   /* gapless */
   GtkWidget *gap = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(gap), "Gapless playback");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(gap), _("Gapless playback"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(gap),
-                              "Start the next track with no silence between songs");
+                              _("Start the next track with no silence between songs"));
   adw_switch_row_set_active(ADW_SWITCH_ROW(gap), DZGapless() != 0);
   g_signal_connect(gap, "notify::active", G_CALLBACK(on_gapless_toggled), a);
   adw_preferences_group_add(audio, gap);
 
   /* crossfade */
-  const char *const xlabels[] = {"Off", "3 seconds", "6 seconds", "12 seconds", NULL};
+  const char *const xlabels[] = {_("Off"), _("3 seconds"), _("6 seconds"), _("12 seconds"), NULL};
   GtkWidget *xfade = adw_combo_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(xfade), "Crossfade");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(xfade), _("Crossfade"));
   GtkStringList *xmodel = gtk_string_list_new(xlabels);
   adw_combo_row_set_model(ADW_COMBO_ROW(xfade), G_LIST_MODEL(xmodel));
   g_object_unref(xmodel); /* set_model is transfer-none — drop our creation ref */
@@ -1837,24 +1842,24 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
 
   /* ---- Behaviour ---- */
   AdwPreferencesGroup *behave = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-  adw_preferences_group_set_title(behave, "Behaviour");
+  adw_preferences_group_set_title(behave, _("Behaviour"));
 
   GtkWidget *bg = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(bg), "Keep playing in background");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(bg), _("Keep playing in background"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(bg),
-                              "When the window is closed, keep playing and stay in the "
-                              "system media controls instead of quitting");
+                              _("When the window is closed, keep playing and stay in the "
+                                "system media controls instead of quitting"));
   adw_switch_row_set_active(ADW_SWITCH_ROW(bg), a->background);
   g_signal_connect(bg, "notify::active", G_CALLBACK(on_background_toggled), a);
   adw_preferences_group_add(behave, bg);
 
   /* sleep timer — pause after a delay (auto fade-out) or when the track ends */
-  const char *const slabels[] = {"Off", "15 minutes", "30 minutes",
-                                 "45 minutes", "60 minutes", "End of track", NULL};
+  const char *const slabels[] = {_("Off"), _("15 minutes"), _("30 minutes"),
+                                 _("45 minutes"), _("60 minutes"), _("End of track"), NULL};
   GtkWidget *sleep = adw_combo_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(sleep), "Sleep timer");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(sleep), _("Sleep timer"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(sleep),
-                              "Pause playback after a delay or when the track ends");
+                              _("Pause playback after a delay or when the track ends"));
   GtkStringList *smodel = gtk_string_list_new(slabels);
   adw_combo_row_set_model(ADW_COMBO_ROW(sleep), G_LIST_MODEL(smodel));
   g_object_unref(smodel); /* set_model is transfer-none — drop our creation ref */
@@ -2001,7 +2006,7 @@ static void on_phone_remote(GSimpleAction *action, GVariant *param, gpointer dat
   AdwToolbarView *tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
   GtkWidget *hb = adw_header_bar_new();
   adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb),
-                                  adw_window_title_new("Phone Remote", NULL));
+                                  adw_window_title_new(_("Phone Remote"), NULL));
   adw_toolbar_view_add_top_bar(tv, hb);
 
   GtkWidget *scroll = gtk_scrolled_window_new();
@@ -2021,9 +2026,9 @@ static void on_phone_remote(GSimpleAction *action, GVariant *param, gpointer dat
   gtk_widget_add_css_class(lb, "boxed-list");
 
   GtkWidget *sw_row = adw_switch_row_new();
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(sw_row), "Enable Phone Remote");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(sw_row), _("Enable Phone Remote"));
   adw_action_row_set_subtitle(ADW_ACTION_ROW(sw_row),
-                              "Serve a browser-based remote on your local network");
+                              _("Serve a browser-based remote on your local network"));
   gtk_list_box_append(GTK_LIST_BOX(lb), sw_row);
   gtk_box_append(GTK_BOX(outer), lb);
 
@@ -2061,7 +2066,7 @@ static void on_phone_remote(GSimpleAction *action, GVariant *param, gpointer dat
 
   /* helper blurb */
   GtkWidget *hint = gtk_label_new(
-      "Scan with your phone (same Wi-Fi), then enter the code.");
+      _("Scan with your phone (same Wi-Fi), then enter the code."));
   gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
   gtk_label_set_justify(GTK_LABEL(hint), GTK_JUSTIFY_CENTER);
   gtk_widget_add_css_class(hint, "dim-label");
@@ -2082,7 +2087,7 @@ static void on_phone_remote(GSimpleAction *action, GVariant *param, gpointer dat
   g_signal_connect(sw_row, "notify::active", G_CALLBACK(on_wr_toggled), w);
 
   AdwDialog *remote_dlg = ADW_DIALOG(adw_dialog_new());
-  adw_dialog_set_title(remote_dlg, "Phone Remote");
+  adw_dialog_set_title(remote_dlg, _("Phone Remote"));
   adw_dialog_set_content_width(remote_dlg, 420);
   adw_dialog_set_content_height(remote_dlg, 520);
   adw_dialog_set_child(remote_dlg, GTK_WIDGET(tv));
@@ -2127,7 +2132,7 @@ static void prompt_text(App *a, const char *heading, const char *initial,
   pc->a = a; pc->cb = cb; pc->ud = ud; pc->ud_free = ud_free; pc->entry = entry;
 #if ADW_CHECK_VERSION(1, 5, 0)
   AdwAlertDialog *d = ADW_ALERT_DIALOG(adw_alert_dialog_new(heading, NULL));
-  adw_alert_dialog_add_responses(d, "cancel", "Cancel", "ok", confirm_label, NULL);
+  adw_alert_dialog_add_responses(d, "cancel", _("Cancel"), "ok", confirm_label, NULL);
   adw_alert_dialog_set_response_appearance(d, "ok", ADW_RESPONSE_SUGGESTED);
   adw_alert_dialog_set_default_response(d, "ok");
   adw_alert_dialog_set_close_response(d, "cancel");
@@ -2136,7 +2141,7 @@ static void prompt_text(App *a, const char *heading, const char *initial,
   adw_dialog_present(ADW_DIALOG(d), GTK_WIDGET(a->win));
 #else
   AdwMessageDialog *d = ADW_MESSAGE_DIALOG(adw_message_dialog_new(GTK_WINDOW(a->win), heading, NULL));
-  adw_message_dialog_add_responses(d, "cancel", "Cancel", "ok", confirm_label, NULL);
+  adw_message_dialog_add_responses(d, "cancel", _("Cancel"), "ok", confirm_label, NULL);
   adw_message_dialog_set_response_appearance(d, "ok", ADW_RESPONSE_SUGGESTED);
   adw_message_dialog_set_default_response(d, "ok");
   adw_message_dialog_set_close_response(d, "cancel");
@@ -2164,7 +2169,7 @@ static void confirm_dialog(App *a, const char *heading, const char *body,
   cc->a = a; cc->cb = cb; cc->ud = ud; cc->ud_free = ud_free;
 #if ADW_CHECK_VERSION(1, 5, 0)
   AdwAlertDialog *d = ADW_ALERT_DIALOG(adw_alert_dialog_new(heading, body));
-  adw_alert_dialog_add_responses(d, "cancel", "Cancel", "ok", confirm_label, NULL);
+  adw_alert_dialog_add_responses(d, "cancel", _("Cancel"), "ok", confirm_label, NULL);
   adw_alert_dialog_set_response_appearance(
       d, "ok", destructive ? ADW_RESPONSE_DESTRUCTIVE : ADW_RESPONSE_SUGGESTED);
   adw_alert_dialog_set_default_response(d, "cancel");
@@ -2173,7 +2178,7 @@ static void confirm_dialog(App *a, const char *heading, const char *body,
   adw_dialog_present(ADW_DIALOG(d), GTK_WIDGET(a->win));
 #else
   AdwMessageDialog *d = ADW_MESSAGE_DIALOG(adw_message_dialog_new(GTK_WINDOW(a->win), heading, body));
-  adw_message_dialog_add_responses(d, "cancel", "Cancel", "ok", confirm_label, NULL);
+  adw_message_dialog_add_responses(d, "cancel", _("Cancel"), "ok", confirm_label, NULL);
   adw_message_dialog_set_response_appearance(
       d, "ok", destructive ? ADW_RESPONSE_DESTRUCTIVE : ADW_RESPONSE_SUGGESTED);
   adw_message_dialog_set_default_response(d, "cancel");
@@ -2196,8 +2201,8 @@ static void like_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
   LikeCtx *l = g_task_get_task_data(G_TASK(res));
   gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
-  if (ok) toast(APP, l->like ? "Added to Liked Songs" : "Removed from Liked Songs");
-  else    toast(APP, l->like ? "Couldn't add to favourites" : "Couldn't remove from favourites");
+  if (ok) toast(APP, l->like ? _("Added to Liked Songs") : _("Removed from Liked Songs"));
+  else    toast(APP, l->like ? _("Couldn't add to favourites") : _("Couldn't remove from favourites"));
 }
 static void start_like(App *a, const char *id, gboolean like) {
   (void)a;
@@ -2221,7 +2226,7 @@ static void on_like_clicked(GtkButton *b, gpointer data) {
   (void)b;
   App *a = data;
   DzTrack *t = mpris_current_track(a);
-  if (!t) { toast(a, "Play a track first"); return; }
+  if (!t) { toast(a, _("Play a track first")); return; }
   gboolean ns = !a->cur_liked;
   start_like(a, t->id, ns);
   a->cur_liked = ns; /* optimistic local toggle */
@@ -2252,7 +2257,7 @@ static void on_tm_artist(GtkButton *b, gpointer mb) {
   const char *aid = g_object_get_data(G_OBJECT(mb), "tm_artist");
   tm_popdown(mb);
   if (aid && *aid) open_artist(APP, aid);
-  else toast(APP, "No artist for this track");
+  else toast(APP, _("No artist for this track"));
 }
 
 static GtkWidget *make_track_menu_button(void) {
@@ -2264,9 +2269,9 @@ static GtkWidget *make_track_menu_button(void) {
   GtkWidget *pop = gtk_popover_new();
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   struct { const char *label; GCallback cb; } items[] = {
-      {"Add to Liked Songs", G_CALLBACK(on_tm_like)},
-      {"Add to Playlist…",   G_CALLBACK(on_tm_add)},
-      {"Go to Artist",       G_CALLBACK(on_tm_artist)},
+      {_("Add to Liked Songs"), G_CALLBACK(on_tm_like)},
+      {_("Add to Playlist…"),   G_CALLBACK(on_tm_add)},
+      {_("Go to Artist"),       G_CALLBACK(on_tm_artist)},
   };
   for (guint i = 0; i < G_N_ELEMENTS(items); i++) {
     GtkWidget *btn = gtk_button_new_with_label(items[i].label);
@@ -2301,8 +2306,8 @@ static void add_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
   AddCtx *x = g_task_get_task_data(G_TASK(res));
   gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
-  if (ok) toastf(APP, "Added to %s", (x->plname && *x->plname) ? x->plname : "playlist");
-  else    toast(APP, "Couldn't add to that playlist");
+  if (ok) toastf(APP, _("Added to %s"), (x->plname && *x->plname) ? x->plname : _("playlist"));
+  else    toast(APP, _("Couldn't add to that playlist"));
 }
 static void add_track_to_playlist(App *a, const char *plid, const char *tid, const char *plname) {
   (void)a;
@@ -2342,10 +2347,10 @@ static void create_done(GObject *src, GAsyncResult *res, gpointer data) {
   CreateCtx *x = g_task_get_task_data(G_TASK(res));
   gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
   if (ok) {
-    toastf(APP, "Created playlist “%s”", x->title ? x->title : "");
+    toastf(APP, _("Created playlist “%s”"), x->title ? x->title : "");
     sidebar_refresh_playlists(APP);
   } else {
-    toast(APP, "Couldn't create the playlist");
+    toast(APP, _("Couldn't create the playlist"));
   }
 }
 static void create_playlist_async(App *a, const char *title, const char *tid) {
@@ -2369,7 +2374,7 @@ static void ren_worker(GTask *task, gpointer src, gpointer data, GCancellable *c
 static void ren_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
   gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
-  toast(APP, ok ? "Playlist renamed" : "Couldn't rename the playlist");
+  toast(APP, ok ? _("Playlist renamed") : _("Couldn't rename the playlist"));
   if (ok) sidebar_refresh_playlists(APP);
 }
 static void rename_playlist_async(App *a, const char *plid, const char *title) {
@@ -2389,7 +2394,7 @@ static void del_worker(GTask *task, gpointer src, gpointer data, GCancellable *c
 static void del_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
   gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
-  toast(APP, ok ? "Playlist deleted" : "Couldn't delete the playlist");
+  toast(APP, ok ? _("Playlist deleted") : _("Couldn't delete the playlist"));
   if (ok) sidebar_refresh_playlists(APP);
 }
 static void delete_playlist_async(App *a, const char *plid) {
@@ -2413,7 +2418,7 @@ static void cb_delete_playlist(App *a, gpointer ud) {
 
 static void on_new_playlist(GtkButton *b, gpointer data) {
   (void)b;
-  prompt_text((App *)data, "New Playlist", "", "Create",
+  prompt_text((App *)data, _("New Playlist"), "", _("Create"),
               cb_create_playlist, g_strdup(""), g_free);
 }
 
@@ -2423,7 +2428,7 @@ static void on_pl_rename(GtkButton *b, gpointer mb) {
   tm_popdown(mb);
   const char *id = g_object_get_data(G_OBJECT(mb), "pl_id");
   const char *name = g_object_get_data(G_OBJECT(mb), "pl_name");
-  prompt_text(APP, "Rename Playlist", name ? name : "", "Rename",
+  prompt_text(APP, _("Rename Playlist"), name ? name : "", _("Rename"),
               cb_rename_playlist, g_strdup(id ? id : ""), g_free);
 }
 static void on_pl_delete(GtkButton *b, gpointer mb) {
@@ -2431,8 +2436,8 @@ static void on_pl_delete(GtkButton *b, gpointer mb) {
   tm_popdown(mb);
   const char *id = g_object_get_data(G_OBJECT(mb), "pl_id");
   const char *name = g_object_get_data(G_OBJECT(mb), "pl_name");
-  char *body = g_strdup_printf("“%s” will be permanently deleted.", name ? name : "");
-  confirm_dialog(APP, "Delete Playlist?", body, "Delete", TRUE,
+  char *body = g_strdup_printf(_("“%s” will be permanently deleted."), name ? name : "");
+  confirm_dialog(APP, _("Delete Playlist?"), body, _("Delete"), TRUE,
                  cb_delete_playlist, g_strdup(id ? id : ""), g_free);
   g_free(body);
 }
@@ -2447,8 +2452,8 @@ static void attach_playlist_menu(GtkWidget *row, const char *plid, const char *p
 
   GtkWidget *pop = gtk_popover_new();
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  GtkWidget *ren = gtk_button_new_with_label("Rename…");
-  GtkWidget *del = gtk_button_new_with_label("Delete…");
+  GtkWidget *ren = gtk_button_new_with_label(_("Rename…"));
+  GtkWidget *del = gtk_button_new_with_label(_("Delete…"));
   for (GtkWidget *btn = ren; btn; btn = (btn == ren ? del : NULL)) {
     gtk_button_set_has_frame(GTK_BUTTON(btn), FALSE);
     GtkWidget *lbl = gtk_button_get_child(GTK_BUTTON(btn));
@@ -2481,7 +2486,7 @@ static void on_addpl_row(GtkListBox *box, GtkListBoxRow *row, gpointer data) {
   char *tid = g_strdup(a->addpl_track_id ? a->addpl_track_id : "");
   if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "new"))) {
     if (a->addpl_dialog) adw_dialog_close(a->addpl_dialog);
-    prompt_text(a, "New Playlist", "", "Create", cb_create_playlist, tid, g_free);
+    prompt_text(a, _("New Playlist"), "", _("Create"), cb_create_playlist, tid, g_free);
     return; /* tid ownership passed to the prompt */
   }
   const char *plid = g_object_get_data(G_OBJECT(row), "pl_id");
@@ -2526,7 +2531,7 @@ static void addpl_done(GObject *src, GAsyncResult *res, gpointer data) {
 }
 
 static void open_add_to_playlist(App *a, const char *track_id, const char *track_name) {
-  if (!track_id || !*track_id) { toast(a, "No track to add"); return; }
+  if (!track_id || !*track_id) { toast(a, _("No track to add")); return; }
   if (a->addpl_dialog) adw_dialog_close(a->addpl_dialog);
   g_free(a->addpl_track_id);
   a->addpl_track_id = g_strdup(track_id);
@@ -2535,7 +2540,7 @@ static void open_add_to_playlist(App *a, const char *track_id, const char *track
   GtkWidget *hb = adw_header_bar_new();
   adw_header_bar_set_title_widget(
       ADW_HEADER_BAR(hb),
-      adw_window_title_new("Add to Playlist", track_name && *track_name ? track_name : NULL));
+      adw_window_title_new(_("Add to Playlist"), track_name && *track_name ? track_name : NULL));
   adw_toolbar_view_add_top_bar(tv, hb);
 
   GtkWidget *scroll = gtk_scrolled_window_new();
@@ -2554,7 +2559,7 @@ static void open_add_to_playlist(App *a, const char *track_id, const char *track
   /* "New playlist…" pinned at the top */
   GtkWidget *newrow = adw_action_row_new();
   gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(newrow), TRUE);
-  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(newrow), "New Playlist…");
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(newrow), _("New Playlist…"));
   adw_action_row_add_prefix(ADW_ACTION_ROW(newrow), gtk_image_new_from_icon_name("list-add-symbolic"));
   g_object_set_data(G_OBJECT(newrow), "new", GINT_TO_POINTER(1));
   gtk_list_box_append(GTK_LIST_BOX(lb), newrow);
@@ -2564,7 +2569,7 @@ static void open_add_to_playlist(App *a, const char *track_id, const char *track
   adw_toolbar_view_set_content(tv, scroll);
 
   a->addpl_dialog = ADW_DIALOG(adw_dialog_new());
-  adw_dialog_set_title(a->addpl_dialog, "Add to Playlist");
+  adw_dialog_set_title(a->addpl_dialog, _("Add to Playlist"));
   adw_dialog_set_content_width(a->addpl_dialog, 420);
   adw_dialog_set_content_height(a->addpl_dialog, 520);
   adw_dialog_set_child(a->addpl_dialog, GTK_WIDGET(tv));
@@ -2887,7 +2892,7 @@ static gboolean on_window_close(GtkWindow *win, gpointer data) {
 
   GNotification *n = g_notification_new("OpenDeezer");
   g_notification_set_body(
-      n, "Still playing in the background. Use the media controls or relaunch to reopen.");
+      n, _("Still playing in the background. Use the media controls or relaunch to reopen."));
   g_application_send_notification(G_APPLICATION(a->app), "opendeezer-background", n);
   g_object_unref(n);
 
@@ -3030,7 +3035,7 @@ static void on_search_activate(GtkSearchEntry *entry, gpointer data) {
   App *a = data;
   const char *q = gtk_editable_get_text(GTK_EDITABLE(entry));
   if (q && *q) {
-    adw_navigation_page_set_title(a->content_page, "Search");
+    adw_navigation_page_set_title(a->content_page, _("Search"));
     load_async(a, LOAD_SEARCH, q);
   }
 }
@@ -3079,19 +3084,19 @@ static void lyrics_apply(App *a, const char *track_id, const char *json) {
   g_free(a->lyrics_track_id);
   a->lyrics_track_id = g_strdup(track_id ? track_id : "");
 
-  if (!json) { lyrics_set_status(a, "No lyrics available"); return; }
+  if (!json) { lyrics_set_status(a, _("No lyrics available")); return; }
 
   JsonParser *p = json_parser_new();
   if (!json_parser_load_from_data(p, json, -1, NULL)) {
     g_object_unref(p);
-    lyrics_set_status(a, "Couldn't load lyrics");
+    lyrics_set_status(a, _("Couldn't load lyrics"));
     return;
   }
   JsonNode *root = json_parser_get_root(p);
   JsonObject *o = (root && JSON_NODE_HOLDS_OBJECT(root)) ? json_node_get_object(root) : NULL;
   if (!o || json_object_has_member(o, "error")) {
     g_object_unref(p);
-    lyrics_set_status(a, "No lyrics available");
+    lyrics_set_status(a, _("No lyrics available"));
     return;
   }
 
@@ -3130,7 +3135,7 @@ static void lyrics_apply(App *a, const char *track_id, const char *json) {
     gtk_widget_add_css_class(lab, "lyrics-plain");
     gtk_box_append(GTK_BOX(a->lyrics_box), lab);
   } else {
-    lyrics_set_status(a, "No lyrics available");
+    lyrics_set_status(a, _("No lyrics available"));
   }
   g_free(plain);
   g_object_unref(p);
@@ -3164,12 +3169,12 @@ static void lyrics_load(App *a, const char *track_id) {
   g_free(a->lyrics_req_id);
   a->lyrics_req_id = g_strdup(track_id ? track_id : "");
   a->lyrics_gen++; /* invalidate any in-flight fetch */
-  if (!track_id || !*track_id) { lyrics_set_status(a, "Play a track to see its lyrics"); return; }
+  if (!track_id || !*track_id) { lyrics_set_status(a, _("Play a track to see its lyrics")); return; }
 
   const char *cached = a->lyrics_cache ? g_hash_table_lookup(a->lyrics_cache, track_id) : NULL;
   if (cached) { lyrics_apply(a, track_id, cached); return; }
 
-  lyrics_set_status(a, "Loading lyrics…");
+  lyrics_set_status(a, _("Loading lyrics…"));
   LyricsCtx *c = g_new0(LyricsCtx, 1);
   c->id = g_strdup(track_id);
   c->gen = a->lyrics_gen;
@@ -3241,7 +3246,7 @@ static void open_lyrics(App *a) {
 
   AdwToolbarView *tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
   GtkWidget *hb = adw_header_bar_new();
-  a->lyrics_titlew = adw_window_title_new("Lyrics", NULL);
+  a->lyrics_titlew = adw_window_title_new(_("Lyrics"), NULL);
   adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb), a->lyrics_titlew);
   adw_toolbar_view_add_top_bar(tv, hb);
 
@@ -3258,7 +3263,7 @@ static void open_lyrics(App *a) {
   adw_toolbar_view_set_content(tv, a->lyrics_scroll);
 
   a->lyrics_dialog = ADW_DIALOG(adw_dialog_new());
-  adw_dialog_set_title(a->lyrics_dialog, "Lyrics");
+  adw_dialog_set_title(a->lyrics_dialog, _("Lyrics"));
   adw_dialog_set_content_width(a->lyrics_dialog, 520);
   adw_dialog_set_content_height(a->lyrics_dialog, 640);
   adw_dialog_set_child(a->lyrics_dialog, GTK_WIDGET(tv));
@@ -3369,7 +3374,7 @@ static void on_artist_album_activated(GtkListBox *box, GtkListBoxRow *row, gpoin
   const char *id = g_object_get_data(G_OBJECT(row), "album_id");
   const char *name = g_object_get_data(G_OBJECT(row), "album_name");
   if (!id || !*id) return;
-  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : "Album");
+  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : _("Album"));
   load_async(a, LOAD_ALBUM, id);
   if (a->artist_dialog) adw_dialog_close(a->artist_dialog);
 }
@@ -3391,15 +3396,15 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
   if (a->artist_top) g_ptr_array_set_size(a->artist_top, 0);
   g_clear_pointer(&a->artist_name, g_free);
 
-  if (!json) { artist_set_status(a, "Couldn't load this artist"); return; }
+  if (!json) { artist_set_status(a, _("Couldn't load this artist")); return; }
   JsonParser *p = json_parser_new();
   if (!json_parser_load_from_data(p, json, -1, NULL)) {
-    g_object_unref(p); artist_set_status(a, "Couldn't load this artist"); return;
+    g_object_unref(p); artist_set_status(a, _("Couldn't load this artist")); return;
   }
   JsonNode *root = json_parser_get_root(p);
   JsonObject *o = (root && JSON_NODE_HOLDS_OBJECT(root)) ? json_node_get_object(root) : NULL;
   if (!o || json_object_has_member(o, "error")) {
-    g_object_unref(p); artist_set_status(a, "Couldn't load this artist"); return;
+    g_object_unref(p); artist_set_status(a, _("Couldn't load this artist")); return;
   }
 
   guint gen = a->artist_gen;
@@ -3426,7 +3431,7 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
   gtk_widget_add_css_class(nl, "title-1");
   gtk_box_append(GTK_BOX(htext), nl);
   if (fans > 0) {
-    char *fl = g_strdup_printf("%lld fans", (long long)fans);
+    char *fl = g_strdup_printf(ngettext("%lld fan", "%lld fans", (gulong)fans), (long long)fans);
     GtkWidget *fw = gtk_label_new(fl);
     gtk_label_set_xalign(GTK_LABEL(fw), 0.0);
     gtk_widget_add_css_class(fw, "dim-label");
@@ -3441,7 +3446,7 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
       json_object_has_member(o, "top") ? json_object_get_array_member(o, "top") : NULL;
   guint tn = top ? json_array_get_length(top) : 0;
   if (tn > 0) {
-    gtk_box_append(GTK_BOX(a->artist_content), section_title("Top Tracks"));
+    gtk_box_append(GTK_BOX(a->artist_content), section_title(_("Top Tracks")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_artist_top_activated), a);
     for (guint i = 0; i < tn; i++) {
       DzTrack *t = dz_track_from_json(json_array_get_object_element(top, i));
@@ -3471,7 +3476,7 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
       json_object_has_member(o, "albums") ? json_object_get_array_member(o, "albums") : NULL;
   guint an = albums ? json_array_get_length(albums) : 0;
   if (an > 0) {
-    gtk_box_append(GTK_BOX(a->artist_content), section_title("Albums"));
+    gtk_box_append(GTK_BOX(a->artist_content), section_title(_("Albums")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_artist_album_activated), a);
     for (guint i = 0; i < an; i++) {
       JsonObject *ao = json_array_get_object_element(albums, i);
@@ -3511,7 +3516,7 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
       json_object_has_member(o, "related") ? json_object_get_array_member(o, "related") : NULL;
   guint rn = rel ? json_array_get_length(rel) : 0;
   if (rn > 0) {
-    gtk_box_append(GTK_BOX(a->artist_content), section_title("Related Artists"));
+    gtk_box_append(GTK_BOX(a->artist_content), section_title(_("Related Artists")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_artist_related_activated), a);
     for (guint i = 0; i < rn; i++) {
       JsonObject *ro = json_array_get_object_element(rel, i);
@@ -3522,7 +3527,7 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
       adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
       adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), rname);
       if (rfans > 0) {
-        char *s = g_strdup_printf("%lld fans", (long long)rfans);
+        char *s = g_strdup_printf(ngettext("%lld fan", "%lld fans", (gulong)rfans), (long long)rfans);
         adw_action_row_set_subtitle(ADW_ACTION_ROW(row), s);
         g_free(s);
       }
@@ -3577,14 +3582,14 @@ static void on_artist_closed(AdwDialog *d, gpointer data) {
 }
 
 static void open_artist(App *a, const char *artist_id) {
-  if (!artist_id || !*artist_id) { toast(a, "No artist for this track"); return; }
+  if (!artist_id || !*artist_id) { toast(a, _("No artist for this track")); return; }
 
   if (!a->artist_dialog) {
     a->artist_top = g_ptr_array_new_with_free_func(g_object_unref);
 
     AdwToolbarView *tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
     GtkWidget *hb = adw_header_bar_new();
-    a->artist_titlew = adw_window_title_new("Artist", NULL);
+    a->artist_titlew = adw_window_title_new(_("Artist"), NULL);
     adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb), a->artist_titlew);
     adw_toolbar_view_add_top_bar(tv, hb);
 
@@ -3601,7 +3606,7 @@ static void open_artist(App *a, const char *artist_id) {
     adw_toolbar_view_set_content(tv, scroll);
 
     a->artist_dialog = ADW_DIALOG(adw_dialog_new());
-    adw_dialog_set_title(a->artist_dialog, "Artist");
+    adw_dialog_set_title(a->artist_dialog, _("Artist"));
     adw_dialog_set_content_width(a->artist_dialog, 560);
     adw_dialog_set_content_height(a->artist_dialog, 680);
     adw_dialog_set_child(a->artist_dialog, GTK_WIDGET(tv));
@@ -3615,7 +3620,7 @@ static void open_artist(App *a, const char *artist_id) {
   a->artist_gen++;
   g_free(a->artist_req_id);
   a->artist_req_id = g_strdup(artist_id);
-  artist_set_status(a, "Loading…");
+  artist_set_status(a, _("Loading…"));
 
   ArtistCtx *c = g_new0(ArtistCtx, 1);
   c->id = g_strdup(artist_id);
@@ -3679,17 +3684,17 @@ static void on_artist_clicked(GtkButton *b, gpointer data) {
       DZFree(npj);
     }
     if (aid && *aid) open_artist(a, aid);
-    else toast(a, "No track playing");
+    else toast(a, _("No track playing"));
     g_free(aid);
     return;
   }
 
   DzTrack *t = mpris_current_track(a);
-  if (!t) { toast(a, "Play a track first"); return; }
+  if (!t) { toast(a, _("Play a track first")); return; }
   char *aid = g_strdup(t->artist_id);
   g_object_unref(t);
   if (aid && *aid) open_artist(a, aid);
-  else toast(a, "No artist for this track");
+  else toast(a, _("No artist for this track"));
   g_free(aid);
 }
 
@@ -3741,7 +3746,7 @@ static void on_browse_album_activated(GtkListBox *box, GtkListBoxRow *row, gpoin
   const char *id = g_object_get_data(G_OBJECT(row), "album_id");
   const char *name = g_object_get_data(G_OBJECT(row), "album_name");
   if (!id || !*id) return;
-  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : "Album");
+  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : _("Album"));
   load_async(a, LOAD_ALBUM, id); /* load_done switches the stack back to tracks */
 }
 
@@ -3752,7 +3757,7 @@ static void on_browse_playlist_activated(GtkListBox *box, GtkListBoxRow *row, gp
   const char *id = g_object_get_data(G_OBJECT(row), "pl_id");
   const char *name = g_object_get_data(G_OBJECT(row), "pl_name");
   if (!id || !*id) return;
-  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : "Playlist");
+  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : _("Playlist"));
   load_async(a, LOAD_PLAYLIST, id);
 }
 
@@ -3784,17 +3789,17 @@ static void populate_browse(App *a, const char *json) {
   a->browse_gen++;
   guint gen = a->browse_gen;
 
-  if (!json) { browse_set_status(a, "Nothing to show"); return; }
+  if (!json) { browse_set_status(a, _("Nothing to show")); return; }
   JsonParser *p = json_parser_new();
   if (!json_parser_load_from_data(p, json, -1, NULL)) {
-    g_object_unref(p); browse_set_status(a, "Couldn't load results"); return;
+    g_object_unref(p); browse_set_status(a, _("Couldn't load results")); return;
   }
   JsonNode *root = json_parser_get_root(p);
   JsonObject *o = (root && JSON_NODE_HOLDS_OBJECT(root)) ? json_node_get_object(root) : NULL;
-  if (!o) { g_object_unref(p); browse_set_status(a, "Couldn't load results"); return; }
+  if (!o) { g_object_unref(p); browse_set_status(a, _("Couldn't load results")); return; }
   if (json_object_has_member(o, "error")) {
     char *msg = jstr(o, "error");
-    if (*msg) toastf(a, "Deezer: %s", msg);
+    if (*msg) toastf(a, _("Deezer: %s"), msg);
     g_free(msg);
   }
 
@@ -3806,7 +3811,7 @@ static void populate_browse(App *a, const char *json) {
   guint tn = tracks ? json_array_get_length(tracks) : 0;
   if (tn > 0) {
     any = TRUE;
-    gtk_box_append(GTK_BOX(a->browse_box), section_title("Songs"));
+    gtk_box_append(GTK_BOX(a->browse_box), section_title(_("Songs")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_browse_track_activated), a);
     for (guint i = 0; i < tn; i++) {
       DzTrack *t = dz_track_from_json(json_array_get_object_element(tracks, i));
@@ -3842,7 +3847,7 @@ static void populate_browse(App *a, const char *json) {
   guint an = albums ? json_array_get_length(albums) : 0;
   if (an > 0) {
     any = TRUE;
-    gtk_box_append(GTK_BOX(a->browse_box), section_title("Albums"));
+    gtk_box_append(GTK_BOX(a->browse_box), section_title(_("Albums")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_browse_album_activated), a);
     for (guint i = 0; i < an; i++) {
       JsonObject *ao = json_array_get_object_element(albums, i);
@@ -3873,7 +3878,7 @@ static void populate_browse(App *a, const char *json) {
   guint arn = artists ? json_array_get_length(artists) : 0;
   if (arn > 0) {
     any = TRUE;
-    gtk_box_append(GTK_BOX(a->browse_box), section_title("Artists"));
+    gtk_box_append(GTK_BOX(a->browse_box), section_title(_("Artists")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_browse_artist_activated), a);
     for (guint i = 0; i < arn; i++) {
       JsonObject *ro = json_array_get_object_element(artists, i);
@@ -3884,7 +3889,7 @@ static void populate_browse(App *a, const char *json) {
       adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
       adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), name);
       if (fans > 0) {
-        char *s = g_strdup_printf("%lld fans", (long long)fans);
+        char *s = g_strdup_printf(ngettext("%lld fan", "%lld fans", (gulong)fans), (long long)fans);
         adw_action_row_set_subtitle(ADW_ACTION_ROW(row), s);
         g_free(s);
       }
@@ -3907,7 +3912,7 @@ static void populate_browse(App *a, const char *json) {
   guint pn = pls ? json_array_get_length(pls) : 0;
   if (pn > 0) {
     any = TRUE;
-    gtk_box_append(GTK_BOX(a->browse_box), section_title("Playlists"));
+    gtk_box_append(GTK_BOX(a->browse_box), section_title(_("Playlists")));
     GtkWidget *lb = artist_listbox(G_CALLBACK(on_browse_playlist_activated), a);
     for (guint i = 0; i < pn; i++) {
       JsonObject *po = json_array_get_object_element(pls, i);
@@ -3917,7 +3922,10 @@ static void populate_browse(App *a, const char *json) {
       gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), TRUE);
       adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
       adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), name);
-      char *sub = g_strdup_printf("%s · %lld tracks", owner, (long long)jint(po, "trackCount"));
+      gint64 tc = jint(po, "trackCount");
+      char *tcs = g_strdup_printf(ngettext("%lld track", "%lld tracks", (gulong)tc), (long long)tc);
+      char *sub = g_strdup_printf("%s · %s", owner, tcs);
+      g_free(tcs);
       adw_action_row_set_subtitle(ADW_ACTION_ROW(row), sub);
       g_free(sub);
       GtkWidget *cov = thumb_new(44, FALSE);
@@ -3934,7 +3942,7 @@ static void populate_browse(App *a, const char *json) {
     gtk_box_append(GTK_BOX(a->browse_box), lb);
   }
 
-  if (!any) browse_set_status(a, "No results");
+  if (!any) browse_set_status(a, _("No results"));
 }
 
 static GtkWidget *build_browse_view(App *a) {
@@ -3968,9 +3976,9 @@ static const char *greeting_for_hour(void) {
   GDateTime *dt = g_date_time_new_now_local();
   int hour = g_date_time_get_hour(dt);
   g_date_time_unref(dt);
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+  if (hour < 12) return _("Good morning");
+  if (hour < 18) return _("Good afternoon");
+  return _("Good evening");
 }
 
 /* ---- quick-pick cards: navigate to an existing sidebar destination ---- */
@@ -4057,7 +4065,7 @@ static void on_home_playlist_clicked(GtkButton *b, gpointer data) {
   const char *id   = g_object_get_data(G_OBJECT(b), "pl_id");
   const char *name = g_object_get_data(G_OBJECT(b), "pl_name");
   if (!id || !*id) return;
-  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : "Playlist");
+  adw_navigation_page_set_title(a->content_page, (name && *name) ? name : _("Playlist"));
   /* clear sidebar selection so clicking Home later re-selects + reloads it */
   gtk_list_box_select_row(a->sidebar, NULL);
   load_async(a, LOAD_PLAYLIST, id);
@@ -4094,7 +4102,7 @@ static GtkWidget *make_home_playlist_card(App *a, JsonObject *po, guint gen) {
   gtk_box_append(GTK_BOX(box), name_lbl);
 
   if (cnt > 0) {
-    char *cnt_s = g_strdup_printf("%lld tracks", (long long)cnt);
+    char *cnt_s = g_strdup_printf(ngettext("%lld track", "%lld tracks", (gulong)cnt), (long long)cnt);
     GtkWidget *cnt_lbl = gtk_label_new(cnt_s);
     g_free(cnt_s);
     gtk_label_set_xalign(GTK_LABEL(cnt_lbl), 0.0);
@@ -4126,15 +4134,15 @@ static void home_populate(App *a, const char *json) {
   gtk_box_append(GTK_BOX(a->home_box), greet);
 
   /* ---- quick picks ---- */
-  gtk_box_append(GTK_BOX(a->home_box), section_title("Quick Picks"));
+  gtk_box_append(GTK_BOX(a->home_box), section_title(_("Quick Picks")));
   GtkWidget *qp_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_set_margin_bottom(qp_box, 4);
   /* sidebar indices: Home=0, Liked=1, Flow=2, Charts=3, Podcasts=4 */
   struct { const char *label; const char *icon; int row; } picks[] = {
-    { "Liked Songs", "emblem-favorite-symbolic",        1 },
-    { "Flow",        "media-playlist-shuffle-symbolic",  2 },
-    { "Charts",      "view-sort-descending-symbolic",    3 },
-    { "Podcasts",    "audio-x-generic-symbolic",         4 },
+    { _("Liked Songs"), "emblem-favorite-symbolic",        1 },
+    { "Flow",           "media-playlist-shuffle-symbolic",  2 },
+    { _("Charts"),      "view-sort-descending-symbolic",    3 },
+    { _("Podcasts"),    "audio-x-generic-symbolic",         4 },
   };
   for (guint i = 0; i < G_N_ELEMENTS(picks); i++)
     gtk_box_append(GTK_BOX(qp_box),
@@ -4153,7 +4161,7 @@ static void home_populate(App *a, const char *json) {
                           ? json_object_get_array_member(o, "topTracks") : NULL;
   guint tn = tracks ? json_array_get_length(tracks) : 0;
   if (tn > 0) {
-    gtk_box_append(GTK_BOX(a->home_box), section_title("Top Tracks"));
+    gtk_box_append(GTK_BOX(a->home_box), section_title(_("Top Tracks")));
     GtkWidget *rail_scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(rail_scroll),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
@@ -4177,7 +4185,7 @@ static void home_populate(App *a, const char *json) {
                        ? json_object_get_array_member(o, "playlists") : NULL;
   guint pn = pls ? json_array_get_length(pls) : 0;
   if (pn > 0) {
-    gtk_box_append(GTK_BOX(a->home_box), section_title("Your Playlists"));
+    gtk_box_append(GTK_BOX(a->home_box), section_title(_("Your Playlists")));
     GtkWidget *pl_scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(pl_scroll),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
@@ -4258,7 +4266,7 @@ static void episode_worker(GTask *task, gpointer src, gpointer data, GCancellabl
 static void episode_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
   APP->last_finished = DZFinishedCount(); /* don't let the finish poll skip */
-  if (!g_task_propagate_boolean(G_TASK(res), NULL)) toast(APP, "Couldn't play that episode");
+  if (!g_task_propagate_boolean(G_TASK(res), NULL)) toast(APP, _("Couldn't play that episode"));
 }
 
 static void play_episode(App *a, const char *id, const char *title, const char *art, gint64 dur) {
@@ -4270,7 +4278,7 @@ static void play_episode(App *a, const char *id, const char *title, const char *
   gtk_single_selection_set_selected(a->track_sel, GTK_INVALID_LIST_POSITION);
   gtk_label_set_label(a->np_title, title ? title : "");
   if (a->np_explicit) gtk_widget_set_visible(a->np_explicit, FALSE); /* episodes have no E badge */
-  gtk_label_set_label(a->np_subtitle, "Podcast");
+  gtk_label_set_label(a->np_subtitle, _("Podcast"));
   gtk_range_set_range(GTK_RANGE(a->seek), 0, dur > 0 ? (double)dur : 1.0);
   gtk_range_set_value(GTK_RANGE(a->seek), 0);
   start_cover_fetch(a, art);
@@ -4361,7 +4369,7 @@ static void pod_shows_done(GObject *src, GAsyncResult *res, gpointer data) {
         adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
         adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), name);
         if (eps > 0) {
-          char *s = g_strdup_printf("%lld episodes", (long long)eps);
+          char *s = g_strdup_printf(ngettext("%lld episode", "%lld episodes", (gulong)eps), (long long)eps);
           adw_action_row_set_subtitle(ADW_ACTION_ROW(row), s);
           g_free(s);
         }
@@ -4379,7 +4387,7 @@ static void pod_shows_done(GObject *src, GAsyncResult *res, gpointer data) {
     }
   }
   g_object_unref(p);
-  if (n == 0) pod_set_status(APP, "No shows found");
+  if (n == 0) pod_set_status(APP, _("No shows found"));
   g_free(json);
 }
 
@@ -4391,7 +4399,7 @@ static void pod_episodes_done(GObject *src, GAsyncResult *res, gpointer data) {
   box_clear(APP->pod_content);
 
   /* back to the show results */
-  GtkWidget *back = gtk_button_new_with_label("‹ Back to shows");
+  GtkWidget *back = gtk_button_new_with_label(_("‹ Back to shows"));
   gtk_widget_add_css_class(back, "flat");
   gtk_widget_set_halign(back, GTK_ALIGN_START);
   g_signal_connect(back, "clicked", G_CALLBACK(on_pod_back), APP);
@@ -4435,7 +4443,7 @@ static void pod_episodes_done(GObject *src, GAsyncResult *res, gpointer data) {
   }
   g_object_unref(p);
   if (n == 0) {
-    GtkWidget *l = gtk_label_new("No episodes");
+    GtkWidget *l = gtk_label_new(_("No episodes"));
     gtk_widget_add_css_class(l, "dim-label");
     gtk_widget_set_margin_top(l, 24);
     gtk_box_append(GTK_BOX(APP->pod_content), l);
@@ -4448,7 +4456,7 @@ static void pod_search_run(App *a, const char *query) {
   a->pod_gen++;
   g_free(a->pod_query);
   a->pod_query = g_strdup(query);
-  pod_set_status(a, "Searching…");
+  pod_set_status(a, _("Searching…"));
   PodCtx *x = g_new0(PodCtx, 1);
   x->arg = g_strdup(query);
   x->gen = a->pod_gen;
@@ -4461,7 +4469,7 @@ static void pod_search_run(App *a, const char *query) {
 
 static void pod_episodes_run(App *a, const char *podcast_id) {
   a->pod_gen++;
-  pod_set_status(a, "Loading episodes…");
+  pod_set_status(a, _("Loading episodes…"));
   PodCtx *x = g_new0(PodCtx, 1);
   x->arg = g_strdup(podcast_id);
   x->gen = a->pod_gen;
@@ -4492,7 +4500,7 @@ static void open_podcasts(App *a) {
 
   AdwToolbarView *tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
   GtkWidget *hb = adw_header_bar_new();
-  adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb), adw_window_title_new("Podcasts", NULL));
+  adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb), adw_window_title_new(_("Podcasts"), NULL));
   adw_toolbar_view_add_top_bar(tv, hb);
 
   GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
@@ -4500,7 +4508,7 @@ static void open_podcasts(App *a) {
   gtk_widget_set_margin_start(outer, 12); gtk_widget_set_margin_end(outer, 12);
 
   a->pod_search = gtk_search_entry_new();
-  g_object_set(a->pod_search, "placeholder-text", "Search podcasts", NULL);
+  g_object_set(a->pod_search, "placeholder-text", _("Search podcasts"), NULL);
   GtkText *ptext = GTK_TEXT(gtk_editable_get_delegate(GTK_EDITABLE(a->pod_search)));
   g_signal_connect(ptext, "activate", G_CALLBACK(on_pod_search_activate), a);
   gtk_box_append(GTK_BOX(outer), a->pod_search);
@@ -4515,12 +4523,12 @@ static void open_podcasts(App *a) {
   adw_toolbar_view_set_content(tv, outer);
 
   a->pod_dialog = ADW_DIALOG(adw_dialog_new());
-  adw_dialog_set_title(a->pod_dialog, "Podcasts");
+  adw_dialog_set_title(a->pod_dialog, _("Podcasts"));
   adw_dialog_set_content_width(a->pod_dialog, 520);
   adw_dialog_set_content_height(a->pod_dialog, 640);
   adw_dialog_set_child(a->pod_dialog, GTK_WIDGET(tv));
   g_signal_connect(a->pod_dialog, "closed", G_CALLBACK(on_pod_closed), a);
-  pod_set_status(a, "Search for a podcast to get started");
+  pod_set_status(a, _("Search for a podcast to get started"));
   adw_dialog_present(a->pod_dialog, GTK_WIDGET(a->win));
 }
 
@@ -4735,7 +4743,7 @@ static void on_login_cookies(GObject *src, GAsyncResult *res, gpointer data) {
   a->login_captured = TRUE; /* stop further polling for this attempt */
   a->login_busy = TRUE;
   if (a->login_poll_id) { g_source_remove(a->login_poll_id); a->login_poll_id = 0; }
-  if (a->login_status) gtk_label_set_label(GTK_LABEL(a->login_status), "Signing in…");
+  if (a->login_status) gtk_label_set_label(GTK_LABEL(a->login_status), _("Signing in…"));
   start_init(a, arl, TRUE); /* owns arl; persists + dismisses on success */
 }
 
@@ -4794,9 +4802,9 @@ static void on_login_manual(GtkWidget *w, gpointer data) {
   if (!a->login_manual_entry || a->login_busy) return;
   const char *txt = gtk_editable_get_text(GTK_EDITABLE(a->login_manual_entry));
   char *arl = g_strstrip(g_strdup(txt ? txt : ""));
-  if (!*arl) { g_free(arl); toast(a, "Enter an ARL token"); return; }
+  if (!*arl) { g_free(arl); toast(a, _("Enter an ARL token")); return; }
   a->login_busy = TRUE;
-  if (a->login_status) gtk_label_set_label(GTK_LABEL(a->login_status), "Signing in…");
+  if (a->login_status) gtk_label_set_label(GTK_LABEL(a->login_status), _("Signing in…"));
   start_init(a, arl, TRUE); /* owns arl; persists on success */
 }
 
@@ -4815,17 +4823,17 @@ static GtkWidget *build_login_choose(App *a) {
   gtk_image_set_pixel_size(GTK_IMAGE(icon), 96);
   gtk_box_append(GTK_BOX(box), icon);
 
-  GtkWidget *title = gtk_label_new("Log in to Deezer");
+  GtkWidget *title = gtk_label_new(_("Log in to Deezer"));
   gtk_widget_add_css_class(title, "title-1");
   gtk_box_append(GTK_BOX(box), title);
 
-  GtkWidget *sub = gtk_label_new("Sign in with your Deezer account to start listening.");
+  GtkWidget *sub = gtk_label_new(_("Sign in with your Deezer account to start listening."));
   gtk_label_set_wrap(GTK_LABEL(sub), TRUE);
   gtk_label_set_justify(GTK_LABEL(sub), GTK_JUSTIFY_CENTER);
   gtk_widget_add_css_class(sub, "dim-label");
   gtk_box_append(GTK_BOX(box), sub);
 
-  GtkWidget *login_btn = gtk_button_new_with_label("Log in with Deezer");
+  GtkWidget *login_btn = gtk_button_new_with_label(_("Log in with Deezer"));
   gtk_widget_add_css_class(login_btn, "suggested-action");
   gtk_widget_add_css_class(login_btn, "pill");
   gtk_widget_set_halign(login_btn, GTK_ALIGN_CENTER);
@@ -4834,7 +4842,7 @@ static GtkWidget *build_login_choose(App *a) {
 
   gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  GtkWidget *manual_label = gtk_label_new("Or paste an ARL token manually:");
+  GtkWidget *manual_label = gtk_label_new(_("Or paste an ARL token manually:"));
   gtk_label_set_xalign(GTK_LABEL(manual_label), 0.0);
   gtk_widget_add_css_class(manual_label, "dim-label");
   gtk_box_append(GTK_BOX(box), manual_label);
@@ -4844,7 +4852,7 @@ static GtkWidget *build_login_choose(App *a) {
   gtk_entry_set_placeholder_text(GTK_ENTRY(a->login_manual_entry), "ARL");
   gtk_widget_set_hexpand(a->login_manual_entry, TRUE);
   g_signal_connect(a->login_manual_entry, "activate", G_CALLBACK(on_login_manual), a);
-  GtkWidget *use_btn = gtk_button_new_with_label("Use");
+  GtkWidget *use_btn = gtk_button_new_with_label(_("Use"));
   g_signal_connect(use_btn, "clicked", G_CALLBACK(on_login_manual), a);
   gtk_box_append(GTK_BOX(row), a->login_manual_entry);
   gtk_box_append(GTK_BOX(row), use_btn);
@@ -4864,7 +4872,7 @@ static void open_login_window(App *a) {
 
   GtkWidget *win = adw_window_new();
   a->login_win = GTK_WINDOW(win);
-  gtk_window_set_title(GTK_WINDOW(win), "Log in to Deezer");
+  gtk_window_set_title(GTK_WINDOW(win), _("Log in to Deezer"));
   gtk_window_set_default_size(GTK_WINDOW(win), 540, 720);
   gtk_window_set_transient_for(GTK_WINDOW(win), GTK_WINDOW(a->win));
   gtk_window_set_modal(GTK_WINDOW(win), TRUE);
@@ -4873,9 +4881,9 @@ static void open_login_window(App *a) {
   AdwToolbarView *tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
   GtkWidget *hb = adw_header_bar_new();
   adw_header_bar_set_title_widget(ADW_HEADER_BAR(hb),
-                                  adw_window_title_new("Log in to Deezer", NULL));
+                                  adw_window_title_new(_("Log in to Deezer"), NULL));
   a->login_back = gtk_button_new_from_icon_name("go-previous-symbolic");
-  gtk_widget_set_tooltip_text(a->login_back, "Back");
+  gtk_widget_set_tooltip_text(a->login_back, _("Back"));
   gtk_widget_set_visible(a->login_back, FALSE);
   g_signal_connect(a->login_back, "clicked", G_CALLBACK(on_login_back), a);
   adw_header_bar_pack_start(ADW_HEADER_BAR(hb), a->login_back);
@@ -4921,24 +4929,24 @@ static void show_free_block(App *a) {
 
   AdwStatusPage *sp = ADW_STATUS_PAGE(adw_status_page_new());
   adw_status_page_set_icon_name(sp, "dialog-warning-symbolic");
-  adw_status_page_set_title(sp, "Sorry — your account isn't supported");
+  adw_status_page_set_title(sp, _("Sorry — your account isn't supported"));
 
   char *body = g_strdup_printf(
-      "OpenDeezer needs a Deezer Premium subscription to stream. "
-      "Your account: %s. Subscribe at deezer.com, then restart OpenDeezer.",
-      (a->acct_offer && *a->acct_offer) ? a->acct_offer : "Deezer Free");
+      _("OpenDeezer needs a Deezer Premium subscription to stream. "
+        "Your account: %s. Subscribe at deezer.com, then restart OpenDeezer."),
+      (a->acct_offer && *a->acct_offer) ? a->acct_offer : _("Deezer Free"));
   adw_status_page_set_description(sp, body);
   g_free(body);
 
   GtkWidget *btns = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   gtk_widget_set_halign(btns, GTK_ALIGN_CENTER);
 
-  GtkWidget *switch_btn = gtk_button_new_with_label("Sign in with a different account");
+  GtkWidget *switch_btn = gtk_button_new_with_label(_("Sign in with a different account"));
   gtk_widget_add_css_class(switch_btn, "pill");
   g_signal_connect(switch_btn, "clicked", G_CALLBACK(on_free_block_switch), a);
   gtk_box_append(GTK_BOX(btns), switch_btn);
 
-  GtkWidget *quit_btn = gtk_button_new_with_label("Quit OpenDeezer");
+  GtkWidget *quit_btn = gtk_button_new_with_label(_("Quit OpenDeezer"));
   gtk_widget_add_css_class(quit_btn, "pill");
   gtk_widget_add_css_class(quit_btn, "destructive-action");
   g_signal_connect(quit_btn, "clicked", G_CALLBACK(on_free_block_quit), a);
@@ -4982,7 +4990,7 @@ static void load_account(App *a) {
     toastf(a, "%s · %s", a->acct_name,
            (a->acct_offer && *a->acct_offer) ? a->acct_offer : "Deezer");
     if ((a->quality >= 2 && !a->can_hifi) || (a->quality >= 1 && !a->can_hq))
-      toast(a, "Selected quality is above your plan");
+      toast(a, _("Selected quality is above your plan"));
   }
 }
 
@@ -5023,7 +5031,7 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
     }
     show_main_content(APP);                     /* restore UI if returning from the block */
     if (!(APP->acct_name && *APP->acct_name))
-      toast(APP, "Connected to Deezer");       /* fallback when account info is unavailable */
+      toast(APP, _("Connected to Deezer"));       /* fallback when account info is unavailable */
     /* refresh (not just append) so switching accounts replaces the previous
      * account's playlists instead of stacking the new ones underneath */
     sidebar_refresh_playlists(APP);
@@ -5039,10 +5047,10 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
     APP->login_captured = FALSE;
     login_show_choose(APP);
     if (APP->login_status)
-      gtk_label_set_label(GTK_LABEL(APP->login_status), "Login failed — please try again.");
-    toast(APP, "Login failed — try again");
+      gtk_label_set_label(GTK_LABEL(APP->login_status), _("Login failed — please try again."));
+    toast(APP, _("Login failed — try again"));
   } else {
-    toast(APP, "Login failed — check your ARL");
+    toast(APP, _("Login failed — check your ARL"));
   }
 }
 
@@ -5066,17 +5074,17 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   (void)action; (void)param; (void)data;
   char *comments =
       (APP->acct_name && *APP->acct_name)
-          ? g_strdup_printf("An open source reimplementation of Deezer.\n\n"
-                            "Signed in as %s · %s",
+          ? g_strdup_printf(_("An open source reimplementation of Deezer.\n\n"
+                            "Signed in as %s · %s"),
                             APP->acct_name,
                             (APP->acct_offer && *APP->acct_offer) ? APP->acct_offer : "Deezer")
-          : g_strdup("An open source reimplementation of Deezer.");
+          : g_strdup(_("An open source reimplementation of Deezer."));
 #if ADW_CHECK_VERSION(1, 6, 0)
   AdwDialog *about = adw_about_dialog_new();
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.7.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.8.0");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -5087,7 +5095,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "1.7.0",
+      "version", "1.8.0",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -5182,8 +5190,8 @@ static GtkButton *transport_button(const char *icon) {
 
 /* Map a discovery client id to a human device type (per the project's table). */
 static const char *connect_type_label(const char *client) {
-  if (!client || !*client)                                      return "Device";
-  if (!g_strcmp0(client, "tui"))                                return "Terminal";
+  if (!client || !*client)                                      return _("Device");
+  if (!g_strcmp0(client, "tui"))                                return _("Terminal");
   if (!g_strcmp0(client, "darwin") || !g_strcmp0(client, "macos")) return "macOS";
   if (!g_strcmp0(client, "windows"))                            return "Windows";
   if (!g_strcmp0(client, "linux") || !g_strcmp0(client, "gnome") ||
@@ -5236,13 +5244,13 @@ static void connect_reflect(App *a) {
   GtkWidget *w = GTK_WIDGET(a->connect_btn);
   if (connected) {
     gtk_widget_add_css_class(w, "dz-connected");
-    char *tip = g_strdup_printf("Playing on %s",
+    char *tip = g_strdup_printf(_("Playing on %s"),
         (a->connect_name && *a->connect_name) ? a->connect_name : addr);
     gtk_widget_set_tooltip_text(w, tip);
     g_free(tip);
   } else {
     gtk_widget_remove_css_class(w, "dz-connected");
-    gtk_widget_set_tooltip_text(w, "Connect to a device");
+    gtk_widget_set_tooltip_text(w, _("Connect to a device"));
   }
   if (addr) DZFree(addr);
 }
@@ -5262,9 +5270,9 @@ static void conn_done(GObject *src, GAsyncResult *res, gpointer data) {
   if (ok) {
     g_free(APP->connect_name);
     APP->connect_name = g_strdup(x->name ? x->name : "");
-    toastf(APP, "Playing on %s", (x->name && *x->name) ? x->name : "device");
+    toastf(APP, _("Playing on %s"), (x->name && *x->name) ? x->name : _("device"));
   } else {
-    toast(APP, "Couldn't connect to that device");
+    toast(APP, _("Couldn't connect to that device"));
   }
   connect_reflect(APP);
 }
@@ -5297,7 +5305,7 @@ static void disconn_worker(GTask *task, gpointer src, gpointer data, GCancellabl
 static void disconn_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)res; (void)data;
   connect_reflect(APP);
-  toast(APP, "Playing on this computer");
+  toast(APP, _("Playing on this computer"));
 }
 static void on_connect_local_clicked(GtkButton *b, gpointer data) {
   (void)b;
@@ -5329,7 +5337,7 @@ static void disc_done(GObject *src, GAsyncResult *res, gpointer data) {
   box_clear(a->connect_box);
   char *cur = DZConnectedDevice(); /* malloc'd; "" = local */
 
-  GtkWidget *home = connect_row("This computer", "Play here", "computer-symbolic",
+  GtkWidget *home = connect_row(_("This computer"), _("Play here"), "computer-symbolic",
                                 !(cur && *cur));
   g_signal_connect(home, "clicked", G_CALLBACK(on_connect_local_clicked), a);
   gtk_box_append(GTK_BOX(a->connect_box), home);
@@ -5363,7 +5371,7 @@ static void disc_done(GObject *src, GAsyncResult *res, gpointer data) {
     g_object_unref(p);
   }
   if (n == 0) {
-    GtkWidget *none = gtk_label_new("No devices found");
+    GtkWidget *none = gtk_label_new(_("No devices found"));
     gtk_widget_add_css_class(none, "dim-label");
     gtk_widget_set_margin_top(none, 8);
     gtk_widget_set_margin_bottom(none, 8);
@@ -5382,7 +5390,7 @@ static void connect_popup_rebuild(GtkMenuButton *mb, gpointer data) {
   guint gen = ++a->connect_gen; /* invalidate any in-flight discovery */
 
   char *cur = DZConnectedDevice();
-  GtkWidget *home = connect_row("This computer", "Play here", "computer-symbolic",
+  GtkWidget *home = connect_row(_("This computer"), _("Play here"), "computer-symbolic",
                                 !(cur && *cur));
   g_signal_connect(home, "clicked", G_CALLBACK(on_connect_local_clicked), a);
   gtk_box_append(GTK_BOX(a->connect_box), home);
@@ -5396,7 +5404,7 @@ static void connect_popup_rebuild(GtkMenuButton *mb, gpointer data) {
   GtkWidget *spin = gtk_spinner_new();
   gtk_spinner_start(GTK_SPINNER(spin));
   gtk_box_append(GTK_BOX(busy), spin);
-  GtkWidget *lbl = gtk_label_new("Searching for devices…");
+  GtkWidget *lbl = gtk_label_new(_("Searching for devices…"));
   gtk_widget_add_css_class(lbl, "dim-label");
   gtk_box_append(GTK_BOX(busy), lbl);
   gtk_box_append(GTK_BOX(a->connect_box), busy);
@@ -5413,7 +5421,7 @@ static GtkWidget *build_connect_button(App *a) {
   gtk_menu_button_set_icon_name(mb, "audio-speakers-symbolic");
   gtk_widget_add_css_class(GTK_WIDGET(mb), "flat");
   gtk_widget_set_valign(GTK_WIDGET(mb), GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(GTK_WIDGET(mb), "Connect to a device");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(mb), _("Connect to a device"));
 
   GtkWidget *pop = gtk_popover_new();
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -5468,21 +5476,21 @@ static GtkWidget *build_now_playing(App *a) {
   a->like_btn = GTK_BUTTON(gtk_button_new_from_icon_name("emblem-favorite-symbolic"));
   gtk_widget_add_css_class(GTK_WIDGET(a->like_btn), "flat");
   gtk_widget_set_valign(GTK_WIDGET(a->like_btn), GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(GTK_WIDGET(a->like_btn), "Like / unlike");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->like_btn), _("Like / unlike"));
   g_signal_connect(a->like_btn, "clicked", G_CALLBACK(on_like_clicked), a);
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->like_btn));
 
   GtkWidget *lyrics_btn = gtk_button_new_from_icon_name("view-list-symbolic");
   gtk_widget_add_css_class(lyrics_btn, "flat");
   gtk_widget_set_valign(lyrics_btn, GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(lyrics_btn, "Lyrics");
+  gtk_widget_set_tooltip_text(lyrics_btn, _("Lyrics"));
   g_signal_connect(lyrics_btn, "clicked", G_CALLBACK(on_lyrics_clicked), a);
   gtk_box_append(GTK_BOX(bar), lyrics_btn);
 
   GtkWidget *artist_btn = gtk_button_new_from_icon_name("avatar-default-symbolic");
   gtk_widget_add_css_class(artist_btn, "flat");
   gtk_widget_set_valign(artist_btn, GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(artist_btn, "Go to artist");
+  gtk_widget_set_tooltip_text(artist_btn, _("Go to artist"));
   g_signal_connect(artist_btn, "clicked", G_CALLBACK(on_artist_clicked), a);
   gtk_box_append(GTK_BOX(bar), artist_btn);
 
@@ -5493,9 +5501,9 @@ static GtkWidget *build_now_playing(App *a) {
   g_signal_connect(a->prev_btn, "clicked", G_CALLBACK(on_prev_clicked), a);
   g_signal_connect(a->play_btn, "clicked", G_CALLBACK(on_play_clicked), a);
   g_signal_connect(a->next_btn, "clicked", G_CALLBACK(on_next_clicked), a);
-  gtk_widget_set_tooltip_text(GTK_WIDGET(a->prev_btn), "Previous");
-  gtk_widget_set_tooltip_text(GTK_WIDGET(a->play_btn), "Play / Pause");
-  gtk_widget_set_tooltip_text(GTK_WIDGET(a->next_btn), "Next");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->prev_btn), _("Previous"));
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->play_btn), _("Play / Pause"));
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->next_btn), _("Next"));
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->prev_btn));
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->play_btn));
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->next_btn));
@@ -5504,7 +5512,7 @@ static GtkWidget *build_now_playing(App *a) {
   a->repeat_btn = GTK_BUTTON(gtk_button_new_from_icon_name("media-playlist-repeat-symbolic"));
   gtk_widget_add_css_class(GTK_WIDGET(a->repeat_btn), "flat");
   gtk_widget_set_valign(GTK_WIDGET(a->repeat_btn), GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(GTK_WIDGET(a->repeat_btn), "Repeat");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->repeat_btn), _("Repeat"));
   g_signal_connect(a->repeat_btn, "clicked", G_CALLBACK(on_repeat_clicked), a);
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->repeat_btn));
 
@@ -5512,7 +5520,7 @@ static GtkWidget *build_now_playing(App *a) {
   a->shuffle_btn = GTK_BUTTON(gtk_button_new_from_icon_name("media-playlist-shuffle-symbolic"));
   gtk_widget_add_css_class(GTK_WIDGET(a->shuffle_btn), "flat");
   gtk_widget_set_valign(GTK_WIDGET(a->shuffle_btn), GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text(GTK_WIDGET(a->shuffle_btn), "Shuffle");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->shuffle_btn), _("Shuffle"));
   g_signal_connect(a->shuffle_btn, "clicked", G_CALLBACK(on_shuffle_clicked), a);
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->shuffle_btn));
 
@@ -5567,15 +5575,15 @@ static GtkWidget *build_sidebar(App *a) {
   /* static entries; the user's playlists are appended after login.
    * Home is row 0 — the default landing page; keep it first. */
   gtk_list_box_append(a->sidebar,
-      make_side_row("Home", "", "go-home-symbolic", ROW_HOME, ""));
+      make_side_row(_("Home"), "", "go-home-symbolic", ROW_HOME, ""));
   gtk_list_box_append(a->sidebar,
-      make_side_row("Liked Songs", "", "emblem-favorite-symbolic", ROW_LIKED, ""));
+      make_side_row(_("Liked Songs"), "", "emblem-favorite-symbolic", ROW_LIKED, ""));
   gtk_list_box_append(a->sidebar,
       make_side_row("Flow", "", "media-playlist-shuffle-symbolic", ROW_FLOW, ""));
   gtk_list_box_append(a->sidebar,
-      make_side_row("Charts", "", "view-sort-descending-symbolic", ROW_CHARTS, ""));
+      make_side_row(_("Charts"), "", "view-sort-descending-symbolic", ROW_CHARTS, ""));
   gtk_list_box_append(a->sidebar,
-      make_side_row("Podcasts", "", "audio-x-generic-symbolic", ROW_PODCASTS, ""));
+      make_side_row(_("Podcasts"), "", "audio-x-generic-symbolic", ROW_PODCASTS, ""));
 
   GtkWidget *scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), GTK_WIDGET(a->sidebar));
@@ -5597,9 +5605,9 @@ static GtkWidget *build_track_view(App *a) {
 
   GtkColumnViewColumn *cols[] = {
       make_title_column(),
-      make_column("Artist", TRUE, FALSE, G_CALLBACK(bind_artist)),
-      make_column("Album", TRUE, FALSE, G_CALLBACK(bind_album)),
-      make_column("Time", FALSE, TRUE, G_CALLBACK(bind_time)),
+      make_column(_("Artist"), TRUE, FALSE, G_CALLBACK(bind_artist)),
+      make_column(_("Album"), TRUE, FALSE, G_CALLBACK(bind_album)),
+      make_column(_("Time"), FALSE, TRUE, G_CALLBACK(bind_time)),
   };
   for (guint i = 0; i < G_N_ELEMENTS(cols); i++) {
     gtk_column_view_append_column(a->track_view, cols[i]);
@@ -5683,11 +5691,11 @@ static void on_activate(GApplication *app, gpointer data) {
   g_object_unref(wr_act);
 
   GMenu *menu = g_menu_new();
-  g_menu_append(menu, "Log in / Switch account…", "app.login");
-  g_menu_append(menu, "Settings", "app.settings");
-  g_menu_append(menu, "Phone Remote…", "app.phone_remote");
-  g_menu_append(menu, "About OpenDeezer", "app.about");
-  g_menu_append(menu, "Quit", "app.quit");
+  g_menu_append(menu, _("Log in / Switch account…"), "app.login");
+  g_menu_append(menu, _("Settings"), "app.settings");
+  g_menu_append(menu, _("Phone Remote…"), "app.phone_remote");
+  g_menu_append(menu, _("About OpenDeezer"), "app.about");
+  g_menu_append(menu, _("Quit"), "app.quit");
 
   /* ---- sidebar pane ---- */
   AdwToolbarView *side_tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
@@ -5699,20 +5707,20 @@ static void on_activate(GApplication *app, gpointer data) {
   adw_header_bar_pack_end(ADW_HEADER_BAR(side_hb), GTK_WIDGET(menu_btn));
   /* create a new playlist */
   GtkWidget *new_pl_btn = gtk_button_new_from_icon_name("list-add-symbolic");
-  gtk_widget_set_tooltip_text(new_pl_btn, "New playlist");
+  gtk_widget_set_tooltip_text(new_pl_btn, _("New playlist"));
   g_signal_connect(new_pl_btn, "clicked", G_CALLBACK(on_new_playlist), a);
   adw_header_bar_pack_start(ADW_HEADER_BAR(side_hb), new_pl_btn);
   adw_toolbar_view_add_top_bar(side_tv, side_hb);
   adw_toolbar_view_set_content(side_tv, build_sidebar(a));
   AdwNavigationPage *side_page =
-      adw_navigation_page_new(GTK_WIDGET(side_tv), "Library");
+      adw_navigation_page_new(GTK_WIDGET(side_tv), _("Library"));
 
   /* ---- content pane ---- */
   AdwToolbarView *content_tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
   GtkWidget *content_hb = adw_header_bar_new();
   GtkWidget *search = gtk_search_entry_new();
   gtk_widget_set_size_request(search, 280, -1);
-  g_object_set(search, "placeholder-text", "Search Deezer", NULL);
+  g_object_set(search, "placeholder-text", _("Search Deezer"), NULL);
   /* GtkSearchEntry::activate only exists on GTK >= 4.14; connect to the
    * delegate GtkText's activate instead so Enter works on older GTK too. */
   GtkText *search_text = GTK_TEXT(gtk_editable_get_delegate(GTK_EDITABLE(search)));
@@ -5722,7 +5730,7 @@ static void on_activate(GApplication *app, gpointer data) {
   /* update-available banner: hidden until check_update_async (below) finds a
    * newer release; sits under the header, above the content stack */
   GtkWidget *update_banner = adw_banner_new("");
-  adw_banner_set_button_label(ADW_BANNER(update_banner), "Download");
+  adw_banner_set_button_label(ADW_BANNER(update_banner), _("Download"));
   g_signal_connect(update_banner, "button-clicked", G_CALLBACK(on_update_banner_clicked), a);
   a->update_banner = update_banner;
   adw_toolbar_view_add_top_bar(content_tv, update_banner);
@@ -5737,7 +5745,7 @@ static void on_activate(GApplication *app, gpointer data) {
 
   a->toast = ADW_TOAST_OVERLAY(adw_toast_overlay_new());
   adw_toast_overlay_set_child(a->toast, GTK_WIDGET(content_tv));
-  a->content_page = adw_navigation_page_new(GTK_WIDGET(a->toast), "Home");
+  a->content_page = adw_navigation_page_new(GTK_WIDGET(a->toast), _("Home"));
 
   /* ---- split ---- */
   AdwNavigationSplitView *split = ADW_NAVIGATION_SPLIT_VIEW(adw_navigation_split_view_new());
@@ -5772,6 +5780,14 @@ static void on_activate(GApplication *app, gpointer data) {
  * opendeezer-gnome executable wraps it with a trivial main (standalone.c). */
 __attribute__((visibility("default")))
 int opendeezer_run(int argc, char **argv) {
+  /* Localization: honour the user's locale and load our message catalogs from
+   * LOCALEDIR (set by meson to <prefix>/<localedir>). Must run before any
+   * translatable string is fetched, i.e. before the application is built. */
+  setlocale(LC_ALL, "");
+  bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
+  bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8");
+  textdomain(GETTEXT_PACKAGE);
+
   AdwApplication *app = adw_application_new("org.opendeezer.OpenDeezer", G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(on_activate), NULL);
   int status = g_application_run(G_APPLICATION(app), argc, argv);

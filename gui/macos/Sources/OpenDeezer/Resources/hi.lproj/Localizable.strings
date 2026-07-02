@@ -1,0 +1,198 @@
+/* OpenDeezer — हिन्दी */
+
+/* Sidebar / navigation */
+"Home" = "होम";
+"Search" = "खोजें";
+"Library" = "लाइब्रेरी";
+"Liked Songs" = "पसंदीदा गाने";
+"Playlists" = "प्लेलिस्ट";
+"Charts" = "चार्ट";
+"Podcasts" = "पॉडकास्ट";
+
+/* App menu / account row */
+"About OpenDeezer" = "OpenDeezer के बारे में";
+"Settings…" = "सेटिंग्स…";
+"Log in / Switch account…" = "साइन इन करें / खाता बदलें…";
+"Settings" = "सेटिंग्स";
+
+/* Update banner */
+"OpenDeezer %@ is available" = "OpenDeezer %@ उपलब्ध है";
+"Hide notes" = "नोट्स छिपाएँ";
+"Release notes" = "रिलीज़ नोट्स";
+"Download" = "डाउनलोड करें";
+"Later" = "बाद में";
+
+/* Login gate */
+"Logging in…" = "साइन इन हो रहा है…";
+"Log in with Deezer" = "Deezer से साइन इन करें";
+"Hide manual ARL" = "मैनुअल ARL छिपाएँ";
+"Enter ARL manually" = "ARL मैन्युअल रूप से दर्ज करें";
+"Paste your ARL cookie" = "अपनी ARL कुकी पेस्ट करें";
+"Sign in" = "साइन इन करें";
+
+/* Free-account gate */
+"Premium required" = "Premium आवश्यक है";
+"OpenDeezer needs a Deezer Premium subscription to stream. Your account: %@. Subscribe at deezer.com, then restart OpenDeezer." = "स्ट्रीम करने के लिए OpenDeezer को Deezer Premium सदस्यता चाहिए। आपका खाता: %@। deezer.com पर सदस्यता लें, फिर OpenDeezer को पुनः आरंभ करें।";
+"Log in with a different account" = "किसी अन्य खाते से साइन इन करें";
+"Quit OpenDeezer" = "OpenDeezer बंद करें";
+
+/* Explicit badge */
+"Explicit" = "अश्लील सामग्री";
+
+/* Account label */
+"user %@" = "उपयोगकर्ता %@";
+
+/* Credits / About */
+"v%@ · An open source reimplementation of Deezer" = "v%@ · Deezer का एक ओपन सोर्स पुनर्निर्माण";
+"by Cycl0o0" = "द्वारा Cycl0o0";
+"Signed in as %@" = "%@ के रूप में साइन इन";
+"Built with SwiftUI + a Go engine" = "SwiftUI + एक Go इंजन के साथ निर्मित";
+"Audio decrypted + decoded locally — your ARL never leaves your machine." = "ऑडियो को स्थानीय रूप से डिक्रिप्ट और डिकोड किया जाता है — आपकी ARL कभी आपके डिवाइस से बाहर नहीं जाती।";
+"AGPL-3.0 · Not affiliated with Deezer." = "AGPL-3.0 · Deezer से संबद्ध नहीं।";
+"Checking…" = "जाँच हो रही है…";
+"Check for Updates" = "अपडेट जाँचें";
+"Download v%@" = "v%@ डाउनलोड करें";
+"Done" = "पूर्ण";
+
+/* Hero header + track table */
+"Play" = "चलाएँ";
+"Shuffle" = "शफ़ल";
+"Title" = "शीर्षक";
+"Album" = "एल्बम";
+"Time" = "अवधि";
+"Unlike" = "पसंद हटाएँ";
+"Like" = "पसंद करें";
+"Add to Playlist…" = "प्लेलिस्ट में जोड़ें…";
+"Go to Artist" = "कलाकार पर जाएँ";
+
+/* Playlist grid + create/rename/delete */
+"New Playlist" = "नई प्लेलिस्ट";
+"Open" = "खोलें";
+"Rename…" = "नाम बदलें…";
+"Delete…" = "मिटाएँ…";
+"Playlist name" = "प्लेलिस्ट का नाम";
+"Create" = "बनाएँ";
+"Cancel" = "रद्द करें";
+"Name your new playlist." = "अपनी नई प्लेलिस्ट को नाम दें।";
+"Rename Playlist" = "प्लेलिस्ट का नाम बदलें";
+"Save" = "सहेजें";
+"Enter a new name." = "नया नाम दर्ज करें।";
+"Delete “%@”?" = "“%@” मिटाएँ?";
+"Delete" = "मिटाएँ";
+"This can't be undone." = "इसे पूर्ववत नहीं किया जा सकता।";
+
+/* Search */
+"Search tracks, albums, playlists" = "ट्रैक, एल्बम, प्लेलिस्ट खोजें";
+"Tracks" = "ट्रैक";
+"Artists" = "कलाकार";
+"Artist" = "कलाकार";
+"Albums" = "एल्बम";
+
+/* Settings — audio */
+"Audio Quality" = "ऑडियो गुणवत्ता";
+"Normal · MP3 128" = "सामान्य · MP3 128";
+"High · MP3 320" = "उच्च · MP3 320";
+"HiFi · FLAC lossless" = "HiFi · FLAC लॉसलेस";
+"Applied immediately and on next launch." = "तुरंत और अगली बार शुरू होने पर लागू।";
+"Output Device" = "आउटपुट डिवाइस";
+"System Default" = "सिस्टम डिफ़ॉल्ट";
+"%@ (System Default)" = "%@ (सिस्टम डिफ़ॉल्ट)";
+"Choose where audio plays. Switching takes effect on the next track or seek." = "चुनें कि ऑडियो कहाँ बजे। बदलाव अगले ट्रैक या सीक पर लागू होगा।";
+"Gapless playback" = "गैपलेस प्लेबैक";
+"Preloads the next track so albums play with no silence between songs." = "अगले ट्रैक को पहले से लोड करता है ताकि एल्बम के गानों के बीच कोई खामोशी न हो।";
+"Crossfade" = "क्रॉसफ़ेड";
+"Off" = "बंद";
+"Fades the end of one track into the start of the next." = "एक ट्रैक के अंत को अगले की शुरुआत में मिला देता है।";
+"Sleep timer" = "स्लीप टाइमर";
+"%d min" = "%d मिनट";
+"End of track" = "ट्रैक के अंत में";
+"Volume normalization" = "वॉल्यूम सामान्यीकरण";
+"Evens out loudness differences between tracks (ReplayGain)." = "ट्रैक के बीच आवाज़ के अंतर को संतुलित करता है (ReplayGain)।";
+"Equalizer" = "इक्वलाइज़र";
+"Custom" = "कस्टम";
+"Preamp" = "प्रीएम्प";
+"Mono audio" = "मोनो ऑडियो";
+"Plays both channels as one — helpful with a single speaker or hearing in one ear." = "दोनों चैनलों को एक साथ बजाता है — एक ही स्पीकर या एक कान से सुनने में मददगार।";
+"Keep playing in background" = "बैकग्राउंड में चलता रहे";
+"Closing the window hides it to the menu bar instead of quitting." = "विंडो बंद करने पर यह बंद होने के बजाय मेनू बार में छिप जाती है।";
+
+/* Settings — remote control */
+"Remote control" = "रिमोट कंट्रोल";
+"Lets other devices control playback over the network." = "अन्य डिवाइस को नेटवर्क पर प्लेबैक नियंत्रित करने देता है।";
+"Enable" = "सक्षम करें";
+"Allow on local network (LAN)" = "लोकल नेटवर्क (LAN) पर अनुमति दें";
+"Access token" = "एक्सेस टोकन";
+"None" = "कोई नहीं";
+"Phone Remote" = "फ़ोन रिमोट";
+"Scan with your phone (same Wi-Fi), then enter the code." = "अपने फ़ोन से स्कैन करें (वही Wi-Fi), फिर कोड दर्ज करें।";
+"Stored in %@" = "%@ में संग्रहीत";
+
+/* Settings — sleep timer captions */
+"Playback pauses when the current track ends." = "वर्तमान ट्रैक समाप्त होने पर प्लेबैक रुक जाता है।";
+"Fades out and pauses in %@." = "%@ में फ़ेड होकर रुक जाएगा।";
+"Automatically pause playback after a set time." = "एक निर्धारित समय के बाद प्लेबैक अपने आप रोक देता है।";
+
+/* Player bar */
+"Nothing playing" = "कुछ नहीं चल रहा";
+"Lyrics" = "बोल";
+"Connected — choose a device" = "कनेक्ट है — कोई डिवाइस चुनें";
+"Connect to a device" = "किसी डिवाइस से कनेक्ट करें";
+
+/* Lyrics / artist */
+"No lyrics available" = "कोई बोल उपलब्ध नहीं";
+"Couldn't load this artist." = "यह कलाकार लोड नहीं हो सका।";
+"Top Tracks" = "शीर्ष ट्रैक";
+"Related Artists" = "संबंधित कलाकार";
+
+/* Podcasts */
+"Search podcasts" = "पॉडकास्ट खोजें";
+"Search for podcasts" = "पॉडकास्ट खोजें";
+"Podcast" = "पॉडकास्ट";
+
+/* Charts */
+"Top Albums" = "शीर्ष एल्बम";
+"Top Artists" = "शीर्ष कलाकार";
+"Top Playlists" = "शीर्ष प्लेलिस्ट";
+
+/* Device picker */
+"Connect to a Device" = "किसी डिवाइस से कनेक्ट करें";
+"Play on another device on your network" = "अपने नेटवर्क के किसी अन्य डिवाइस पर चलाएँ";
+"Refresh" = "रिफ़्रेश करें";
+"This computer" = "यह कंप्यूटर";
+"Play here" = "यहाँ चलाएँ";
+"Looking for devices…" = "डिवाइस खोजे जा रहे हैं…";
+"No devices found on your network." = "आपके नेटवर्क पर कोई डिवाइस नहीं मिला।";
+"Devices" = "डिवाइस";
+"Device" = "डिवाइस";
+
+/* Add to playlist */
+"Add to Playlist" = "प्लेलिस्ट में जोड़ें";
+"New playlist…" = "नई प्लेलिस्ट…";
+"Your Playlists" = "आपकी प्लेलिस्ट";
+
+/* Home greeting */
+"Good morning" = "सुप्रभात";
+"Good afternoon" = "नमस्कार";
+"Good evening" = "शुभ संध्या";
+
+/* Login sheet */
+"Signing in…" = "साइन इन हो रहा है…";
+
+/* Tray menu */
+"Show OpenDeezer" = "OpenDeezer दिखाएँ";
+"Play / Pause" = "चलाएँ / पॉज़ करें";
+"Next" = "अगला";
+"Previous" = "पिछला";
+
+/* AppState — status / errors / list subtitles */
+"Login failed — invalid or expired ARL." = "साइन इन विफल — ARL अमान्य या समाप्त हो गया।";
+"OpenDeezer %@ is available." = "OpenDeezer %@ उपलब्ध है।";
+"You're up to date." = "आप अप टू डेट हैं।";
+"plan" = "प्लान";
+"%@ plan" = "%@ प्लान";
+"Your %@ doesn't include HiFi (FLAC)." = "आपके %@ में HiFi (FLAC) शामिल नहीं है।";
+"Your %@ doesn't include High (MP3 320)." = "आपके %@ में उच्च (MP3 320) शामिल नहीं है।";
+"Playlist" = "प्लेलिस्ट";
+"Playlist · %@" = "प्लेलिस्ट · %@";
+"Top worldwide" = "विश्वभर में शीर्ष";
+"Album · %@" = "एल्बम · %@";

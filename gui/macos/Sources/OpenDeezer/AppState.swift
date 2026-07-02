@@ -51,7 +51,7 @@ final class AppState: ObservableObject {
     @Published var homeData: HomeResponse?       // loaded by loadHome() / DZHomeJSON
     @Published var homeLoading = false
     @Published var tracks: [Track] = []          // browsed track list (play queue is separate)
-    @Published var listTitle = "Liked Songs"
+    @Published var listTitle = L("Liked Songs")
     @Published var listArtwork = ""              // hero artwork (empty => Liked gradient)
     @Published var listIsLiked = true            // hero style: gradient vs artwork
     @Published var listHeroSymbol = "heart.fill" // glyph drawn on the gradient hero
@@ -198,7 +198,7 @@ final class AppState: ObservableObject {
                     if persist { Self.saveARL(arl) }
                     self.finishLogin(account: acct)
                 } else {
-                    self.loginError = "Login failed — invalid or expired ARL."
+                    self.loginError = L("Login failed — invalid or expired ARL.")
                 }
                 completion?(ok)
             }
@@ -280,9 +280,9 @@ final class AppState: ObservableObject {
                 if let info, info.hasUpdate {
                     self.updateInfo = info
                     self.showUpdateBanner = true
-                    if manual { self.updateCheckStatus = "OpenDeezer \(info.latest) is available." }
+                    if manual { self.updateCheckStatus = Lf("OpenDeezer %@ is available.", info.latest) }
                 } else if manual {
-                    self.updateCheckStatus = "You're up to date."
+                    self.updateCheckStatus = L("You're up to date.")
                 }
             }
         }
@@ -302,18 +302,18 @@ final class AppState: ObservableObject {
         if let a = account, !a.name.isEmpty {
             return a.offer.isEmpty ? a.name : "\(a.name) · \(a.offer)"
         }
-        return userID.isEmpty ? "—" : "user \(userID)"
+        return userID.isEmpty ? "—" : Lf("user %@", userID)
     }
 
     // Warns when the chosen quality exceeds the account's entitlement; nil otherwise.
     var qualityEntitlementNote: String? {
         guard let a = account else { return nil }
-        let plan = a.offer.isEmpty ? "plan" : "\(a.offer) plan"
+        let plan = a.offer.isEmpty ? L("plan") : Lf("%@ plan", a.offer)
         if settings.quality >= 2 && !a.canHifi {
-            return "Your \(plan) doesn't include HiFi (FLAC)."
+            return Lf("Your %@ doesn't include HiFi (FLAC).", plan)
         }
         if settings.quality >= 1 && !a.canHq {
-            return "Your \(plan) doesn't include High (MP3 320)."
+            return Lf("Your %@ doesn't include High (MP3 320).", plan)
         }
         return nil
     }
@@ -334,7 +334,7 @@ final class AppState: ObservableObject {
     }
 
     func loadFavorites() {
-        listTitle = "Liked Songs"
+        listTitle = L("Liked Songs")
         listArtwork = ""
         listIsLiked = true
         listHeroSymbol = "heart.fill"
@@ -361,16 +361,16 @@ final class AppState: ObservableObject {
         listTitle = p.name
         listArtwork = p.artworkUrl
         listIsLiked = false
-        listSubtitle = p.owner.isEmpty ? "Playlist" : "Playlist · \(p.owner)"
+        listSubtitle = p.owner.isEmpty ? L("Playlist") : Lf("Playlist · %@", p.owner)
         runList { Core.playlistTracks(p.id) }
     }
     // Global charts: tracks drive the shared hero/track-list; albums, artists and
     // playlists render as rails below (see ChartsView).
     func loadCharts() {
         section = .charts
-        listTitle = "Charts"
+        listTitle = L("Charts")
         listIsLiked = false
-        listSubtitle = "Top worldwide"
+        listSubtitle = L("Top worldwide")
         busy = true
         Task.detached {
             let c = Core.charts()
@@ -413,7 +413,7 @@ final class AppState: ObservableObject {
         listTitle = a.name
         listArtwork = a.artworkUrl
         listIsLiked = false
-        listSubtitle = a.artistLine.isEmpty ? "Album" : "Album · \(a.artistLine)"
+        listSubtitle = a.artistLine.isEmpty ? L("Album") : Lf("Album · %@", a.artistLine)
         runList { Core.albumTracks(a.id) }
     }
 
@@ -645,7 +645,7 @@ final class AppState: ObservableObject {
     func playEpisode(_ e: Episode) {
         playingEpisode = true
         let t = Track(id: e.id, name: e.title, durationMs: e.durationMs,
-                      artists: [], artistLine: openedPodcast?.name ?? "Podcast",
+                      artists: [], artistLine: openedPodcast?.name ?? L("Podcast"),
                       albumName: openedPodcast?.name ?? "", artworkUrl: e.artworkUrl,
                       explicit: false)
         current = t

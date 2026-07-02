@@ -21,17 +21,17 @@ struct HomeView: View {
 
                 // MARK: Quick-pick row
                 HStack(spacing: 14) {
-                    QuickPickCard(title: "Liked Songs", symbol: "heart.fill") {
+                    QuickPickCard(title: L("Liked Songs"), symbol: "heart.fill") {
                         app.section = .liked
                         app.loadFavorites()
                     }
                     QuickPickCard(title: "Flow", symbol: "infinity") {
                         app.loadFlow()        // sets section = .flow internally
                     }
-                    QuickPickCard(title: "Charts", symbol: "chart.bar.fill") {
+                    QuickPickCard(title: L("Charts"), symbol: "chart.bar.fill") {
                         app.loadCharts()      // sets section = .charts internally
                     }
-                    QuickPickCard(title: "Podcasts", symbol: "mic.fill") {
+                    QuickPickCard(title: L("Podcasts"), symbol: "mic.fill") {
                         app.section = .podcasts
                     }
                 }
@@ -48,11 +48,11 @@ struct HomeView: View {
                     }
                 } else if let data = app.homeData {
                     if !data.topTracks.isEmpty {
-                        railHeader("Top Tracks")
+                        railHeader(L("Top Tracks"))
                         trackRail(data.topTracks)
                     }
                     if !data.topAlbums.isEmpty {
-                        railHeader("Top Albums")
+                        railHeader(L("Top Albums"))
                         rail {
                             ForEach(data.topAlbums) { a in
                                 TileCard(url: a.artworkUrl, title: a.name,
@@ -63,11 +63,11 @@ struct HomeView: View {
                         }
                     }
                     if !data.playlists.isEmpty {
-                        railHeader("Your Playlists")
+                        railHeader(L("Your Playlists"))
                         rail {
                             ForEach(data.playlists) { p in
                                 TileCard(url: p.artworkUrl, title: p.name,
-                                         sub: "\(p.trackCount) tracks") {
+                                         sub: Lp("%d tracks", p.trackCount)) {
                                     app.openPlaylist(p)
                                 }
                             }
@@ -87,9 +87,9 @@ struct HomeView: View {
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        default: return "Good evening"
+        case 5..<12: return L("Good morning")
+        case 12..<17: return L("Good afternoon")
+        default: return L("Good evening")
         }
     }
 
@@ -208,17 +208,17 @@ private struct HomeTrackCard: View {
         .scaleEffect(hover ? 1.03 : 1)
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
         .contextMenu {
-            Button { onPlay() } label: { Label("Play", systemImage: "play.fill") }
+            Button { onPlay() } label: { Label(L("Play"), systemImage: "play.fill") }
             Button { app.toggleLike(track) } label: {
-                Label(app.isLiked(track) ? "Unlike" : "Like",
+                Label(app.isLiked(track) ? L("Unlike") : L("Like"),
                       systemImage: app.isLiked(track) ? "heart.fill" : "heart")
             }
             Button { app.beginAddToPlaylist(track) } label: {
-                Label("Add to Playlist…", systemImage: "text.badge.plus")
+                Label(L("Add to Playlist…"), systemImage: "text.badge.plus")
             }
             if let aid = track.artists.first?.id {
                 Button { app.openArtist(aid) } label: {
-                    Label("Go to Artist", systemImage: "music.mic")
+                    Label(L("Go to Artist"), systemImage: "music.mic")
                 }
             }
         }

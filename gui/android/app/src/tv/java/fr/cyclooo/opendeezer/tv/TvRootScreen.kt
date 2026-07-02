@@ -46,12 +46,15 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.cyclooo.opendeezer.AppViewModel
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Album
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.HomeData
@@ -162,8 +165,8 @@ private fun TvLoadError(onRetry: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Couldn't load — check your connection.", color = TvPalette.TextDim, style = MaterialTheme.typography.titleMedium)
-        TvPill("Retry", onClick = onRetry)
+        Text(stringResource(R.string.tv_load_error), color = TvPalette.TextDim, style = MaterialTheme.typography.titleMedium)
+        TvPill(stringResource(R.string.action_retry), onClick = onRetry)
     }
 }
 
@@ -232,30 +235,30 @@ private fun TvBrowse(
         }
         if (flow.isNotEmpty()) {
             item {
-                TvRow("Flow · your mix", flow) { i, t ->
+                TvRow(stringResource(R.string.tv_flow_mix), flow) { i, t ->
                     TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(flow, i) })
                 }
             }
         }
         item {
-            TvRow("Made for you", h.topTracks) { i, t ->
+            TvRow(stringResource(R.string.tv_made_for_you), h.topTracks) { i, t ->
                 TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(h.topTracks, i) })
             }
         }
         charts?.let { c ->
             item {
-                TvRow("Charts", c.tracks) { i, t ->
+                TvRow(stringResource(R.string.charts_title), c.tracks) { i, t ->
                     TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(c.tracks, i) })
                 }
             }
         }
         item {
-            TvRow("Albums", h.topAlbums) { _, a ->
+            TvRow(stringResource(R.string.section_albums), h.topAlbums) { _, a ->
                 TvCard(a.name, a.artistLine, a.artworkUrl, onClick = { onOpenAlbum(a) })
             }
         }
         item {
-            TvRow("Playlists", h.playlists) { _, p ->
+            TvRow(stringResource(R.string.section_playlists), h.playlists) { _, p ->
                 TvCard(p.name, p.owner, p.artworkUrl, onClick = { onOpenPlaylist(p) })
             }
         }
@@ -302,13 +305,13 @@ private fun TvSearch(
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                label = { Text("Search tracks, albums, playlists") },
+                label = { Text(stringResource(R.string.tv_search_hint)) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TvPalette.Purple) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { runSearch() }),
                 modifier = Modifier.weight(1f).focusRequester(fieldFocus),
             )
-            TvPill("Search", onClick = runSearch, leadingIcon = Icons.Filled.Search)
+            TvPill(stringResource(R.string.search_title), onClick = runSearch, leadingIcon = Icons.Filled.Search)
         }
 
         if (searching) {
@@ -319,17 +322,17 @@ private fun TvSearch(
         results?.let { r ->
             LazyColumn(verticalArrangement = Arrangement.spacedBy(30.dp)) {
                 item {
-                    TvRow("Tracks", r.tracks) { i, t ->
+                    TvRow(stringResource(R.string.section_tracks), r.tracks) { i, t ->
                         TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(r.tracks, i) })
                     }
                 }
                 item {
-                    TvRow("Albums", r.albums) { _, a ->
+                    TvRow(stringResource(R.string.section_albums), r.albums) { _, a ->
                         TvCard(a.name, a.artistLine, a.artworkUrl, onClick = { onOpenAlbum(a) })
                     }
                 }
                 item {
-                    TvRow("Playlists", r.playlists) { _, p ->
+                    TvRow(stringResource(R.string.section_playlists), r.playlists) { _, p ->
                         TvCard(p.name, p.owner, p.artworkUrl, onClick = { onOpenPlaylist(p) })
                     }
                 }
@@ -375,20 +378,20 @@ private fun TvLibrary(
         verticalArrangement = Arrangement.spacedBy(30.dp),
     ) {
         item {
-            Text("Your Library", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = Color.White)
+            Text(stringResource(R.string.tv_your_library), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = Color.White)
         }
         item {
-            TvRow("Liked songs", likedList) { i, t ->
+            TvRow(stringResource(R.string.tv_liked_songs), likedList) { i, t ->
                 TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(likedList, i) })
             }
         }
         item {
-            TvRow("Your playlists", playlists) { _, p ->
+            TvRow(stringResource(R.string.tv_your_playlists), playlists) { _, p ->
                 TvCard(p.name, p.owner, p.artworkUrl, onClick = { onOpenPlaylist(p) })
             }
         }
         if (likedList.isEmpty() && playlists.isEmpty()) {
-            item { Text("Nothing saved yet.", color = TvPalette.TextDim, style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.tv_nothing_saved), color = TvPalette.TextDim, style = MaterialTheme.typography.titleMedium) }
         }
     }
 }
@@ -419,10 +422,10 @@ private fun TvDetail(
                 if (subtitle.isNotBlank()) {
                     Text(subtitle, style = MaterialTheme.typography.titleMedium, color = TvPalette.TextDim)
                 }
-                Text("${tracks.size} tracks", style = MaterialTheme.typography.bodyMedium, color = TvPalette.TextDim)
+                Text(pluralStringResource(R.plurals.n_tracks, tracks.size, tracks.size), style = MaterialTheme.typography.bodyMedium, color = TvPalette.TextDim)
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    TvPill("Play all", onClick = onPlayAll, focusRequester = playFocus, leadingIcon = Icons.Filled.PlayArrow)
-                    TvPill("Back", onClick = onBack)
+                    TvPill(stringResource(R.string.action_play_all), onClick = onPlayAll, focusRequester = playFocus, leadingIcon = Icons.Filled.PlayArrow)
+                    TvPill(stringResource(R.string.action_back), onClick = onBack)
                 }
             }
         }
@@ -469,7 +472,7 @@ private fun TvTrackRow(track: Track, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (focused) Icon(Icons.Filled.PlayArrow, contentDescription = "Play", tint = TvPalette.Purple)
+        if (focused) Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.action_play), tint = TvPalette.Purple)
     }
 }
 

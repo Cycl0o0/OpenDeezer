@@ -10,7 +10,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # (src/loginhelper.cpp) — NOT by the main app/lib, so QtWebEngine never loads
 # inside the dlopen'd unified-launcher backend (where it crashed). Needs the
 # qt6-webengine-dev package.
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent DBus WebEngineWidgets)
+# LinguistTools provides lrelease (compiles the committed i18n/*.ts catalogs to
+# .qm at build time) and lupdate. On Ubuntu the CMake config + tools ship in the
+# qt6-l10n-tools package (add it to the CI apt line alongside qt6-base-dev).
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent DBus WebEngineWidgets LinguistTools)
 find_package(Threads REQUIRED)
 qt_standard_project_setup()            # enables AUTOMOC/UIC/RCC
 
@@ -62,3 +65,48 @@ target_link_libraries(opendeezer-kde PRIVATE
 )
 
 install(TARGETS opendeezer-kde RUNTIME DESTINATION bin)
+
+# ---- Translations (Qt Linguist) -------------------------------------------
+# main.cpp / loginhelper.cpp install a QTranslator that loads
+# ":/i18n/opendeezer_<lang>" for QLocale::system(); English has no catalog and
+# falls through to the source strings, and Arabic also flips the layout to RTL.
+#
+# lrelease compiles each committed i18n/*.ts into opendeezer_<lang>.qm in the
+# build tree, and the .qm are embedded under the resource prefix /i18n. This is
+# done explicitly (rather than via qt_add_translations) so the SAME six catalogs
+# can be shared by all three targets — the standalone exe, the dlopen'd
+# unified-launcher lib, and the out-of-process login helper — with a single
+# lrelease rule per file (three qt_add_translations calls would each try to
+# produce the same .qm and collide). Refresh the catalogs from the code with
+# `lupdate src/*.cpp -ts i18n/opendeezer_<lang>.ts` (never needed for a build).
+set(OPENDEEZER_TS_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/i18n/opendeezer_zh_CN.ts
+    ${CMAKE_CURRENT_SOURCE_DIR}/i18n/opendeezer_hi.ts
+    ${CMAKE_CURRENT_SOURCE_DIR}/i18n/opendeezer_es.ts
+    ${CMAKE_CURRENT_SOURCE_DIR}/i18n/opendeezer_fr.ts
+    ${CMAKE_CURRENT_SOURCE_DIR}/i18n/opendeezer_ar.ts
+    ${CMAKE_CURRENT_SOURCE_DIR}/i18n/opendeezer_ru.ts
+)
+
+set(OPENDEEZER_QM_FILES)
+foreach(_ts ${OPENDEEZER_TS_FILES})
+    get_filename_component(_qm_name ${_ts} NAME_WE)
+    set(_qm "${CMAKE_CURRENT_BINARY_DIR}/${_qm_name}.qm")
+    add_custom_command(
+        OUTPUT ${_qm}
+        COMMAND Qt6::lrelease ${_ts} -qm ${_qm}
+        DEPENDS ${_ts}
+        COMMENT "lrelease ${_qm_name}.qm"
+        VERBATIM)
+    list(APPEND OPENDEEZER_QM_FILES ${_qm})
+endforeach()
+
+# Embed the compiled catalogs into each binary at :/i18n/opendeezer_<lang>.qm.
+# BASE = the build dir so the resource alias is just the .qm basename; each call
+# uses a unique resource name so the three targets don't clash.
+qt_add_resources(opendeezer-kde   "i18n_kde"
+    PREFIX "/i18n" BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${OPENDEEZER_QM_FILES})
+qt_add_resources(opendeezer-qt    "i18n_qt"
+    PREFIX "/i18n" BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${OPENDEEZER_QM_FILES})
+qt_add_resources(opendeezer-login "i18n_login"
+    PREFIX "/i18n" BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${OPENDEEZER_QM_FILES})

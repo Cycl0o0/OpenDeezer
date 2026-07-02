@@ -1,0 +1,198 @@
+/* OpenDeezer — Español */
+
+/* Sidebar / navigation */
+"Home" = "Inicio";
+"Search" = "Buscar";
+"Library" = "Biblioteca";
+"Liked Songs" = "Canciones favoritas";
+"Playlists" = "Playlists";
+"Charts" = "Éxitos";
+"Podcasts" = "Podcasts";
+
+/* App menu / account row */
+"About OpenDeezer" = "Acerca de OpenDeezer";
+"Settings…" = "Ajustes…";
+"Log in / Switch account…" = "Iniciar sesión / Cambiar de cuenta…";
+"Settings" = "Ajustes";
+
+/* Update banner */
+"OpenDeezer %@ is available" = "OpenDeezer %@ ya está disponible";
+"Hide notes" = "Ocultar notas";
+"Release notes" = "Notas de la versión";
+"Download" = "Descargar";
+"Later" = "Más tarde";
+
+/* Login gate */
+"Logging in…" = "Iniciando sesión…";
+"Log in with Deezer" = "Iniciar sesión con Deezer";
+"Hide manual ARL" = "Ocultar ARL manual";
+"Enter ARL manually" = "Introducir ARL manualmente";
+"Paste your ARL cookie" = "Pega tu cookie ARL";
+"Sign in" = "Iniciar sesión";
+
+/* Free-account gate */
+"Premium required" = "Se requiere Premium";
+"OpenDeezer needs a Deezer Premium subscription to stream. Your account: %@. Subscribe at deezer.com, then restart OpenDeezer." = "OpenDeezer necesita una suscripción Deezer Premium para reproducir. Tu cuenta: %@. Suscríbete en deezer.com y reinicia OpenDeezer.";
+"Log in with a different account" = "Iniciar sesión con otra cuenta";
+"Quit OpenDeezer" = "Salir de OpenDeezer";
+
+/* Explicit badge */
+"Explicit" = "Explícito";
+
+/* Account label */
+"user %@" = "usuario %@";
+
+/* Credits / About */
+"v%@ · An open source reimplementation of Deezer" = "v%@ · Una reimplementación de código abierto de Deezer";
+"by Cycl0o0" = "por Cycl0o0";
+"Signed in as %@" = "Sesión iniciada como %@";
+"Built with SwiftUI + a Go engine" = "Creado con SwiftUI + un motor en Go";
+"Audio decrypted + decoded locally — your ARL never leaves your machine." = "Audio descifrado y decodificado localmente: tu ARL nunca sale de tu equipo.";
+"AGPL-3.0 · Not affiliated with Deezer." = "AGPL-3.0 · Sin afiliación con Deezer.";
+"Checking…" = "Comprobando…";
+"Check for Updates" = "Buscar actualizaciones";
+"Download v%@" = "Descargar v%@";
+"Done" = "Listo";
+
+/* Hero header + track table */
+"Play" = "Reproducir";
+"Shuffle" = "Aleatorio";
+"Title" = "Título";
+"Album" = "Álbum";
+"Time" = "Duración";
+"Unlike" = "Quitar Me gusta";
+"Like" = "Me gusta";
+"Add to Playlist…" = "Añadir a playlist…";
+"Go to Artist" = "Ir al artista";
+
+/* Playlist grid + create/rename/delete */
+"New Playlist" = "Nueva playlist";
+"Open" = "Abrir";
+"Rename…" = "Cambiar nombre…";
+"Delete…" = "Eliminar…";
+"Playlist name" = "Nombre de la playlist";
+"Create" = "Crear";
+"Cancel" = "Cancelar";
+"Name your new playlist." = "Ponle nombre a tu nueva playlist.";
+"Rename Playlist" = "Cambiar nombre de la playlist";
+"Save" = "Guardar";
+"Enter a new name." = "Introduce un nombre nuevo.";
+"Delete “%@”?" = "¿Eliminar «%@»?";
+"Delete" = "Eliminar";
+"This can't be undone." = "Esta acción no se puede deshacer.";
+
+/* Search */
+"Search tracks, albums, playlists" = "Buscar canciones, álbumes, playlists";
+"Tracks" = "Canciones";
+"Artists" = "Artistas";
+"Artist" = "Artista";
+"Albums" = "Álbumes";
+
+/* Settings — audio */
+"Audio Quality" = "Calidad de audio";
+"Normal · MP3 128" = "Normal · MP3 128";
+"High · MP3 320" = "Alta · MP3 320";
+"HiFi · FLAC lossless" = "HiFi · FLAC sin pérdidas";
+"Applied immediately and on next launch." = "Se aplica al instante y en el próximo inicio.";
+"Output Device" = "Dispositivo de salida";
+"System Default" = "Predeterminado del sistema";
+"%@ (System Default)" = "%@ (predeterminado del sistema)";
+"Choose where audio plays. Switching takes effect on the next track or seek." = "Elige dónde se reproduce el audio. El cambio se aplica en la siguiente canción o al avanzar.";
+"Gapless playback" = "Reproducción sin pausas";
+"Preloads the next track so albums play with no silence between songs." = "Precarga la siguiente canción para que los álbumes suenen sin silencios entre temas.";
+"Crossfade" = "Crossfade";
+"Off" = "Desactivado";
+"Fades the end of one track into the start of the next." = "Funde el final de una canción con el inicio de la siguiente.";
+"Sleep timer" = "Temporizador de sueño";
+"%d min" = "%d min";
+"End of track" = "Fin de la canción";
+"Volume normalization" = "Normalización de volumen";
+"Evens out loudness differences between tracks (ReplayGain)." = "Iguala las diferencias de volumen entre canciones (ReplayGain).";
+"Equalizer" = "Ecualizador";
+"Custom" = "Personalizado";
+"Preamp" = "Preamplificador";
+"Mono audio" = "Audio mono";
+"Plays both channels as one — helpful with a single speaker or hearing in one ear." = "Reproduce ambos canales como uno: útil con un solo altavoz o si oyes por un oído.";
+"Keep playing in background" = "Seguir reproduciendo en segundo plano";
+"Closing the window hides it to the menu bar instead of quitting." = "Al cerrar la ventana se oculta en la barra de menús en lugar de salir.";
+
+/* Settings — remote control */
+"Remote control" = "Control remoto";
+"Lets other devices control playback over the network." = "Permite que otros dispositivos controlen la reproducción por la red.";
+"Enable" = "Activar";
+"Allow on local network (LAN)" = "Permitir en la red local (LAN)";
+"Access token" = "Token de acceso";
+"None" = "Ninguno";
+"Phone Remote" = "Control desde el teléfono";
+"Scan with your phone (same Wi-Fi), then enter the code." = "Escanea con tu teléfono (misma Wi-Fi) e introduce el código.";
+"Stored in %@" = "Guardado en %@";
+
+/* Settings — sleep timer captions */
+"Playback pauses when the current track ends." = "La reproducción se pausa cuando termina la canción actual.";
+"Fades out and pauses in %@." = "Baja el volumen y se pausa en %@.";
+"Automatically pause playback after a set time." = "Pausa la reproducción automáticamente tras un tiempo definido.";
+
+/* Player bar */
+"Nothing playing" = "Nada en reproducción";
+"Lyrics" = "Letra";
+"Connected — choose a device" = "Conectado: elige un dispositivo";
+"Connect to a device" = "Conectar a un dispositivo";
+
+/* Lyrics / artist */
+"No lyrics available" = "No hay letra disponible";
+"Couldn't load this artist." = "No se pudo cargar este artista.";
+"Top Tracks" = "Canciones destacadas";
+"Related Artists" = "Artistas relacionados";
+
+/* Podcasts */
+"Search podcasts" = "Buscar podcasts";
+"Search for podcasts" = "Busca podcasts";
+"Podcast" = "Podcast";
+
+/* Charts */
+"Top Albums" = "Álbumes destacados";
+"Top Artists" = "Artistas destacados";
+"Top Playlists" = "Playlists destacadas";
+
+/* Device picker */
+"Connect to a Device" = "Conectar a un dispositivo";
+"Play on another device on your network" = "Reproduce en otro dispositivo de tu red";
+"Refresh" = "Actualizar";
+"This computer" = "Este equipo";
+"Play here" = "Reproducir aquí";
+"Looking for devices…" = "Buscando dispositivos…";
+"No devices found on your network." = "No se encontraron dispositivos en tu red.";
+"Devices" = "Dispositivos";
+"Device" = "Dispositivo";
+
+/* Add to playlist */
+"Add to Playlist" = "Añadir a playlist";
+"New playlist…" = "Nueva playlist…";
+"Your Playlists" = "Tus playlists";
+
+/* Home greeting */
+"Good morning" = "Buenos días";
+"Good afternoon" = "Buenas tardes";
+"Good evening" = "Buenas noches";
+
+/* Login sheet */
+"Signing in…" = "Iniciando sesión…";
+
+/* Tray menu */
+"Show OpenDeezer" = "Mostrar OpenDeezer";
+"Play / Pause" = "Reproducir / Pausar";
+"Next" = "Siguiente";
+"Previous" = "Anterior";
+
+/* AppState — status / errors / list subtitles */
+"Login failed — invalid or expired ARL." = "Error de inicio de sesión: ARL no válido o caducado.";
+"OpenDeezer %@ is available." = "OpenDeezer %@ ya está disponible.";
+"You're up to date." = "Ya tienes la última versión.";
+"plan" = "plan";
+"%@ plan" = "plan %@";
+"Your %@ doesn't include HiFi (FLAC)." = "Tu %@ no incluye HiFi (FLAC).";
+"Your %@ doesn't include High (MP3 320)." = "Tu %@ no incluye Alta (MP3 320).";
+"Playlist" = "Playlist";
+"Playlist · %@" = "Playlist · %@";
+"Top worldwide" = "Top mundial";
+"Album · %@" = "Álbum · %@";

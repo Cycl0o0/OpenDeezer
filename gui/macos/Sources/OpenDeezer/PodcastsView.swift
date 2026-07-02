@@ -22,7 +22,7 @@ struct PodcastsView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(DZ.textSec)
-                TextField("Search podcasts", text: $app.podcastQuery)
+                TextField(L("Search podcasts"), text: $app.podcastQuery)
                     .textFieldStyle(.plain).foregroundStyle(DZ.textPri)
                     .onSubmit { app.runPodcastSearch() }
             }
@@ -38,7 +38,7 @@ struct PodcastsView: View {
                 Spacer()
                 VStack(spacing: 8) {
                     Image(systemName: "mic").font(.system(size: 32)).foregroundStyle(DZ.textSec)
-                    Text("Search for podcasts").font(.system(size: 14)).foregroundStyle(DZ.textSec)
+                    Text(L("Search for podcasts")).font(.system(size: 14)).foregroundStyle(DZ.textSec)
                 }
                 Spacer()
             } else {
@@ -68,7 +68,7 @@ private struct PodcastCard: View {
                 Artwork(url: podcast.artworkUrl, size: 170, radius: 8).shadow(radius: 6, y: 4)
                 Text(podcast.name).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(DZ.textPri).lineLimit(1)
-                Text(podcast.episodeCount > 0 ? "\(podcast.episodeCount) episodes" : "Podcast")
+                Text(podcast.episodeCount > 0 ? Lp("%d episodes", podcast.episodeCount) : L("Podcast"))
                     .font(.caption).foregroundStyle(DZ.textSec)
             }
         }
@@ -111,14 +111,15 @@ private struct PodcastEpisodesView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button { app.closePodcast() } label: {
-                Label("Podcasts", systemImage: "chevron.left")
+                // chevron.backward auto-mirrors under RTL (unlike chevron.left).
+                Label(L("Podcasts"), systemImage: "chevron.backward")
             }
             .buttonStyle(.glass).tint(DZ.accent)
 
             HStack(alignment: .bottom, spacing: 20) {
                 Artwork(url: show.artworkUrl, size: 140, radius: 10).shadow(radius: 14, y: 6)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Podcast").font(.system(size: 11, weight: .bold)).textCase(.uppercase)
+                    Text(L("Podcast")).font(.system(size: 11, weight: .bold)).textCase(.uppercase)
                         .foregroundStyle(DZ.textSec)
                     Text(show.name).font(.system(size: 30, weight: .bold))
                         .foregroundStyle(DZ.textPri).lineLimit(2)

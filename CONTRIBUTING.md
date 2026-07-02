@@ -40,6 +40,16 @@ OPENDEEZER_LOG=debug go run ./cmd/opendeezer   # with debug logging to opendeeze
 - `gui/*` — native frontends (macOS SwiftUI, GNOME GTK, KDE Qt, Windows WinUI,
   unified Linux launcher).
 
+## Translations
+
+OpenDeezer ships in English, 简体中文, हिन्दी, Español, Français, العربية and
+Русский, across every client. New languages and fixes to the existing ones are
+welcome — each client localizes natively (Go JSON catalogs for the TUI, an inline
+dictionary for the web remote, `.lproj` on macOS/iOS, `.resw` on Windows, gettext
+`.po` on GNOME, Qt `.ts` on KDE, `values-*` resources on Android). See
+[`docs/TRANSLATIONS.md`](docs/TRANSLATIONS.md) for the per-client steps and how to
+verify each one.
+
 ## Pull requests
 
 - Keep the build, `go vet`, and `go test -race ./...` green.

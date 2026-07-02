@@ -133,28 +133,28 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
                                const QVector<AudioDevice> &devices,
                                const QString &currentDeviceId, QWidget *parent)
     : QDialog(parent), m_iniPath(iniPath), m_initialDevice(currentDeviceId) {
-    setWindowTitle(QStringLiteral("OpenDeezer Settings"));
+    setWindowTitle(tr("OpenDeezer Settings"));
     setModal(true);
 
     auto *root = new QVBoxLayout(this);
 
     // ---- Audio ----
-    auto *audioBox  = new QGroupBox(QStringLiteral("Audio"));
+    auto *audioBox  = new QGroupBox(tr("Audio"));
     auto *audioForm = new QFormLayout(audioBox);
     m_quality = new QComboBox;
-    m_quality->addItem(QStringLiteral("Normal — MP3 128 kbps"), 0);
-    m_quality->addItem(QStringLiteral("High — MP3 320 kbps"), 1);
-    m_quality->addItem(QStringLiteral("HiFi — FLAC lossless"), 2);
+    m_quality->addItem(tr("Normal — MP3 128 kbps"), 0);
+    m_quality->addItem(tr("High — MP3 320 kbps"), 1);
+    m_quality->addItem(tr("HiFi — FLAC lossless"), 2);
     m_quality->setCurrentIndex(loadQuality(m_iniPath));
-    audioForm->addRow(QStringLiteral("Streaming quality"), m_quality);
-    m_replayGain = new QCheckBox(QStringLiteral("Normalize loudness (ReplayGain)"));
+    audioForm->addRow(tr("Streaming quality"), m_quality);
+    m_replayGain = new QCheckBox(tr("Normalize loudness (ReplayGain)"));
     m_replayGain->setChecked(loadReplayGain(m_iniPath));
     audioForm->addRow(QString(), m_replayGain);
 
     // Mono downmix — engine-owned (part of the EQ state, but it works with the
     // equalizer off too), so it sits with the other output options and applies
     // live like the sleep timer. Seeded by refreshEQ() below.
-    m_eqMono = new QCheckBox(QStringLiteral("Mono audio (downmix to one channel)"));
+    m_eqMono = new QCheckBox(tr("Mono audio (downmix to one channel)"));
     connect(m_eqMono, &QCheckBox::toggled, this, [this](bool on) {
         if (!m_eqLoading)
             sendEQ({{QStringLiteral("mono"), on}});
@@ -165,12 +165,12 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     // selection prefers the engine's active device, then the system default.
     m_device = new QComboBox;
     if (devices.isEmpty()) {
-        m_device->addItem(QStringLiteral("System default"), QString());
+        m_device->addItem(tr("System default"), QString());
     } else {
         for (const AudioDevice &d : devices) {
-            QString label = d.name.isEmpty() ? QStringLiteral("System default") : d.name;
+            QString label = d.name.isEmpty() ? tr("System default") : d.name;
             if (d.isDefault)
-                label += QStringLiteral("  (default)");
+                label += tr("  (default)");
             m_device->addItem(label, d.id);
         }
         int sel = m_device->findData(currentDeviceId);
@@ -180,36 +180,36 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
         if (sel >= 0)
             m_device->setCurrentIndex(sel);
     }
-    audioForm->addRow(QStringLiteral("Output device"), m_device);
+    audioForm->addRow(tr("Output device"), m_device);
 
     // Gapless + crossfade. Crossfade overlaps adjacent tracks; gapless butts
     // them with no silence. Both rely on the engine preloading the next track.
-    m_gapless = new QCheckBox(QStringLiteral("Gapless playback"));
+    m_gapless = new QCheckBox(tr("Gapless playback"));
     m_gapless->setChecked(loadGapless(m_iniPath));
     audioForm->addRow(QString(), m_gapless);
 
     m_crossfade = new QComboBox;
-    m_crossfade->addItem(QStringLiteral("Off"), 0);
-    m_crossfade->addItem(QStringLiteral("3 seconds"), 3000);
-    m_crossfade->addItem(QStringLiteral("6 seconds"), 6000);
-    m_crossfade->addItem(QStringLiteral("12 seconds"), 12000);
+    m_crossfade->addItem(tr("Off"), 0);
+    m_crossfade->addItem(tr("3 seconds"), 3000);
+    m_crossfade->addItem(tr("6 seconds"), 6000);
+    m_crossfade->addItem(tr("12 seconds"), 12000);
     {
         const int xf = loadCrossfadeMs(m_iniPath);
         int sel = m_crossfade->findData(xf);
         m_crossfade->setCurrentIndex(sel < 0 ? 0 : sel);
     }
-    audioForm->addRow(QStringLiteral("Crossfade"), m_crossfade);
+    audioForm->addRow(tr("Crossfade"), m_crossfade);
 
     // Sleep timer — pause after N minutes (auto fade-out) or at the end of the
     // current track. Not persisted: it's a live, transient engine action, so it
     // applies immediately on change rather than waiting for OK.
     m_sleepTimer = new QComboBox;
-    m_sleepTimer->addItem(QStringLiteral("Off"), 0);
-    m_sleepTimer->addItem(QStringLiteral("15 minutes"), 15);
-    m_sleepTimer->addItem(QStringLiteral("30 minutes"), 30);
-    m_sleepTimer->addItem(QStringLiteral("45 minutes"), 45);
-    m_sleepTimer->addItem(QStringLiteral("60 minutes"), 60);
-    m_sleepTimer->addItem(QStringLiteral("End of track"), -1);
+    m_sleepTimer->addItem(tr("Off"), 0);
+    m_sleepTimer->addItem(tr("15 minutes"), 15);
+    m_sleepTimer->addItem(tr("30 minutes"), 30);
+    m_sleepTimer->addItem(tr("45 minutes"), 45);
+    m_sleepTimer->addItem(tr("60 minutes"), 60);
+    m_sleepTimer->addItem(tr("End of track"), -1);
     // Reflect the engine's current sleep-timer state; a running countdown is
     // snapped up to the nearest preset for display.
     if (DZSleepTimerActive()) {
@@ -226,7 +226,7 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     // Connect after seeding the index so the initial state doesn't re-apply.
     connect(m_sleepTimer, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int) { applySleepTimer(); });
-    audioForm->addRow(QStringLiteral("Sleep timer"), m_sleepTimer);
+    audioForm->addRow(tr("Sleep timer"), m_sleepTimer);
     root->addWidget(audioBox);
 
     // ---- Equalizer ----
@@ -235,12 +235,12 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     // in the core, so the dialog only mirrors DZEQJSON and pushes edits via
     // DZSetEQJSON. The group's own checkbox is the EQ on/off switch — Qt
     // greys out the contents when it's unchecked, mono stays in Audio above.
-    m_eqBox = new QGroupBox(QStringLiteral("Equalizer"));
+    m_eqBox = new QGroupBox(tr("Equalizer"));
     m_eqBox->setCheckable(true);
     auto *eqLay = new QVBoxLayout(m_eqBox);
 
     auto *eqPresetRow = new QHBoxLayout;
-    eqPresetRow->addWidget(new QLabel(QStringLiteral("Preset")));
+    eqPresetRow->addWidget(new QLabel(tr("Preset")));
     m_eqPreset = new QComboBox; // populated from the core's list by refreshEQ()
     eqPresetRow->addWidget(m_eqPreset, 1);
     eqLay->addLayout(eqPresetRow);
@@ -274,7 +274,7 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
         // valueChanged fires per pixel while dragging — mark the band dirty
         // and let the 33 ms timer coalesce the engine calls (~30/s max).
         connect(sl, &QSlider::valueChanged, this, [this, i, sl](int v) {
-            sl->setToolTip(QStringLiteral("%1 dB").arg(v / 10.0));
+            sl->setToolTip(tr("%1 dB").arg(v / 10.0));
             if (m_eqLoading)
                 return;
             // A manual band edit flips the engine's preset to "custom";
@@ -291,7 +291,7 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
 
     // Preamp: output trim under the bands, same ±12 dB range and dB×10 units.
     auto *eqPreampRow = new QHBoxLayout;
-    eqPreampRow->addWidget(new QLabel(QStringLiteral("Preamp")));
+    eqPreampRow->addWidget(new QLabel(tr("Preamp")));
     m_eqPreamp = new QSlider(Qt::Horizontal);
     m_eqPreamp->setRange(-120, 120);
     m_eqPreamp->setPageStep(10);
@@ -325,7 +325,7 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
         refreshEQ(); // the preset changed all ten gains — mirror them
     });
     connect(m_eqPreamp, &QSlider::valueChanged, this, [this](int v) {
-        m_eqPreamp->setToolTip(QStringLiteral("%1 dB").arg(v / 10.0));
+        m_eqPreamp->setToolTip(tr("%1 dB").arg(v / 10.0));
         if (m_eqLoading)
             return;
         m_eqPreampDirty = true;
@@ -334,12 +334,12 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     });
 
     // ---- Behaviour ----
-    auto *behBox  = new QGroupBox(QStringLiteral("Behaviour"));
+    auto *behBox  = new QGroupBox(tr("Behaviour"));
     auto *behLay  = new QVBoxLayout(behBox);
-    m_tray = new QCheckBox(QStringLiteral("Keep playing in the background "
+    m_tray = new QCheckBox(tr("Keep playing in the background "
                                           "(close to tray)"));
     m_tray->setChecked(loadCloseToTray(m_iniPath));
-    auto *hint = new QLabel(QStringLiteral(
+    auto *hint = new QLabel(tr(
         "When enabled, closing the window hides it to the system tray and the "
         "music keeps playing. Use the tray icon to restore or quit."));
     hint->setWordWrap(true);
@@ -353,23 +353,23 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     // ---- Remote control ----
     // Unlike the groups above, this talks to the engine directly and applies
     // on every change (it's toggling a live server, not a playback setting).
-    auto *remoteBox  = new QGroupBox(QStringLiteral("Remote control"));
+    auto *remoteBox  = new QGroupBox(tr("Remote control"));
     auto *remoteForm = new QFormLayout(remoteBox);
 
-    m_ctrlEnable = new QCheckBox(QStringLiteral("Enable remote control"));
+    m_ctrlEnable = new QCheckBox(tr("Enable remote control"));
     remoteForm->addRow(QString(), m_ctrlEnable);
 
-    m_ctrlLan = new QCheckBox(QStringLiteral("Allow on local network (LAN)"));
+    m_ctrlLan = new QCheckBox(tr("Allow on local network (LAN)"));
     remoteForm->addRow(QString(), m_ctrlLan);
 
     m_ctrlToken = new QLineEdit;
-    m_ctrlToken->setPlaceholderText(QStringLiteral("None"));
-    remoteForm->addRow(QStringLiteral("Access token"), m_ctrlToken);
+    m_ctrlToken->setPlaceholderText(tr("None"));
+    remoteForm->addRow(tr("Access token"), m_ctrlToken);
 
-    m_phoneRemote = new QCheckBox(QStringLiteral("Enable Phone Remote"));
+    m_phoneRemote = new QCheckBox(tr("Enable Phone Remote"));
     remoteForm->addRow(QString(), m_phoneRemote);
 
-    auto *remoteHint = new QLabel(QStringLiteral(
+    auto *remoteHint = new QLabel(tr(
         "Lets another OpenDeezer app or your phone control playback over the "
         "network."));
     remoteHint->setWordWrap(true);
@@ -413,15 +413,15 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     // On-demand release check (mirrors the background one MainWindow runs at
     // startup): never blocks, never downloads/installs anything — Download just
     // opens the GitHub release page in the browser.
-    auto *aboutBox = new QGroupBox(QStringLiteral("About"));
+    auto *aboutBox = new QGroupBox(tr("About"));
     auto *aboutLay = new QVBoxLayout(aboutBox);
     auto *updRow   = new QHBoxLayout;
-    m_checkUpdatesBtn = new QPushButton(QStringLiteral("Check for Updates"));
+    m_checkUpdatesBtn = new QPushButton(tr("Check for Updates"));
     updRow->addWidget(m_checkUpdatesBtn);
     m_updateResult = new QLabel;
     m_updateResult->setWordWrap(true);
     updRow->addWidget(m_updateResult, 1);
-    m_updateDownloadBtn = new QPushButton(QStringLiteral("Download"));
+    m_updateDownloadBtn = new QPushButton(tr("Download"));
     m_updateDownloadBtn->hide();
     updRow->addWidget(m_updateDownloadBtn);
     aboutLay->addLayout(updRow);
@@ -534,7 +534,7 @@ void SettingsDialog::refreshEQ() {
         for (const QJsonValue &v : presets)
             m_eqPreset->addItem(eqPresetLabel(v.toString()), v.toString());
         m_eqCustomIdx = m_eqPreset->count();
-        m_eqPreset->addItem(QStringLiteral("Custom"), QStringLiteral("custom"));
+        m_eqPreset->addItem(tr("Custom"), QStringLiteral("custom"));
     }
     const int sel = m_eqPreset->findData(eq.value("preset").toString());
     m_eqPreset->setCurrentIndex(sel < 0 ? m_eqCustomIdx : sel);
@@ -562,7 +562,7 @@ void SettingsDialog::flushEQ() {
 void SettingsDialog::checkForUpdates() {
     m_checkUpdatesBtn->setEnabled(false);
     m_updateDownloadBtn->hide();
-    m_updateResult->setText(QStringLiteral("Checking…"));
+    m_updateResult->setText(tr("Checking…"));
     m_updateResult->setToolTip(QString());
 
     // The dialog is a stack local in MainWindow and may be dismissed (OK /
@@ -582,14 +582,14 @@ void SettingsDialog::checkForUpdates() {
             if (o.value("hasUpdate").toBool()) {
                 m_updateUrl = o.value("url").toString();
                 m_updateResult->setText(
-                    QStringLiteral("OpenDeezer %1 is available.").arg(latest));
+                    tr("OpenDeezer %1 is available.").arg(latest));
                 m_updateResult->setToolTip(o.value("notes").toString());
                 m_updateDownloadBtn->show();
             } else if (!latest.isEmpty()) {
-                m_updateResult->setText(QStringLiteral("You're up to date (%1).").arg(latest));
+                m_updateResult->setText(tr("You're up to date (%1).").arg(latest));
             } else {
                 m_updateResult->setText(
-                    QStringLiteral("Couldn't check for updates — try again later."));
+                    tr("Couldn't check for updates — try again later."));
             }
         });
     });

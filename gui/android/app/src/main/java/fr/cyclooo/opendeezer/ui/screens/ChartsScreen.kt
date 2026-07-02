@@ -17,6 +17,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Album
 import fr.cyclooo.opendeezer.engine.ArtistInfo
 import fr.cyclooo.opendeezer.engine.Engine
@@ -38,10 +40,10 @@ fun ChartsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Charts") },
+                title = { Text(stringResource(R.string.charts_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -53,7 +55,7 @@ fun ChartsScreen(
                     CircularProgressIndicator()
                 }
                 else -> if (c.isEmpty) {
-                    CenteredMessage("Charts unavailable.")
+                    CenteredMessage(stringResource(R.string.charts_unavailable))
                 } else {
                     SearchResultsList(
                         results = c,

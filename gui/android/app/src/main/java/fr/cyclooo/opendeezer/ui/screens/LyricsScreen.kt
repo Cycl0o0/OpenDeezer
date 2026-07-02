@@ -27,9 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.Lyrics
 import fr.cyclooo.opendeezer.player.PlayerController
@@ -59,10 +61,10 @@ fun LyricsScreen(player: PlayerController, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Lyrics") },
+                title = { Text(stringResource(R.string.lyrics_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Back")
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -81,7 +83,7 @@ fun LyricsScreen(player: PlayerController, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No lyrics available.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.lyrics_none), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

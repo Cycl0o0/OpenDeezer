@@ -27,4 +27,11 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
   </ItemGroup>
+  <!-- Localization: MRT Core resources. UseWinUI does NOT auto-glob .resw for the
+       .NET SDK WinUI flow, so register them explicitly. MakePri compiles these into
+       resources.pri (one resource subtree "Resources", one qualifier per locale
+       folder) which ships next to OpenDeezer.exe and is read by Loc.cs at runtime. -->
+  <ItemGroup>
+    <PRIResource Include="Strings\**\*.resw" />
+  </ItemGroup>
 </Project>

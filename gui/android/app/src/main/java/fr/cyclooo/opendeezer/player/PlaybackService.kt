@@ -168,7 +168,7 @@ class PlaybackService : Service() {
         val t = st.current
         s.setMetadata(
             MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, t?.name ?: "OpenDeezer")
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, t?.name ?: getString(R.string.app_name))
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, t?.artistLine.orEmpty())
                 .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, t?.albumName.orEmpty())
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, st.durationMs)
@@ -236,7 +236,7 @@ class PlaybackService : Service() {
         if (Build.VERSION.SDK_INT < 26) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Playback", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_ID, getString(R.string.notif_channel_playback), NotificationManager.IMPORTANCE_LOW),
         )
     }
 
@@ -248,33 +248,33 @@ class PlaybackService : Service() {
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(t?.name ?: "OpenDeezer")
+            .setContentTitle(t?.name ?: getString(R.string.app_name))
             .setContentText(t?.artistLine.orEmpty())
             .setContentIntent(contentIntent)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_previous, "Previous",
+                    android.R.drawable.ic_media_previous, getString(R.string.action_previous),
                     MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS),
                 ),
             )
             .addAction(
                 if (st.isPlaying) {
                     NotificationCompat.Action(
-                        android.R.drawable.ic_media_pause, "Pause",
+                        android.R.drawable.ic_media_pause, getString(R.string.action_pause),
                         MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE),
                     )
                 } else {
                     NotificationCompat.Action(
-                        android.R.drawable.ic_media_play, "Play",
+                        android.R.drawable.ic_media_play, getString(R.string.action_play),
                         MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY),
                     )
                 },
             )
             .addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_next, "Next",
+                    android.R.drawable.ic_media_next, getString(R.string.action_next),
                     MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT),
                 ),
             )

@@ -1,0 +1,652 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Nav_Home" xml:space="preserve">
+    <value>الرئيسية</value>
+  </data>
+  <data name="Nav_LikedSongs" xml:space="preserve">
+    <value>الأغاني المفضلة</value>
+  </data>
+  <data name="Nav_Flow" xml:space="preserve">
+    <value>Flow</value>
+  </data>
+  <data name="Nav_Playlists" xml:space="preserve">
+    <value>قوائم التشغيل</value>
+  </data>
+  <data name="Nav_Charts" xml:space="preserve">
+    <value>الأكثر رواجًا</value>
+  </data>
+  <data name="Nav_Podcasts" xml:space="preserve">
+    <value>البودكاست</value>
+  </data>
+  <data name="Nav_Search" xml:space="preserve">
+    <value>البحث</value>
+  </data>
+  <data name="Nav_Account" xml:space="preserve">
+    <value>تسجيل الدخول / تبديل الحساب…</value>
+  </data>
+  <data name="Nav_Settings" xml:space="preserve">
+    <value>الإعدادات</value>
+  </data>
+  <data name="Nav_PhoneRemote" xml:space="preserve">
+    <value>التحكم عبر الهاتف</value>
+  </data>
+  <data name="Nav_About" xml:space="preserve">
+    <value>حول</value>
+  </data>
+  <data name="Nav_Artist" xml:space="preserve">
+    <value>فنان</value>
+  </data>
+  <data name="Nav_Lyrics" xml:space="preserve">
+    <value>كلمات الأغنية</value>
+  </data>
+  <data name="Btn_Download" xml:space="preserve">
+    <value>تنزيل</value>
+  </data>
+  <data name="Btn_NewPlaylist" xml:space="preserve">
+    <value>قائمة تشغيل جديدة</value>
+  </data>
+  <data name="Btn_Add" xml:space="preserve">
+    <value>إضافة</value>
+  </data>
+  <data name="Btn_Cancel" xml:space="preserve">
+    <value>إلغاء</value>
+  </data>
+  <data name="Btn_OK" xml:space="preserve">
+    <value>موافق</value>
+  </data>
+  <data name="Btn_Save" xml:space="preserve">
+    <value>حفظ</value>
+  </data>
+  <data name="Btn_Close" xml:space="preserve">
+    <value>إغلاق</value>
+  </data>
+  <data name="Btn_Quit" xml:space="preserve">
+    <value>إنهاء</value>
+  </data>
+  <data name="Btn_Delete" xml:space="preserve">
+    <value>حذف</value>
+  </data>
+  <data name="Btn_LogInWithDeezer" xml:space="preserve">
+    <value>تسجيل الدخول عبر Deezer</value>
+  </data>
+  <data name="Btn_EnterArlManually" xml:space="preserve">
+    <value>إدخال ARL يدويًا</value>
+  </data>
+  <data name="Section_TopTracks" xml:space="preserve">
+    <value>أفضل الأغاني</value>
+  </data>
+  <data name="Section_Albums" xml:space="preserve">
+    <value>الألبومات</value>
+  </data>
+  <data name="Section_Artists" xml:space="preserve">
+    <value>الفنانون</value>
+  </data>
+  <data name="Section_Playlists" xml:space="preserve">
+    <value>قوائم التشغيل</value>
+  </data>
+  <data name="Section_YourPlaylists" xml:space="preserve">
+    <value>قوائم التشغيل الخاصة بك</value>
+  </data>
+  <data name="Section_RelatedArtists" xml:space="preserve">
+    <value>فنانون ذوو صلة</value>
+  </data>
+  <data name="Search_Placeholder" xml:space="preserve">
+    <value>البحث في Deezer…</value>
+  </data>
+  <data name="Search_TracksHeader" xml:space="preserve">
+    <value>الأغاني</value>
+  </data>
+  <data name="Search_AlbumsPlaylistsHeader" xml:space="preserve">
+    <value>الألبومات وقوائم التشغيل</value>
+  </data>
+  <data name="Podcast_SearchPlaceholder" xml:space="preserve">
+    <value>البحث في البودكاست…</value>
+  </data>
+  <data name="Podcast_ShowsHeader" xml:space="preserve">
+    <value>البرامج</value>
+  </data>
+  <data name="Greeting_Morning" xml:space="preserve">
+    <value>صباح الخير</value>
+  </data>
+  <data name="Greeting_Afternoon" xml:space="preserve">
+    <value>نهارك سعيد</value>
+  </data>
+  <data name="Greeting_Evening" xml:space="preserve">
+    <value>مساء الخير</value>
+  </data>
+  <data name="Tooltip_Like" xml:space="preserve">
+    <value>إعجاب / إلغاء الإعجاب</value>
+  </data>
+  <data name="Tooltip_AddToPlaylist" xml:space="preserve">
+    <value>إضافة إلى قائمة تشغيل</value>
+  </data>
+  <data name="Tooltip_Shuffle" xml:space="preserve">
+    <value>تشغيل عشوائي</value>
+  </data>
+  <data name="Tooltip_Previous" xml:space="preserve">
+    <value>السابق</value>
+  </data>
+  <data name="Tooltip_PlayPause" xml:space="preserve">
+    <value>تشغيل / إيقاف مؤقت</value>
+  </data>
+  <data name="Tooltip_Next" xml:space="preserve">
+    <value>التالي</value>
+  </data>
+  <data name="Tooltip_RepeatOff" xml:space="preserve">
+    <value>تكرار: إيقاف</value>
+  </data>
+  <data name="Tooltip_RepeatAll" xml:space="preserve">
+    <value>تكرار: الكل</value>
+  </data>
+  <data name="Tooltip_RepeatOne" xml:space="preserve">
+    <value>تكرار: أغنية واحدة</value>
+  </data>
+  <data name="Tooltip_Lyrics" xml:space="preserve">
+    <value>كلمات الأغنية</value>
+  </data>
+  <data name="Tooltip_Artist" xml:space="preserve">
+    <value>فنان</value>
+  </data>
+  <data name="Tooltip_Connect" xml:space="preserve">
+    <value>الاتصال بجهاز</value>
+  </data>
+  <data name="Tooltip_Explicit" xml:space="preserve">
+    <value>محتوى صريح</value>
+  </data>
+  <data name="Menu_Like" xml:space="preserve">
+    <value>إعجاب</value>
+  </data>
+  <data name="Menu_AddToPlaylist" xml:space="preserve">
+    <value>إضافة إلى قائمة تشغيل…</value>
+  </data>
+  <data name="Menu_Rename" xml:space="preserve">
+    <value>إعادة تسمية…</value>
+  </data>
+  <data name="Menu_Delete" xml:space="preserve">
+    <value>حذف…</value>
+  </data>
+  <data name="Status_LoggingIn" xml:space="preserve">
+    <value>جارٍ تسجيل الدخول…</value>
+  </data>
+  <data name="Status_LoginFailed" xml:space="preserve">
+    <value>فشل تسجيل الدخول</value>
+  </data>
+  <data name="Status_CheckingAccount" xml:space="preserve">
+    <value>جارٍ التحقق من الحساب…</value>
+  </data>
+  <data name="Status_NotPlaying" xml:space="preserve">
+    <value>لا يوجد تشغيل</value>
+  </data>
+  <data name="Status_NotSignedIn" xml:space="preserve">
+    <value>لم يتم تسجيل الدخول</value>
+  </data>
+  <data name="Status_Loading" xml:space="preserve">
+    <value>جارٍ التحميل…</value>
+  </data>
+  <data name="Connect_Title" xml:space="preserve">
+    <value>الاتصال بجهاز</value>
+  </data>
+  <data name="Connect_SignIn" xml:space="preserve">
+    <value>سجّل الدخول لاستخدام Connect.</value>
+  </data>
+  <data name="Connect_Searching" xml:space="preserve">
+    <value>جارٍ البحث عن الأجهزة…</value>
+  </data>
+  <data name="Connect_ThisComputer" xml:space="preserve">
+    <value>هذا الكمبيوتر</value>
+  </data>
+  <data name="Connect_LocalPlayback" xml:space="preserve">
+    <value>تشغيل محلي</value>
+  </data>
+  <data name="Connect_NoDevices" xml:space="preserve">
+    <value>لم يتم العثور على أجهزة أخرى على شبكتك.</value>
+  </data>
+  <data name="Connect_VersionFormat" xml:space="preserve">
+    <value>{0} · OpenDeezer {1}</value>
+  </data>
+  <data name="Connect_PlayingOnFormat" xml:space="preserve">
+    <value>التشغيل على {0}</value>
+  </data>
+  <data name="ConnectType_Terminal" xml:space="preserve">
+    <value>طرفية</value>
+  </data>
+  <data name="ConnectType_Device" xml:space="preserve">
+    <value>جهاز</value>
+  </data>
+  <data name="Lyrics_PlayPrompt" xml:space="preserve">
+    <value>شغّل أغنية لعرض كلماتها.</value>
+  </data>
+  <data name="Lyrics_Loading" xml:space="preserve">
+    <value>جارٍ تحميل كلمات الأغنية…</value>
+  </data>
+  <data name="Lyrics_None" xml:space="preserve">
+    <value>لا تتوفر كلمات لهذه الأغنية.</value>
+  </data>
+  <data name="Dialog_SignInTitle" xml:space="preserve">
+    <value>تسجيل الدخول إلى Deezer</value>
+  </data>
+  <data name="Dialog_SignInBody" xml:space="preserve">
+    <value>اختر طريقة تسجيل الدخول.</value>
+  </data>
+  <data name="Dialog_WebLoginTitle" xml:space="preserve">
+    <value>تسجيل الدخول عبر Deezer</value>
+  </data>
+  <data name="Dialog_LogInWithArlTitle" xml:space="preserve">
+    <value>تسجيل الدخول باستخدام ARL</value>
+  </data>
+  <data name="Dialog_PasteArlPlaceholder" xml:space="preserve">
+    <value>الصق ARL الخاص بـ Deezer</value>
+  </data>
+  <data name="Dialog_LoginFailedTitle" xml:space="preserve">
+    <value>فشل تسجيل الدخول</value>
+  </data>
+  <data name="Dialog_LoginFailedBody" xml:space="preserve">
+    <value>ARL غير صالح أو منتهي الصلاحية. حاول تسجيل الدخول مرة أخرى.</value>
+  </data>
+  <data name="Dialog_NoArtistTitle" xml:space="preserve">
+    <value>لا يوجد فنان</value>
+  </data>
+  <data name="Dialog_NoArtistBody" xml:space="preserve">
+    <value>شغّل أغنية لعرض فنانها.</value>
+  </data>
+  <data name="Dialog_NoTrackTitle" xml:space="preserve">
+    <value>لا توجد أغنية</value>
+  </data>
+  <data name="Dialog_NoTrackBody" xml:space="preserve">
+    <value>شغّل أغنية لإضافتها إلى قائمة تشغيل.</value>
+  </data>
+  <data name="Dialog_AddToPlaylistTitle" xml:space="preserve">
+    <value>إضافة إلى قائمة تشغيل</value>
+  </data>
+  <data name="Dialog_NewPlaylistItem" xml:space="preserve">
+    <value>＋  قائمة تشغيل جديدة…</value>
+  </data>
+  <data name="Dialog_NewPlaylistTitle" xml:space="preserve">
+    <value>قائمة تشغيل جديدة</value>
+  </data>
+  <data name="Dialog_PlaylistNamePlaceholder" xml:space="preserve">
+    <value>اسم قائمة التشغيل</value>
+  </data>
+  <data name="Dialog_RenamePlaylistTitle" xml:space="preserve">
+    <value>إعادة تسمية قائمة التشغيل</value>
+  </data>
+  <data name="Dialog_DeletePlaylistTitle" xml:space="preserve">
+    <value>حذف قائمة التشغيل</value>
+  </data>
+  <data name="Dialog_DeletePlaylistBodyFormat" xml:space="preserve">
+    <value>هل تريد حذف ‏«{0}»؟ لا يمكن التراجع عن ذلك.</value>
+  </data>
+  <data name="Dialog_CreateFailTitle" xml:space="preserve">
+    <value>تعذّر إنشاء قائمة التشغيل</value>
+  </data>
+  <data name="Dialog_CreateFailBody" xml:space="preserve">
+    <value>لم يتمكّن من إنشاء قائمة التشغيل.</value>
+  </data>
+  <data name="Dialog_AddFailTitle" xml:space="preserve">
+    <value>تعذّرت الإضافة إلى قائمة التشغيل</value>
+  </data>
+  <data name="Dialog_AddFailBody" xml:space="preserve">
+    <value>لم يتمكّن من إضافة الأغنية.</value>
+  </data>
+  <data name="Dialog_RenameFailTitle" xml:space="preserve">
+    <value>تعذّرت إعادة التسمية</value>
+  </data>
+  <data name="Dialog_RenameFailBody" xml:space="preserve">
+    <value>لم يتمكّن من إعادة تسمية قائمة التشغيل.</value>
+  </data>
+  <data name="Dialog_DeleteFailTitle" xml:space="preserve">
+    <value>تعذّر الحذف</value>
+  </data>
+  <data name="Dialog_DeleteFailBody" xml:space="preserve">
+    <value>لم يتمكّن من حذف قائمة التشغيل.</value>
+  </data>
+  <data name="Dialog_ConnectFailTitle" xml:space="preserve">
+    <value>تعذّر الاتصال</value>
+  </data>
+  <data name="Dialog_ConnectFailBody" xml:space="preserve">
+    <value>تعذّر الوصول إلى ذلك الجهاز.</value>
+  </data>
+  <data name="Blocked_Title" xml:space="preserve">
+    <value>يتطلب Premium</value>
+  </data>
+  <data name="Blocked_BodyFormat" xml:space="preserve">
+    <value>حسابك ({0}) ليس Premium. اشترك على deezer.com ثم أعد تشغيل OpenDeezer.</value>
+  </data>
+  <data name="Update_TitleFormat" xml:space="preserve">
+    <value>يتوفّر OpenDeezer {0}</value>
+  </data>
+  <data name="Update_BodyDefault" xml:space="preserve">
+    <value>يتوفّر إصدار أحدث للتنزيل.</value>
+  </data>
+  <data name="Tray_Open" xml:space="preserve">
+    <value>فتح OpenDeezer</value>
+  </data>
+  <data name="Tray_Quit" xml:space="preserve">
+    <value>إنهاء</value>
+  </data>
+  <data name="Settings_Title" xml:space="preserve">
+    <value>الإعدادات</value>
+  </data>
+  <data name="Settings_AudioQuality" xml:space="preserve">
+    <value>جودة الصوت</value>
+  </data>
+  <data name="Quality_Normal" xml:space="preserve">
+    <value>عادية — MP3 128 kbps</value>
+  </data>
+  <data name="Quality_High" xml:space="preserve">
+    <value>عالية — MP3 320 kbps</value>
+  </data>
+  <data name="Quality_HiFi" xml:space="preserve">
+    <value>HiFi — FLAC بدون فقدان</value>
+  </data>
+  <data name="Settings_QualityWarnFormat" xml:space="preserve">
+    <value>قد لا تدعم باقتك ({0}) هذه الجودة؛ سيعود التشغيل تلقائيًا إلى جودة أقل.</value>
+  </data>
+  <data name="Settings_OutputDevice" xml:space="preserve">
+    <value>جهاز الإخراج</value>
+  </data>
+  <data name="Settings_SystemDefault" xml:space="preserve">
+    <value>افتراضي النظام</value>
+  </data>
+  <data name="Settings_DeviceDefaultFormat" xml:space="preserve">
+    <value>{0}  (افتراضي)</value>
+  </data>
+  <data name="Settings_NoOutputDevices" xml:space="preserve">
+    <value>لا توجد أجهزة إخراج</value>
+  </data>
+  <data name="Settings_GaplessPlayback" xml:space="preserve">
+    <value>تشغيل دون فواصل</value>
+  </data>
+  <data name="Settings_GaplessOn" xml:space="preserve">
+    <value>تشغيل الأغاني المتتالية دون صمت</value>
+  </data>
+  <data name="Settings_GaplessOff" xml:space="preserve">
+    <value>فاصل قصير بين الأغاني</value>
+  </data>
+  <data name="Settings_Crossfade" xml:space="preserve">
+    <value>التلاشي المتقاطع</value>
+  </data>
+  <data name="Common_Off" xml:space="preserve">
+    <value>إيقاف</value>
+  </data>
+  <data name="Settings_Equalizer" xml:space="preserve">
+    <value>موازن الصوت</value>
+  </data>
+  <data name="Settings_EqualizerBtn" xml:space="preserve">
+    <value>موازن الصوت…</value>
+  </data>
+  <data name="Settings_EqualizerDesc" xml:space="preserve">
+    <value>موازن صوت من 10 نطاقات، وتضخيم مسبق، وصوت أحادي.</value>
+  </data>
+  <data name="Settings_SleepTimer" xml:space="preserve">
+    <value>مؤقت النوم</value>
+  </data>
+  <data name="Settings_EndOfTrack" xml:space="preserve">
+    <value>عند نهاية الأغنية</value>
+  </data>
+  <data name="Settings_VolumeNormalization" xml:space="preserve">
+    <value>توحيد مستوى الصوت</value>
+  </data>
+  <data name="Settings_ReplayGainOn" xml:space="preserve">
+    <value>توحيد مستوى الصوت بين الأغاني (ReplayGain)</value>
+  </data>
+  <data name="Settings_ReplayGainOff" xml:space="preserve">
+    <value>تشغيل الأغاني بمستوى صوتها الأصلي</value>
+  </data>
+  <data name="Settings_BackgroundPlayback" xml:space="preserve">
+    <value>التشغيل في الخلفية</value>
+  </data>
+  <data name="Settings_TrayOn" xml:space="preserve">
+    <value>إغلاق النافذة يُبقي التشغيل في شريط النظام</value>
+  </data>
+  <data name="Settings_TrayOff" xml:space="preserve">
+    <value>إغلاق النافذة يُنهي OpenDeezer</value>
+  </data>
+  <data name="Settings_RemoteControl" xml:space="preserve">
+    <value>التحكم عن بُعد</value>
+  </data>
+  <data name="Settings_RemoteDesc" xml:space="preserve">
+    <value>تحكّم في التشغيل من جهاز آخر على شبكتك.</value>
+  </data>
+  <data name="Settings_RemoteOn" xml:space="preserve">
+    <value>التحكم عن بُعد مُفعّل</value>
+  </data>
+  <data name="Settings_RemoteOff" xml:space="preserve">
+    <value>التحكم عن بُعد مُعطّل</value>
+  </data>
+  <data name="Settings_RemoteLanOn" xml:space="preserve">
+    <value>يمكن الوصول إليه على الشبكة المحلية</value>
+  </data>
+  <data name="Settings_RemoteLanOff" xml:space="preserve">
+    <value>هذا الكمبيوتر فقط</value>
+  </data>
+  <data name="Settings_AccessToken" xml:space="preserve">
+    <value>رمز الوصول (اختياري)</value>
+  </data>
+  <data name="Settings_Updates" xml:space="preserve">
+    <value>التحديثات</value>
+  </data>
+  <data name="Settings_UpdateCheckDesc" xml:space="preserve">
+    <value>تحقّق من وجود إصدار أحدث على GitHub.</value>
+  </data>
+  <data name="Settings_CheckForUpdates" xml:space="preserve">
+    <value>التحقق من التحديثات</value>
+  </data>
+  <data name="Settings_Checking" xml:space="preserve">
+    <value>جارٍ التحقق…</value>
+  </data>
+  <data name="Settings_UpdateAvailFormat" xml:space="preserve">
+    <value>يتوفّر الإصدار v{0} (لديك v{1}).</value>
+  </data>
+  <data name="Settings_UpdateFail" xml:space="preserve">
+    <value>تعذّر التحقق من التحديثات. حاول مرة أخرى لاحقًا.</value>
+  </data>
+  <data name="Settings_UpToDateFormat" xml:space="preserve">
+    <value>أنت على أحدث إصدار (v{0}).</value>
+  </data>
+  <data name="Settings_Language" xml:space="preserve">
+    <value>اللغة</value>
+  </data>
+  <data name="Settings_LanguageSystem" xml:space="preserve">
+    <value>افتراضي النظام</value>
+  </data>
+  <data name="Settings_LanguageRestart" xml:space="preserve">
+    <value>أعد تشغيل OpenDeezer لتطبيق اللغة الجديدة.</value>
+  </data>
+  <data name="EQ_Preset" xml:space="preserve">
+    <value>إعداد مسبق</value>
+  </data>
+  <data name="EQ_Custom" xml:space="preserve">
+    <value>مخصّص</value>
+  </data>
+  <data name="EQ_Preamp" xml:space="preserve">
+    <value>تضخيم مسبق</value>
+  </data>
+  <data name="EQ_MonoAudio" xml:space="preserve">
+    <value>صوت أحادي</value>
+  </data>
+  <data name="EQ_EnableOn" xml:space="preserve">
+    <value>موازن الصوت مُفعّل</value>
+  </data>
+  <data name="EQ_EnableOff" xml:space="preserve">
+    <value>موازن الصوت مُعطّل</value>
+  </data>
+  <data name="EQ_MonoOn" xml:space="preserve">
+    <value>تشغّل القناتان الصوت نفسه</value>
+  </data>
+  <data name="EQ_MonoOff" xml:space="preserve">
+    <value>ستيريو</value>
+  </data>
+  <data name="PhoneRemote_Instructions" xml:space="preserve">
+    <value>امسح بهاتفك (نفس شبكة Wi-Fi)، ثم أدخل الرمز.</value>
+  </data>
+  <data name="PhoneRemote_On" xml:space="preserve">
+    <value>التحكم عبر الهاتف مُفعّل</value>
+  </data>
+  <data name="PhoneRemote_Off" xml:space="preserve">
+    <value>التحكم عبر الهاتف مُعطّل</value>
+  </data>
+  <data name="About_Title" xml:space="preserve">
+    <value>حول OpenDeezer</value>
+  </data>
+  <data name="About_Tagline" xml:space="preserve">
+    <value>إعادة تنفيذ مفتوحة المصدر لـ Deezer.</value>
+  </data>
+  <data name="About_Description" xml:space="preserve">
+    <value>عميل Windows أصلي (WinUI 3 · C# · Fluent). المحرّك — تسجيل الدخول، التصفح، فك تشفير Blowfish، فك ترميز MP3، تشغيل WASAPI — هو نواة Go المسماة libdeezercore.dll، المرتبطة داخل العملية.</value>
+  </data>
+  <data name="About_SignedInFormat" xml:space="preserve">
+    <value>تم تسجيل الدخول: {0} · {1}</value>
+  </data>
+  <data name="About_Credits" xml:space="preserve">
+    <value>بواسطة Cycl0o0. مرخّص بموجب AGPL-3.0.</value>
+  </data>
+  <data name="Tracks_Zero" xml:space="preserve">
+    <value>{0} أغنية</value>
+  </data>
+  <data name="Tracks_One" xml:space="preserve">
+    <value>أغنية واحدة</value>
+  </data>
+  <data name="Tracks_Two" xml:space="preserve">
+    <value>أغنيتان</value>
+  </data>
+  <data name="Tracks_Few" xml:space="preserve">
+    <value>{0} أغانٍ</value>
+  </data>
+  <data name="Tracks_Many" xml:space="preserve">
+    <value>{0} أغنية</value>
+  </data>
+  <data name="Tracks_Other" xml:space="preserve">
+    <value>{0} أغنية</value>
+  </data>
+  <data name="Episodes_Zero" xml:space="preserve">
+    <value>{0} حلقة</value>
+  </data>
+  <data name="Episodes_One" xml:space="preserve">
+    <value>حلقة واحدة</value>
+  </data>
+  <data name="Episodes_Two" xml:space="preserve">
+    <value>حلقتان</value>
+  </data>
+  <data name="Episodes_Few" xml:space="preserve">
+    <value>{0} حلقات</value>
+  </data>
+  <data name="Episodes_Many" xml:space="preserve">
+    <value>{0} حلقة</value>
+  </data>
+  <data name="Episodes_Other" xml:space="preserve">
+    <value>{0} حلقة</value>
+  </data>
+  <data name="Fans_Zero" xml:space="preserve">
+    <value>{0} معجب</value>
+  </data>
+  <data name="Fans_One" xml:space="preserve">
+    <value>معجب واحد</value>
+  </data>
+  <data name="Fans_Two" xml:space="preserve">
+    <value>معجبان</value>
+  </data>
+  <data name="Fans_Few" xml:space="preserve">
+    <value>{0} معجبين</value>
+  </data>
+  <data name="Fans_Many" xml:space="preserve">
+    <value>{0} معجب</value>
+  </data>
+  <data name="Fans_Other" xml:space="preserve">
+    <value>{0} معجب</value>
+  </data>
+  <data name="Minutes_Zero" xml:space="preserve">
+    <value>{0} دقيقة</value>
+  </data>
+  <data name="Minutes_One" xml:space="preserve">
+    <value>دقيقة واحدة</value>
+  </data>
+  <data name="Minutes_Two" xml:space="preserve">
+    <value>دقيقتان</value>
+  </data>
+  <data name="Minutes_Few" xml:space="preserve">
+    <value>{0} دقائق</value>
+  </data>
+  <data name="Minutes_Many" xml:space="preserve">
+    <value>{0} دقيقة</value>
+  </data>
+  <data name="Minutes_Other" xml:space="preserve">
+    <value>{0} دقيقة</value>
+  </data>
+  <data name="Seconds_Zero" xml:space="preserve">
+    <value>{0} ثانية</value>
+  </data>
+  <data name="Seconds_One" xml:space="preserve">
+    <value>ثانية واحدة</value>
+  </data>
+  <data name="Seconds_Two" xml:space="preserve">
+    <value>ثانيتان</value>
+  </data>
+  <data name="Seconds_Few" xml:space="preserve">
+    <value>{0} ثوانٍ</value>
+  </data>
+  <data name="Seconds_Many" xml:space="preserve">
+    <value>{0} ثانية</value>
+  </data>
+  <data name="Seconds_Other" xml:space="preserve">
+    <value>{0} ثانية</value>
+  </data>
+</root>

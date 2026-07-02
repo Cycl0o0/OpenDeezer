@@ -7,7 +7,7 @@
 class Opendeezer < Formula
   desc "Terminal Deezer client — browse and stream with your Premium ARL"
   homepage "https://github.com/Cycl0o0/OpenDeezer"
-  version "1.7.0"
+  version "1.8.0"
   license "AGPL-3.0-or-later"
 
   on_macos do

@@ -25,9 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
+import fr.cyclooo.opendeezer.R
+import fr.cyclooo.opendeezer.engine.ConnectDevice
 import fr.cyclooo.opendeezer.engine.Track
 
 @Composable
@@ -94,7 +97,7 @@ fun TrackRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    track.name.ifBlank { "Unknown" },
+                    track.name.ifBlank { stringResource(R.string.unknown_title) },
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -104,7 +107,7 @@ fun TrackRow(
                     Spacer(Modifier.width(4.dp))
                     Icon(
                         Icons.Filled.Explicit,
-                        contentDescription = "Explicit",
+                        contentDescription = stringResource(R.string.cd_explicit),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -157,7 +160,7 @@ fun MediaCard(
         )
         Spacer(Modifier.padding(top = 6.dp))
         Text(
-            title.ifBlank { "Unknown" },
+            title.ifBlank { stringResource(R.string.unknown_title) },
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -193,6 +196,18 @@ fun CenteredMessage(text: String, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/** Localized device-type label for a Connect peer (mirrors the desktop GUIs). */
+@Composable
+fun deviceTypeLabel(device: ConnectDevice): String = when (device.client.lowercase()) {
+    "tui" -> stringResource(R.string.device_type_terminal)
+    "darwin", "macos" -> "macOS"
+    "windows" -> "Windows"
+    "linux", "gnome", "kde" -> "Linux"
+    "android" -> "Android"
+    "" -> stringResource(R.string.device_type_generic)
+    else -> device.client
 }
 
 fun formatDuration(ms: Long): String {

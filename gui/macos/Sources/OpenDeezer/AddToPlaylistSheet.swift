@@ -22,13 +22,13 @@ struct AddToPlaylistSheet: View {
         HStack(spacing: 12) {
             Artwork(url: app.addTarget?.artworkUrl ?? "", size: 40, radius: 5)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Add to Playlist")
+                Text(L("Add to Playlist"))
                     .font(.system(size: 16, weight: .bold)).foregroundStyle(DZ.textPri)
                 Text(app.addTarget?.name ?? "")
                     .font(.system(size: 12)).foregroundStyle(DZ.textSec).lineLimit(1)
             }
             Spacer()
-            Button("Cancel") { app.showAddToPlaylist = false }
+            Button(L("Cancel")) { app.showAddToPlaylist = false }
                 .buttonStyle(.glass).tint(DZ.accent)
         }
         .padding(16)
@@ -42,7 +42,7 @@ struct AddToPlaylistSheet: View {
             List {
                 SwiftUI.Section {
                     Button { withAnimation { creating.toggle() } } label: {
-                        Label("New playlist…", systemImage: "plus.circle.fill")
+                        Label(L("New playlist…"), systemImage: "plus.circle.fill")
                             .foregroundStyle(DZ.accent)
                     }
                     .buttonStyle(.plain)
@@ -50,10 +50,10 @@ struct AddToPlaylistSheet: View {
 
                     if creating {
                         HStack(spacing: 8) {
-                            TextField("Playlist name", text: $newName)
+                            TextField(L("Playlist name"), text: $newName)
                                 .textFieldStyle(.roundedBorder)
                                 .onSubmit(commitCreate)
-                            Button("Create", action: commitCreate)
+                            Button(L("Create"), action: commitCreate)
                                 .buttonStyle(.glassProminent).tint(DZ.accent)
                                 .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
@@ -68,7 +68,7 @@ struct AddToPlaylistSheet: View {
                                 Artwork(url: p.artworkUrl, size: 36, radius: 4)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(p.name).foregroundStyle(DZ.textPri).lineLimit(1)
-                                    Text("\(p.trackCount) tracks")
+                                    Text(Lp("%d tracks", p.trackCount))
                                         .font(.caption).foregroundStyle(DZ.textSec)
                                 }
                                 Spacer()
@@ -79,7 +79,7 @@ struct AddToPlaylistSheet: View {
                         .listRowBackground(Color.clear)
                     }
                 } header: {
-                    Text("Your Playlists")
+                    Text(L("Your Playlists"))
                         .font(.system(size: 12, weight: .bold)).foregroundStyle(DZ.textSec)
                 }
             }

@@ -476,6 +476,30 @@ body {
 
 var SESSION_KEY = 'opendeezer_session_v1';
 
+// ---- i18n ----
+// Small inline dictionary for the shipped locales, chosen from navigator.language
+// (falls back to English). Product names, units and format tokens ({n}) are kept
+// verbatim. Arabic switches the document to RTL below.
+var I18N = {
+  en: {pairIntro:"Enter the 6-digit code shown on your device to pair your phone as a remote.",pair:"Pair",pairing:"Pairing…",enterCode:"Enter the 6-digit code.",tooMany:"Too many attempts — wait a minute and try again.",invalidCode:"Invalid code. Check the display and try again.",errorRetry:"Error {n}. Try again.",networkErr:"Network error. Make sure you are on the same Wi-Fi.",sessionExpired:"Session expired — please pair again.",notPlaying:"Not playing",prev:"Previous",playPause:"Play / Pause",next:"Next",repeatOff:"Repeat: off",repeatOne:"Repeat: one",repeatAll:"Repeat: all",shuffle:"Shuffle",shuffleOn:"Shuffle: on",sleep:"Sleep",sleepEnd:"Sleep: end of track",sleepMin:"Sleep: {n} min",equalizer:"Equalizer",eqOn:"EQ: on",eqOff:"EQ: off",monoOn:"Mono: on",monoOff:"Mono: off",preset:"Preset",preamp:"Preamp",custom:"Custom",eqUnavailable:"Equalizer unavailable on this device.",st_playing:"playing",st_paused:"paused",st_stopped:"stopped",st_loading:"loading",st_error:"error"},
+  zh: {pairIntro:"输入设备上显示的 6 位配对码，将手机配对为遥控器。",pair:"配对",pairing:"正在配对…",enterCode:"请输入 6 位配对码。",tooMany:"尝试次数过多 — 请等待一分钟后重试。",invalidCode:"配对码无效。请查看设备显示后重试。",errorRetry:"错误 {n}。请重试。",networkErr:"网络错误。请确认与设备连接同一 Wi-Fi。",sessionExpired:"会话已过期 — 请重新配对。",notPlaying:"未在播放",prev:"上一首",playPause:"播放 / 暂停",next:"下一首",repeatOff:"循环：关",repeatOne:"循环：单曲",repeatAll:"循环：全部",shuffle:"随机播放",shuffleOn:"随机：开",sleep:"定时",sleepEnd:"定时：本曲结束",sleepMin:"定时：{n} 分钟",equalizer:"均衡器",eqOn:"EQ：开",eqOff:"EQ：关",monoOn:"单声道：开",monoOff:"单声道：关",preset:"预设",preamp:"前置放大",custom:"自定义",eqUnavailable:"此设备不支持均衡器。",st_playing:"正在播放",st_paused:"已暂停",st_stopped:"已停止",st_loading:"加载中",st_error:"错误"},
+  hi: {pairIntro:"अपने फ़ोन को रिमोट के रूप में पेयर करने के लिए डिवाइस पर दिखाया गया 6-अंकीय कोड दर्ज करें।",pair:"पेयर करें",pairing:"पेयर हो रहा है…",enterCode:"6-अंकीय कोड दर्ज करें।",tooMany:"बहुत अधिक प्रयास — एक मिनट रुककर पुनः प्रयास करें।",invalidCode:"अमान्य कोड। डिस्प्ले जाँचें और पुनः प्रयास करें।",errorRetry:"त्रुटि {n}। पुनः प्रयास करें।",networkErr:"नेटवर्क त्रुटि। सुनिश्चित करें कि आप उसी Wi-Fi पर हैं।",sessionExpired:"सत्र समाप्त — कृपया फिर से पेयर करें।",notPlaying:"कुछ नहीं चल रहा",prev:"पिछला",playPause:"चलाएँ / पॉज़ करें",next:"अगला",repeatOff:"दोहराएँ: बंद",repeatOne:"दोहराएँ: एक",repeatAll:"दोहराएँ: सभी",shuffle:"शफ़ल",shuffleOn:"शफ़ल: चालू",sleep:"स्लीप",sleepEnd:"स्लीप: ट्रैक का अंत",sleepMin:"स्लीप: {n} मिनट",equalizer:"इक्वलाइज़र",eqOn:"EQ: चालू",eqOff:"EQ: बंद",monoOn:"मोनो: चालू",monoOff:"मोनो: बंद",preset:"प्रीसेट",preamp:"प्रीएम्प",custom:"कस्टम",eqUnavailable:"इस डिवाइस पर इक्वलाइज़र उपलब्ध नहीं है।",st_playing:"चल रहा है",st_paused:"रुका हुआ",st_stopped:"रुका",st_loading:"लोड हो रहा है",st_error:"त्रुटि"},
+  es: {pairIntro:"Introduce el código de 6 dígitos que aparece en tu dispositivo para vincular tu teléfono como control remoto.",pair:"Vincular",pairing:"Vinculando…",enterCode:"Introduce el código de 6 dígitos.",tooMany:"Demasiados intentos — espera un minuto e inténtalo de nuevo.",invalidCode:"Código no válido. Comprueba la pantalla e inténtalo de nuevo.",errorRetry:"Error {n}. Inténtalo de nuevo.",networkErr:"Error de red. Asegúrate de estar en la misma Wi-Fi.",sessionExpired:"La sesión expiró — vincula de nuevo.",notPlaying:"Sin reproducción",prev:"Anterior",playPause:"Reproducir / Pausa",next:"Siguiente",repeatOff:"Repetir: no",repeatOne:"Repetir: uno",repeatAll:"Repetir: todo",shuffle:"Aleatorio",shuffleOn:"Aleatorio: sí",sleep:"Sueño",sleepEnd:"Sueño: fin de la canción",sleepMin:"Sueño: {n} min",equalizer:"Ecualizador",eqOn:"EQ: sí",eqOff:"EQ: no",monoOn:"Mono: sí",monoOff:"Mono: no",preset:"Preajuste",preamp:"Preamplificador",custom:"Personalizado",eqUnavailable:"Ecualizador no disponible en este dispositivo.",st_playing:"reproduciendo",st_paused:"en pausa",st_stopped:"detenido",st_loading:"cargando",st_error:"error"},
+  fr: {pairIntro:"Saisissez le code à 6 chiffres affiché sur votre appareil pour associer votre téléphone comme télécommande.",pair:"Associer",pairing:"Association…",enterCode:"Saisissez le code à 6 chiffres.",tooMany:"Trop de tentatives — attendez une minute et réessayez.",invalidCode:"Code invalide. Vérifiez l'écran et réessayez.",errorRetry:"Erreur {n}. Réessayez.",networkErr:"Erreur réseau. Vérifiez que vous êtes sur le même Wi-Fi.",sessionExpired:"Session expirée — associez à nouveau.",notPlaying:"Aucune lecture",prev:"Précédent",playPause:"Lecture / Pause",next:"Suivant",repeatOff:"Répéter : non",repeatOne:"Répéter : un",repeatAll:"Répéter : tout",shuffle:"Aléatoire",shuffleOn:"Aléatoire : oui",sleep:"Veille",sleepEnd:"Veille : fin du titre",sleepMin:"Veille : {n} min",equalizer:"Égaliseur",eqOn:"EQ : oui",eqOff:"EQ : non",monoOn:"Mono : oui",monoOff:"Mono : non",preset:"Préréglage",preamp:"Préampli",custom:"Personnalisé",eqUnavailable:"Égaliseur indisponible sur cet appareil.",st_playing:"en lecture",st_paused:"en pause",st_stopped:"arrêté",st_loading:"chargement",st_error:"erreur"},
+  ar: {pairIntro:"أدخل الرمز المكوّن من 6 أرقام الظاهر على جهازك لإقران هاتفك كجهاز تحكم عن بُعد.",pair:"إقران",pairing:"جارٍ الإقران…",enterCode:"أدخل الرمز المكوّن من 6 أرقام.",tooMany:"محاولات كثيرة جدًا — انتظر دقيقة ثم أعد المحاولة.",invalidCode:"رمز غير صالح. تحقق من الشاشة وأعد المحاولة.",errorRetry:"خطأ {n}. أعد المحاولة.",networkErr:"خطأ في الشبكة. تأكد من أنك على نفس شبكة Wi-Fi.",sessionExpired:"انتهت الجلسة — يرجى الإقران من جديد.",notPlaying:"لا يوجد تشغيل",prev:"السابق",playPause:"تشغيل / إيقاف مؤقت",next:"التالي",repeatOff:"تكرار: إيقاف",repeatOne:"تكرار: واحد",repeatAll:"تكرار: الكل",shuffle:"تشغيل عشوائي",shuffleOn:"عشوائي: تشغيل",sleep:"النوم",sleepEnd:"النوم: نهاية الأغنية",sleepMin:"النوم: {n} دقيقة",equalizer:"موازن الصوت",eqOn:"EQ: تشغيل",eqOff:"EQ: إيقاف",monoOn:"أحادي: تشغيل",monoOff:"أحادي: إيقاف",preset:"إعداد مسبق",preamp:"تضخيم مسبق",custom:"مخصص",eqUnavailable:"موازن الصوت غير متاح على هذا الجهاز.",st_playing:"قيد التشغيل",st_paused:"متوقف مؤقتًا",st_stopped:"متوقف",st_loading:"جارٍ التحميل",st_error:"خطأ"},
+  ru: {pairIntro:"Введите 6-значный код, показанный на устройстве, чтобы подключить телефон как пульт.",pair:"Подключить",pairing:"Подключение…",enterCode:"Введите 6-значный код.",tooMany:"Слишком много попыток — подождите минуту и повторите.",invalidCode:"Неверный код. Проверьте экран и повторите.",errorRetry:"Ошибка {n}. Повторите.",networkErr:"Ошибка сети. Убедитесь, что вы в той же сети Wi-Fi.",sessionExpired:"Сеанс истёк — подключитесь заново.",notPlaying:"Не воспроизводится",prev:"Предыдущий",playPause:"Воспроизвести / Пауза",next:"Следующий",repeatOff:"Повтор: выкл",repeatOne:"Повтор: один",repeatAll:"Повтор: все",shuffle:"Перемешать",shuffleOn:"Перемешать: вкл",sleep:"Сон",sleepEnd:"Сон: конец трека",sleepMin:"Сон: {n} мин",equalizer:"Эквалайзер",eqOn:"EQ: вкл",eqOff:"EQ: выкл",monoOn:"Моно: вкл",monoOff:"Моно: выкл",preset:"Пресет",preamp:"Предусиление",custom:"Свой",eqUnavailable:"Эквалайзер недоступен на этом устройстве.",st_playing:"воспроизведение",st_paused:"пауза",st_stopped:"остановлено",st_loading:"загрузка",st_error:"ошибка"}
+};
+var LANG = (navigator.language || navigator.userLanguage || 'en').slice(0, 2).toLowerCase();
+if (!I18N[LANG]) LANG = 'en';
+function t(k) { return (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k; }
+function tf(k) {
+  var s = t(k);
+  for (var i = 1; i < arguments.length; i++) s = s.replace('{n}', arguments[i]);
+  return s;
+}
+function stateLabel(s) { return t('st_' + s) !== 'st_' + s ? t('st_' + s) : s; }
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
 // ---- State ----
 var token = localStorage.getItem(SESSION_KEY);
 var currentState = {};
@@ -537,10 +561,10 @@ codeInput.addEventListener('keydown', function(e) {
 
 function doPair() {
   var code = codeInput.value.trim();
-  if (code.length === 0) { setPairError('Enter the 6-digit code.'); return; }
+  if (code.length === 0) { setPairError(t('enterCode')); return; }
   setPairError('');
   pairBtn.disabled = true;
-  pairBtn.textContent = 'Pairing…';
+  pairBtn.textContent = t('pairing');
 
   fetch('/pair', {
     method: 'POST',
@@ -548,21 +572,21 @@ function doPair() {
     body: JSON.stringify({ code: code })
   }).then(function(r) {
     if (r.status === 429) {
-      setPairError('Too many attempts — wait a minute and try again.');
+      setPairError(t('tooMany'));
       pairBtn.disabled = false;
-      pairBtn.textContent = 'Pair';
+      pairBtn.textContent = t('pair');
       return null;
     }
     if (r.status === 401 || r.status === 404) {
-      setPairError('Invalid code. Check the display and try again.');
+      setPairError(t('invalidCode'));
       pairBtn.disabled = false;
-      pairBtn.textContent = 'Pair';
+      pairBtn.textContent = t('pair');
       return null;
     }
     if (!r.ok) {
-      setPairError('Error ' + r.status + '. Try again.');
+      setPairError(tf('errorRetry', r.status));
       pairBtn.disabled = false;
-      pairBtn.textContent = 'Pair';
+      pairBtn.textContent = t('pair');
       return null;
     }
     return r.json();
@@ -571,13 +595,13 @@ function doPair() {
     token = data.token;
     localStorage.setItem(SESSION_KEY, token);
     pairBtn.disabled = false;
-    pairBtn.textContent = 'Pair';
+    pairBtn.textContent = t('pair');
     codeInput.value = '';
     showControls();
   }).catch(function() {
-    setPairError('Network error. Make sure you are on the same Wi-Fi.');
+    setPairError(t('networkErr'));
     pairBtn.disabled = false;
-    pairBtn.textContent = 'Pair';
+    pairBtn.textContent = t('pair');
   });
 }
 
@@ -591,7 +615,7 @@ function api(method, path) {
       localStorage.removeItem(SESSION_KEY);
       token = null;
       showPair();
-      setPairError('Session expired — please pair again.');
+      setPairError(t('sessionExpired'));
       return Promise.reject(new Error('unauthorized'));
     }
     if (!r.ok) return Promise.reject(new Error('http ' + r.status));
@@ -635,7 +659,7 @@ function applyState(st) {
       artworkPlh.style.display = 'flex';
     }
   } else {
-    trackTitle.textContent  = 'Not playing';
+    trackTitle.textContent  = t('notPlaying');
     trackArtist.textContent = '';
     artworkImg.style.display = 'none';
     artworkPlh.style.display = 'flex';
@@ -662,7 +686,7 @@ function applyState(st) {
   }
 
   // State badge
-  stateBadge.textContent = st.state || '';
+  stateBadge.textContent = st.state ? stateLabel(st.state) : '';
 
   // Volume (don't update while user is dragging)
   if (!volumeActive) {
@@ -674,23 +698,21 @@ function applyState(st) {
   // Repeat button
   var rep = st.repeat || 'off';
   repeatBtn.className = 'ctrl-btn' + (rep !== 'off' ? ' active' : '');
-  repeatBtn.innerHTML = (rep === 'one')
-    ? '&#8635; Repeat: one'
-    : (rep === 'all' ? '&#8635; Repeat: all' : '&#8635; Repeat: off');
+  repeatBtn.innerHTML = '&#8635; ' + esc((rep === 'one') ? t('repeatOne') : (rep === 'all' ? t('repeatAll') : t('repeatOff')));
 
   // Shuffle button
   shuffleBtn.className = 'ctrl-btn' + (st.shuffle ? ' active' : '');
-  shuffleBtn.innerHTML = '&#8652; Shuffle' + (st.shuffle ? ': on' : '');
+  shuffleBtn.innerHTML = '&#8652; ' + esc(st.shuffle ? t('shuffleOn') : t('shuffle'));
 
   // Sleep-timer button
   sleepBtn.className = 'ctrl-btn' + (st.sleepActive ? ' active' : '');
   if (st.sleepActive && st.sleepEndOfTrack) {
-    sleepBtn.innerHTML = '&#9790; Sleep: end of track';
+    sleepBtn.innerHTML = '&#9790; ' + esc(t('sleepEnd'));
   } else if (st.sleepActive) {
     var mins = Math.max(1, Math.round((st.sleepRemainingMs || 0) / 60000));
-    sleepBtn.innerHTML = '&#9790; Sleep: ' + mins + ' min';
+    sleepBtn.innerHTML = '&#9790; ' + esc(tf('sleepMin', mins));
   } else {
-    sleepBtn.innerHTML = '&#9790; Sleep';
+    sleepBtn.innerHTML = '&#9790; ' + esc(t('sleep'));
   }
 }
 
@@ -813,7 +835,7 @@ function buildEQPresets(presets) {
   // "custom" is shown when a band was hand-edited but is not user-selectable.
   var custom = document.createElement('option');
   custom.value = 'custom';
-  custom.textContent = 'Custom';
+  custom.textContent = t('custom');
   custom.disabled = true;
   eqPreset.appendChild(custom);
 }
@@ -824,9 +846,9 @@ function applyEQ(eq) {
   if (eqSliders.length === 0 && eq.bands) buildEQBands(eq.bands);
   if (eqPreset.options.length === 0 && eq.presets) buildEQPresets(eq.presets);
   eqEnableBtn.className = 'ctrl-btn' + (eq.enabled ? ' active' : '');
-  eqEnableBtn.textContent = 'EQ: ' + (eq.enabled ? 'on' : 'off');
+  eqEnableBtn.textContent = eq.enabled ? t('eqOn') : t('eqOff');
   eqMonoBtn.className = 'ctrl-btn' + (eq.mono ? ' active' : '');
-  eqMonoBtn.textContent = 'Mono: ' + (eq.mono ? 'on' : 'off');
+  eqMonoBtn.textContent = eq.mono ? t('monoOn') : t('monoOff');
   eqPreset.value = eq.preset || 'flat';
   (eq.gainsDb || []).forEach(function(db, i) {
     if (i !== eqDragBand && eqSliders[i]) eqSliders[i].value = db;
@@ -838,7 +860,7 @@ function applyEQ(eq) {
 
 function refreshEQ() {
   api('GET', '/eq').then(applyEQ).catch(function() {
-    eqError.textContent = 'Equalizer unavailable on this device.';
+    eqError.textContent = t('eqUnavailable');
   });
 }
 
@@ -895,7 +917,32 @@ eqPreamp.addEventListener('change', function() {
   api('POST', '/eq?preamp=' + this.value).then(applyEQ).catch(function() {});
 });
 
+// ---- Static i18n ----
+// Localizes the fixed markup once on load (dynamic text is handled inline via t()
+// as state arrives). Arabic switches the whole document to RTL.
+function applyStaticI18n() {
+  document.documentElement.lang = LANG;
+  if (LANG === 'ar') document.documentElement.dir = 'rtl';
+  var intro = pairView.querySelector('p');
+  if (intro) intro.textContent = t('pairIntro');
+  pairBtn.textContent = t('pair');
+  prevBtn.title = t('prev');
+  playpauseBtn.title = t('playPause');
+  nextBtn.title = t('next');
+  trackTitle.textContent = t('notPlaying');
+  repeatBtn.innerHTML = '&#8635; ' + esc(t('repeatOff'));
+  shuffleBtn.innerHTML = '&#8652; ' + esc(t('shuffle'));
+  sleepBtn.innerHTML = '&#9790; ' + esc(t('sleep'));
+  eqBtn.innerHTML = '&#9776; ' + esc(t('equalizer'));
+  eqEnableBtn.textContent = t('eqOff');
+  eqMonoBtn.textContent = t('monoOff');
+  eqPreset.title = t('preset');
+  var preampLabel = document.querySelector('.eq-preamp-row label');
+  if (preampLabel) preampLabel.textContent = t('preamp');
+}
+
 // ---- Init ----
+applyStaticI18n();
 if (token) {
   showControls();
 } else {

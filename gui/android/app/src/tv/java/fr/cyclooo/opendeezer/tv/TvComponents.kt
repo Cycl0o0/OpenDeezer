@@ -40,10 +40,12 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.ui.components.Artwork
 
 /** Shared 10-foot palette. Deezer purple over a deep, warm-black gradient. */
@@ -230,7 +232,7 @@ fun TvHero(
             horizontalArrangement = Arrangement.spacedBy(32.dp),
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("FEATURED", style = MaterialTheme.typography.labelLarge, color = TvPalette.Purple, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.tv_featured), style = MaterialTheme.typography.labelLarge, color = TvPalette.Purple, fontWeight = FontWeight.Bold)
                 Text(
                     title,
                     style = MaterialTheme.typography.displaySmall,
@@ -244,8 +246,8 @@ fun TvHero(
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    TvPill("Play", onPlay, focusRequester = playFocus, leadingIcon = playIcon)
-                    TvPill("Search", onSearch)
+                    TvPill(stringResource(R.string.action_play), onPlay, focusRequester = playFocus, leadingIcon = playIcon)
+                    TvPill(stringResource(R.string.search_title), onSearch)
                 }
             }
             Box(
