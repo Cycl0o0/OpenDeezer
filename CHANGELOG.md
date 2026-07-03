@@ -4,6 +4,19 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.3]
+
+### Changed
+- **Android releases are now signed with a stable release key.** CI builds
+  release-signed APKs (phone + TV) from a dedicated PKCS12 release keystore, so
+  installs are proper release builds and upgrades across versions always match
+  signatures. Falls back to the previous debug build when the keystore secret is
+  absent. See `docs/ANDROID_SIGNING.md`.
+- **Windows signing scaffolding** added (Azure Trusted Signing, opt-in via repo
+  secrets) so `OpenDeezer.exe` can be Authenticode-signed against SmartScreen once
+  a certificate is configured; inert until the secrets are set. See
+  `docs/WINDOWS_SIGNING.md`.
+
 ## [1.8.2]
 
 ### Changed

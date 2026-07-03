@@ -2866,7 +2866,7 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.8.2", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.8.3", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
         sp.Children.Add(new TextBlock { Text = Loc.S("About_Tagline"), TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {
