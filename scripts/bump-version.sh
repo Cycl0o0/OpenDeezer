@@ -65,7 +65,10 @@ sub gui/kde/src/mainwindow.cpp "s/OpenDeezer $CUR/OpenDeezer $NEW/g"
 
 # ---- Windows ----
 sub gui/windows/MainWindow.xaml.cs "s/OpenDeezer $CUR/OpenDeezer $NEW/g"
-sub gui/windows/app.manifest "s/version=\"$CUR\.0\"/version=\"$NEW.0\"/"
+# Anchor on the assemblyIdentity name, not the current version: if the manifest
+# ever falls out of sync (it froze at 1.6.0.0 through several releases because the
+# old "$CUR.0" pattern silently matched nothing), a value-agnostic sed still fixes it.
+sub gui/windows/app.manifest "s/\(name=\"OpenDeezer.app\" version=\"\)[0-9.]*\"/\1$NEW.0\"/"
 
 # ---- Android (phone + TV share the module) ----
 sub gui/android/app/build.gradle.kts "s/versionName = \"[0-9.]*\"/versionName = \"$NEW\"/"
