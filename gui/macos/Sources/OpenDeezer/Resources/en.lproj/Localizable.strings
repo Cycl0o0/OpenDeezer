@@ -196,3 +196,8 @@
 "Playlist · %@" = "Playlist · %@";
 "Top worldwide" = "Top worldwide";
 "Album · %@" = "Album · %@";
+
+/* No-Internet gate */
+"No Internet Connection" = "No Internet Connection";
+"Check your connection and try again." = "Check your connection and try again.";
+"Retry" = "Retry";

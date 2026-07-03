@@ -55,6 +55,11 @@ enum Engine {
 
     static func initEngine(arl: String) async -> Bool { await run { OdmobileInit(arl) } }
     static func loggedIn() async -> Bool { await run { OdmobileLoggedIn() } }
+    /// Why the most recent `initEngine` returned false: 0 ok, 1 ARL expired or
+    /// invalid, 2 no internet, 3 other. A cheap atomic read engine-side, so
+    /// (like `state`/`volume`) it's called directly; only meaningful right after
+    /// `initEngine` returns false.
+    static func loginErrorKind() -> Int { OdmobileLoginErrorKind() }
     static func setClientInfo(client: String, device: String) { OdmobileSetClientInfo(client, device) }
 
     static func account() async throws -> Account {

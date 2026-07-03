@@ -21,7 +21,20 @@ extern const char *_GoStringPtr(_GoString_ s);
 /* Start of preamble from import "C" comments.  */
 
 
+#line 9 "connect.go"
+
+#include <stdlib.h>
+
+#line 1 "cgo-generated-wrapper"
+
 #line 13 "deezercore.go"
+
+#include <stdlib.h>
+#include <string.h>
+
+#line 1 "cgo-generated-wrapper"
+
+#line 6 "webremote.go"
 
 #include <stdlib.h>
 #include <string.h>
@@ -88,10 +101,17 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 extern "C" {
 #endif
 
+extern void DZSetClientInfo(char* client, char* device);
+extern char* DZNowPlayingJSON(void);
+extern char* DZDiscoverDevices(int timeoutMS);
+extern int DZConnectDevice(char* addr);
+extern void DZDisconnectDevice(void);
+extern char* DZConnectedDevice(void);
 extern void DZFree(char* s);
 extern unsigned char* DZFetch(char* url, int* outLen);
 extern void DZFreeBytes(unsigned char* p);
 extern int DZInit(char* arl);
+extern int DZLoginErrorKind(void);
 extern char* DZLastErrorJSON(void);
 extern void DZSetQuality(int level);
 extern int DZQuality(void);
@@ -109,12 +129,52 @@ extern void DZResume(void);
 extern void DZTogglePause(void);
 extern void DZStop(void);
 extern void DZSeek(long long ms);
+extern void DZSetRepeat(int mode);
+extern void DZSetShuffle(int on);
 extern int DZState(void);
 extern long long DZPositionMS(void);
 extern long long DZDurationMS(void);
 extern void DZSetVolume(double v);
 extern double DZVolume(void);
 extern int DZFinishedCount(void);
+extern char* DZAccountJSON(void);
+extern char* DZChartsJSON(void);
+extern char* DZHomeJSON(void);
+extern char* DZCheckUpdateJSON(void);
+extern char* DZArtistTopJSON(char* id);
+extern char* DZArtistProfileJSON(char* id);
+extern char* DZLyricsJSON(char* trackID);
+extern void DZSetReplayGain(int on);
+extern int DZReplayGain(void);
+extern int DZAddFavorite(char* trackID);
+extern int DZRemoveFavorite(char* trackID);
+extern int DZAddToPlaylist(char* playlistID, char* trackID);
+extern int DZRemoveFromPlaylist(char* playlistID, char* trackID);
+extern char* DZCreatePlaylist(char* title);
+extern int DZRenamePlaylist(char* playlistID, char* title);
+extern int DZDeletePlaylist(char* playlistID);
+extern char* DZFlowJSON(void);
+extern char* DZSearchPodcastsJSON(char* q);
+extern char* DZPodcastEpisodesJSON(char* podcastID);
+extern char* DZAudioDevicesJSON(void);
+extern int DZSetAudioDevice(char* id);
+extern char* DZCurrentAudioDevice(void);
+extern void DZSetGapless(int on);
+extern int DZGapless(void);
+extern void DZSetCrossfadeMS(int ms);
+extern int DZCrossfadeMS(void);
+extern void DZSetSleepTimer(int minutes, int endOfTrack);
+extern void DZCancelSleepTimer(void);
+extern int DZSleepTimerActive(void);
+extern int DZSleepTimerEndOfTrack(void);
+extern long long DZSleepTimerRemainingMS(void);
+extern void DZPreload(char* trackID, long long durationMS);
+extern int DZPlayEpisode(char* episodeID, long long durationMS);
+extern char* DZEQJSON(void);
+extern int DZSetEQJSON(char* js);
+extern void DZClearPreload(void);
+extern char* DZControlConfigJSON(void);
+extern void DZSetControlConfig(int enabled, char* addr, char* token);
 extern void DZWebRemoteSetEnabled(int on);
 extern char* DZWebRemoteInfoJSON(void);
 extern unsigned char* DZWebRemoteQRPNG(int* outLen);

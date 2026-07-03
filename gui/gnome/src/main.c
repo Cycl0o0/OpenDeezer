@@ -91,6 +91,13 @@ extern long long DZSleepTimerRemainingMS(void);
 extern char *DZEQJSON(void);
 extern int   DZSetEQJSON(char *js);
 
+/* Login failure classifier — reports why the most recent DZInit failed, so the
+ * UI can tell "no internet" apart from a bad/expired ARL. Declared explicitly
+ * (see DZSetRepeat above) so this file compiles against an older libdeezercore.h.
+ * Returns 0 ok, 1 ARL expired/invalid, 2 no internet, 3 other; only meaningful
+ * when the immediately preceding DZInit returned != 1. */
+extern int DZLoginErrorKind(void);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -263,6 +270,8 @@ typedef struct {
   guint                 login_poll_id;   /* g_timeout polling cookies, 0 if none */
   gboolean              login_busy;      /* a DZInit is in flight (debounce) */
   gboolean              login_captured;  /* arl already captured -> stop polling */
+  char                 *pending_arl;     /* last ARL handed to start_init; the No-Internet
+                                          * page retries the sign-in with this copy */
 
   /* ---- OpenDeezer Connect (LAN device picker; Spotify-Connect style) ---- */
   GtkMenuButton        *connect_btn;     /* speaker button on the now-playing bar */
@@ -4960,6 +4969,35 @@ static void show_free_block(App *a) {
   adw_application_window_set_content(a->win, GTK_WIDGET(sp));
 }
 
+/* No-internet gate. DZInit failed because the network was unreachable (as opposed
+ * to a bad/expired ARL — see DZLoginErrorKind). Unlike the Free-account block this
+ * is a transient condition, so the whole-window message offers a Retry that
+ * re-runs the sign-in with the same ARL (stashed in pending_arl by start_init). */
+static void on_no_internet_retry(GtkButton *b, gpointer data) {
+  App *a = data;
+  if (!a->pending_arl || !*a->pending_arl) return; /* nothing to retry with */
+  gtk_widget_set_sensitive(GTK_WIDGET(b), FALSE);  /* one retry at a time; on failure a
+                                                    * fresh (re-enabled) page is rebuilt */
+  start_init(a, g_strdup(a->pending_arl), FALSE);  /* takes ownership of the copy */
+}
+static void show_no_internet(App *a) {
+  AdwStatusPage *sp = ADW_STATUS_PAGE(adw_status_page_new());
+  adw_status_page_set_icon_name(sp, "network-offline-symbolic");
+  adw_status_page_set_title(sp, _("No Internet Connection"));
+  adw_status_page_set_description(sp, _("Check your connection and try again."));
+
+  GtkWidget *retry = gtk_button_new_with_label(_("Retry"));
+  gtk_widget_set_halign(retry, GTK_ALIGN_CENTER);
+  gtk_widget_add_css_class(retry, "pill");
+  gtk_widget_set_sensitive(retry, a->pending_arl && *a->pending_arl);
+  g_signal_connect(retry, "clicked", G_CALLBACK(on_no_internet_retry), a);
+  adw_status_page_set_child(sp, retry);
+
+  /* replace the whole window — same swap as show_free_block; root_content keeps
+   * its extra ref, so show_main_content can restore the UI after a good retry. */
+  adw_application_window_set_content(a->win, GTK_WIDGET(sp));
+}
+
 /* DZAccountJSON is a cheap cached read (no network), so it is safe to call on
  * the main thread right after login. Stores tier + entitlements on APP. */
 static void load_account(App *a) {
@@ -4997,13 +5035,17 @@ static void load_account(App *a) {
 /* DZInit blocks on the network, so it runs on a worker. `persist` is set for the
  * login-window path (webview capture / manual entry): on success the working ARL
  * is written to arl.txt so the next launch auto-logs-in. */
-typedef struct { char *arl; gboolean persist; } InitCtx;
+typedef struct { char *arl; gboolean persist; int kind; } InitCtx;
 static void init_ctx_free(gpointer p) { InitCtx *c = p; g_free(c->arl); g_free(c); }
 
 static void init_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
   (void)src; (void)c;
   InitCtx *ic = data;
-  g_task_return_boolean(task, DZInit(ic->arl) == 1);
+  gboolean ok = (DZInit(ic->arl) == 1);
+  /* Classify a failure on the worker, right after DZInit, so the reason reflects
+   * this attempt — a later DZInit could otherwise overwrite the engine's state. */
+  ic->kind = ok ? 0 : DZLoginErrorKind(); /* 0 ok, 1 bad ARL, 2 no internet, 3 other */
+  g_task_return_boolean(task, ok);
 }
 static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
   (void)src; (void)data;
@@ -5041,6 +5083,15 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
     GtkListBoxRow *row = gtk_list_box_get_row_at_index(APP->sidebar, 0);
     gtk_list_box_unselect_all(APP->sidebar);
     gtk_list_box_select_row(APP->sidebar, row);
+  } else if (ic && ic->kind == 2) {
+    /* No internet — a transient, retryable state (not a bad ARL). Show a dedicated
+     * full-window Retry page instead of bouncing to the login form, which would
+     * wrongly imply the saved ARL is invalid. Reached by both the launch
+     * auto-login and the login-window paths. */
+    APP->login_busy = FALSE;
+    APP->login_captured = FALSE;
+    login_dismiss(APP);   /* nothing to sign into offline; drop the login window if open */
+    show_no_internet(APP);
   } else if (ic && ic->persist) {
     /* login-window path: let the user retry or fall back to manual entry */
     APP->login_busy = FALSE;
@@ -5056,7 +5107,10 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
 
 /* Kick off DZInit on a worker. Takes ownership of `arl`. */
 static void start_init(App *a, char *arl, gboolean persist) {
-  (void)a;
+  /* Remember the ARL so the No-Internet page can retry the same sign-in even
+   * before it has been persisted to arl.txt (login-window path). */
+  g_free(a->pending_arl);
+  a->pending_arl = g_strdup(arl);
   InitCtx *ic = g_new0(InitCtx, 1);
   ic->arl = arl; /* owned */
   ic->persist = persist;
@@ -5084,7 +5138,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.8.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.8.1");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -5095,7 +5149,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "1.8.0",
+      "version", "1.8.1",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",

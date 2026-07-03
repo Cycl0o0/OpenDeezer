@@ -196,3 +196,8 @@
 "Playlist · %@" = "प्लेलिस्ट · %@";
 "Top worldwide" = "विश्वभर में शीर्ष";
 "Album · %@" = "एल्बम · %@";
+
+/* No-Internet gate */
+"No Internet Connection" = "इंटरनेट कनेक्शन नहीं है";
+"Check your connection and try again." = "अपना कनेक्शन जांचें और फिर से प्रयास करें।";
+"Retry" = "पुनः प्रयास करें";

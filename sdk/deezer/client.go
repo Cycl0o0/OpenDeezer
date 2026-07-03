@@ -65,6 +65,11 @@ type StripeDecryptor = internaldeezer.StripeDecryptor
 // re-authenticate.
 var ErrARLExpired = internaldeezer.ErrARLExpired
 
+// ErrNoNetwork wraps any transport-level failure reaching Deezer (DNS, refused,
+// unreachable, timeout). Use errors.Is to detect it and show a "No Internet"
+// retry screen instead of mistaking an outage for an expired ARL.
+var ErrNoNetwork = internaldeezer.ErrNoNetwork
+
 // ---- quality constants ----
 
 const (

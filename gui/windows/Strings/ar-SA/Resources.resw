@@ -370,6 +370,15 @@
   <data name="Blocked_BodyFormat" xml:space="preserve">
     <value>حسابك ({0}) ليس Premium. اشترك على deezer.com ثم أعد تشغيل OpenDeezer.</value>
   </data>
+  <data name="NoInternet_Title" xml:space="preserve">
+    <value>لا يوجد اتصال بالإنترنت</value>
+  </data>
+  <data name="NoInternet_Body" xml:space="preserve">
+    <value>تحقق من اتصالك وحاول مرة أخرى.</value>
+  </data>
+  <data name="Action_Retry" xml:space="preserve">
+    <value>إعادة المحاولة</value>
+  </data>
   <data name="Update_TitleFormat" xml:space="preserve">
     <value>يتوفّر OpenDeezer {0}</value>
   </data>

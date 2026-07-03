@@ -849,6 +849,22 @@
         <source>Connected to %1 — choose a device</source>
         <translation>已连接到 %1——选择设备</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1637" />
+        <location filename="../src/mainwindow.cpp" line="1675" />
+        <source>No Internet Connection</source>
+        <translation>无网络连接</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1649" />
+        <source>Check your connection and try again.</source>
+        <translation>请检查网络连接后重试。</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1662" />
+        <source>Retry</source>
+        <translation>重试</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>

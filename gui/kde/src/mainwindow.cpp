@@ -141,6 +141,13 @@ extern "C" unsigned char *DZWebRemoteQRPNG(int *outLen);    // PNG blob encoding
 // anything. Result is a malloc'd JSON string — free with DZFree.
 extern "C" char *DZCheckUpdateJSON(void); // {"current","latest","hasUpdate","url","notes"}
 
+// No-Internet detection. Redeclared here (like the blocks above) so the GUI
+// still builds against an older generated header; identical redeclaration is
+// harmless. Returns why the most recent DZInit failed, so the UI can show a
+// No-Internet retry screen instead of pushing the user to re-authenticate:
+// 0 = ok / logged in, 1 = ARL expired or invalid, 2 = no internet, 3 = other.
+extern "C" int DZLoginErrorKind(void);
+
 namespace {
 
 const char *kAccent = "#A238FF"; // Deezer "Electric Violet"
@@ -854,7 +861,7 @@ void MainWindow::buildMenu() {
     auto *about = help->addAction(tr("&About OpenDeezer"));
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            QStringLiteral("<h3>OpenDeezer 1.8.0</h3><p>") +
+            QStringLiteral("<h3>OpenDeezer 1.8.1</h3><p>") +
             tr("A Deezer client for the desktop.") + QStringLiteral("</p>");
         // Show the signed-in account tier (from DZAccountJSON) when available.
         if (m_haveAccount && !m_accountName.isEmpty())
@@ -1470,6 +1477,11 @@ void MainWindow::startLogin() {
         QMetaObject::invokeMethod(this, [this, ok, acct] {
             if (ok) {
                 finishLogin(acct);
+            } else if (DZLoginErrorKind() == 2) {
+                // The machine is offline — the stored ARL may well be fine, so
+                // don't push the user to re-authenticate. Show a blocking
+                // No-Internet page whose Retry re-runs this login.
+                showNoInternet();
             } else {
                 // The stored ARL is stale — fall back to the login dialog so the
                 // user can re-authenticate without editing files by hand.
@@ -1605,6 +1617,65 @@ void MainWindow::showFreeAccountBlock() {
     m_rootStack->setCurrentWidget(m_blockPage);
     statusBar()->showMessage(
         tr("Premium required — %1 can't stream on-demand").arg(offer));
+}
+
+// Login failed because the machine is offline (DZLoginErrorKind() == 2). Swap
+// the whole window to a blocking "No Internet" page — the live app widgets stay
+// alive on stack page 0 but are unreachable until a successful retry. The Retry
+// button re-runs startLogin(), which reads the stored ARL exactly as at launch
+// and, on success, finishLogin() switches m_rootStack back to index 0.
+void MainWindow::showNoInternet() {
+    if (m_poll)
+        m_poll->stop();
+
+    // Build the page once; on later offline retries just re-show it.
+    if (!m_noInternetPage) {
+        m_noInternetPage = new QWidget;
+        auto *outer = new QVBoxLayout(m_noInternetPage);
+        outer->addStretch(1);
+
+        auto *title = new QLabel(tr("No Internet Connection"));
+        title->setAlignment(Qt::AlignCenter);
+        title->setWordWrap(true);
+        QFont tf = title->font();
+        tf.setPointSize(tf.pointSize() + 8);
+        tf.setBold(true);
+        title->setFont(tf);
+        title->setStyleSheet(QString("color:%1;").arg(kAccent));
+        outer->addWidget(title);
+
+        outer->addSpacing(12);
+
+        auto *body = new QLabel(tr("Check your connection and try again."));
+        body->setAlignment(Qt::AlignCenter);
+        body->setWordWrap(true);
+        body->setMaximumWidth(560);
+        // Centre the constrained body within the page.
+        auto *bodyRow = new QHBoxLayout;
+        bodyRow->addStretch(1);
+        bodyRow->addWidget(body);
+        bodyRow->addStretch(1);
+        outer->addLayout(bodyRow);
+
+        outer->addSpacing(24);
+
+        auto *retryBtn = new QPushButton(tr("Retry"));
+        connect(retryBtn, &QPushButton::clicked, this, &MainWindow::startLogin);
+        auto *btnRow = new QHBoxLayout;
+        btnRow->addStretch(1);
+        btnRow->addWidget(retryBtn);
+        btnRow->addStretch(1);
+        outer->addLayout(btnRow);
+
+        outer->addStretch(1);
+        // Appended after the app (0); becomes index 1 at a cold offline launch,
+        // or index 2 if the Free-account block page was created first. We select
+        // it by pointer below, so the exact index never matters.
+        m_rootStack->addWidget(m_noInternetPage);
+    }
+
+    m_rootStack->setCurrentWidget(m_noInternetPage);
+    statusBar()->showMessage(tr("No Internet Connection"));
 }
 
 // ---- browse ---------------------------------------------------------------

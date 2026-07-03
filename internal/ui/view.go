@@ -51,6 +51,8 @@ func (m *Model) View() string {
 		body = m.webRemoteView()
 	case screenBlocked:
 		return m.blockedView() // full screen, no playback footer
+	case screenNoInternet:
+		return m.noInternetView() // full screen, no playback footer
 	default:
 		body = m.list.View()
 	}
@@ -72,6 +74,28 @@ func (m *Model) blockedView() string {
 		dim.Render(i18n.T("Subscribe at deezer.com, then restart OpenDeezer.")),
 		"",
 		dim.Render(i18n.T("q to quit")),
+	}
+	return padTo(lines, max(1, m.height))
+}
+
+// noInternetView is shown when a login or browse call fails at the transport
+// level (DNS/refused/unreachable/timeout). The session is not dropped — the user
+// stays "logged in" and just retries, which distinguishes a passing outage from
+// an expired ARL (which instead prompts a re-login in the footer).
+func (m *Model) noInternetView() string {
+	hint := i18n.T("r to retry")
+	if m.loading {
+		hint = i18n.T("Reconnecting…")
+	}
+	lines := []string{
+		"",
+		accent.Render("OpenDeezer"),
+		"",
+		statusSty.Render(i18n.T("No internet connection")),
+		"",
+		i18n.T("Check your connection and try again."),
+		"",
+		dim.Render(hint + "  ·  " + i18n.T("q to quit")),
 	}
 	return padTo(lines, max(1, m.height))
 }

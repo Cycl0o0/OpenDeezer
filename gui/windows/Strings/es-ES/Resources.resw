@@ -370,6 +370,15 @@
   <data name="Blocked_BodyFormat" xml:space="preserve">
     <value>Tu cuenta ({0}) no es Premium. Suscríbete en deezer.com y reinicia OpenDeezer.</value>
   </data>
+  <data name="NoInternet_Title" xml:space="preserve">
+    <value>Sin conexión a Internet</value>
+  </data>
+  <data name="NoInternet_Body" xml:space="preserve">
+    <value>Comprueba tu conexión e inténtalo de nuevo.</value>
+  </data>
+  <data name="Action_Retry" xml:space="preserve">
+    <value>Reintentar</value>
+  </data>
   <data name="Update_TitleFormat" xml:space="preserve">
     <value>OpenDeezer {0} disponible</value>
   </data>

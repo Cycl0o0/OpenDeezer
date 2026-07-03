@@ -884,6 +884,22 @@
         <source>Connected to %1 — choose a device</source>
         <translation>متصل بـ %1 — اختر جهازًا</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1637" />
+        <location filename="../src/mainwindow.cpp" line="1675" />
+        <source>No Internet Connection</source>
+        <translation>لا يوجد اتصال بالإنترنت</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1649" />
+        <source>Check your connection and try again.</source>
+        <translation>تحقق من اتصالك وحاول مرة أخرى.</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1662" />
+        <source>Retry</source>
+        <translation>إعادة المحاولة</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>

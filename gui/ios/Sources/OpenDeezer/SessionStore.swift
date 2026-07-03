@@ -9,6 +9,7 @@ final class SessionStore: ObservableObject {
     enum Phase: Equatable {
         case launching
         case loggedOut
+        case noInternet
         case gated
         case ready
     }
@@ -38,8 +39,15 @@ final class SessionStore: ObservableObject {
         lastError = nil
         let ok = await Engine.initEngine(arl: trimmed)
         guard ok else {
-            phase = .loggedOut
-            lastError = String(localized: "Login failed. Check your ARL and try again.")
+            // Distinguish "no internet" (kind 2) from an expired/invalid ARL: on
+            // a network failure keep the saved ARL and show the retry screen
+            // instead of dropping the user back to login.
+            if Engine.loginErrorKind() == 2 {
+                phase = .noInternet
+            } else {
+                phase = .loggedOut
+                lastError = String(localized: "Login failed. Check your ARL and try again.")
+            }
             return false
         }
         if persist { KeychainStore.save(key: arlKey, value: trimmed) }
@@ -59,6 +67,18 @@ final class SessionStore: ObservableObject {
             await LibraryStore.shared.refreshAll()
         }
         return true
+    }
+
+    /// Retries the saved-ARL login after a network failure — driven by the
+    /// No-Internet screen's Retry button. `login` re-derives the phase from the
+    /// result: `.ready`/`.gated` once back online, `.noInternet` if still
+    /// offline, `.loggedOut` on a genuine auth failure.
+    func retrySavedLogin() async {
+        guard let arl = KeychainStore.load(key: arlKey), !arl.isEmpty else {
+            phase = .loggedOut
+            return
+        }
+        await login(arl: arl, persist: false)
     }
 
     func logout() {

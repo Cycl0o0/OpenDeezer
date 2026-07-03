@@ -196,3 +196,8 @@
 "Playlist · %@" = "Плейлист · %@";
 "Top worldwide" = "Топ по всему миру";
 "Album · %@" = "Альбом · %@";
+
+/* No-Internet gate */
+"No Internet Connection" = "Нет подключения к Интернету";
+"Check your connection and try again." = "Проверьте подключение и повторите попытку.";
+"Retry" = "Повторить";

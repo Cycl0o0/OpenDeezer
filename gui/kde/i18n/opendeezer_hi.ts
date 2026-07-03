@@ -856,6 +856,22 @@
         <source>Connected to %1 — choose a device</source>
         <translation>%1 से कनेक्ट है — कोई डिवाइस चुनें</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1637" />
+        <location filename="../src/mainwindow.cpp" line="1675" />
+        <source>No Internet Connection</source>
+        <translation>इंटरनेट कनेक्शन नहीं है</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1649" />
+        <source>Check your connection and try again.</source>
+        <translation>अपना कनेक्शन जांचें और फिर से प्रयास करें।</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1662" />
+        <source>Retry</source>
+        <translation>पुनः प्रयास करें</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>

@@ -39,6 +39,13 @@ enum Core {
         withC(arl) { DZInit($0) } == 1
     }
 
+    /// Why the most recent `initialize` failed — only meaningful when it returned
+    /// false: 0 = ok, 1 = ARL expired/invalid (re-auth needed), 2 = no internet
+    /// (offer retry), 3 = other. The DZLoginErrorKind symbol lands in
+    /// Clib/libdeezercore.h when `make corelib` regenerates it; the engine export
+    /// already exists.
+    static func loginErrorKind() -> Int { Int(DZLoginErrorKind()) }
+
     static var userID: String {
         guard let p = DZUserID() else { return "" }
         defer { DZFree(p) }

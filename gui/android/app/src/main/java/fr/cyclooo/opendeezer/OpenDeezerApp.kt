@@ -31,6 +31,7 @@ import fr.cyclooo.opendeezer.ui.screens.EqualizerScreen
 import fr.cyclooo.opendeezer.ui.screens.HomeScreen
 import fr.cyclooo.opendeezer.ui.screens.LoginScreen
 import fr.cyclooo.opendeezer.ui.screens.LyricsScreen
+import fr.cyclooo.opendeezer.ui.screens.NoInternetScreen
 import fr.cyclooo.opendeezer.ui.screens.NowPlayingScreen
 import fr.cyclooo.opendeezer.ui.screens.PlaylistsScreen
 import fr.cyclooo.opendeezer.ui.screens.PodcastsScreen
@@ -63,6 +64,11 @@ fun OpenDeezerApp(vm: AppViewModel) {
                     accountName = vm.account?.name.orEmpty(),
                     offer = vm.account?.offer.orEmpty(),
                     onLogout = vm::logout,
+                )
+
+                AuthStage.NO_INTERNET -> NoInternetScreen(
+                    busy = vm.busy,
+                    onRetry = vm::retry,
                 )
 
                 AuthStage.READY -> MainScaffold(vm)

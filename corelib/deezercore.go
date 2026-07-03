@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -44,6 +45,28 @@ var (
 	player   *audio.Player
 	finished int // bumped whenever a track ends naturally
 )
+
+// lastLoginKind records why the most recent DZInit login attempt failed so the
+// native UIs can tell "no internet" apart from "expired ARL" (DZInit itself only
+// returns a bare 0/1). Read via DZLoginErrorKind. Atomic: DZInit's Login runs off
+// the mu lock. Values match loginKind below.
+var lastLoginKind int32
+
+// loginKind maps a Login/DZInit error to the stable code the GUIs branch on:
+// 0 = ok, 1 = ARL expired/invalid (send to re-auth), 2 = no internet (show the
+// No-Internet screen + Retry), 3 = other (generic failure).
+func loginKind(err error) int32 {
+	switch {
+	case err == nil:
+		return 0
+	case deezer.IsNoNetwork(err):
+		return 2
+	case deezer.IsARLExpired(err):
+		return 1
+	default:
+		return 3
+	}
+}
 
 // ---- JSON DTOs (stable wire shape for the native UIs) ----
 
@@ -182,9 +205,11 @@ func DZInit(arl *C.char) C.int {
 	// can't block every other engine call meanwhile.
 	c := deezer.New(C.GoString(arl))
 	if err := c.Login(); err != nil {
+		atomic.StoreInt32(&lastLoginKind, loginKind(err))
 		odlog.Warn("login failed: %v", err)
 		return 0
 	}
+	atomic.StoreInt32(&lastLoginKind, 0)
 	mu.Lock()
 	client = c
 	mu.Unlock()
@@ -193,6 +218,15 @@ func DZInit(arl *C.char) C.int {
 	// Start engine-hosted services (Discord RP + control API) once.
 	startServices(c)
 	return 1
+}
+
+// DZLoginErrorKind returns why the most recent DZInit failed, so the UI can show
+// a No-Internet retry screen instead of pushing the user to re-authenticate:
+// 0 = ok / logged in, 1 = ARL expired or invalid, 2 = no internet, 3 = other.
+//
+//export DZLoginErrorKind
+func DZLoginErrorKind() C.int {
+	return C.int(atomic.LoadInt32(&lastLoginKind))
 }
 
 //export DZLastErrorJSON

@@ -196,3 +196,8 @@
 "Playlist · %@" = "歌单 · %@";
 "Top worldwide" = "全球热门";
 "Album · %@" = "专辑 · %@";
+
+/* No-Internet gate */
+"No Internet Connection" = "无网络连接";
+"Check your connection and try again." = "请检查网络连接后重试。";
+"Retry" = "重试";

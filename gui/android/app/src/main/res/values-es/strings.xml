@@ -38,6 +38,10 @@
     <string name="login_error_failed">Error de inicio de sesión — comprueba tu ARL y tu conexión.</string>
     <string name="login_error_account">No se pudo cargar la cuenta.</string>
 
+    <!-- No internet (retry reuses action_retry) -->
+    <string name="no_internet_title">Sin conexión a Internet</string>
+    <string name="no_internet_body">Comprueba tu conexión e inténtalo de nuevo.</string>
+
     <string name="device_type_terminal">Terminal</string>
     <string name="device_type_generic">Dispositivo</string>
 

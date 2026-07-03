@@ -38,6 +38,10 @@
     <string name="login_error_failed">Ошибка входа — проверьте ARL и подключение.</string>
     <string name="login_error_account">Не удалось загрузить аккаунт.</string>
 
+    <!-- No internet (retry reuses action_retry) -->
+    <string name="no_internet_title">Нет подключения к Интернету</string>
+    <string name="no_internet_body">Проверьте подключение и повторите попытку.</string>
+
     <string name="device_type_terminal">Терминал</string>
     <string name="device_type_generic">Устройство</string>
 

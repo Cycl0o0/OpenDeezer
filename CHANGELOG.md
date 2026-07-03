@@ -4,6 +4,27 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1]
+
+### Added
+- **"No Internet" screen** (all clients): when the engine can't reach Deezer at
+  launch or while browsing — DNS failure, connection refused, host/network
+  unreachable or a timeout — the TUI and every GUI (macOS, iOS, Android phone +
+  TV, Windows, GNOME, KDE) now show a dedicated **No Internet** screen with a
+  **Retry** action instead of dropping the user back to the login/ARL screen. The
+  session is kept, so recovering connectivity and retrying resumes where you were
+  rather than forcing a re-authentication. The new screen is localized in all
+  seven languages.
+
+### Changed
+- The shared Go engine now **distinguishes a network outage from an expired
+  ARL**. `internal/deezer` classifies transport-level failures as the new
+  `ErrNoNetwork` (exported through the SDK) separately from `ErrARLExpired`, and
+  the FFI bindings surface it to the native apps (`DZLoginErrorKind` in the
+  c-archive, `LoginErrorKind` in the gomobile binding). Previously a launch with
+  no connectivity was misreported as "invalid or expired ARL" and pushed the user
+  toward re-authenticating; it now correctly reads as an outage you can retry.
+
 ## [1.8.0]
 
 ### Added

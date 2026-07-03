@@ -48,6 +48,10 @@
     <string name="login_error_failed">Login failed — check your ARL and connection.</string>
     <string name="login_error_account">Could not load account.</string>
 
+    <!-- No internet (retry reuses action_retry) -->
+    <string name="no_internet_title">No Internet Connection</string>
+    <string name="no_internet_body">Check your connection and try again.</string>
+
     <!-- Connect device type labels -->
     <string name="device_type_terminal">Terminal</string>
     <string name="device_type_generic">Device</string>

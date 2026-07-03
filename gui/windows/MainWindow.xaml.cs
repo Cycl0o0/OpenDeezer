@@ -798,6 +798,10 @@ public sealed partial class MainWindow : Window
         else
         {
             _nowTitle.Text = Loc.S("Status_LoginFailed");
+            // No internet is a transient, retryable failure -> a dedicated Retry
+            // screen instead of the expired-ARL "sign in again" chooser. Any other
+            // kind (1 expired/invalid ARL, 3 other) keeps the existing behavior.
+            if (DeezerCore.DZLoginErrorKind() == 2) { ShowNoInternet(); return; }
             await ShowMessage(Loc.S("Dialog_LoginFailedTitle"), Loc.S("Dialog_LoginFailedBody"));
             ShowLoginChoice();
         }
@@ -818,6 +822,12 @@ public sealed partial class MainWindow : Window
         var acct = await Task.Run(() => DeezerCore.Account());
         _account = acct;
         if (!_account.Premium) { ShowBlocked(); return; } // Free account -> gate the app
+
+        // Restore the app UI if a takeover screen (the no-internet retry page)
+        // replaced the window content during login. In the normal login flow Content
+        // is already RootGrid, so this is a no-op; the nav manipulation below needs
+        // RootGrid to be the live window content.
+        if (!ReferenceEquals(Content, RootGrid)) Content = RootGrid;
 
         _lastFinished = DeezerCore.DZFinishedCount();
         _updatingVol = true; _volume.Value = DeezerCore.DZVolume() * 100.0; _updatingVol = false;
@@ -880,6 +890,61 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(quit);
         page.Children.Add(sp);
         Content = page; // wholesale replace -> the app can no longer be used
+    }
+
+    // No-internet screen: DZInit failed because the network is unreachable (kind 2),
+    // as opposed to an expired ARL. Replace the ENTIRE window content with a
+    // retryable page; Retry re-runs the saved-ARL login flow. Mirrors ShowBlocked's
+    // takeover, but this state is recoverable -- no _blocked flag, no engine stop.
+    private void ShowNoInternet()
+    {
+        var page = new Grid { Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x14, 0x04, 0x1E)), FlowDirection = Loc.FlowDirection };
+        var sp = new StackPanel
+        {
+            Spacing = 14,
+            MaxWidth = 560,
+            Padding = new Thickness(24),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        sp.Children.Add(new TextBlock
+        {
+            Text = "OpenDeezer",
+            FontSize = 22,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = _accent,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        sp.Children.Add(new TextBlock
+        {
+            Text = Loc.S("NoInternet_Title"),
+            FontSize = 26,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        sp.Children.Add(new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            Opacity = 0.85,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Text = Loc.S("NoInternet_Body"),
+        });
+        var retry = new Button { Content = Loc.S("Action_Retry"), HorizontalAlignment = HorizontalAlignment.Center };
+        retry.Click += (_, _) =>
+        {
+            // Busy state while the saved-ARL login retries: StartLogin replaces the
+            // window content on success, or rebuilds this page (fresh, enabled button)
+            // on a repeat no-internet failure.
+            retry.IsEnabled = false;
+            retry.Content = Loc.S("Status_LoggingIn");
+            StartLogin();
+        };
+        sp.Children.Add(retry);
+        page.Children.Add(sp);
+        Content = page; // wholesale replace, same takeover as the block screen
     }
 
     // Login chooser: "Log in with Deezer" opens the embedded webview, "Enter ARL"
@@ -2801,7 +2866,7 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.8.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.8.1", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
         sp.Children.Add(new TextBlock { Text = Loc.S("About_Tagline"), TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {

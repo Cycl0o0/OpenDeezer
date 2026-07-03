@@ -5,16 +5,19 @@ package deezer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -22,6 +25,76 @@ import (
 // otherwise rejected, so callers can distinguish "re-auth needed" from a
 // transient network failure and prompt the user accordingly.
 var ErrARLExpired = errors.New("ARL expired or invalid — re-login required")
+
+// ErrNoNetwork wraps any transport-level failure reaching Deezer (DNS failure,
+// connection refused, host/network unreachable, TLS/dial timeout, context
+// deadline). Callers use errors.Is(err, ErrNoNetwork) to show a "No Internet"
+// screen and offer a retry, instead of mistaking an outage for an expired ARL
+// (ErrARLExpired) and forcing the user to re-authenticate. The two are mutually
+// exclusive: a reachable Deezer that rejects the ARL yields ErrARLExpired; an
+// unreachable Deezer yields ErrNoNetwork.
+var ErrNoNetwork = errors.New("no internet connection")
+
+// classifyNet wraps err with ErrNoNetwork when it is a transport/reachability
+// failure (so errors.Is(err, ErrNoNetwork) holds), and returns err unchanged
+// otherwise. Every c.http.Do call site pipes its transport error through this so
+// the online/offline distinction is made in exactly one place. HTTP-level
+// rejections (non-2xx, Deezer error envelopes) are NOT network errors and are
+// left to the existing per-call handling.
+func classifyNet(err error) error {
+	if err == nil {
+		return nil
+	}
+	if isNetworkErr(err) {
+		return fmt.Errorf("%w: %v", ErrNoNetwork, err)
+	}
+	return err
+}
+
+// isNetworkErr reports whether err is a transport-level connectivity failure.
+// net/http wraps transport errors in *url.Error, whose Unwrap chain reaches the
+// underlying *net.OpError / *net.DNSError / syscall.Errno / context deadline, so
+// errors.As/Is see through it.
+func isNetworkErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Dial/read/write timeouts and the request context deadline (30s client
+	// timeout fires as context.DeadlineExceeded).
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	// DNS resolution failure (host not found / no route to resolver).
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	// Refused / unreachable / network-down at the syscall layer.
+	for _, se := range []syscall.Errno{
+		syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.EHOSTUNREACH,
+		syscall.ENETUNREACH, syscall.ENETDOWN, syscall.ETIMEDOUT,
+	} {
+		if errors.Is(err, se) {
+			return true
+		}
+	}
+	// Any remaining net.Error that reports itself as a timeout, plus the generic
+	// dial/OpError case (covers platforms/TLS handshakes not caught above).
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr)
+}
+
+// IsNoNetwork reports whether err (or anything it wraps) is a transport-level
+// connectivity failure. Exported for callers outside this package (the FFI
+// bindings, the TUI) that classify a login/browse failure.
+func IsNoNetwork(err error) bool { return errors.Is(err, ErrNoNetwork) }
+
+// IsARLExpired reports whether err is an expired/invalid-ARL auth failure.
+func IsARLExpired(err error) bool { return errors.Is(err, ErrARLExpired) }
 
 const (
 	gwURL    = "https://www.deezer.com/ajax/gw-light.php"
@@ -164,7 +237,7 @@ func (c *Client) Login() error {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return classifyNet(err)
 	}
 	defer resp.Body.Close()
 
@@ -287,7 +360,7 @@ func (c *Client) gwRaw(method, jsonBody string) ([]byte, error) {
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, classifyNet(err)
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
@@ -353,7 +426,7 @@ func (c *Client) restGet(path string) ([]byte, error) {
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, classifyNet(err)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
@@ -770,7 +843,7 @@ func (c *Client) getMediaURL(licenseToken, trackToken, formats string) (urlStr, 
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", classifyNet(err)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)

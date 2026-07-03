@@ -19,6 +19,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
@@ -41,6 +42,11 @@ var (
 	client   *deezer.Client
 	player   *audio.Player
 	finished int
+
+	// lastLoginKind records why the most recent Init login failed so the Kotlin/
+	// Swift UIs can tell "no internet" apart from "expired ARL" (Init returns a
+	// bare bool). Read via LoginErrorKind. See loginKind for the value mapping.
+	lastLoginKind int32
 
 	curMu    sync.Mutex
 	curTrack deezer.Track
@@ -177,9 +183,11 @@ func Init(arl string) bool {
 
 	c := deezer.New(arl)
 	if err := c.Login(); err != nil {
+		atomic.StoreInt32(&lastLoginKind, loginKind(err))
 		odlog.Warn("login failed: %v", err)
 		return false
 	}
+	atomic.StoreInt32(&lastLoginKind, 0)
 	mu.Lock()
 	client = c
 	mu.Unlock()
@@ -187,6 +195,27 @@ func Init(arl string) bool {
 	refreshControlServer(c)
 	return true
 }
+
+// loginKind maps a Login/Init error to the stable code the mobile UIs branch on:
+// 0 = ok, 1 = ARL expired/invalid (re-auth), 2 = no internet (No-Internet screen
+// + Retry), 3 = other.
+func loginKind(err error) int32 {
+	switch {
+	case err == nil:
+		return 0
+	case deezer.IsNoNetwork(err):
+		return 2
+	case deezer.IsARLExpired(err):
+		return 1
+	default:
+		return 3
+	}
+}
+
+// LoginErrorKind returns why the most recent Init failed so the UI shows a
+// No-Internet retry screen instead of forcing re-auth: 0 = ok, 1 = ARL expired
+// or invalid, 2 = no internet, 3 = other.
+func LoginErrorKind() int { return int(atomic.LoadInt32(&lastLoginKind)) }
 
 // LoggedIn reports whether Init succeeded.
 func LoggedIn() bool { c := curClient(); return c != nil && c.LoggedIn() }

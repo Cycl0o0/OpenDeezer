@@ -53,10 +53,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case loginDoneMsg:
 		m.loading = false
 		if msg.err != nil {
-			if errors.Is(msg.err, deezer.ErrARLExpired) {
+			switch {
+			case errors.Is(msg.err, deezer.ErrNoNetwork):
+				// Connectivity loss, not an auth problem — show the No-Internet
+				// screen with a retry rather than telling the user to re-login.
+				m.screen = screenNoInternet
+				m.status = ""
+			case errors.Is(msg.err, deezer.ErrARLExpired):
 				m.status = i18n.T("ARL expired or invalid — refresh the 'arl' cookie from deezer.com, then `opendeezer -save-arl <arl>`")
-			} else {
-				m.status = i18n.Tf("Login failed (network?): %s", msg.err.Error())
+			default:
+				m.status = i18n.Tf("Login failed: %s", msg.err.Error())
 			}
 			return m, nil
 		}
@@ -279,6 +285,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.loading = false
+		// A browse/stream call failed because the network dropped: take over with
+		// the No-Internet screen (remembering where to return) instead of leaving a
+		// cryptic error in the footer. The session stays valid, so retry can just
+		// go back once connectivity returns.
+		if errors.Is(msg.err, deezer.ErrNoNetwork) && m.screen != screenNoInternet {
+			m.prevScreen = m.screen
+			m.screen = screenNoInternet
+			m.status = ""
+			return m, nil
+		}
 		m.status = i18n.Tf("Error: %s", msg.err.Error())
 		return m, nil
 
@@ -513,6 +529,26 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenBlocked {
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
+			m.shutdown()
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+
+	// No-Internet screen: retry re-establishes the session (a fresh login round-
+	// trip doubles as a connectivity probe); on success loginDoneMsg lands us back
+	// in the app. If the session is still valid (in-session drop), retry still just
+	// re-logs in — cheap and it confirms the network is back.
+	if m.screen == screenNoInternet {
+		switch msg.String() {
+		case "r", "enter":
+			if m.loading {
+				return m, nil
+			}
+			m.loading = true
+			m.status = ""
+			return m, m.loginCmd()
+		case "q", "ctrl+c":
 			m.shutdown()
 			return m, tea.Quit
 		}

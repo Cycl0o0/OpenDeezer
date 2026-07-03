@@ -856,6 +856,22 @@
         <source>Connected to %1 — choose a device</source>
         <translation>Conectado a %1: elige un dispositivo</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1637" />
+        <location filename="../src/mainwindow.cpp" line="1675" />
+        <source>No Internet Connection</source>
+        <translation>Sin conexión a Internet</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1649" />
+        <source>Check your connection and try again.</source>
+        <translation>Comprueba tu conexión e inténtalo de nuevo.</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1662" />
+        <source>Retry</source>
+        <translation>Reintentar</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>

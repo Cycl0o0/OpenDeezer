@@ -51,6 +51,10 @@ struct RootView: View {
                 } detail: {
                     DetailView()
                 }
+            } else if app.noInternet {
+                // Launch login failed because the network is down (not a bad ARL):
+                // offer a retry instead of the login gate's "expired ARL" message.
+                NoInternetView()
             } else {
                 LoginGate()
             }
@@ -207,6 +211,48 @@ struct FreeAccountBlockedView: View {
                 }
                 .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
             }
+            .padding(.top, 6)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DZ.windowBG)
+    }
+}
+
+// NoInternetView — shown when the launch login fails because the network is
+// unreachable (DZLoginErrorKind == 2), not because the ARL is bad. It offers a
+// Retry that re-runs the launch login: a successful login opens the app, a
+// repeat network failure keeps this screen, and a genuine auth failure drops to
+// the login gate.
+struct NoInternetView: View {
+    @EnvironmentObject var app: AppState
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 52)).foregroundStyle(DZ.accent)
+            Text("OpenDeezer").font(.system(size: 22, weight: .bold)).foregroundStyle(DZ.textPri)
+
+            Text(L("No Internet Connection"))
+                .font(.system(size: 26, weight: .bold)).foregroundStyle(DZ.textPri)
+                .multilineTextAlignment(.center)
+
+            Text(L("Check your connection and try again."))
+                .font(.title3).foregroundStyle(DZ.textSec)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 460)
+
+            // Retry re-runs the launch login (app.busy reflects the in-flight
+            // attempt, so the button shows a spinner and disables meanwhile).
+            Button { app.retryLogin() } label: {
+                if app.busy {
+                    ProgressView().controlSize(.small).tint(.white)
+                } else {
+                    Label(L("Retry"), systemImage: "arrow.clockwise").frame(minWidth: 140)
+                }
+            }
+            .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
+            .disabled(app.busy)
             .padding(.top, 6)
         }
         .padding(40)

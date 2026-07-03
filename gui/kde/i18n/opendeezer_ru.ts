@@ -863,6 +863,22 @@
         <source>Connected to %1 — choose a device</source>
         <translation>Подключено к %1 — выберите устройство</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1637" />
+        <location filename="../src/mainwindow.cpp" line="1675" />
+        <source>No Internet Connection</source>
+        <translation>Нет подключения к Интернету</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1649" />
+        <source>Check your connection and try again.</source>
+        <translation>Проверьте подключение и повторите попытку.</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1662" />
+        <source>Retry</source>
+        <translation>Повторить</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: opendeezer-gnome 1.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/Cycl0o0/OpenDeezer/issues\n"
-"POT-Creation-Date: 2026-07-02 22:00+0000\n"
+"POT-Creation-Date: 2026-07-03 09:29+0200\n"
 "PO-Revision-Date: 2026-07-02 22:00+0000\n"
 "Last-Translator: OpenDeezer <cyclolysis0@gmail.com>\n"
 "Language-Team: ru\n"
@@ -14,27 +14,28 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
 
-#: src/main.c:486
+#: src/main.c:495
 msgid "Explicit content"
 msgstr "Ненормативный контент"
 
-#: src/main.c:568
+#: src/main.c:577
 msgid "Title"
 msgstr "Название"
 
-#: src/main.c:612
+#: src/main.c:621
 #, c-format
 msgid "Couldn't parse response: %s"
 msgstr "Не удалось обработать ответ: %s"
 
-#: src/main.c:622 src/main.c:3802
+#: src/main.c:631 src/main.c:3811
 #, c-format
 msgid "Deezer: %s"
 msgstr "Deezer: %s"
 
-#: src/main.c:633
+#: src/main.c:642
 #, c-format
 msgid "%u track"
 msgid_plural "%u tracks"
@@ -42,7 +43,7 @@ msgstr[0] "%u трек"
 msgstr[1] "%u трека"
 msgstr[2] "%u треков"
 
-#: src/main.c:730 src/main.c:3926 src/main.c:4105
+#: src/main.c:739 src/main.c:3935 src/main.c:4114
 #, c-format
 msgid "%lld track"
 msgid_plural "%lld tracks"
@@ -50,489 +51,497 @@ msgstr[0] "%lld трек"
 msgstr[1] "%lld трека"
 msgstr[2] "%lld треков"
 
-#: src/main.c:856
+#: src/main.c:865
 msgid "Couldn't play that track"
 msgstr "Не удалось воспроизвести трек"
 
-#: src/main.c:1085
+#: src/main.c:1094
 msgid "Normal (MP3 128)"
 msgstr "Обычное (MP3 128)"
 
-#: src/main.c:1085
+#: src/main.c:1094
 msgid "High (MP3 320)"
 msgstr "Высокое (MP3 320)"
 
-#: src/main.c:1085
+#: src/main.c:1094
 msgid "HiFi (FLAC)"
 msgstr "HiFi (FLAC)"
 
-#: src/main.c:1086
+#: src/main.c:1095
 #, c-format
 msgid "Audio quality: %s"
 msgstr "Качество звука: %s"
 
-#: src/main.c:1102
+#: src/main.c:1111
 msgid "Loudness normalization enabled"
 msgstr "Нормализация громкости включена"
 
-#: src/main.c:1102
+#: src/main.c:1111
 msgid "Loudness normalization disabled"
 msgstr "Нормализация громкости выключена"
 
-#: src/main.c:1112
+#: src/main.c:1121
 msgid "Gapless playback enabled"
 msgstr "Воспроизведение без пауз включено"
 
-#: src/main.c:1112
+#: src/main.c:1121
 msgid "Gapless playback disabled"
 msgstr "Воспроизведение без пауз выключено"
 
-#: src/main.c:1126
+#: src/main.c:1135
 #, c-format
 msgid "Crossfade: %ds"
 msgstr "Кроссфейд: %d с"
 
-#: src/main.c:1127
+#: src/main.c:1136
 msgid "Crossfade off"
 msgstr "Кроссфейд выключен"
 
-#: src/main.c:1143
+#: src/main.c:1152
 msgid "Sleep timer off"
 msgstr "Таймер сна выключен"
 
-#: src/main.c:1146
+#: src/main.c:1155
 msgid "Sleep timer: end of track"
 msgstr "Таймер сна: в конце трека"
 
-#: src/main.c:1149
+#: src/main.c:1158
 #, c-format
 msgid "Sleep timer: %d min"
 msgstr "Таймер сна: %d мин"
 
-#: src/main.c:1160
+#: src/main.c:1169
 msgid "Couldn't switch output device"
 msgstr "Не удалось сменить устройство вывода"
 
-#: src/main.c:1164
+#: src/main.c:1173
 msgid "Output device changed"
 msgstr "Устройство вывода изменено"
 
-#: src/main.c:1172
+#: src/main.c:1181
 msgid "Output device"
 msgstr "Устройство вывода"
 
-#: src/main.c:1195
+#: src/main.c:1204
 #, c-format
 msgid "%s (default)"
 msgstr "%s (по умолчанию)"
 
-#: src/main.c:1196 src/main.c:1211
+#: src/main.c:1205 src/main.c:1220
 msgid "System default"
 msgstr "Как в системе"
 
-#: src/main.c:1252
+#: src/main.c:1261
 msgid "Remote control"
 msgstr "Удалённое управление"
 
-#: src/main.c:1255 src/main.c:1507
+#: src/main.c:1264 src/main.c:1516
 msgid "Enable"
 msgstr "Включить"
 
-#: src/main.c:1257
+#: src/main.c:1266
 msgid "Control playback from another device"
 msgstr "Управляйте воспроизведением с другого устройства"
 
-#: src/main.c:1260
+#: src/main.c:1269
 msgid "Allow on local network"
 msgstr "Разрешить в локальной сети"
 
-#: src/main.c:1262
+#: src/main.c:1271
 msgid "Off restricts connections to this computer only"
 msgstr "Если выключено, подключения разрешены только с этого компьютера"
 
-#: src/main.c:1265
+#: src/main.c:1274
 msgid "Access token"
 msgstr "Токен доступа"
 
-#: src/main.c:1431
+#: src/main.c:1440
 msgid "Equalizer enabled"
 msgstr "Эквалайзер включён"
 
-#: src/main.c:1431
+#: src/main.c:1440
 msgid "Equalizer disabled"
 msgstr "Эквалайзер выключен"
 
-#: src/main.c:1440
+#: src/main.c:1449
 msgid "Mono audio enabled"
 msgstr "Монозвук включён"
 
-#: src/main.c:1440
+#: src/main.c:1449
 msgid "Mono audio disabled"
 msgstr "Монозвук выключен"
 
-#: src/main.c:1451
+#: src/main.c:1460
 msgid "Couldn't apply the preset"
 msgstr "Не удалось применить пресет"
 
-#: src/main.c:1502
+#: src/main.c:1511
 msgid "Equalizer"
 msgstr "Эквалайзер"
 
-#: src/main.c:1509
+#: src/main.c:1518
 msgid "Shape the sound with a 10-band graphic equalizer"
 msgstr "Настройте звук 10-полосным графическим эквалайзером"
 
-#: src/main.c:1512
+#: src/main.c:1521
 msgid "Preset"
 msgstr "Пресет"
 
-#: src/main.c:1515
+#: src/main.c:1524
 msgid "Mono audio"
 msgstr "Монозвук"
 
-#: src/main.c:1517
+#: src/main.c:1526
 msgid "Mix both stereo channels into one"
 msgstr "Свести оба стереоканала в один"
 
-#: src/main.c:1553
+#: src/main.c:1562
 msgid "Custom"
 msgstr "Свой"
 
-#: src/main.c:1598
+#: src/main.c:1607
 msgid "Preamp"
 msgstr "Предусиление"
 
-#: src/main.c:1647
+#: src/main.c:1656
 msgid "Couldn't open the browser"
 msgstr "Не удалось открыть браузер"
 
-#: src/main.c:1708
+#: src/main.c:1717
 #, c-format
 msgid "OpenDeezer %s available"
 msgstr "Доступна версия OpenDeezer %s"
 
-#: src/main.c:1713
+#: src/main.c:1722
 #, c-format
 msgid "OpenDeezer %s is available"
 msgstr "Доступна версия OpenDeezer %s"
 
-#: src/main.c:1715
+#: src/main.c:1724
 #, c-format
 msgid "You're up to date (%s)"
 msgstr "У вас последняя версия (%s)"
 
-#: src/main.c:1716
+#: src/main.c:1725
 msgid "Couldn't check for updates — try again later"
 msgstr "Не удалось проверить обновления — повторите позже"
 
-#: src/main.c:1744
+#: src/main.c:1753
 msgid "Updates"
 msgstr "Обновления"
 
-#: src/main.c:1747
+#: src/main.c:1756
 msgid "Check for updates"
 msgstr "Проверить обновления"
 
-#: src/main.c:1748
+#: src/main.c:1757
 msgid "Look for a newer OpenDeezer release on GitHub"
 msgstr "Искать новую версию OpenDeezer на GitHub"
 
-#: src/main.c:1750
+#: src/main.c:1759
 msgid "Check Now"
 msgstr "Проверить сейчас"
 
-#: src/main.c:1766 src/main.c:5695
+#: src/main.c:1775 src/main.c:5749
 msgid "Settings"
 msgstr "Настройки"
 
-#: src/main.c:1771
+#: src/main.c:1780
 msgid "Account"
 msgstr "Аккаунт"
 
-#: src/main.c:1773
+#: src/main.c:1782
 msgid "Signed in"
 msgstr "Вход выполнен"
 
-#: src/main.c:1782
+#: src/main.c:1791
 msgid "Not signed in"
 msgstr "Вход не выполнен"
 
-#: src/main.c:1789
+#: src/main.c:1798
 msgid "Audio"
 msgstr "Звук"
 
-#: src/main.c:1791
+#: src/main.c:1800
 msgid "Normal — MP3 128 kbps"
 msgstr "Обычное — MP3 128 кбит/с"
 
-#: src/main.c:1792
+#: src/main.c:1801
 msgid "High — MP3 320 kbps"
 msgstr "Высокое — MP3 320 кбит/с"
 
-#: src/main.c:1793
+#: src/main.c:1802
 msgid "HiFi — FLAC lossless"
 msgstr "HiFi — FLAC без потерь"
 
-#: src/main.c:1795
+#: src/main.c:1804
 msgid "Streaming quality"
 msgstr "Качество потока"
 
-#: src/main.c:1804
+#: src/main.c:1813
 msgid "Loudness normalization"
 msgstr "Нормализация громкости"
 
-#: src/main.c:1806
+#: src/main.c:1815
 msgid "Even out volume across tracks (ReplayGain)"
 msgstr "Выравнивает громкость треков (ReplayGain)"
 
-#: src/main.c:1816
+#: src/main.c:1825
 msgid "Gapless playback"
 msgstr "Воспроизведение без пауз"
 
-#: src/main.c:1818
+#: src/main.c:1827
 msgid "Start the next track with no silence between songs"
 msgstr "Начинает следующий трек без паузы между песнями"
 
-#: src/main.c:1824 src/main.c:1857
+#: src/main.c:1833 src/main.c:1866
 msgid "Off"
 msgstr "Выкл."
 
-#: src/main.c:1824
+#: src/main.c:1833
 msgid "3 seconds"
 msgstr "3 секунды"
 
-#: src/main.c:1824
+#: src/main.c:1833
 msgid "6 seconds"
 msgstr "6 секунд"
 
-#: src/main.c:1824
+#: src/main.c:1833
 msgid "12 seconds"
 msgstr "12 секунд"
 
-#: src/main.c:1826
+#: src/main.c:1835
 msgid "Crossfade"
 msgstr "Кроссфейд"
 
-#: src/main.c:1845
+#: src/main.c:1854
 msgid "Behaviour"
 msgstr "Поведение"
 
-#: src/main.c:1848
+#: src/main.c:1857
 msgid "Keep playing in background"
 msgstr "Продолжать в фоне"
 
-#: src/main.c:1850
-msgid "When the window is closed, keep playing and stay in the system media controls instead of quitting"
-msgstr "При закрытии окна продолжает воспроизведение и остаётся в системных медиаэлементах, а не завершает работу"
+#: src/main.c:1859
+msgid ""
+"When the window is closed, keep playing and stay in the system media "
+"controls instead of quitting"
+msgstr ""
+"При закрытии окна продолжает воспроизведение и остаётся в системных "
+"медиаэлементах, а не завершает работу"
 
-#: src/main.c:1857
+#: src/main.c:1866
 msgid "15 minutes"
 msgstr "15 минут"
 
-#: src/main.c:1857
+#: src/main.c:1866
 msgid "30 minutes"
 msgstr "30 минут"
 
-#: src/main.c:1858
+#: src/main.c:1867
 msgid "45 minutes"
 msgstr "45 минут"
 
-#: src/main.c:1858
+#: src/main.c:1867
 msgid "60 minutes"
 msgstr "60 минут"
 
-#: src/main.c:1858
+#: src/main.c:1867
 msgid "End of track"
 msgstr "Конец трека"
 
-#: src/main.c:1860
+#: src/main.c:1869
 msgid "Sleep timer"
 msgstr "Таймер сна"
 
-#: src/main.c:1862
+#: src/main.c:1871
 msgid "Pause playback after a delay or when the track ends"
 msgstr "Приостанавливает воспроизведение по таймеру или в конце трека"
 
-#: src/main.c:2009 src/main.c:2090
+#: src/main.c:2018 src/main.c:2099
 msgid "Phone Remote"
 msgstr "Пульт на телефоне"
 
-#: src/main.c:2029
+#: src/main.c:2038
 msgid "Enable Phone Remote"
 msgstr "Включить пульт на телефоне"
 
-#: src/main.c:2031
+#: src/main.c:2040
 msgid "Serve a browser-based remote on your local network"
 msgstr "Запускает веб-пульт в локальной сети"
 
-#: src/main.c:2069
+#: src/main.c:2078
 msgid "Scan with your phone (same Wi-Fi), then enter the code."
 msgstr "Отсканируйте телефоном (та же сеть Wi-Fi) и введите код."
 
-#: src/main.c:2135 src/main.c:2144 src/main.c:2172 src/main.c:2181
+#: src/main.c:2144 src/main.c:2153 src/main.c:2181 src/main.c:2190
 msgid "Cancel"
 msgstr "Отмена"
 
-#: src/main.c:2204
+#: src/main.c:2213
 msgid "Added to Liked Songs"
 msgstr "Добавлено в Любимые треки"
 
-#: src/main.c:2204
+#: src/main.c:2213
 msgid "Removed from Liked Songs"
 msgstr "Убрано из Любимых треков"
 
-#: src/main.c:2205
+#: src/main.c:2214
 msgid "Couldn't add to favourites"
 msgstr "Не удалось добавить в избранное"
 
-#: src/main.c:2205
+#: src/main.c:2214
 msgid "Couldn't remove from favourites"
 msgstr "Не удалось убрать из избранного"
 
-#: src/main.c:2229 src/main.c:3693
+#: src/main.c:2238 src/main.c:3702
 msgid "Play a track first"
 msgstr "Сначала включите трек"
 
-#: src/main.c:2260 src/main.c:3585 src/main.c:3697
+#: src/main.c:2269 src/main.c:3594 src/main.c:3706
 msgid "No artist for this track"
 msgstr "Для этого трека нет исполнителя"
 
-#: src/main.c:2272
+#: src/main.c:2281
 msgid "Add to Liked Songs"
 msgstr "Добавить в Любимые треки"
 
-#: src/main.c:2273
+#: src/main.c:2282
 msgid "Add to Playlist…"
 msgstr "Добавить в плейлист…"
 
-#: src/main.c:2274
+#: src/main.c:2283
 msgid "Go to Artist"
 msgstr "Перейти к исполнителю"
 
-#: src/main.c:2309
+#: src/main.c:2318
 #, c-format
 msgid "Added to %s"
 msgstr "Добавлено в %s"
 
-#: src/main.c:2309
+#: src/main.c:2318
 msgid "playlist"
 msgstr "плейлист"
 
-#: src/main.c:2310
+#: src/main.c:2319
 msgid "Couldn't add to that playlist"
 msgstr "Не удалось добавить в этот плейлист"
 
-#: src/main.c:2350
+#: src/main.c:2359
 #, c-format
 msgid "Created playlist “%s”"
 msgstr "Плейлист «%s» создан"
 
-#: src/main.c:2353
+#: src/main.c:2362
 msgid "Couldn't create the playlist"
 msgstr "Не удалось создать плейлист"
 
-#: src/main.c:2377
+#: src/main.c:2386
 msgid "Playlist renamed"
 msgstr "Плейлист переименован"
 
-#: src/main.c:2377
+#: src/main.c:2386
 msgid "Couldn't rename the playlist"
 msgstr "Не удалось переименовать плейлист"
 
-#: src/main.c:2397
+#: src/main.c:2406
 msgid "Playlist deleted"
 msgstr "Плейлист удалён"
 
-#: src/main.c:2397
+#: src/main.c:2406
 msgid "Couldn't delete the playlist"
 msgstr "Не удалось удалить плейлист"
 
-#: src/main.c:2421 src/main.c:2489
+#: src/main.c:2430 src/main.c:2498
 msgid "New Playlist"
 msgstr "Новый плейлист"
 
-#: src/main.c:2421 src/main.c:2489
+#: src/main.c:2430 src/main.c:2498
 msgid "Create"
 msgstr "Создать"
 
-#: src/main.c:2431
+#: src/main.c:2440
 msgid "Rename Playlist"
 msgstr "Переименовать плейлист"
 
-#: src/main.c:2431
+#: src/main.c:2440
 msgid "Rename"
 msgstr "Переименовать"
 
-#: src/main.c:2439
+#: src/main.c:2448
 #, c-format
 msgid "“%s” will be permanently deleted."
 msgstr "«%s» будет удалён навсегда."
 
-#: src/main.c:2440
+#: src/main.c:2449
 msgid "Delete Playlist?"
 msgstr "Удалить плейлист?"
 
-#: src/main.c:2440
+#: src/main.c:2449
 msgid "Delete"
 msgstr "Удалить"
 
-#: src/main.c:2455
+#: src/main.c:2464
 msgid "Rename…"
 msgstr "Переименовать…"
 
-#: src/main.c:2456
+#: src/main.c:2465
 msgid "Delete…"
 msgstr "Удалить…"
 
-#: src/main.c:2534
+#: src/main.c:2543
 msgid "No track to add"
 msgstr "Нет трека для добавления"
 
-#: src/main.c:2543 src/main.c:2572
+#: src/main.c:2552 src/main.c:2581
 msgid "Add to Playlist"
 msgstr "Добавить в плейлист"
 
-#: src/main.c:2562
+#: src/main.c:2571
 msgid "New Playlist…"
 msgstr "Новый плейлист…"
 
-#: src/main.c:2895
-msgid "Still playing in the background. Use the media controls or relaunch to reopen."
-msgstr "Воспроизведение продолжается в фоне. Используйте медиаэлементы или запустите приложение снова."
+#: src/main.c:2904
+msgid ""
+"Still playing in the background. Use the media controls or relaunch to "
+"reopen."
+msgstr ""
+"Воспроизведение продолжается в фоне. Используйте медиаэлементы или запустите "
+"приложение снова."
 
-#: src/main.c:3038
+#: src/main.c:3047
 msgid "Search"
 msgstr "Поиск"
 
-#: src/main.c:3087 src/main.c:3099 src/main.c:3138
+#: src/main.c:3096 src/main.c:3108 src/main.c:3147
 msgid "No lyrics available"
 msgstr "Текст недоступен"
 
-#: src/main.c:3092
+#: src/main.c:3101
 msgid "Couldn't load lyrics"
 msgstr "Не удалось загрузить текст"
 
-#: src/main.c:3172
+#: src/main.c:3181
 msgid "Play a track to see its lyrics"
 msgstr "Включите трек, чтобы увидеть текст"
 
-#: src/main.c:3177
+#: src/main.c:3186
 msgid "Loading lyrics…"
 msgstr "Загрузка текста…"
 
-#: src/main.c:3249 src/main.c:3266 src/main.c:5486
+#: src/main.c:3258 src/main.c:3275 src/main.c:5540
 msgid "Lyrics"
 msgstr "Текст песни"
 
-#: src/main.c:3377 src/main.c:3749 src/main.c:5609
+#: src/main.c:3386 src/main.c:3758 src/main.c:5663
 msgid "Album"
 msgstr "Альбом"
 
-#: src/main.c:3399 src/main.c:3402 src/main.c:3407
+#: src/main.c:3408 src/main.c:3411 src/main.c:3416
 msgid "Couldn't load this artist"
 msgstr "Не удалось загрузить исполнителя"
 
-#: src/main.c:3434 src/main.c:3530 src/main.c:3892
+#: src/main.c:3443 src/main.c:3539 src/main.c:3901
 #, c-format
 msgid "%lld fan"
 msgid_plural "%lld fans"
@@ -540,99 +549,99 @@ msgstr[0] "%lld поклонник"
 msgstr[1] "%lld поклонника"
 msgstr[2] "%lld поклонников"
 
-#: src/main.c:3449 src/main.c:4164
+#: src/main.c:3458 src/main.c:4173
 msgid "Top Tracks"
 msgstr "Популярные треки"
 
-#: src/main.c:3479 src/main.c:3850
+#: src/main.c:3488 src/main.c:3859
 msgid "Albums"
 msgstr "Альбомы"
 
-#: src/main.c:3519
+#: src/main.c:3528
 msgid "Related Artists"
 msgstr "Похожие исполнители"
 
-#: src/main.c:3592 src/main.c:3609 src/main.c:5608
+#: src/main.c:3601 src/main.c:3618 src/main.c:5662
 msgid "Artist"
 msgstr "Исполнитель"
 
-#: src/main.c:3623
+#: src/main.c:3632
 msgid "Loading…"
 msgstr "Загрузка…"
 
-#: src/main.c:3687
+#: src/main.c:3696
 msgid "No track playing"
 msgstr "Ничего не воспроизводится"
 
-#: src/main.c:3760 src/main.c:4068
+#: src/main.c:3769 src/main.c:4077
 msgid "Playlist"
 msgstr "Плейлист"
 
-#: src/main.c:3792
+#: src/main.c:3801
 msgid "Nothing to show"
 msgstr "Показывать нечего"
 
-#: src/main.c:3795 src/main.c:3799
+#: src/main.c:3804 src/main.c:3808
 msgid "Couldn't load results"
 msgstr "Не удалось загрузить результаты"
 
-#: src/main.c:3814
+#: src/main.c:3823
 msgid "Songs"
 msgstr "Треки"
 
-#: src/main.c:3881
+#: src/main.c:3890
 msgid "Artists"
 msgstr "Исполнители"
 
-#: src/main.c:3915
+#: src/main.c:3924
 msgid "Playlists"
 msgstr "Плейлисты"
 
-#: src/main.c:3945
+#: src/main.c:3954
 msgid "No results"
 msgstr "Ничего не найдено"
 
-#: src/main.c:3979
+#: src/main.c:3988
 msgid "Good morning"
 msgstr "Доброе утро"
 
-#: src/main.c:3980
+#: src/main.c:3989
 msgid "Good afternoon"
 msgstr "Добрый день"
 
-#: src/main.c:3981
+#: src/main.c:3990
 msgid "Good evening"
 msgstr "Добрый вечер"
 
-#: src/main.c:4137
+#: src/main.c:4146
 msgid "Quick Picks"
 msgstr "Быстрый выбор"
 
-#: src/main.c:4142 src/main.c:5580
+#: src/main.c:4151 src/main.c:5634
 msgid "Liked Songs"
 msgstr "Любимые треки"
 
-#: src/main.c:4144 src/main.c:5584
+#: src/main.c:4153 src/main.c:5638
 msgid "Charts"
 msgstr "Чарты"
 
-#: src/main.c:4145 src/main.c:4503 src/main.c:4526 src/main.c:5586
+#: src/main.c:4154 src/main.c:4512 src/main.c:4535 src/main.c:5640
 msgid "Podcasts"
 msgstr "Подкасты"
 
-#: src/main.c:4188
+#: src/main.c:4197
 msgid "Your Playlists"
 msgstr "Ваши плейлисты"
 
-#: src/main.c:4269
+#: src/main.c:4278
 msgid "Couldn't play that episode"
 msgstr "Не удалось воспроизвести выпуск"
 
-#: src/main.c:4281
+#: src/main.c:4290
 msgid "Podcast"
 msgstr "Подкаст"
 
-#: src/main.c:4372
+#: src/main.c:4381
 #, c-format
 msgid "%lld episode"
 msgid_plural "%lld episodes"
@@ -640,226 +649,248 @@ msgstr[0] "%lld выпуск"
 msgstr[1] "%lld выпуска"
 msgstr[2] "%lld выпусков"
 
-#: src/main.c:4390
+#: src/main.c:4399
 msgid "No shows found"
 msgstr "Шоу не найдены"
 
-#: src/main.c:4402
+#: src/main.c:4411
 msgid "‹ Back to shows"
 msgstr "‹ Назад к шоу"
 
-#: src/main.c:4446
+#: src/main.c:4455
 msgid "No episodes"
 msgstr "Нет выпусков"
 
-#: src/main.c:4459
+#: src/main.c:4468
 msgid "Searching…"
 msgstr "Поиск…"
 
-#: src/main.c:4472
+#: src/main.c:4481
 msgid "Loading episodes…"
 msgstr "Загрузка выпусков…"
 
-#: src/main.c:4511
+#: src/main.c:4520
 msgid "Search podcasts"
 msgstr "Поиск подкастов"
 
-#: src/main.c:4531
+#: src/main.c:4540
 msgid "Search for a podcast to get started"
 msgstr "Найдите подкаст, чтобы начать"
 
-#: src/main.c:4746 src/main.c:4807
+#: src/main.c:4755 src/main.c:4816
 msgid "Signing in…"
 msgstr "Вход…"
 
-#: src/main.c:4805
+#: src/main.c:4814
 msgid "Enter an ARL token"
 msgstr "Введите токен ARL"
 
-#: src/main.c:4826 src/main.c:4875 src/main.c:4884
+#: src/main.c:4835 src/main.c:4884 src/main.c:4893
 msgid "Log in to Deezer"
 msgstr "Войти в Deezer"
 
-#: src/main.c:4830
+#: src/main.c:4839
 msgid "Sign in with your Deezer account to start listening."
 msgstr "Войдите в аккаунт Deezer, чтобы начать слушать."
 
-#: src/main.c:4836
+#: src/main.c:4845
 msgid "Log in with Deezer"
 msgstr "Войти через Deezer"
 
-#: src/main.c:4845
+#: src/main.c:4854
 msgid "Or paste an ARL token manually:"
 msgstr "Или вставьте токен ARL вручную:"
 
-#: src/main.c:4855
+#: src/main.c:4864
 msgid "Use"
 msgstr "Применить"
 
-#: src/main.c:4886
+#: src/main.c:4895
 msgid "Back"
 msgstr "Назад"
 
-#: src/main.c:4932
+#: src/main.c:4941
 msgid "Sorry — your account isn't supported"
 msgstr "К сожалению, ваш аккаунт не поддерживается"
 
-#: src/main.c:4935
+#: src/main.c:4944
 #, c-format
-msgid "OpenDeezer needs a Deezer Premium subscription to stream. Your account: %s. Subscribe at deezer.com, then restart OpenDeezer."
-msgstr "Для потоковой передачи OpenDeezer требуется подписка Deezer Premium. Ваш аккаунт: %s. Оформите подписку на deezer.com и перезапустите OpenDeezer."
+msgid ""
+"OpenDeezer needs a Deezer Premium subscription to stream. Your account: %s. "
+"Subscribe at deezer.com, then restart OpenDeezer."
+msgstr ""
+"Для потоковой передачи OpenDeezer требуется подписка Deezer Premium. Ваш "
+"аккаунт: %s. Оформите подписку на deezer.com и перезапустите OpenDeezer."
 
-#: src/main.c:4937
+#: src/main.c:4946
 msgid "Deezer Free"
 msgstr "Deezer Free"
 
-#: src/main.c:4944
+#: src/main.c:4953
 msgid "Sign in with a different account"
 msgstr "Войти в другой аккаунт"
 
-#: src/main.c:4949
+#: src/main.c:4958
 msgid "Quit OpenDeezer"
 msgstr "Выйти из OpenDeezer"
 
-#: src/main.c:4993
+#: src/main.c:4986
+msgid "No Internet Connection"
+msgstr "Нет подключения к Интернету"
+
+#: src/main.c:4987
+msgid "Check your connection and try again."
+msgstr "Проверьте подключение и повторите попытку."
+
+#: src/main.c:4989
+msgid "Retry"
+msgstr "Повторить"
+
+#: src/main.c:5031
 msgid "Selected quality is above your plan"
 msgstr "Выбранное качество выше вашего тарифа"
 
-#: src/main.c:5034
+#: src/main.c:5076
 msgid "Connected to Deezer"
 msgstr "Подключено к Deezer"
 
-#: src/main.c:5050
+#: src/main.c:5101
 msgid "Login failed — please try again."
 msgstr "Не удалось войти — попробуйте снова."
 
-#: src/main.c:5051
+#: src/main.c:5102
 msgid "Login failed — try again"
 msgstr "Не удалось войти — попробуйте снова"
 
-#: src/main.c:5053
+#: src/main.c:5104
 msgid "Login failed — check your ARL"
 msgstr "Не удалось войти — проверьте ARL"
 
-#: src/main.c:5077
+#: src/main.c:5131
 #, c-format
-msgid "An open source reimplementation of Deezer.\n\nSigned in as %s · %s"
-msgstr "Открытая реализация Deezer.\n\nВыполнен вход как %s · %s"
+msgid ""
+"An open source reimplementation of Deezer.\n"
+"\n"
+"Signed in as %s · %s"
+msgstr ""
+"Открытая реализация Deezer.\n"
+"\n"
+"Выполнен вход как %s · %s"
 
-#: src/main.c:5081
+#: src/main.c:5135
 msgid "An open source reimplementation of Deezer."
 msgstr "Открытая реализация Deezer."
 
-#: src/main.c:5193
+#: src/main.c:5247
 msgid "Device"
 msgstr "Устройство"
 
-#: src/main.c:5194
+#: src/main.c:5248
 msgid "Terminal"
 msgstr "Терминал"
 
-#: src/main.c:5247 src/main.c:5273
+#: src/main.c:5301 src/main.c:5327
 #, c-format
 msgid "Playing on %s"
 msgstr "Воспроизведение на %s"
 
-#: src/main.c:5253 src/main.c:5424
+#: src/main.c:5307 src/main.c:5478
 msgid "Connect to a device"
 msgstr "Подключиться к устройству"
 
-#: src/main.c:5273
+#: src/main.c:5327
 msgid "device"
 msgstr "устройство"
 
-#: src/main.c:5275
+#: src/main.c:5329
 msgid "Couldn't connect to that device"
 msgstr "Не удалось подключиться к устройству"
 
-#: src/main.c:5308
+#: src/main.c:5362
 msgid "Playing on this computer"
 msgstr "Воспроизведение на этом компьютере"
 
-#: src/main.c:5340 src/main.c:5393
+#: src/main.c:5394 src/main.c:5447
 msgid "This computer"
 msgstr "Этот компьютер"
 
-#: src/main.c:5340 src/main.c:5393
+#: src/main.c:5394 src/main.c:5447
 msgid "Play here"
 msgstr "Воспроизводить здесь"
 
-#: src/main.c:5374
+#: src/main.c:5428
 msgid "No devices found"
 msgstr "Устройства не найдены"
 
-#: src/main.c:5407
+#: src/main.c:5461
 msgid "Searching for devices…"
 msgstr "Поиск устройств…"
 
-#: src/main.c:5479
+#: src/main.c:5533
 msgid "Like / unlike"
 msgstr "Нравится / убрать"
 
-#: src/main.c:5493
+#: src/main.c:5547
 msgid "Go to artist"
 msgstr "Перейти к исполнителю"
 
-#: src/main.c:5504
+#: src/main.c:5558
 msgid "Previous"
 msgstr "Предыдущий"
 
-#: src/main.c:5505
+#: src/main.c:5559
 msgid "Play / Pause"
 msgstr "Воспроизвести / Пауза"
 
-#: src/main.c:5506
+#: src/main.c:5560
 msgid "Next"
 msgstr "Следующий"
 
-#: src/main.c:5515
+#: src/main.c:5569
 msgid "Repeat"
 msgstr "Повтор"
 
-#: src/main.c:5523
+#: src/main.c:5577
 msgid "Shuffle"
 msgstr "Перемешать"
 
-#: src/main.c:5578 src/main.c:5748
+#: src/main.c:5632 src/main.c:5802
 msgid "Home"
 msgstr "Главная"
 
-#: src/main.c:5610
+#: src/main.c:5664
 msgid "Time"
 msgstr "Время"
 
-#: src/main.c:5694
+#: src/main.c:5748
 msgid "Log in / Switch account…"
 msgstr "Войти / Сменить аккаунт…"
 
-#: src/main.c:5696
+#: src/main.c:5750
 msgid "Phone Remote…"
 msgstr "Пульт на телефоне…"
 
-#: src/main.c:5697
+#: src/main.c:5751
 msgid "About OpenDeezer"
 msgstr "О программе OpenDeezer"
 
-#: src/main.c:5698
+#: src/main.c:5752
 msgid "Quit"
 msgstr "Выход"
 
-#: src/main.c:5710
+#: src/main.c:5764
 msgid "New playlist"
 msgstr "Новый плейлист"
 
-#: src/main.c:5716
+#: src/main.c:5770
 msgid "Library"
 msgstr "Библиотека"
 
-#: src/main.c:5723
+#: src/main.c:5777
 msgid "Search Deezer"
 msgstr "Поиск в Deezer"
 
-#: src/main.c:5733
+#: src/main.c:5787
 msgid "Download"
 msgstr "Скачать"
 

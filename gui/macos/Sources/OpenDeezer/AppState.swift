@@ -17,6 +17,12 @@ final class AppState: ObservableObject {
     // replaced by FreeAccountBlockedView; no browsing or playback is wired up.
     @Published var accountBlocked = false
     @Published var loginError: String?
+    // No-Internet gate: the launch login failed because the network is
+    // unreachable (DZLoginErrorKind == 2), NOT because the ARL is bad. When true
+    // the whole app is replaced by NoInternetView, which offers a retry. Cleared
+    // on a successful login (finishLogin) or when a retry reveals a real auth
+    // failure (attemptLogin drops back to LoginGate).
+    @Published var noInternet = false
     @Published var busy = false
     @Published var userID = ""
     @Published var account: Account?            // plan + entitlements (DZAccountJSON)
@@ -181,6 +187,19 @@ final class AppState: ObservableObject {
         attemptLogin(arl: v, persist: true)
     }
 
+    // "Retry" on the No-Internet screen: re-run the SAME launch login flow start()
+    // used (the saved ARL). On success the app opens; a repeat no-internet keeps
+    // the screen; any other failure drops back to LoginGate. If there's no saved
+    // ARL to retry with, fall through to the login gate.
+    func retryLogin() {
+        guard !busy else { return }
+        guard let arl = Self.loadARL(), !arl.isEmpty else {
+            noInternet = false
+            return
+        }
+        attemptLogin(arl: arl, persist: false)
+    }
+
     // Shared login path: DZInit off the main thread, then wire up the session on
     // success or surface an error. `persist` writes the ARL to the config file the
     // frontend reads at startup so the next launch auto-logs-in.
@@ -190,6 +209,10 @@ final class AppState: ObservableObject {
         loginError = nil
         Task.detached {
             let ok = Core.initialize(arl: arl)
+            // On failure, ask the engine WHY it failed: kind 2 means the network
+            // is down (offer a retry) rather than a bad ARL (push re-auth). Only
+            // meaningful when ok == false.
+            let kind = ok ? 0 : Core.loginErrorKind()
             // Plan/entitlements are populated by login; fetch off the main thread.
             let acct = ok ? Core.account() : nil
             await MainActor.run {
@@ -197,7 +220,14 @@ final class AppState: ObservableObject {
                 if ok {
                     if persist { Self.saveARL(arl) }
                     self.finishLogin(account: acct)
+                } else if kind == 2 {
+                    // Network loss, not a bad ARL: show the retriable No-Internet
+                    // screen instead of wrongly claiming the ARL expired.
+                    self.noInternet = true
                 } else {
+                    // Genuine auth failure (or other): drop to the login gate with
+                    // the error, clearing any No-Internet state left from a retry.
+                    self.noInternet = false
                     self.loginError = L("Login failed — invalid or expired ARL.")
                 }
                 completion?(ok)
@@ -208,6 +238,7 @@ final class AppState: ObservableObject {
     // Post-login wiring shared by auto / web / manual login. Runs on the main
     // actor after a successful DZInit.
     private func finishLogin(account acct: Account?) {
+        noInternet = false   // a successful login always clears the No-Internet gate
         userID = Core.userID
         account = acct
         // Free-account gate: a Deezer Free plan (premium == false) can't stream

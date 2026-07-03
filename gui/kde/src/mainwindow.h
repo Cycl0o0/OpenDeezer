@@ -203,6 +203,9 @@ private:
     // Free (non-Premium) accounts can't stream on-demand — replace the whole UI
     // with a blocking "Premium required" page (only Quit remains reachable).
     void showFreeAccountBlock();
+    // Login failed because the machine is offline — swap the whole UI to a
+    // blocking "No Internet" page whose Retry button re-runs startLogin().
+    void showNoInternet();
     void applyQuality(int level);
     void applyReplayGain(bool on);
     void applyAudioDevice(const QString &deviceId);
@@ -212,10 +215,13 @@ private:
     QString settingsPath() const;
 
     // ---- widgets ----
-    // Top-level stack: the full app UI (0) vs the Free-account block page (1).
-    QStackedWidget*m_rootStack     = nullptr;
-    QWidget       *m_blockPage     = nullptr;   // "Premium required" gate page
-    QLabel        *m_blockBody     = nullptr;   // its body line (carries the offer)
+    // Top-level stack: the full app UI (index 0) plus two lazily-appended gate
+    // pages — the Free-account block and the No-Internet retry page. Both are
+    // selected by pointer (setCurrentWidget), so their exact indices don't matter.
+    QStackedWidget*m_rootStack      = nullptr;
+    QWidget       *m_blockPage      = nullptr;   // "Premium required" gate page
+    QLabel        *m_blockBody      = nullptr;   // its body line (carries the offer)
+    QWidget       *m_noInternetPage = nullptr;   // "No Internet" retry page
     QListWidget   *m_sidebar       = nullptr;
     QStackedWidget*m_stack         = nullptr;
 

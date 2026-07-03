@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: opendeezer-gnome 1.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/Cycl0o0/OpenDeezer/issues\n"
-"POT-Creation-Date: 2026-07-02 22:00+0000\n"
+"POT-Creation-Date: 2026-07-03 09:29+0200\n"
 "PO-Revision-Date: 2026-07-02 22:00+0000\n"
 "Last-Translator: OpenDeezer <cyclolysis0@gmail.com>\n"
 "Language-Team: zh_CN\n"
@@ -16,842 +16,868 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: src/main.c:486
+#: src/main.c:495
 msgid "Explicit content"
 msgstr "露骨内容"
 
-#: src/main.c:568
+#: src/main.c:577
 msgid "Title"
 msgstr "标题"
 
-#: src/main.c:612
+#: src/main.c:621
 #, c-format
 msgid "Couldn't parse response: %s"
 msgstr "无法解析响应：%s"
 
-#: src/main.c:622 src/main.c:3802
+#: src/main.c:631 src/main.c:3811
 #, c-format
 msgid "Deezer: %s"
 msgstr "Deezer：%s"
 
-#: src/main.c:633
+#: src/main.c:642
 #, c-format
 msgid "%u track"
 msgid_plural "%u tracks"
 msgstr[0] "%u 首歌曲"
 
-#: src/main.c:730 src/main.c:3926 src/main.c:4105
+#: src/main.c:739 src/main.c:3935 src/main.c:4114
 #, c-format
 msgid "%lld track"
 msgid_plural "%lld tracks"
 msgstr[0] "%lld 首歌曲"
 
-#: src/main.c:856
+#: src/main.c:865
 msgid "Couldn't play that track"
 msgstr "无法播放该歌曲"
 
-#: src/main.c:1085
+#: src/main.c:1094
 msgid "Normal (MP3 128)"
 msgstr "普通 (MP3 128)"
 
-#: src/main.c:1085
+#: src/main.c:1094
 msgid "High (MP3 320)"
 msgstr "高 (MP3 320)"
 
-#: src/main.c:1085
+#: src/main.c:1094
 msgid "HiFi (FLAC)"
 msgstr "HiFi (FLAC)"
 
-#: src/main.c:1086
+#: src/main.c:1095
 #, c-format
 msgid "Audio quality: %s"
 msgstr "音质：%s"
 
-#: src/main.c:1102
+#: src/main.c:1111
 msgid "Loudness normalization enabled"
 msgstr "已开启音量标准化"
 
-#: src/main.c:1102
+#: src/main.c:1111
 msgid "Loudness normalization disabled"
 msgstr "已关闭音量标准化"
 
-#: src/main.c:1112
+#: src/main.c:1121
 msgid "Gapless playback enabled"
 msgstr "已开启无缝播放"
 
-#: src/main.c:1112
+#: src/main.c:1121
 msgid "Gapless playback disabled"
 msgstr "已关闭无缝播放"
 
-#: src/main.c:1126
+#: src/main.c:1135
 #, c-format
 msgid "Crossfade: %ds"
 msgstr "淡入淡出：%d 秒"
 
-#: src/main.c:1127
+#: src/main.c:1136
 msgid "Crossfade off"
 msgstr "淡入淡出已关闭"
 
-#: src/main.c:1143
+#: src/main.c:1152
 msgid "Sleep timer off"
 msgstr "定时关闭已关闭"
 
-#: src/main.c:1146
+#: src/main.c:1155
 msgid "Sleep timer: end of track"
 msgstr "定时关闭：本首歌曲结束时"
 
-#: src/main.c:1149
+#: src/main.c:1158
 #, c-format
 msgid "Sleep timer: %d min"
 msgstr "定时关闭：%d 分钟"
 
-#: src/main.c:1160
+#: src/main.c:1169
 msgid "Couldn't switch output device"
 msgstr "无法切换输出设备"
 
-#: src/main.c:1164
+#: src/main.c:1173
 msgid "Output device changed"
 msgstr "已更改输出设备"
 
-#: src/main.c:1172
+#: src/main.c:1181
 msgid "Output device"
 msgstr "输出设备"
 
-#: src/main.c:1195
+#: src/main.c:1204
 #, c-format
 msgid "%s (default)"
 msgstr "%s（默认）"
 
-#: src/main.c:1196 src/main.c:1211
+#: src/main.c:1205 src/main.c:1220
 msgid "System default"
 msgstr "跟随系统"
 
-#: src/main.c:1252
+#: src/main.c:1261
 msgid "Remote control"
 msgstr "远程控制"
 
-#: src/main.c:1255 src/main.c:1507
+#: src/main.c:1264 src/main.c:1516
 msgid "Enable"
 msgstr "启用"
 
-#: src/main.c:1257
+#: src/main.c:1266
 msgid "Control playback from another device"
 msgstr "从其他设备控制播放"
 
-#: src/main.c:1260
+#: src/main.c:1269
 msgid "Allow on local network"
 msgstr "允许在本地网络中使用"
 
-#: src/main.c:1262
+#: src/main.c:1271
 msgid "Off restricts connections to this computer only"
 msgstr "关闭后仅允许本机连接"
 
-#: src/main.c:1265
+#: src/main.c:1274
 msgid "Access token"
 msgstr "访问令牌"
 
-#: src/main.c:1431
+#: src/main.c:1440
 msgid "Equalizer enabled"
 msgstr "已开启均衡器"
 
-#: src/main.c:1431
+#: src/main.c:1440
 msgid "Equalizer disabled"
 msgstr "已关闭均衡器"
 
-#: src/main.c:1440
+#: src/main.c:1449
 msgid "Mono audio enabled"
 msgstr "已开启单声道"
 
-#: src/main.c:1440
+#: src/main.c:1449
 msgid "Mono audio disabled"
 msgstr "已关闭单声道"
 
-#: src/main.c:1451
+#: src/main.c:1460
 msgid "Couldn't apply the preset"
 msgstr "无法应用该预设"
 
-#: src/main.c:1502
+#: src/main.c:1511
 msgid "Equalizer"
 msgstr "均衡器"
 
-#: src/main.c:1509
+#: src/main.c:1518
 msgid "Shape the sound with a 10-band graphic equalizer"
 msgstr "使用 10 段图形均衡器调整音色"
 
-#: src/main.c:1512
+#: src/main.c:1521
 msgid "Preset"
 msgstr "预设"
 
-#: src/main.c:1515
+#: src/main.c:1524
 msgid "Mono audio"
 msgstr "单声道"
 
-#: src/main.c:1517
+#: src/main.c:1526
 msgid "Mix both stereo channels into one"
 msgstr "将左右声道混合为一个"
 
-#: src/main.c:1553
+#: src/main.c:1562
 msgid "Custom"
 msgstr "自定义"
 
-#: src/main.c:1598
+#: src/main.c:1607
 msgid "Preamp"
 msgstr "前置放大"
 
-#: src/main.c:1647
+#: src/main.c:1656
 msgid "Couldn't open the browser"
 msgstr "无法打开浏览器"
 
-#: src/main.c:1708
+#: src/main.c:1717
 #, c-format
 msgid "OpenDeezer %s available"
 msgstr "OpenDeezer %s 可用"
 
-#: src/main.c:1713
+#: src/main.c:1722
 #, c-format
 msgid "OpenDeezer %s is available"
 msgstr "OpenDeezer %s 现已可用"
 
-#: src/main.c:1715
+#: src/main.c:1724
 #, c-format
 msgid "You're up to date (%s)"
 msgstr "已是最新版本（%s）"
 
-#: src/main.c:1716
+#: src/main.c:1725
 msgid "Couldn't check for updates — try again later"
 msgstr "无法检查更新 — 请稍后再试"
 
-#: src/main.c:1744
+#: src/main.c:1753
 msgid "Updates"
 msgstr "更新"
 
-#: src/main.c:1747
+#: src/main.c:1756
 msgid "Check for updates"
 msgstr "检查更新"
 
-#: src/main.c:1748
+#: src/main.c:1757
 msgid "Look for a newer OpenDeezer release on GitHub"
 msgstr "在 GitHub 上查找更新的 OpenDeezer 版本"
 
-#: src/main.c:1750
+#: src/main.c:1759
 msgid "Check Now"
 msgstr "立即检查"
 
-#: src/main.c:1766 src/main.c:5695
+#: src/main.c:1775 src/main.c:5749
 msgid "Settings"
 msgstr "设置"
 
-#: src/main.c:1771
+#: src/main.c:1780
 msgid "Account"
 msgstr "账户"
 
-#: src/main.c:1773
+#: src/main.c:1782
 msgid "Signed in"
 msgstr "已登录"
 
-#: src/main.c:1782
+#: src/main.c:1791
 msgid "Not signed in"
 msgstr "未登录"
 
-#: src/main.c:1789
+#: src/main.c:1798
 msgid "Audio"
 msgstr "音频"
 
-#: src/main.c:1791
+#: src/main.c:1800
 msgid "Normal — MP3 128 kbps"
 msgstr "普通 — MP3 128 kbps"
 
-#: src/main.c:1792
+#: src/main.c:1801
 msgid "High — MP3 320 kbps"
 msgstr "高 — MP3 320 kbps"
 
-#: src/main.c:1793
+#: src/main.c:1802
 msgid "HiFi — FLAC lossless"
 msgstr "HiFi — FLAC 无损"
 
-#: src/main.c:1795
+#: src/main.c:1804
 msgid "Streaming quality"
 msgstr "流媒体音质"
 
-#: src/main.c:1804
+#: src/main.c:1813
 msgid "Loudness normalization"
 msgstr "音量标准化"
 
-#: src/main.c:1806
+#: src/main.c:1815
 msgid "Even out volume across tracks (ReplayGain)"
 msgstr "让各歌曲音量保持一致（ReplayGain）"
 
-#: src/main.c:1816
+#: src/main.c:1825
 msgid "Gapless playback"
 msgstr "无缝播放"
 
-#: src/main.c:1818
+#: src/main.c:1827
 msgid "Start the next track with no silence between songs"
 msgstr "歌曲之间无静音，直接播放下一首"
 
-#: src/main.c:1824 src/main.c:1857
+#: src/main.c:1833 src/main.c:1866
 msgid "Off"
 msgstr "关闭"
 
-#: src/main.c:1824
+#: src/main.c:1833
 msgid "3 seconds"
 msgstr "3 秒"
 
-#: src/main.c:1824
+#: src/main.c:1833
 msgid "6 seconds"
 msgstr "6 秒"
 
-#: src/main.c:1824
+#: src/main.c:1833
 msgid "12 seconds"
 msgstr "12 秒"
 
-#: src/main.c:1826
+#: src/main.c:1835
 msgid "Crossfade"
 msgstr "淡入淡出"
 
-#: src/main.c:1845
+#: src/main.c:1854
 msgid "Behaviour"
 msgstr "行为"
 
-#: src/main.c:1848
+#: src/main.c:1857
 msgid "Keep playing in background"
 msgstr "在后台继续播放"
 
-#: src/main.c:1850
-msgid "When the window is closed, keep playing and stay in the system media controls instead of quitting"
+#: src/main.c:1859
+msgid ""
+"When the window is closed, keep playing and stay in the system media "
+"controls instead of quitting"
 msgstr "关闭窗口时继续播放并保留在系统媒体控件中，而不是退出"
 
-#: src/main.c:1857
+#: src/main.c:1866
 msgid "15 minutes"
 msgstr "15 分钟"
 
-#: src/main.c:1857
+#: src/main.c:1866
 msgid "30 minutes"
 msgstr "30 分钟"
 
-#: src/main.c:1858
+#: src/main.c:1867
 msgid "45 minutes"
 msgstr "45 分钟"
 
-#: src/main.c:1858
+#: src/main.c:1867
 msgid "60 minutes"
 msgstr "60 分钟"
 
-#: src/main.c:1858
+#: src/main.c:1867
 msgid "End of track"
 msgstr "歌曲结束时"
 
-#: src/main.c:1860
+#: src/main.c:1869
 msgid "Sleep timer"
 msgstr "定时关闭"
 
-#: src/main.c:1862
+#: src/main.c:1871
 msgid "Pause playback after a delay or when the track ends"
 msgstr "延时后或歌曲结束时暂停播放"
 
-#: src/main.c:2009 src/main.c:2090
+#: src/main.c:2018 src/main.c:2099
 msgid "Phone Remote"
 msgstr "手机遥控"
 
-#: src/main.c:2029
+#: src/main.c:2038
 msgid "Enable Phone Remote"
 msgstr "启用手机遥控"
 
-#: src/main.c:2031
+#: src/main.c:2040
 msgid "Serve a browser-based remote on your local network"
 msgstr "在本地网络上提供基于浏览器的遥控"
 
-#: src/main.c:2069
+#: src/main.c:2078
 msgid "Scan with your phone (same Wi-Fi), then enter the code."
 msgstr "用手机扫描（同一 Wi-Fi），然后输入代码。"
 
-#: src/main.c:2135 src/main.c:2144 src/main.c:2172 src/main.c:2181
+#: src/main.c:2144 src/main.c:2153 src/main.c:2181 src/main.c:2190
 msgid "Cancel"
 msgstr "取消"
 
-#: src/main.c:2204
+#: src/main.c:2213
 msgid "Added to Liked Songs"
 msgstr "已添加到喜欢的歌曲"
 
-#: src/main.c:2204
+#: src/main.c:2213
 msgid "Removed from Liked Songs"
 msgstr "已从喜欢的歌曲中移除"
 
-#: src/main.c:2205
+#: src/main.c:2214
 msgid "Couldn't add to favourites"
 msgstr "无法添加到收藏"
 
-#: src/main.c:2205
+#: src/main.c:2214
 msgid "Couldn't remove from favourites"
 msgstr "无法从收藏中移除"
 
-#: src/main.c:2229 src/main.c:3693
+#: src/main.c:2238 src/main.c:3702
 msgid "Play a track first"
 msgstr "请先播放一首歌曲"
 
-#: src/main.c:2260 src/main.c:3585 src/main.c:3697
+#: src/main.c:2269 src/main.c:3594 src/main.c:3706
 msgid "No artist for this track"
 msgstr "此歌曲没有艺人信息"
 
-#: src/main.c:2272
+#: src/main.c:2281
 msgid "Add to Liked Songs"
 msgstr "添加到喜欢的歌曲"
 
-#: src/main.c:2273
+#: src/main.c:2282
 msgid "Add to Playlist…"
 msgstr "添加到歌单…"
 
-#: src/main.c:2274
+#: src/main.c:2283
 msgid "Go to Artist"
 msgstr "前往艺人"
 
-#: src/main.c:2309
+#: src/main.c:2318
 #, c-format
 msgid "Added to %s"
 msgstr "已添加到 %s"
 
-#: src/main.c:2309
+#: src/main.c:2318
 msgid "playlist"
 msgstr "歌单"
 
-#: src/main.c:2310
+#: src/main.c:2319
 msgid "Couldn't add to that playlist"
 msgstr "无法添加到该歌单"
 
-#: src/main.c:2350
+#: src/main.c:2359
 #, c-format
 msgid "Created playlist “%s”"
 msgstr "已创建歌单“%s”"
 
-#: src/main.c:2353
+#: src/main.c:2362
 msgid "Couldn't create the playlist"
 msgstr "无法创建歌单"
 
-#: src/main.c:2377
+#: src/main.c:2386
 msgid "Playlist renamed"
 msgstr "已重命名歌单"
 
-#: src/main.c:2377
+#: src/main.c:2386
 msgid "Couldn't rename the playlist"
 msgstr "无法重命名歌单"
 
-#: src/main.c:2397
+#: src/main.c:2406
 msgid "Playlist deleted"
 msgstr "已删除歌单"
 
-#: src/main.c:2397
+#: src/main.c:2406
 msgid "Couldn't delete the playlist"
 msgstr "无法删除歌单"
 
-#: src/main.c:2421 src/main.c:2489
+#: src/main.c:2430 src/main.c:2498
 msgid "New Playlist"
 msgstr "新建歌单"
 
-#: src/main.c:2421 src/main.c:2489
+#: src/main.c:2430 src/main.c:2498
 msgid "Create"
 msgstr "创建"
 
-#: src/main.c:2431
+#: src/main.c:2440
 msgid "Rename Playlist"
 msgstr "重命名歌单"
 
-#: src/main.c:2431
+#: src/main.c:2440
 msgid "Rename"
 msgstr "重命名"
 
-#: src/main.c:2439
+#: src/main.c:2448
 #, c-format
 msgid "“%s” will be permanently deleted."
 msgstr "“%s”将被永久删除。"
 
-#: src/main.c:2440
+#: src/main.c:2449
 msgid "Delete Playlist?"
 msgstr "删除歌单？"
 
-#: src/main.c:2440
+#: src/main.c:2449
 msgid "Delete"
 msgstr "删除"
 
-#: src/main.c:2455
+#: src/main.c:2464
 msgid "Rename…"
 msgstr "重命名…"
 
-#: src/main.c:2456
+#: src/main.c:2465
 msgid "Delete…"
 msgstr "删除…"
 
-#: src/main.c:2534
+#: src/main.c:2543
 msgid "No track to add"
 msgstr "没有可添加的歌曲"
 
-#: src/main.c:2543 src/main.c:2572
+#: src/main.c:2552 src/main.c:2581
 msgid "Add to Playlist"
 msgstr "添加到歌单"
 
-#: src/main.c:2562
+#: src/main.c:2571
 msgid "New Playlist…"
 msgstr "新建歌单…"
 
-#: src/main.c:2895
-msgid "Still playing in the background. Use the media controls or relaunch to reopen."
+#: src/main.c:2904
+msgid ""
+"Still playing in the background. Use the media controls or relaunch to "
+"reopen."
 msgstr "正在后台播放。使用媒体控件或重新启动以重新打开。"
 
-#: src/main.c:3038
+#: src/main.c:3047
 msgid "Search"
 msgstr "搜索"
 
-#: src/main.c:3087 src/main.c:3099 src/main.c:3138
+#: src/main.c:3096 src/main.c:3108 src/main.c:3147
 msgid "No lyrics available"
 msgstr "暂无歌词"
 
-#: src/main.c:3092
+#: src/main.c:3101
 msgid "Couldn't load lyrics"
 msgstr "无法加载歌词"
 
-#: src/main.c:3172
+#: src/main.c:3181
 msgid "Play a track to see its lyrics"
 msgstr "播放歌曲以查看其歌词"
 
-#: src/main.c:3177
+#: src/main.c:3186
 msgid "Loading lyrics…"
 msgstr "正在加载歌词…"
 
-#: src/main.c:3249 src/main.c:3266 src/main.c:5486
+#: src/main.c:3258 src/main.c:3275 src/main.c:5540
 msgid "Lyrics"
 msgstr "歌词"
 
-#: src/main.c:3377 src/main.c:3749 src/main.c:5609
+#: src/main.c:3386 src/main.c:3758 src/main.c:5663
 msgid "Album"
 msgstr "专辑"
 
-#: src/main.c:3399 src/main.c:3402 src/main.c:3407
+#: src/main.c:3408 src/main.c:3411 src/main.c:3416
 msgid "Couldn't load this artist"
 msgstr "无法加载此艺人"
 
-#: src/main.c:3434 src/main.c:3530 src/main.c:3892
+#: src/main.c:3443 src/main.c:3539 src/main.c:3901
 #, c-format
 msgid "%lld fan"
 msgid_plural "%lld fans"
 msgstr[0] "%lld 位粉丝"
 
-#: src/main.c:3449 src/main.c:4164
+#: src/main.c:3458 src/main.c:4173
 msgid "Top Tracks"
 msgstr "热门歌曲"
 
-#: src/main.c:3479 src/main.c:3850
+#: src/main.c:3488 src/main.c:3859
 msgid "Albums"
 msgstr "专辑"
 
-#: src/main.c:3519
+#: src/main.c:3528
 msgid "Related Artists"
 msgstr "相关艺人"
 
-#: src/main.c:3592 src/main.c:3609 src/main.c:5608
+#: src/main.c:3601 src/main.c:3618 src/main.c:5662
 msgid "Artist"
 msgstr "艺人"
 
-#: src/main.c:3623
+#: src/main.c:3632
 msgid "Loading…"
 msgstr "加载中…"
 
-#: src/main.c:3687
+#: src/main.c:3696
 msgid "No track playing"
 msgstr "没有正在播放的歌曲"
 
-#: src/main.c:3760 src/main.c:4068
+#: src/main.c:3769 src/main.c:4077
 msgid "Playlist"
 msgstr "歌单"
 
-#: src/main.c:3792
+#: src/main.c:3801
 msgid "Nothing to show"
 msgstr "暂无内容"
 
-#: src/main.c:3795 src/main.c:3799
+#: src/main.c:3804 src/main.c:3808
 msgid "Couldn't load results"
 msgstr "无法加载结果"
 
-#: src/main.c:3814
+#: src/main.c:3823
 msgid "Songs"
 msgstr "歌曲"
 
-#: src/main.c:3881
+#: src/main.c:3890
 msgid "Artists"
 msgstr "艺人"
 
-#: src/main.c:3915
+#: src/main.c:3924
 msgid "Playlists"
 msgstr "歌单"
 
-#: src/main.c:3945
+#: src/main.c:3954
 msgid "No results"
 msgstr "无结果"
 
-#: src/main.c:3979
+#: src/main.c:3988
 msgid "Good morning"
 msgstr "早上好"
 
-#: src/main.c:3980
+#: src/main.c:3989
 msgid "Good afternoon"
 msgstr "下午好"
 
-#: src/main.c:3981
+#: src/main.c:3990
 msgid "Good evening"
 msgstr "晚上好"
 
-#: src/main.c:4137
+#: src/main.c:4146
 msgid "Quick Picks"
 msgstr "快速精选"
 
-#: src/main.c:4142 src/main.c:5580
+#: src/main.c:4151 src/main.c:5634
 msgid "Liked Songs"
 msgstr "喜欢的歌曲"
 
-#: src/main.c:4144 src/main.c:5584
+#: src/main.c:4153 src/main.c:5638
 msgid "Charts"
 msgstr "排行榜"
 
-#: src/main.c:4145 src/main.c:4503 src/main.c:4526 src/main.c:5586
+#: src/main.c:4154 src/main.c:4512 src/main.c:4535 src/main.c:5640
 msgid "Podcasts"
 msgstr "播客"
 
-#: src/main.c:4188
+#: src/main.c:4197
 msgid "Your Playlists"
 msgstr "你的歌单"
 
-#: src/main.c:4269
+#: src/main.c:4278
 msgid "Couldn't play that episode"
 msgstr "无法播放该单集"
 
-#: src/main.c:4281
+#: src/main.c:4290
 msgid "Podcast"
 msgstr "播客"
 
-#: src/main.c:4372
+#: src/main.c:4381
 #, c-format
 msgid "%lld episode"
 msgid_plural "%lld episodes"
 msgstr[0] "%lld 集"
 
-#: src/main.c:4390
+#: src/main.c:4399
 msgid "No shows found"
 msgstr "未找到节目"
 
-#: src/main.c:4402
+#: src/main.c:4411
 msgid "‹ Back to shows"
 msgstr "‹ 返回节目"
 
-#: src/main.c:4446
+#: src/main.c:4455
 msgid "No episodes"
 msgstr "没有单集"
 
-#: src/main.c:4459
+#: src/main.c:4468
 msgid "Searching…"
 msgstr "正在搜索…"
 
-#: src/main.c:4472
+#: src/main.c:4481
 msgid "Loading episodes…"
 msgstr "正在加载单集…"
 
-#: src/main.c:4511
+#: src/main.c:4520
 msgid "Search podcasts"
 msgstr "搜索播客"
 
-#: src/main.c:4531
+#: src/main.c:4540
 msgid "Search for a podcast to get started"
 msgstr "搜索播客以开始"
 
-#: src/main.c:4746 src/main.c:4807
+#: src/main.c:4755 src/main.c:4816
 msgid "Signing in…"
 msgstr "正在登录…"
 
-#: src/main.c:4805
+#: src/main.c:4814
 msgid "Enter an ARL token"
 msgstr "请输入 ARL 令牌"
 
-#: src/main.c:4826 src/main.c:4875 src/main.c:4884
+#: src/main.c:4835 src/main.c:4884 src/main.c:4893
 msgid "Log in to Deezer"
 msgstr "登录 Deezer"
 
-#: src/main.c:4830
+#: src/main.c:4839
 msgid "Sign in with your Deezer account to start listening."
 msgstr "使用你的 Deezer 账户登录即可开始收听。"
 
-#: src/main.c:4836
+#: src/main.c:4845
 msgid "Log in with Deezer"
 msgstr "使用 Deezer 登录"
 
-#: src/main.c:4845
+#: src/main.c:4854
 msgid "Or paste an ARL token manually:"
 msgstr "或手动粘贴 ARL 令牌："
 
-#: src/main.c:4855
+#: src/main.c:4864
 msgid "Use"
 msgstr "使用"
 
-#: src/main.c:4886
+#: src/main.c:4895
 msgid "Back"
 msgstr "返回"
 
-#: src/main.c:4932
+#: src/main.c:4941
 msgid "Sorry — your account isn't supported"
 msgstr "抱歉 — 不支持你的账户"
 
-#: src/main.c:4935
+#: src/main.c:4944
 #, c-format
-msgid "OpenDeezer needs a Deezer Premium subscription to stream. Your account: %s. Subscribe at deezer.com, then restart OpenDeezer."
-msgstr "OpenDeezer 需要 Deezer Premium 订阅才能播放。你的账户：%s。请在 deezer.com 订阅，然后重新启动 OpenDeezer。"
+msgid ""
+"OpenDeezer needs a Deezer Premium subscription to stream. Your account: %s. "
+"Subscribe at deezer.com, then restart OpenDeezer."
+msgstr ""
+"OpenDeezer 需要 Deezer Premium 订阅才能播放。你的账户：%s。请在 deezer.com 订"
+"阅，然后重新启动 OpenDeezer。"
 
-#: src/main.c:4937
+#: src/main.c:4946
 msgid "Deezer Free"
 msgstr "Deezer Free"
 
-#: src/main.c:4944
+#: src/main.c:4953
 msgid "Sign in with a different account"
 msgstr "使用其他账户登录"
 
-#: src/main.c:4949
+#: src/main.c:4958
 msgid "Quit OpenDeezer"
 msgstr "退出 OpenDeezer"
 
-#: src/main.c:4993
+#: src/main.c:4986
+msgid "No Internet Connection"
+msgstr "无网络连接"
+
+#: src/main.c:4987
+msgid "Check your connection and try again."
+msgstr "请检查网络连接后重试。"
+
+#: src/main.c:4989
+msgid "Retry"
+msgstr "重试"
+
+#: src/main.c:5031
 msgid "Selected quality is above your plan"
 msgstr "所选音质超出你的套餐"
 
-#: src/main.c:5034
+#: src/main.c:5076
 msgid "Connected to Deezer"
 msgstr "已连接到 Deezer"
 
-#: src/main.c:5050
+#: src/main.c:5101
 msgid "Login failed — please try again."
 msgstr "登录失败 — 请重试。"
 
-#: src/main.c:5051
+#: src/main.c:5102
 msgid "Login failed — try again"
 msgstr "登录失败 — 请重试"
 
-#: src/main.c:5053
+#: src/main.c:5104
 msgid "Login failed — check your ARL"
 msgstr "登录失败 — 请检查你的 ARL"
 
-#: src/main.c:5077
+#: src/main.c:5131
 #, c-format
-msgid "An open source reimplementation of Deezer.\n\nSigned in as %s · %s"
-msgstr "Deezer 的开源重新实现。\n\n已登录为 %s · %s"
+msgid ""
+"An open source reimplementation of Deezer.\n"
+"\n"
+"Signed in as %s · %s"
+msgstr ""
+"Deezer 的开源重新实现。\n"
+"\n"
+"已登录为 %s · %s"
 
-#: src/main.c:5081
+#: src/main.c:5135
 msgid "An open source reimplementation of Deezer."
 msgstr "Deezer 的开源重新实现。"
 
-#: src/main.c:5193
+#: src/main.c:5247
 msgid "Device"
 msgstr "设备"
 
-#: src/main.c:5194
+#: src/main.c:5248
 msgid "Terminal"
 msgstr "终端"
 
-#: src/main.c:5247 src/main.c:5273
+#: src/main.c:5301 src/main.c:5327
 #, c-format
 msgid "Playing on %s"
 msgstr "正在 %s 上播放"
 
-#: src/main.c:5253 src/main.c:5424
+#: src/main.c:5307 src/main.c:5478
 msgid "Connect to a device"
 msgstr "连接到设备"
 
-#: src/main.c:5273
+#: src/main.c:5327
 msgid "device"
 msgstr "设备"
 
-#: src/main.c:5275
+#: src/main.c:5329
 msgid "Couldn't connect to that device"
 msgstr "无法连接到该设备"
 
-#: src/main.c:5308
+#: src/main.c:5362
 msgid "Playing on this computer"
 msgstr "正在此电脑上播放"
 
-#: src/main.c:5340 src/main.c:5393
+#: src/main.c:5394 src/main.c:5447
 msgid "This computer"
 msgstr "此电脑"
 
-#: src/main.c:5340 src/main.c:5393
+#: src/main.c:5394 src/main.c:5447
 msgid "Play here"
 msgstr "在此播放"
 
-#: src/main.c:5374
+#: src/main.c:5428
 msgid "No devices found"
 msgstr "未找到设备"
 
-#: src/main.c:5407
+#: src/main.c:5461
 msgid "Searching for devices…"
 msgstr "正在搜索设备…"
 
-#: src/main.c:5479
+#: src/main.c:5533
 msgid "Like / unlike"
 msgstr "喜欢 / 取消喜欢"
 
-#: src/main.c:5493
+#: src/main.c:5547
 msgid "Go to artist"
 msgstr "前往艺人"
 
-#: src/main.c:5504
+#: src/main.c:5558
 msgid "Previous"
 msgstr "上一首"
 
-#: src/main.c:5505
+#: src/main.c:5559
 msgid "Play / Pause"
 msgstr "播放 / 暂停"
 
-#: src/main.c:5506
+#: src/main.c:5560
 msgid "Next"
 msgstr "下一首"
 
-#: src/main.c:5515
+#: src/main.c:5569
 msgid "Repeat"
 msgstr "循环播放"
 
-#: src/main.c:5523
+#: src/main.c:5577
 msgid "Shuffle"
 msgstr "随机播放"
 
-#: src/main.c:5578 src/main.c:5748
+#: src/main.c:5632 src/main.c:5802
 msgid "Home"
 msgstr "首页"
 
-#: src/main.c:5610
+#: src/main.c:5664
 msgid "Time"
 msgstr "时长"
 
-#: src/main.c:5694
+#: src/main.c:5748
 msgid "Log in / Switch account…"
 msgstr "登录 / 切换账户…"
 
-#: src/main.c:5696
+#: src/main.c:5750
 msgid "Phone Remote…"
 msgstr "手机遥控…"
 
-#: src/main.c:5697
+#: src/main.c:5751
 msgid "About OpenDeezer"
 msgstr "关于 OpenDeezer"
 
-#: src/main.c:5698
+#: src/main.c:5752
 msgid "Quit"
 msgstr "退出"
 
-#: src/main.c:5710
+#: src/main.c:5764
 msgid "New playlist"
 msgstr "新建歌单"
 
-#: src/main.c:5716
+#: src/main.c:5770
 msgid "Library"
 msgstr "音乐库"
 
-#: src/main.c:5723
+#: src/main.c:5777
 msgid "Search Deezer"
 msgstr "搜索 Deezer"
 
-#: src/main.c:5733
+#: src/main.c:5787
 msgid "Download"
 msgstr "下载"
 

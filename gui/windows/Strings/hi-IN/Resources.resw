@@ -370,6 +370,15 @@
   <data name="Blocked_BodyFormat" xml:space="preserve">
     <value>आपका खाता ({0}) Premium नहीं है। deezer.com पर सदस्यता लें, फिर OpenDeezer को दोबारा शुरू करें।</value>
   </data>
+  <data name="NoInternet_Title" xml:space="preserve">
+    <value>इंटरनेट कनेक्शन नहीं है</value>
+  </data>
+  <data name="NoInternet_Body" xml:space="preserve">
+    <value>अपना कनेक्शन जांचें और फिर से प्रयास करें।</value>
+  </data>
+  <data name="Action_Retry" xml:space="preserve">
+    <value>पुनः प्रयास करें</value>
+  </data>
   <data name="Update_TitleFormat" xml:space="preserve">
     <value>OpenDeezer {0} उपलब्ध है</value>
   </data>

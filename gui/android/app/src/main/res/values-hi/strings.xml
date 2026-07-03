@@ -38,6 +38,10 @@
     <string name="login_error_failed">लॉगिन विफल — अपना ARL और कनेक्शन जाँचें।</string>
     <string name="login_error_account">खाता लोड नहीं हो सका।</string>
 
+    <!-- No internet (retry reuses action_retry) -->
+    <string name="no_internet_title">इंटरनेट कनेक्शन नहीं है</string>
+    <string name="no_internet_body">अपना कनेक्शन जांचें और फिर से प्रयास करें।</string>
+
     <string name="device_type_terminal">टर्मिनल</string>
     <string name="device_type_generic">डिवाइस</string>
 

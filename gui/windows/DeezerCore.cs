@@ -26,6 +26,8 @@ internal static class DeezerCore
 
     // ---- raw exports (mirror libdeezercore.def / the extern "C" block) -------
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZInit([MarshalAs(UnmanagedType.LPUTF8Str)] string arl);
+    // Why the last DZInit(...) returned falsy: 0 ok, 1 ARL expired/invalid, 2 no internet, 3 other.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZLoginErrorKind();
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZUserID();
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZFavoritesJSON();
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZPlaylistsJSON();

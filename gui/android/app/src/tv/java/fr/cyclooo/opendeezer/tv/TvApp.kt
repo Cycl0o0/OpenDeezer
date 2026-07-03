@@ -45,6 +45,25 @@ fun TvApp(vm: AppViewModel) {
                     Button(onClick = { vm.logout() }) { Text(stringResource(R.string.tv_use_another_account)) }
                 }
             }
+            AuthStage.NO_INTERNET -> Centered {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(stringResource(R.string.no_internet_title), style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        stringResource(R.string.no_internet_body),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // Keeps the saved ARL; re-runs the same launch sign-in path.
+                    if (vm.busy) {
+                        CircularProgressIndicator()
+                    } else {
+                        Button(onClick = { vm.retry() }) { Text(stringResource(R.string.action_retry)) }
+                    }
+                }
+            }
             AuthStage.READY -> TvRootScreen(vm)
         }
     }

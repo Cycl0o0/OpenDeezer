@@ -196,3 +196,8 @@
 "Playlist · %@" = "قائمة تشغيل · %@";
 "Top worldwide" = "الأكثر رواجًا عالميًا";
 "Album · %@" = "ألبوم · %@";
+
+/* No-Internet gate */
+"No Internet Connection" = "لا يوجد اتصال بالإنترنت";
+"Check your connection and try again." = "تحقق من اتصالك وحاول مرة أخرى.";
+"Retry" = "إعادة المحاولة";

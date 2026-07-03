@@ -12,8 +12,8 @@ android {
         applicationId = "fr.cyclooo.opendeezer"
         minSdk = 24
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.8.0"
+        versionCode = 11
+        versionName = "1.8.1"
     }
 
     buildTypes {

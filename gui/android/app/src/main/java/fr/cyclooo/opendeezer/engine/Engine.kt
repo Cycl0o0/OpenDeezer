@@ -34,6 +34,11 @@ object Engine {
 
     fun loggedIn(): Boolean = runCatching { Odmobile.loggedIn() }.getOrDefault(false)
 
+    // Why the most recent [init] failed: 0 ok, 1 ARL expired/invalid, 2 no
+    // internet, 3 other. Only meaningful right after [init] returned false.
+    // gomobile maps Go int -> Java long, hence toInt(); defaults to 3 (other).
+    fun loginErrorKind(): Int = runCatching { Odmobile.loginErrorKind().toInt() }.getOrDefault(3)
+
     suspend fun account(): Account? = withContext(Dispatchers.IO) {
         Json.account(runCatching { Odmobile.account() }.getOrNull())
     }

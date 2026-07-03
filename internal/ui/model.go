@@ -47,6 +47,7 @@ const (
 	screenRemoteCtl   // remote-control: driving a connected peer
 	screenBlocked     // Free account — playback not available
 	screenWebRemote   // phone web remote: QR + pairing code
+	screenNoInternet  // transport-level connectivity loss — offer retry, don't log out
 )
 
 // Model is the root Bubble Tea model.

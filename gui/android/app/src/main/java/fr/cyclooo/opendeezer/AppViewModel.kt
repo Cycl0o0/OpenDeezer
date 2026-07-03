@@ -16,7 +16,7 @@ import fr.cyclooo.opendeezer.player.PlaybackService
 import fr.cyclooo.opendeezer.player.PlayerController
 import kotlinx.coroutines.launch
 
-enum class AuthStage { LOADING, NEEDS_LOGIN, NEEDS_PREMIUM, READY }
+enum class AuthStage { LOADING, NEEDS_LOGIN, NEEDS_PREMIUM, NO_INTERNET, READY }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -98,6 +98,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val ok = Engine.init(arl)
             if (!ok) {
                 busy = false
+                // Tell "offline" apart from "bad/expired ARL": when the engine
+                // reports no internet (kind 2), keep the saved credentials and
+                // show the No-Internet screen (with Retry) instead of wiping
+                // prefs and bouncing the user back to sign-in.
+                if (Engine.loginErrorKind() == 2) {
+                    stage = AuthStage.NO_INTERNET
+                    return@launch
+                }
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
                 stage = AuthStage.NEEDS_LOGIN
@@ -122,6 +130,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     applyRemoteHosts()
                 }
             }
+        }
+    }
+
+    /**
+     * Re-attempts sign-in with the saved ARL. Backs the No-Internet screen's
+     * Retry button — reuses the exact launch path, so a recovered connection
+     * proceeds to READY, a still-offline engine stays on NO_INTERNET, and an
+     * expired ARL falls through to NEEDS_LOGIN.
+     */
+    fun retry() {
+        val saved = prefs.arl
+        if (saved.isNullOrBlank()) {
+            stage = AuthStage.NEEDS_LOGIN
+        } else {
+            login(saved, persist = false)
         }
     }
 

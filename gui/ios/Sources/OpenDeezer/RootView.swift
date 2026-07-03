@@ -15,6 +15,8 @@ struct RootView: View {
                     .task { await session.bootstrap() }
             case .loggedOut:
                 LoginView()
+            case .noInternet:
+                NoInternetView()
             case .gated:
                 PremiumGateView()
             case .ready:
