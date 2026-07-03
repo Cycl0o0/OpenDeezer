@@ -4,6 +4,23 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2]
+
+### Changed
+- **macOS releases are now Developer ID signed and notarized.** The release
+  workflow signs the `.app` with a hardened runtime, submits it to Apple's notary
+  service and staples the ticket, so Gatekeeper opens it with no "unidentified
+  developer" / "damaged" prompt and no quarantine dance. Signing activates only
+  when the signing secrets are present, so forks and secret-less builds still
+  produce the same unsigned zip. See `docs/MACOS_SIGNING.md`.
+
+### Fixed
+- The Windows `app.manifest` assembly version had been frozen at 1.6.0.0 since the
+  1.6.0 release (the version bump matched the literal current version and silently
+  missed once the file drifted); it now tracks the release version, and the bump
+  script rewrites it value-agnostically so it can't freeze again. The AUR
+  `.SRCINFO` source URL had the same class of bug and is fixed too.
+
 ## [1.8.1]
 
 ### Added

@@ -83,7 +83,10 @@ echo "  · gui/ios/OpenDeezer.xcodeproj/project.pbxproj"
 
 # ---- packaging manifests (checksums are filled at release time) ----
 sub packaging/aur/PKGBUILD "s/^pkgver=.*/pkgver=$NEW/"
-sub packaging/aur/.SRCINFO -e "s/pkgver = .*/pkgver = $NEW/" -e "s|/v$CUR/|/v$NEW/|g" -e "s/opendeezer-$CUR/opendeezer-$NEW/g"
+# The tag URL ends in "v<ver>.tar.gz" (a dot, not a trailing slash), so the old
+# "/v$CUR/" pattern never matched and the source URL froze a release behind.
+# Match the tag path value-agnostically instead.
+sub packaging/aur/.SRCINFO -e "s/pkgver = .*/pkgver = $NEW/" -e "s|/refs/tags/v[0-9.]*\.tar\.gz|/refs/tags/v$NEW.tar.gz|g" -e "s/opendeezer-[0-9.]*\.tar\.gz/opendeezer-$NEW.tar.gz/g"
 sub packaging/homebrew/opendeezer.rb "s/$CUR/$NEW/g"
 for f in packaging/winget/*.yaml; do
   # PackageVersion + tag URLs only — ManifestVersion is the SCHEMA version.
