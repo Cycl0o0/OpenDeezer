@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Flathub requires this AppStream MetaInfo file. Validate before submitting:
+       appstreamcli validate --explain org.opendeezer.OpenDeezer.unified.metainfo.xml
+     TODO before submission:
+       * host at least one real screenshot (aspect 1:1..2:1, PNG/JPG) at the URLs
+         below (e.g. under https://opendeezer.org/screenshots/) and confirm they
+         load over HTTPS. -->
+<component type="desktop-application">
+  <id>org.opendeezer.OpenDeezer.unified</id>
+
+  <name>OpenDeezer</name>
+  <summary>Stream your Deezer library from the desktop</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+
+  <developer id="fr.cyclooo">
+    <name>Cycl0o0</name>
+  </developer>
+
+  <description>
+    <p>
+      OpenDeezer is an open-source desktop client for Deezer. Sign in with your
+      own ARL and the whole streaming path runs on your machine: browse your
+      liked songs, playlists, artists and search results, then decode and play
+      the audio locally. Nothing leaves your machine but the requests to Deezer.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Browse liked tracks, playlists, albums, artists and charts</li>
+      <li>Search across tracks, albums, artists and playlists</li>
+      <li>Gapless playback with a 10-band equalizer and mono downmix</li>
+      <li>Synced lyrics and a play queue</li>
+      <li>HiFi (FLAC) and high-quality streaming for entitled accounts</li>
+      <li>MPRIS integration and desktop notifications</li>
+    </ul>
+    <p>
+      A single Go engine powers the app; this is the unified Linux desktop client
+      (Qt 6 / KDE), which also runs well outside KDE.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">org.opendeezer.OpenDeezer.unified.desktop</launchable>
+
+  <url type="homepage">https://opendeezer.org</url>
+  <url type="bugtracker">https://github.com/Cycl0o0/OpenDeezer/issues</url>
+  <url type="vcs-browser">https://github.com/Cycl0o0/OpenDeezer</url>
+  <url type="contribute">https://github.com/Cycl0o0/OpenDeezer/blob/main/CONTRIBUTING.md</url>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>deezer</keyword>
+    <keyword>streaming</keyword>
+    <keyword>player</keyword>
+  </keywords>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#e6d4ff</color>
+    <color type="primary" scheme_preference="dark">#3a1a5c</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://opendeezer.org/screenshots/desktop-home.png</image>
+      <caption>Browsing the library</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://opendeezer.org/screenshots/desktop-nowplaying.png</image>
+      <caption>Now playing with synced lyrics</caption>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.8.3" date="2026-07-03">
+      <description>
+        <p>Signed desktop releases and a "No Internet" screen across all clients.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,54 @@
+# Flathub submission manifest — OpenDeezer unified Linux client (Qt6 / KDE).
+#
+# Differs from packaging/flatpak/org.opendeezer.OpenDeezer.unified.yaml (the local
+# build) in the ways Flathub requires:
+#   * NO build-time network — Go modules are vendored via the generated go.mod.yml
+#     (see gen-and-build.sh) and the build runs with GOFLAGS=-mod=vendor.
+#   * source is pinned to a tag AND commit.
+#   * the AppStream metainfo is installed and validated.
+# The runtime `--share=network` stays: the app itself must reach Deezer.
+app-id: org.opendeezer.OpenDeezer.unified
+runtime: org.kde.Platform
+runtime-version: "6.8"
+sdk: org.kde.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: opendeezer
+finish-args:
+  - --share=network          # runtime: reach Deezer (not a build-time grant)
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --own-name=org.mpris.MediaPlayer2.OpenDeezer
+build-options:
+  append-path: /usr/lib/sdk/golang/bin
+  env:
+    GOFLAGS: "-trimpath -mod=vendor"
+    GOTOOLCHAIN: local
+modules:
+  - name: opendeezer-unified
+    buildsystem: simple
+    build-commands:
+      # Engine c-archive + Qt backend (.so); build.sh reads the vendored modules.
+      - cd gui/kde && chmod +x build.sh && ./build.sh
+      # dlopen launcher loads libopendeezer-qt.so from its own dir ($ORIGIN).
+      - cc -O2 -o opendeezer gui/linux/launcher.c -ldl -Wl,-rpath,'$ORIGIN'
+      - install -Dm755 opendeezer /app/bin/opendeezer
+      - install -Dm755 gui/kde/build/libopendeezer-qt.so /app/bin/libopendeezer-qt.so
+      - install -Dm755 gui/kde/opendeezer-login /app/bin/opendeezer-login
+      - install -Dm644 packaging/flatpak/org.opendeezer.OpenDeezer.unified.desktop
+          /app/share/applications/org.opendeezer.OpenDeezer.unified.desktop
+      - install -Dm644 assets/icon.png
+          /app/share/icons/hicolor/256x256/apps/org.opendeezer.OpenDeezer.unified.png
+      - install -Dm644 packaging/flatpak/flathub/org.opendeezer.OpenDeezer.unified.metainfo.xml
+          /app/share/metainfo/org.opendeezer.OpenDeezer.unified.metainfo.xml
+    sources:
+      - type: git
+        url: https://github.com/Cycl0o0/OpenDeezer.git
+        tag: v1.8.3
+        commit: 6b68977449e4b8aa961186ca97826f42bfd4d3ae
+      # Vendored Go modules (offline). Regenerate with gen-and-build.sh when go.mod
+      # changes. flatpak-go-mod writes vendor/ + this sources file.
+      - go.mod.yml
