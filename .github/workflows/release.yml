@@ -264,6 +264,12 @@ jobs:
     needs: detect
     if: needs.detect.outputs.windows == 'true'
     runs-on: windows-latest
+    # SIGN is 'true' only when the Azure Trusted Signing secrets are present, so
+    # forks / secret-less runs still zip an unsigned build exactly as before. When
+    # true, OpenDeezer.exe is Authenticode-signed so SmartScreen stops flagging an
+    # "unknown publisher". See docs/WINDOWS_SIGNING.md.
+    env:
+      SIGN: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.TRUSTED_SIGNING_ACCOUNT_NAME != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -275,7 +281,8 @@ jobs:
       - name: Build (Go c-shared DLL + dotnet publish)
         shell: pwsh
         run: cd gui/windows; ./build.ps1
-      - name: Zip
+      - name: Locate publish dir
+        id: pub
         shell: pwsh
         # build.ps1 publishes a self-contained win-x64 build (exe + WinAppSDK DLLs +
         # libdeezercore.dll) under bin\...\win-x64\publish. Resolve that dir robustly.
@@ -283,7 +290,29 @@ jobs:
           $exe = Get-ChildItem -Path gui/windows/bin -Filter OpenDeezer.exe -Recurse -File |
                  Where-Object { $_.FullName -match '\\publish\\' } | Select-Object -First 1
           if (-not $exe) { throw 'publish dir not found' }
-          Compress-Archive -Path (Join-Path $exe.Directory.FullName '*') -DestinationPath OpenDeezer-windows-x64.zip
+          "dir=$($exe.Directory.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Sign OpenDeezer.exe (Azure Trusted Signing)
+        if: env.SIGN == 'true'
+        # Signs only the launcher exe (SmartScreen assesses the exe the user runs;
+        # the WinAppSDK DLLs are already Microsoft-signed and libdeezercore.dll is
+        # loaded by the signed exe, so re-signing every DLL is unnecessary).
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_CERT_PROFILE }}
+          files-folder: ${{ steps.pub.outputs.dir }}
+          files-folder-filter: exe
+          files-folder-recurse: false
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path (Join-Path '${{ steps.pub.outputs.dir }}' '*') -DestinationPath OpenDeezer-windows-x64.zip
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -294,6 +323,11 @@ jobs:
   android:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
+    # ANDROID_SIGN is 'true' when a release keystore secret is present: the job
+    # then builds release-signed APKs. Without it, it falls back to the debug
+    # build (unchanged) so the release still ships installable APKs.
+    env:
+      ANDROID_SIGN: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -317,20 +351,39 @@ jobs:
           gomobile init
           mkdir -p gui/android/app/libs
           gomobile bind -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
+      # ---- signed release build (when the keystore secret is set) ----
+      - name: Assemble release APKs (signed, phone + TV)
+        if: env.ANDROID_SIGN == 'true'
+        working-directory: gui/android
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/opendeezer-release.p12
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$ANDROID_KEYSTORE_FILE"
+          chmod +x ./gradlew || true
+          ./gradlew --no-daemon assembleMobileRelease assembleTvRelease
+          rm -f "$ANDROID_KEYSTORE_FILE"
+      - name: Stage release artifacts
+        if: env.ANDROID_SIGN == 'true'
+        run: |
+          cp gui/android/app/build/outputs/apk/mobile/release/*.apk OpenDeezer-android.apk
+          cp gui/android/app/build/outputs/apk/tv/release/*.apk OpenDeezer-androidtv.apk
+
+      # ---- debug fallback (no release keystore secret) ----
       - name: Install stable signing keystore (optional)
-        # Without this, Gradle debug-signs with the runner's auto-generated
-        # ~/.android/debug.keystore, whose key is random per runner — so APKs
-        # from different releases carry different signatures and Android
-        # refuses to upgrade (INSTALL_FAILED_UPDATE_INCOMPATIBLE).
-        # Set the ANDROID_DEBUG_KEYSTORE_BASE64 repo secret to a base64-encoded
-        # keystore with the standard debug credentials so every release signs
-        # with the same key. Generate it once with:
+        if: env.ANDROID_SIGN != 'true'
+        # Without a release keystore, Gradle debug-signs with the runner's
+        # auto-generated ~/.android/debug.keystore, whose key is random per runner
+        # — so APKs from different releases carry different signatures and Android
+        # refuses to upgrade (INSTALL_FAILED_UPDATE_INCOMPATIBLE). Set
+        # ANDROID_DEBUG_KEYSTORE_BASE64 to a base64 keystore with the standard
+        # debug credentials so every release signs with the same key. Generate once:
         #   keytool -genkeypair -keystore debug.keystore -alias androiddebugkey \
         #     -storepass android -keypass android -keyalg RSA -keysize 2048 \
         #     -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
         #   base64 -w0 debug.keystore   # -> secret value
-        # If the secret is unset the build still works, but keeps today's
-        # per-run key (users must uninstall/reinstall to upgrade).
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         run: |
@@ -339,17 +392,20 @@ jobs:
             printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
             echo "Installed persistent debug keystore from secret."
           else
-            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 not set — APKs get an ephemeral per-run signing key; upgrades across releases will fail."
+            echo "::warning::No release keystore (ANDROID_KEYSTORE_BASE64) and no ANDROID_DEBUG_KEYSTORE_BASE64 — APKs get an ephemeral per-run key; upgrades across releases will fail."
           fi
       - name: Assemble debug APKs (phone + TV)
+        if: env.ANDROID_SIGN != 'true'
         working-directory: gui/android
         run: |
           chmod +x ./gradlew || true
           ./gradlew --no-daemon assembleMobileDebug assembleTvDebug
-      - name: Stage artifacts
+      - name: Stage debug artifacts
+        if: env.ANDROID_SIGN != 'true'
         run: |
           cp gui/android/app/build/outputs/apk/mobile/debug/*.apk OpenDeezer-android.apk
           cp gui/android/app/build/outputs/apk/tv/debug/*.apk OpenDeezer-androidtv.apk
+
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2

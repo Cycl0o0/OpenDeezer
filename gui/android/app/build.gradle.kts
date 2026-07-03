@@ -16,6 +16,23 @@ android {
         versionName = "1.8.2"
     }
 
+    // Release signing is driven by env vars set by CI from repo secrets (see
+    // .github/workflows/release.yml + docs/ANDROID_SIGNING.md). The keystore is
+    // PKCS12; its single password is used for both store and key. Absent locally,
+    // so a plain `assembleRelease` on a dev machine just produces an unsigned APK.
+    signingConfigs {
+        create("release") {
+            val ksPath = System.getenv("ANDROID_KEYSTORE_FILE")
+            if (ksPath != null && file(ksPath).exists()) {
+                storeFile = file(ksPath)
+                storeType = "PKCS12"
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -23,6 +40,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Sign with the release key only when the keystore env is present (CI
+            // with secrets); otherwise leave unsigned so local builds still work.
+            if (System.getenv("ANDROID_KEYSTORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
