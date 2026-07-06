@@ -89,6 +89,9 @@ struct NowPlayingView: View {
                     if player.current?.explicit == true {
                         ExplicitBadge()
                     }
+                    if player.isPreview {
+                        PreviewBadge()
+                    }
                 }
                 Text(player.current?.artistLine ?? "")
                     .font(.subheadline)
@@ -226,5 +229,18 @@ struct ExplicitBadge: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
             .background(RoundedRectangle(cornerRadius: 3).stroke(Color.secondary, lineWidth: 1))
+    }
+}
+
+/// Accent "Preview" pill shown when the engine served Deezer's 30-second
+/// preview for the current track (the rare Free-account fallback).
+struct PreviewBadge: View {
+    var body: some View {
+        Text("Preview")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Palette.accent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Palette.accent.opacity(0.15), in: Capsule())
     }
 }

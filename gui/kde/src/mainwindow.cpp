@@ -102,6 +102,19 @@ extern "C" void  DZSetCrossfadeMS(int ms);
 extern "C" int   DZCrossfadeMS(void);
 extern "C" void  DZPreload(char *trackID, long long durationMs);
 
+// Track downloads (premium-only). Redeclared here (like the blocks above) so
+// the GUI still builds against an older generated header; identical
+// redeclarations are harmless. DZDownloadTrack returns a malloc'd JSON string —
+// {"path":"..."} on success, {"error":"..."} on failure — free with DZFree;
+// pass "" for destDir to save into the shared default download folder.
+// DZDownloadDir returns that folder (malloc'd — free with DZFree);
+// DZSetDownloadDir sets it (1 = ok, 0 = fail). DZIsPreview reports whether the
+// engine is currently streaming a 30-second preview (1 = yes, 0 = no).
+extern "C" char *DZDownloadTrack(char *trackID, char *destDir);
+extern "C" char *DZDownloadDir(void);
+extern "C" int   DZSetDownloadDir(char *path);
+extern "C" int   DZIsPreview(void);
+
 // OpenDeezer Connect (LAN device transfer). Redeclared here (like the blocks
 // above) so the GUI still builds against an older generated header; identical
 // redeclarations are harmless. char* results are malloc'd — free with DZFree.
@@ -414,9 +427,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     v->addWidget(buildTransport());
     m_centralLayout = v; // update banner inserts itself at row 0, above the splitter
 
-    // The whole app lives in a top-level stack so a Free account can be gated
-    // behind a blocking "Premium required" page without tearing down the live
-    // widgets (see showFreeAccountBlock).
+    // The whole app lives in a top-level stack so the No-Internet retry page can
+    // take over the window (without tearing down the live widgets) on an offline
+    // login, then hand back to the app on a successful retry (see showNoInternet).
     m_rootStack = new QStackedWidget;
     m_rootStack->addWidget(central);   // index 0: the app
     setCentralWidget(m_rootStack);
@@ -556,7 +569,7 @@ void MainWindow::openSettings() {
         }
     }
 
-    SettingsDialog dlg(settingsPath(), devices, curDevice, this);
+    SettingsDialog dlg(settingsPath(), devices, curDevice, m_premium, this);
     connect(&dlg, &SettingsDialog::qualityChanged, this, &MainWindow::applyQuality);
     connect(&dlg, &SettingsDialog::replayGainChanged, this, &MainWindow::applyReplayGain);
     connect(&dlg, &SettingsDialog::closeToTrayChanged, this,
@@ -861,7 +874,7 @@ void MainWindow::buildMenu() {
     auto *about = help->addAction(tr("&About OpenDeezer"));
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            QStringLiteral("<h3>OpenDeezer 1.8.3</h3><p>") +
+            QStringLiteral("<h3>OpenDeezer 2.0.0</h3><p>") +
             tr("A Deezer client for the desktop.") + QStringLiteral("</p>");
         // Show the signed-in account tier (from DZAccountJSON) when available.
         if (m_haveAccount && !m_accountName.isEmpty())
@@ -1300,6 +1313,17 @@ QWidget *MainWindow::buildTransport() {
     m_explicitBadge->setVisible(false);
     h->addWidget(m_explicitBadge);
 
+    // "Preview" badge — visible only while the engine is streaming a 30-second
+    // preview instead of the full track (polled from DZIsPreview in tick()).
+    m_previewBadge = new QLabel(tr("Preview"));
+    m_previewBadge->setStyleSheet(
+        "QLabel{background:#A238FF;color:#FFFFFF;border-radius:3px;"
+        "padding:0px 4px;font-size:10px;font-weight:bold;}");
+    m_previewBadge->setAlignment(Qt::AlignCenter);
+    m_previewBadge->setFixedHeight(16);
+    m_previewBadge->setVisible(false);
+    h->addWidget(m_previewBadge);
+
     m_nowPlaying = new QLabel(tr("Not playing"));
     m_nowPlaying->setMinimumWidth(180);
     h->addWidget(m_nowPlaying, 0);
@@ -1510,14 +1534,12 @@ void MainWindow::promptLogin() {
 void MainWindow::finishLogin(const QByteArray &acct) {
     m_loggedIn = true;
     applyAccount(acct);          // tier + HiFi/HQ entitlements
-    // Free accounts can't stream on-demand — gate the whole app behind a blocking
-    // "Premium required" page. Both auto-login (stored ARL) and the manual
-    // ARL/webview dialog land here, so a Free login can never reach the service.
-    if (!m_premium) {
-        showFreeAccountBlock();
-        return;
-    }
-    // A Premium account (re-)logged in: make sure the app UI is the visible page.
+    // The engine now streams full standard-quality (128 kbps) tracks for Free
+    // accounts too (some tracks may still be preview-only, reflected by the
+    // transport badge), so both tiers bring up the same browsing/playback UI —
+    // there's no longer a blocking "Premium required" gate. m_premium still gates
+    // the Download action and drives the Free hint shown below.
+    // Any account (re-)logged in: make sure the app UI is the visible page.
     if (m_rootStack)
         m_rootStack->setCurrentIndex(0);
     m_lastFinished = DZFinishedCount();
@@ -1550,73 +1572,26 @@ void MainWindow::finishLogin(const QByteArray &acct) {
         ? m_accountName + " · " + m_accountOffer
         : tr("Connected");
     statusBar()->showMessage(conn, 4000);
-}
 
-// Gate a Free (non-Premium) account: OpenDeezer streams on-demand, which a Deezer
-// Free plan can't do, so swap the whole window to a hardcoded blocking page. The
-// live app widgets stay alive on stack page 0 but are unreachable; only the menu
-// bar (Quit / Log in to switch account) and the page's Quit button remain. No
-// browsing or playback is started.
-void MainWindow::showFreeAccountBlock() {
-    if (m_poll)
-        m_poll->stop();
-    DZStop();   // nothing should be playing on a Free account
-
-    const QString offer = m_accountOffer.isEmpty()
-        ? QStringLiteral("Deezer Free") : m_accountOffer;
-    const QString body =
-        tr("OpenDeezer streams on demand, which needs Deezer Premium. "
-           "You're on %1 — subscribe at deezer.com, then restart "
-           "OpenDeezer.").arg(offer);
-
-    // Build the page once; refresh the offer line on later (re-)logins.
-    if (!m_blockPage) {
-        m_blockPage = new QWidget;
-        auto *outer = new QVBoxLayout(m_blockPage);
-        outer->addStretch(1);
-
-        auto *title = new QLabel(tr("Premium required"));
-        title->setAlignment(Qt::AlignCenter);
-        title->setWordWrap(true);
-        QFont tf = title->font();
-        tf.setPointSize(tf.pointSize() + 8);
-        tf.setBold(true);
-        title->setFont(tf);
-        title->setStyleSheet(QString("color:%1;").arg(kAccent));
-        outer->addWidget(title);
-
-        outer->addSpacing(12);
-
-        m_blockBody = new QLabel(body);
-        m_blockBody->setAlignment(Qt::AlignCenter);
-        m_blockBody->setWordWrap(true);
-        m_blockBody->setMaximumWidth(560);
-        // Centre the constrained body within the page.
-        auto *bodyRow = new QHBoxLayout;
-        bodyRow->addStretch(1);
-        bodyRow->addWidget(m_blockBody);
-        bodyRow->addStretch(1);
-        outer->addLayout(bodyRow);
-
-        outer->addSpacing(24);
-
-        auto *quitBtn = new QPushButton(tr("Quit OpenDeezer"));
-        connect(quitBtn, &QPushButton::clicked, this, &MainWindow::quitApp);
-        auto *btnRow = new QHBoxLayout;
-        btnRow->addStretch(1);
-        btnRow->addWidget(quitBtn);
-        btnRow->addStretch(1);
-        outer->addLayout(btnRow);
-
-        outer->addStretch(1);
-        m_rootStack->addWidget(m_blockPage);   // index 1
-    } else if (m_blockBody) {
-        m_blockBody->setText(body);
+    // Free tier streams at standard quality (128 kbps) — surface it unobtrusively
+    // as a permanent label in the status-bar corner (the per-track preview badge
+    // in the transport bar still reflects any preview-only track live). Built
+    // once, then toggled per login so switching to a Premium account hides it.
+    if (!m_premium) {
+        if (!m_freeHint) {
+            m_freeHint = new QLabel(tr("Free · standard quality (128 kbps)"));
+            m_freeHint->setToolTip(tr("Deezer Free streams at standard quality "
+                                      "(128 kbps). Upgrade for High and HiFi "
+                                      "quality, and for downloads."));
+            QFont ff = m_freeHint->font();
+            ff.setPointSize(qMax(1, ff.pointSize() - 1));
+            m_freeHint->setFont(ff);
+            statusBar()->addPermanentWidget(m_freeHint);
+        }
+        m_freeHint->show();
+    } else if (m_freeHint) {
+        m_freeHint->hide();
     }
-
-    m_rootStack->setCurrentWidget(m_blockPage);
-    statusBar()->showMessage(
-        tr("Premium required — %1 can't stream on-demand").arg(offer));
 }
 
 // Login failed because the machine is offline (DZLoginErrorKind() == 2). Swap
@@ -1971,6 +1946,39 @@ void MainWindow::likeTrack(const QString &trackId, bool like) {
     });
 }
 
+// ---- download -------------------------------------------------------------
+
+// Save a track to disk (premium-only). The whole job — fetch, Blowfish decrypt
+// and file write — happens in the engine, so it runs on a worker and reports
+// back on the GUI thread. Empty destDir → the engine's shared default folder
+// (see the Downloads setting). Mirrors likeTrack's worker/marshal shape.
+void MainWindow::download(const QString &id) {
+    if (!m_loggedIn || id.isEmpty())
+        return;
+    if (!m_premium) { // belt-and-braces: the menu entry is disabled on Free plans
+        statusBar()->showMessage(tr("Downloads require a paid Deezer plan"), 4000);
+        return;
+    }
+    statusBar()->showMessage(tr("Downloading…"));
+    const QByteArray idb = id.toUtf8();
+    QtConcurrent::run([this, idb] {
+        // "" destDir → shared default folder. takeJson frees the malloc'd result.
+        const QByteArray status = takeJson(DZDownloadTrack(cstr(idb), cstr(QByteArray())));
+        const QJsonObject o = QJsonDocument::fromJson(status).object();
+        const QString path = o.value("path").toString();
+        const QString err  = o.value("error").toString();
+        QMetaObject::invokeMethod(this, [this, path, err] {
+            if (!path.isEmpty()) {
+                statusBar()->showMessage(tr("Saved to %1").arg(path), 6000);
+            } else {
+                statusBar()->showMessage(tr("Download failed"), 5000);
+                QMessageBox::warning(this, tr("Download"),
+                                     err.isEmpty() ? tr("Download failed") : err);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
 // ---- add to playlist ------------------------------------------------------
 
 // Load the user's playlists (fresh) then show the picker on the GUI thread.
@@ -2181,6 +2189,15 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                 menu.addSeparator();
                 QAction *like  = menu.addAction(tr("Add to Liked Songs"));
                 QAction *addPl = menu.addAction(tr("Add to Playlist…"));
+                menu.addSeparator();
+                // Downloads are premium-only: show the entry always so it's
+                // discoverable, but grey it out with a hint on Free plans.
+                QAction *dl = menu.addAction(tr("Download"));
+                if (!m_premium) {
+                    dl->setEnabled(false);
+                    dl->setToolTip(tr("Requires a paid Deezer plan"));
+                    menu.setToolTipsVisible(true);
+                }
                 QAction *removePl = nullptr;
                 if (table == m_trackTable && !m_currentPlaylistId.isEmpty())
                     removePl = menu.addAction(tr("Remove from this playlist"));
@@ -2193,6 +2210,8 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                     likeTrack(t.id, true);
                 else if (chosen == addPl)
                     addTrackToPlaylist(t);
+                else if (chosen == dl)
+                    download(t.id);
                 else if (removePl && chosen == removePl)
                     removeFromCurrentPlaylist(t, row);
             });
@@ -3231,6 +3250,11 @@ void MainWindow::tick() {
             m_explicitBadge->setVisible(m_current.isExplicit);
         m_nowPlaying->setText(m_current.name + "\n" + sub);
     }
+
+    // Flag when the engine is only streaming a 30-second preview (e.g. a track
+    // not fully available on the current plan / region). Hidden when idle.
+    if (m_previewBadge)
+        m_previewBadge->setVisible(m_hasCurrent && DZIsPreview() == 1);
 
     // Lyrics page: follow the playing track and keep the synced line highlighted.
     if (m_stack->currentIndex() == 4) {

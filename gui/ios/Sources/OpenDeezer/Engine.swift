@@ -249,6 +249,42 @@ enum Engine {
         return try? decode(json, as: ConnectHostInfo.self)
     }
 
+    // MARK: - Downloads (premium-only)
+
+    /// `OdmobileDownloadTrack` result: `{"path":"…"}` on success, `{"error":"…"}`
+    /// on failure. Both optional so an empty/malformed reply still decodes.
+    struct DownloadResult: Decodable {
+        let path: String?
+        let error: String?
+    }
+
+    /// Downloads `id` into `destDir` ("" -> the engine's shared default folder).
+    /// Blocking engine-side (network fetch + Blowfish decrypt), so it runs on the
+    /// IO queue. Downloads are premium-only; a Free account comes back with an
+    /// error in the result.
+    static func download(id: String, destDir: String = "") async -> DownloadResult {
+        let json = await run { OdmobileDownloadTrack(id, destDir) }
+        return (try? decoder.decode(DownloadResult.self, from: Data(json.utf8)))
+            ?? DownloadResult(path: nil, error: nil)
+    }
+    /// The current download folder (env / config / default).
+    static func downloadDir() async -> String { await run { OdmobileDownloadDir() } }
+    /// Persists the download folder ("" resets to the default); true on success.
+    @discardableResult
+    static func setDownloadDir(_ path: String) async -> Bool { await run { OdmobileSetDownloadDir(path) } }
+    /// True when the current track is Deezer's 30-second preview fallback — rare;
+    /// a Free account normally streams the full 128 kbps track. Cheap engine read,
+    /// so (like `state`/`volume`) it's called directly.
+    static func isPreview() -> Bool { OdmobileIsPreview() }
+
+    // MARK: - Free-tier ads / play reporting (Deezer Free only)
+
+    /// Whether the Free-tier ads / play-reporting opt-out is on. Only meaningful
+    /// for a Deezer Free account — paid plans carry no ads.
+    static func adsDisabled() async -> Bool { await run { OdmobileAdsDisabled() } }
+    @discardableResult
+    static func setAdsDisabled(_ disabled: Bool) async -> Bool { await run { OdmobileSetAdsDisabled(disabled) } }
+
     // MARK: - Misc
 
     static func fetch(_ url: String) async -> Data? { await runFetch { OdmobileFetch(url) } }

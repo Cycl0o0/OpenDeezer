@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
 	"github.com/charmbracelet/bubbles/list"
@@ -67,22 +68,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.acct = m.client.Account()
-		m.publishAccount() // identity snapshot for the control API (race-free read)
-		// Free accounts can't stream on-demand — gate the whole app behind a
-		// message (Premium required).
-		if !m.acct.Premium {
-			m.screen = screenBlocked
-			m.status = ""
-			return m, nil
-		}
+		m.publishAccount()                                // identity snapshot for the control API (race-free read)
+		m.client.SetAdsDisabled(config.LoadAdsDisabled()) // free-tier ads opt-out
 		m.screen = screenMenu
 		if m.acct.Name != "" {
 			m.status = i18n.Tf("Logged in as %s · %s", m.acct.Name, m.acct.Offer)
 		} else {
 			m.status = i18n.Tf("Logged in · %s", m.acct.Offer)
 		}
-		// Warn if the chosen quality exceeds the plan's entitlement.
-		if q := m.client.Quality(); (q == 2 && !m.acct.CanHiFi) || (q == 1 && !m.acct.CanHQ) {
+		switch {
+		case !m.acct.Premium:
+			// Free account: streams full tracks at 128 kbps (ad-supported, like
+			// Deezer's web player); 320/FLAC and downloads need a paid plan. A track
+			// with no full-length source falls back to a 30-second preview.
+			m.status += "  " + i18n.T("(free account · 128 kbps; downloads need a paid plan)")
+		case (m.client.Quality() == 2 && !m.acct.CanHiFi) || (m.client.Quality() == 1 && !m.acct.CanHQ):
+			// Warn if the chosen quality exceeds the plan's entitlement.
 			m.status += "  " + i18n.T("(plan can't stream that quality — will fall back)")
 		}
 		m.list.Title = "OpenDeezer"
@@ -138,6 +139,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.loading = false
 		m.status = msg.text
+		return m, nil
+
+	case downloadDoneMsg:
+		m.downloading = false
+		switch {
+		case msg.err == nil:
+			m.status = i18n.Tf("Saved to %s", msg.path)
+		case deezer.IsPremiumRequired(msg.err):
+			m.status = i18n.T("Downloads need a paid Deezer plan")
+		default:
+			m.status = i18n.Tf("Download failed: %s", msg.err.Error())
+		}
 		return m, nil
 
 	case playlistsMsg:
@@ -196,8 +209,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingSeek = 0
 		}
 		cmd := m.onTrackChanged(msg.track)
-		// Preload the next track for a gapless/crossfaded transition.
-		return m, tea.Batch(cmd, m.preloadNextCmd())
+		// Preload the next track for a gapless/crossfaded transition, and report the
+		// play to Deezer (log.listen) unless the user disabled ads/reporting.
+		return m, tea.Batch(cmd, m.preloadNextCmd(), m.nowPlayingCmd(msg.track.ID))
 
 	case preloadMsg:
 		if msg.plan == nil {
@@ -525,16 +539,6 @@ func (m *Model) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Free-account block: only quit is allowed.
-	if m.screen == screenBlocked {
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
-			m.shutdown()
-			return m, tea.Quit
-		}
-		return m, nil
-	}
-
 	// No-Internet screen: retry re-establishes the session (a fresh login round-
 	// trip doubles as a connectivity probe); on success loginDoneMsg lands us back
 	// in the app. If the session is still valid (in-session drop), retry still just
@@ -800,6 +804,44 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = i18n.T("Audio quality: High (MP3 320)")
 		default:
 			m.status = i18n.T("Audio quality: Normal (MP3 128)")
+		}
+		return m, nil
+	case "D":
+		// Download a full track to disk (premium-only). Prefer the highlighted
+		// track row; otherwise fall back to the current track (not podcasts).
+		var t deezer.Track
+		if it, ok := m.list.SelectedItem().(row); ok && it.kind == rowTrack {
+			t = it.track
+		} else if ct, ok := m.q.Current(); ok && !m.episodeMode {
+			t = ct
+		} else {
+			return m, nil
+		}
+		if !m.acct.Premium {
+			m.status = i18n.T("Downloads need a paid Deezer plan")
+			return m, nil
+		}
+		if m.downloading {
+			m.status = i18n.T("A download is already in progress…")
+			return m, nil
+		}
+		m.downloading = true
+		m.status = i18n.Tf("Downloading %s…", t.Name)
+		return m, m.downloadCmd(t)
+	case "A":
+		// Toggle Deezer Free's play-reporting/ads (free accounts only). Paid plans
+		// have no ads, so it's a no-op there.
+		if m.acct.Premium {
+			m.status = i18n.T("Your plan has no ads")
+			return m, nil
+		}
+		off := !m.client.AdsDisabled()
+		m.client.SetAdsDisabled(off)
+		_ = config.SaveAdsDisabled(off)
+		if off {
+			m.status = i18n.T("Ads off — plays no longer reported (at your own risk: breaks Deezer's terms, denies artists their play count)")
+		} else {
+			m.status = i18n.T("Ads on — plays reported to Deezer (supports artists)")
 		}
 		return m, nil
 	case "s":

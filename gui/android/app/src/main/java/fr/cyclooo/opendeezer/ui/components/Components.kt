@@ -1,7 +1,9 @@
 package fr.cyclooo.opendeezer.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +16,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explicit
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,62 +87,106 @@ fun Artwork(
     }
 }
 
+/**
+ * A track list row. Tapping runs [onClick]; when [onDownload] is supplied the row
+ * also responds to a long-press with a context menu holding a Download item. That
+ * item is enabled only when [downloadEnabled] (premium), otherwise it's shown
+ * disabled with a hint — downloads are premium-only.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(
     track: Track,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     trailing: @Composable (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    downloadEnabled: Boolean = true,
 ) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Artwork(track.artworkUrl, Modifier.size(52.dp), corner = 6)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    track.name.ifBlank { stringResource(R.string.unknown_title) },
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (track.explicit) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Filled.Explicit,
-                        contentDescription = stringResource(R.string.cd_explicit),
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    var menuOpen by remember { mutableStateOf(false) }
+    val clickModifier =
+        if (onDownload != null) {
+            Modifier.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
+        } else {
+            Modifier.clickable(onClick = onClick)
+        }
+    Box {
+        Row(
+            modifier
+                .fillMaxWidth()
+                .then(clickModifier)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Artwork(track.artworkUrl, Modifier.size(52.dp), corner = 6)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        track.name.ifBlank { stringResource(R.string.unknown_title) },
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (track.explicit) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Filled.Explicit,
+                            contentDescription = stringResource(R.string.cd_explicit),
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                val sub = track.artistLine.ifBlank { track.albumName }
+                if (sub.isNotBlank()) {
+                    Text(
+                        sub,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            val sub = track.artistLine.ifBlank { track.albumName }
-            if (sub.isNotBlank()) {
+            if (trailing != null) {
+                Spacer(Modifier.width(8.dp))
+                trailing()
+            } else if (track.durationMs > 0) {
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    sub,
-                    style = MaterialTheme.typography.bodyMedium,
+                    formatDuration(track.durationMs),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        if (trailing != null) {
-            Spacer(Modifier.width(8.dp))
-            trailing()
-        } else if (track.durationMs > 0) {
-            Spacer(Modifier.width(8.dp))
-            Text(
-                formatDuration(track.durationMs),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (onDownload != null) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = {
+                        if (downloadEnabled) {
+                            Text(stringResource(R.string.action_download))
+                        } else {
+                            Column {
+                                Text(stringResource(R.string.action_download))
+                                Text(
+                                    stringResource(R.string.download_requires_premium),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
+                    enabled = downloadEnabled,
+                    onClick = {
+                        menuOpen = false
+                        onDownload()
+                    },
+                )
+            }
         }
     }
 }

@@ -504,6 +504,15 @@ func (p *Player) LastError() string     { s, _ := p.lastErr.Load().(string); ret
 func (p *Player) PositionMS() int64     { return p.played.Load() * 1000 / bytesPerSec }
 func (p *Player) DurationMS() int64     { return p.totalMS.Load() }
 
+// IsPreview reports whether the current track is Deezer's 30-second preview
+// (the free-account fallback) rather than the full, entitled stream.
+func (p *Player) IsPreview() bool {
+	if cur := p.cur.Load(); cur != nil && cur.plan != nil {
+		return cur.plan.Preview
+	}
+	return false
+}
+
 // ---- playback ----
 
 // Play starts a track immediately, replacing anything current.

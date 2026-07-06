@@ -133,6 +133,25 @@ internal static class DeezerCore
     // (shuffle / repeat toggled after a gapless preload was armed).
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZClearPreload();
 
+    // ---- v1.9 additions (offline track export; PREMIUM-ONLY) -----------------
+    // DZDownloadTrack decrypts + writes the full track to destDir and returns
+    // malloc'd UTF-8 JSON {"path":"..."} on success or {"error":"..."} on failure
+    // (free with DZFree, like every char* export). An empty destDir ("") targets
+    // the shared default download folder. DZDownloadDir / DZSetDownloadDir read and
+    // change that folder (SetDownloadDir returns 1 ok / 0 fail). DZIsPreview reports
+    // whether the CURRENT stream is a 30-second preview rather than the full track.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZDownloadTrack([MarshalAs(UnmanagedType.LPUTF8Str)] string trackID, [MarshalAs(UnmanagedType.LPUTF8Str)] string destDir);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZDownloadDir();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSetDownloadDir([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZIsPreview();
+
+    // Ad-report opt-out for Deezer Free (Premium has no ads). DZAdsDisabled reports
+    // the current state (1 = plays are NOT reported / ads suppressed); DZSetAdsDisabled
+    // persists it engine-side and returns 1 on success. See the disclaimer shown next
+    // to the Settings toggle -- disabling reporting breaches Deezer's terms of use.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZAdsDisabled();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSetAdsDisabled(int disabled);
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -186,6 +205,18 @@ internal static class DeezerCore
     internal static HomeData Home() => Wire.ParseHome(TakeJson(DZHomeJSON()));
     internal static string ControlConfig() => TakeJson(DZControlConfigJSON());
     internal static EQState EQ() => Wire.ParseEQ(TakeJson(DZEQJSON()));
+
+    // Download a track to `dir` ("" = shared default folder); returns the raw
+    // {"path":...} / {"error":...} JSON. DownloadDir/SetDownloadDir read + change
+    // the default folder; IsPreview flags a 30-second preview of the current track.
+    internal static string Download(string id, string dir) => TakeJson(DZDownloadTrack(id, dir));
+    internal static string DownloadDir() => TakeJson(DZDownloadDir());
+    internal static bool SetDownloadDir(string p) => DZSetDownloadDir(p) == 1;
+    internal static bool IsPreview() => DZIsPreview() == 1;
+
+    // Deezer Free ad-report opt-out (see DZAdsDisabled / DZSetAdsDisabled above).
+    internal static bool AdsDisabled() => DZAdsDisabled() == 1;
+    internal static bool SetAdsDisabled(bool off) => DZSetAdsDisabled(off ? 1 : 0) == 1;
 
     // {current,latest,hasUpdate,url,notes}; network failure -> HasUpdate=false.
     internal static UpdateInfo CheckUpdate() => Wire.ParseUpdateInfo(TakeJson(DZCheckUpdateJSON()));

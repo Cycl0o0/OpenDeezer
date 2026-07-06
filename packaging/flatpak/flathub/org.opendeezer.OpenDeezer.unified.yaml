@@ -47,7 +47,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/Cycl0o0/OpenDeezer.git
-        tag: v1.8.3
+        tag: v2.0.0
         commit: 6b68977449e4b8aa961186ca97826f42bfd4d3ae
       # Vendored Go modules (offline). Regenerate with gen-and-build.sh when go.mod
       # changes. flatpak-go-mod writes vendor/ + this sources file.

@@ -3,6 +3,8 @@ package fr.cyclooo.opendeezer.ui.screens
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -96,6 +98,44 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val prefs = remember(context) { Prefs(context) }
+
+    // Free-only ad-reporting toggle. Seeded from the engine; only loaded/shown for
+    // free accounts (premium has no ads). See the disclaimer rendered under it.
+    var adsDisabled by remember { mutableStateOf(false) }
+    LaunchedEffect(account?.premium) {
+        if (account?.premium == false) adsDisabled = Engine.adsDisabled()
+    }
+
+    // Download folder: seed from the persisted choice, else the engine's default.
+    var downloadFolder by remember { mutableStateOf(prefs.downloadFolder.orEmpty()) }
+    LaunchedEffect(Unit) {
+        if (downloadFolder.isBlank()) downloadFolder = Engine.downloadDir()
+    }
+    // Storage Access Framework tree picker: the correct way to reach user-visible
+    // storage under scoped storage. We persist the grant and hand the Uri to the
+    // engine (best-effort — see setDownloadDir).
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            val target = uri.toString()
+            prefs.downloadFolder = target
+            downloadFolder = target
+            scope.launch {
+                // The engine expects a filesystem path, so it may reject a SAF tree
+                // Uri and keep its own default — reflect whatever it settles on.
+                if (!Engine.setDownloadDir(target)) {
+                    downloadFolder = Engine.downloadDir().ifBlank { target }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(connectHostEnabled) {
         connectHostInfo = if (connectHostEnabled) Engine.connectHostInfo() else null
@@ -198,6 +238,28 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                 subtitle = stringResource(R.string.settings_eq_sub),
                 onClick = onEqualizer,
             )
+
+            HorizontalDivider()
+
+            Text(stringResource(R.string.settings_downloads), style = MaterialTheme.typography.titleMedium)
+            SettingAction(
+                title = stringResource(R.string.download_folder_title),
+                subtitle = downloadFolder.ifBlank { stringResource(R.string.download_folder_default) },
+                onClick = { folderPicker.launch(null) },
+            )
+
+            if (account?.premium == false) {
+                HorizontalDivider()
+                Text(stringResource(R.string.settings_ads), style = MaterialTheme.typography.titleMedium)
+                SettingSwitch(
+                    stringResource(R.string.setting_disable_ads_title),
+                    stringResource(R.string.setting_disable_ads_disclaimer),
+                    adsDisabled,
+                ) {
+                    adsDisabled = it
+                    scope.launch { Engine.setAdsDisabled(it) }
+                }
+            }
 
             HorizontalDivider()
 
@@ -341,6 +403,15 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Free accounts stream full tracks at 128 kbps — surface that, and
+                // it also explains why the per-track Download action is disabled.
+                if (!account.premium) {
+                    Text(
+                        stringResource(R.string.account_free_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.action_sign_out))

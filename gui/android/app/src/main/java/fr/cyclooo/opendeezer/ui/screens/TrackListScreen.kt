@@ -78,7 +78,12 @@ fun TrackListScreen(
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { index, track ->
-                            TrackRow(track = track, onClick = { player.playQueue(list, index) })
+                            TrackRow(
+                                track = track,
+                                onClick = { player.playQueue(list, index) },
+                                onDownload = { player.download(track) },
+                                downloadEnabled = player.premium,
+                            )
                         }
                         item { Spacer(Modifier.height(88.dp)) }
                     }

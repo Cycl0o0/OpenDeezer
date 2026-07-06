@@ -31,7 +31,8 @@
       <li>Search across tracks, albums, artists and playlists</li>
       <li>Gapless playback with a 10-band equalizer and mono downmix</li>
       <li>Synced lyrics and a play queue</li>
-      <li>HiFi (FLAC) and high-quality streaming for entitled accounts</li>
+      <li>HiFi (FLAC) and high-quality streaming for paid accounts; free accounts stream the full library at 128 kbps (ad-supported)</li>
+      <li>Download tracks to disk (paid plans)</li>
       <li>MPRIS integration and desktop notifications</li>
     </ul>
     <p>
@@ -79,6 +80,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.0.0" date="2026-07-06">
+      <description>
+        <p>Deezer Free accounts now stream the full library at 128 kbps (ad-supported), download tracks to disk (paid plans) on every client, and a free-only setting to disable ads/play-reporting.</p>
+      </description>
+    </release>
     <release version="1.8.3" date="2026-07-03">
       <description>
         <p>Signed desktop releases and a "No Internet" screen across all clients.</p>

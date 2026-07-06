@@ -201,3 +201,18 @@
 "No Internet Connection" = "No Internet Connection";
 "Check your connection and try again." = "Check your connection and try again.";
 "Retry" = "Retry";
+
+/* Downloads + preview + free tier */
+"Downloads" = "Downloads";
+"Where downloaded tracks are saved." = "Where downloaded tracks are saved.";
+"Default folder" = "Default folder";
+"Choose…" = "Choose…";
+"Choose" = "Choose";
+"Requires a paid Deezer plan" = "Requires a paid Deezer plan";
+"Downloading “%@”…" = "Downloading “%@”…";
+"Saved “%@”" = "Saved “%@”";
+"Download failed." = "Download failed.";
+"Preview" = "Preview";
+"Free account · standard quality (128 kbps)" = "Free account · standard quality (128 kbps)";
+"Disable ads" = "Disable ads";
+"Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.";

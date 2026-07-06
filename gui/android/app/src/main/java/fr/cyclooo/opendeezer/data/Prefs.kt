@@ -65,6 +65,19 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_CROSSFADE, -1)
         set(value) { sp.edit().putInt(KEY_CROSSFADE, value).apply() }
 
+    /**
+     * User-chosen download folder (a SAF tree Uri string, or a plain path). Blank
+     * when unset — the engine then uses its own shared default. Persisted so the
+     * choice (and the taken SAF permission) survive relaunches.
+     */
+    var downloadFolder: String?
+        get() = sp.getString(KEY_DOWNLOAD_FOLDER, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            sp.edit().apply {
+                if (value.isNullOrBlank()) remove(KEY_DOWNLOAD_FOLDER) else putString(KEY_DOWNLOAD_FOLDER, value)
+            }.apply()
+        }
+
     fun clear() {
         sp.edit().remove(KEY_ARL).apply()
     }
@@ -77,5 +90,6 @@ class Prefs(context: Context) {
         private const val KEY_REPLAYGAIN = "audio_replaygain"
         private const val KEY_GAPLESS = "audio_gapless"
         private const val KEY_CROSSFADE = "audio_crossfade_ms"
+        private const val KEY_DOWNLOAD_FOLDER = "download_folder"
     }
 }

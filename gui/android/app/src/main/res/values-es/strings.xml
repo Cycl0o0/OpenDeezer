@@ -217,4 +217,19 @@
         <item quantity="many">Se pausa en %1$d de minutos</item>
         <item quantity="other">Se pausa en %1$d minutos</item>
     </plurals>
+    <!-- Downloads / preview / free account / ads -->
+    <string name="settings_downloads">Descargas</string>
+    <string name="download_folder_title">Carpeta de descargas</string>
+    <string name="download_folder_default">Carpeta predeterminada</string>
+    <string name="download_requires_premium">Requiere un plan de pago de Deezer</string>
+    <string name="download_started">Descargando %1$s…</string>
+    <string name="download_saved">Guardado en %1$s</string>
+    <string name="download_saved_generic">%1$s descargado</string>
+    <string name="download_failed">Error al descargar: %1$s</string>
+    <string name="download_failed_generic">Error al descargar</string>
+    <string name="preview_chip">Vista previa</string>
+    <string name="account_free_hint">Cuenta gratuita · calidad estándar (128 kbps)</string>
+    <string name="settings_ads">Anuncios</string>
+    <string name="setting_disable_ads_title">Desactivar anuncios</string>
+    <string name="setting_disable_ads_disclaimer">Deezer Free se financia con anuncios. Informar de tus reproducciones —como la aplicación oficial— remunera a los artistas e impulsa los anuncios. Desactivar esta opción elimina los anuncios pero deja de informar de tus reproducciones, lo que priva a los artistas de sus recuentos de reproducciones e infringe las condiciones de uso de Deezer. Úsalo bajo tu propia responsabilidad.</string>
 </resources>

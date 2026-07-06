@@ -197,6 +197,8 @@ fun HomeScreen(
                                     TrackRow(
                                         track = track,
                                         onClick = { player.playQueue(data.topTracks, index) },
+                                        onDownload = { player.download(track) },
+                                        downloadEnabled = player.premium,
                                     )
                                 }
                             }

@@ -17,6 +17,7 @@ package main
 import "C"
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -30,6 +31,7 @@ import (
 	"unsafe"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
 	"github.com/Cycl0o0/OpenDeezer/internal/update"
@@ -210,6 +212,7 @@ func DZInit(arl *C.char) C.int {
 		return 0
 	}
 	atomic.StoreInt32(&lastLoginKind, 0)
+	c.SetAdsDisabled(config.LoadAdsDisabled()) // free-tier ads opt-out (persisted)
 	mu.Lock()
 	client = c
 	mu.Unlock()
@@ -419,6 +422,9 @@ func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
 	// metadata (title/artist/album) asynchronously.
 	setCurrentTrack(deezer.Track{ID: id, DurationMS: int64(durationMS)})
 	go fetchTrackMeta(c, id)
+	// Report the play to Deezer (log.listen), like the web player — free-tier ad
+	// accounting + artist play-counts depend on it. Best-effort, off the hot path.
+	go func() { _ = c.NowPlaying(id) }()
 	return 1
 }
 
@@ -587,6 +593,89 @@ func withPlayer(fn func(*audio.Player)) {
 	if p != nil {
 		fn(p)
 	}
+}
+
+// ---- downloads (premium-only, full track to disk) ----
+
+// DZDownloadTrack downloads trackID to a file in destDir and returns JSON
+// {"path":"..."} on success or {"error":"..."} on failure. Pass "" for destDir
+// to use the shared default folder (DZDownloadDir). The filename is derived from
+// the track title/artist and the resolved format's extension. Blocking — GUIs
+// should call it off the UI thread (as they already do for DZPlay). The result
+// string must be released with DZFree. Downloads are premium-only; a free
+// account gets {"error":"downloads require a paid Deezer plan"}.
+//
+//export DZDownloadTrack
+func DZDownloadTrack(trackID, destDir *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	dir := C.GoString(destDir)
+	if dir == "" {
+		dir = config.LoadDownloadDir()
+	}
+	path, err := c.SaveTrack(context.Background(), C.GoString(trackID), dir)
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	return jsonStr(map[string]string{"path": path}, nil)
+}
+
+// DZDownloadDir returns the current download folder (env/config/default). The
+// result must be released with DZFree.
+//
+//export DZDownloadDir
+func DZDownloadDir() *C.char { return C.CString(config.LoadDownloadDir()) }
+
+// DZSetDownloadDir persists the download folder ("" resets to the default) and
+// returns 1 on success, 0 on failure.
+//
+//export DZSetDownloadDir
+func DZSetDownloadDir(path *C.char) C.int { return ok(config.SaveDownloadDir(C.GoString(path))) }
+
+// DZIsPreview returns 1 when the current track is Deezer's 30-second preview
+// (the free-account fallback) rather than the full stream, else 0.
+//
+//export DZIsPreview
+func DZIsPreview() C.int {
+	mu.Lock()
+	p := player
+	mu.Unlock()
+	if p != nil && p.IsPreview() {
+		return 1
+	}
+	return 0
+}
+
+// DZSetAdsDisabled turns Deezer Free's play-reporting/ads off (1) or on (0) and
+// persists the choice. FREE accounts only: reporting plays (log.listen) credits
+// artists and drives the ad schedule; disabling it is ad-free but stops
+// reporting — the user's at-own-risk choice. Paid accounts are unaffected.
+//
+//export DZSetAdsDisabled
+func DZSetAdsDisabled(disabled C.int) C.int {
+	off := disabled != 0
+	if c := curClient(); c != nil {
+		c.SetAdsDisabled(off)
+	}
+	return ok(config.SaveAdsDisabled(off))
+}
+
+// DZAdsDisabled returns 1 when the free-tier ads/play-reporting opt-out is on.
+//
+//export DZAdsDisabled
+func DZAdsDisabled() C.int {
+	if c := curClient(); c != nil {
+		if c.AdsDisabled() {
+			return 1
+		}
+		return 0
+	}
+	if config.LoadAdsDisabled() {
+		return 1
+	}
+	return 0
 }
 
 // ---- account / browse / lyrics / loudness (added for the v0.3 roadmap) ----

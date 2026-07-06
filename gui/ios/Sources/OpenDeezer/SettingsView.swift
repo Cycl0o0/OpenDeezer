@@ -37,11 +37,21 @@ struct SettingsView: View {
     @State private var qrImage: UIImage?
     @State private var connectInfo: ConnectHostInfo?
 
+    // Engine-owned, loaded on appear: the shared download folder and the
+    // Free-tier ads / play-reporting opt-out (shown only for a Free account).
+    @State private var downloadFolder = ""
+    @State private var adsDisabled = false
+
     private let qualities: [(Int, LocalizedStringKey, String)] = [
         (0, "Normal", "MP3 · 128 kbps"),
         (1, "High", "MP3 · 320 kbps"),
         (2, "HiFi", "HiFi · FLAC"),
     ]
+
+    /// A paid plan (Premium / Family / HiFi). Downloads and the HiFi/HQ tiers
+    /// need one; Free streams full-length at standard quality (128 kbps) and is
+    /// the only tier that sees the ads opt-out.
+    private var isPremium: Bool { session.account?.premium ?? false }
 
     var body: some View {
         NavigationStack {
@@ -52,6 +62,13 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(account.name).font(.headline)
                                 Text(account.offer).font(.caption).foregroundStyle(.secondary)
+                                // Free accounts stream full-length at standard
+                                // quality (128 kbps); HiFi/HQ need a paid plan.
+                                if !isPremium {
+                                    Text("Free account · standard quality (128 kbps)")
+                                        .font(.caption2)
+                                        .foregroundStyle(Palette.accent)
+                                }
                             }
                             Spacer()
                         }
@@ -96,6 +113,39 @@ struct SettingsView: View {
                             .onChange(of: crossfadeMs) { _, value in AudioPrefs.crossfadeMs = Int(value); Engine.setCrossfadeMS(Int(value)) }
                     }
                     NavigationLink("Equalizer") { EqualizerView() }
+                }
+
+                // Downloads — premium-only, so shown only for a paid plan. The
+                // folder is engine-owned; iOS sandboxing keeps it inside the app,
+                // so it's read-only here (no picker) with the caveat spelled out.
+                if isPremium {
+                    Section {
+                        Text(downloadFolder.isEmpty ? String(localized: "Default folder") : downloadFolder)
+                            .font(.footnote.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    } header: {
+                        Text("Downloads")
+                    } footer: {
+                        Text("On iOS, tracks are saved inside OpenDeezer and available in the Files app. Choosing another folder isn't supported.")
+                    }
+                }
+
+                // Disable ads — Deezer Free only (paid plans carry no ads). The
+                // opt-out is engine-owned; loaded on appear, applied immediately.
+                if !isPremium {
+                    Section {
+                        Toggle(isOn: $adsDisabled) {
+                            Label("Disable ads", systemImage: "megaphone.slash")
+                        }
+                        .onChange(of: adsDisabled) { _, value in
+                            Task { await Engine.setAdsDisabled(value) }
+                        }
+                    } footer: {
+                        Text("Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.")
+                    }
                 }
 
                 Section {
@@ -204,6 +254,11 @@ struct SettingsView: View {
             }
             .task {
                 syncSleep()
+                if isPremium {
+                    downloadFolder = await Engine.downloadDir()
+                } else {
+                    adsDisabled = await Engine.adsDisabled()
+                }
                 await refreshRemote()
                 await refreshConnect()
             }

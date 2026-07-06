@@ -16,7 +16,7 @@ import fr.cyclooo.opendeezer.player.PlaybackService
 import fr.cyclooo.opendeezer.player.PlayerController
 import kotlinx.coroutines.launch
 
-enum class AuthStage { LOADING, NEEDS_LOGIN, NEEDS_PREMIUM, NO_INTERNET, READY }
+enum class AuthStage { LOADING, NEEDS_LOGIN, NO_INTERNET, READY }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -122,9 +122,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     loginError = getApplication<Application>().getString(R.string.login_error_account)
                     stage = AuthStage.NEEDS_LOGIN
                 }
-                !acct.premium -> stage = AuthStage.NEEDS_PREMIUM
                 else -> {
                     lastFailedArl = null
+                    // Free and premium accounts both reach the app — a Free account
+                    // streams full tracks at 128 kbps (not 30s previews). Only the
+                    // per-track Download action is premium-only, so record premium
+                    // before READY so every screen's TrackRow reads a stable value.
+                    player.premium = acct.premium
                     stage = AuthStage.READY
                     player.start()
                     applyRemoteHosts()

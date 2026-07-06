@@ -121,6 +121,7 @@ private:
     void addTrackToPlaylist(const Track &t);              // picker -> DZAddToPlaylist
     void showAddToPlaylistPicker(const Track &t, const QVector<Playlist> &ps);
     void removeFromCurrentPlaylist(const Track &t, int row);
+    void download(const QString &id);                     // DZDownloadTrack (premium-only)
     void createPlaylist();                                // DZCreatePlaylist
     void renamePlaylist(const Playlist &p);               // DZRenamePlaylist
     void deletePlaylist(const Playlist &p);               // DZDeletePlaylist (confirm)
@@ -200,9 +201,6 @@ private:
     void showUpdateBanner(const QString &latest, const QString &url,
                           const QString &notes);
     void applyAccount(const QByteArray &json);
-    // Free (non-Premium) accounts can't stream on-demand — replace the whole UI
-    // with a blocking "Premium required" page (only Quit remains reachable).
-    void showFreeAccountBlock();
     // Login failed because the machine is offline — swap the whole UI to a
     // blocking "No Internet" page whose Retry button re-runs startLogin().
     void showNoInternet();
@@ -215,12 +213,10 @@ private:
     QString settingsPath() const;
 
     // ---- widgets ----
-    // Top-level stack: the full app UI (index 0) plus two lazily-appended gate
-    // pages — the Free-account block and the No-Internet retry page. Both are
-    // selected by pointer (setCurrentWidget), so their exact indices don't matter.
+    // Top-level stack: the full app UI (index 0) plus the lazily-appended
+    // No-Internet retry page, selected by pointer (setCurrentWidget) so its exact
+    // index doesn't matter.
     QStackedWidget*m_rootStack      = nullptr;
-    QWidget       *m_blockPage      = nullptr;   // "Premium required" gate page
-    QLabel        *m_blockBody      = nullptr;   // its body line (carries the offer)
     QWidget       *m_noInternetPage = nullptr;   // "No Internet" retry page
     QListWidget   *m_sidebar       = nullptr;
     QStackedWidget*m_stack         = nullptr;
@@ -272,6 +268,7 @@ private:
     QLabel      *m_nowPlaying = nullptr, *m_cover = nullptr,
                 *m_posLabel = nullptr, *m_durLabel = nullptr;
     QLabel      *m_explicitBadge = nullptr;  // styled "E" tag shown for explicit tracks
+    QLabel      *m_previewBadge  = nullptr;  // styled "Preview" tag while DZIsPreview()==1
     QTimer      *m_poll = nullptr;
 
     // ---- data ----
@@ -354,8 +351,9 @@ private:
     QString m_accountName, m_accountOffer;      // shown in About / status bar
     bool    m_canHq       = false;              // plan allows MP3 320
     bool    m_canHifi     = false;              // plan allows FLAC
-    bool    m_premium     = false;              // paid plan that can stream on-demand
+    bool    m_premium     = false;              // paid plan (gates Download; drives previews)
     bool    m_haveAccount = false;              // DZAccountJSON parsed OK
+    QLabel *m_freeHint    = nullptr;            // status-bar "Free · standard quality (128 kbps)" hint
     bool             m_forceQuit   = false;     // set by an explicit Quit
     bool             m_trayHintShown = false;   // first hide-to-tray notice
 

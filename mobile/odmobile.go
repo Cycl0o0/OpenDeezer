@@ -10,6 +10,7 @@
 package odmobile
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -188,6 +189,7 @@ func Init(arl string) bool {
 		return false
 	}
 	atomic.StoreInt32(&lastLoginKind, 0)
+	c.SetAdsDisabled(config.LoadAdsDisabled()) // free-tier ads opt-out (persisted)
 	mu.Lock()
 	client = c
 	mu.Unlock()
@@ -580,6 +582,9 @@ func Play(trackID string, durationMS int64) bool {
 	}
 	gen := setCurrentTrack(deezer.Track{ID: trackID, DurationMS: durationMS})
 	go fetchTrackMeta(c, trackID, gen)
+	// Report the play (log.listen) like the web player — free-tier ad accounting +
+	// artist play-counts depend on it. Best-effort, off the hot path.
+	go func() { _ = c.NowPlaying(trackID) }()
 	return true
 }
 
@@ -587,6 +592,61 @@ func fetchTrackMeta(c *deezer.Client, id string, gen uint64) {
 	if t, err := c.Track(id); err == nil && t.ID != "" {
 		setCurrentTrackAt(gen, t)
 	}
+}
+
+// ---- downloads (premium-only, full track to disk) ----
+
+// DownloadTrack downloads trackID to a file in destDir and returns JSON
+// {"path":"..."} on success or {"error":"..."} on failure. Pass "" for destDir
+// to use the shared default folder (DownloadDir). Blocking — call it off the UI
+// thread. Downloads are premium-only; a free account gets an error.
+func DownloadTrack(trackID, destDir string) string {
+	c := curClient()
+	if c == nil {
+		return jstr(nil, fmt.Errorf("not logged in"))
+	}
+	if destDir == "" {
+		destDir = config.LoadDownloadDir()
+	}
+	path, err := c.SaveTrack(context.Background(), trackID, destDir)
+	if err != nil {
+		return jstr(nil, err)
+	}
+	return jstr(map[string]string{"path": path}, nil)
+}
+
+// DownloadDir returns the current download folder (env/config/default).
+func DownloadDir() string { return config.LoadDownloadDir() }
+
+// SetDownloadDir persists the download folder ("" resets to the default).
+func SetDownloadDir(path string) bool { return ok(config.SaveDownloadDir(path)) }
+
+// IsPreview reports whether the current track is Deezer's 30-second preview (the
+// free-account fallback) rather than the full stream.
+func IsPreview() bool {
+	if p := curPlayer(); p != nil {
+		return p.IsPreview()
+	}
+	return false
+}
+
+// SetAdsDisabled turns Deezer Free's play-reporting/ads off/on and persists it.
+// FREE accounts only: reporting plays (log.listen) credits artists and drives the
+// ad schedule; disabling it is ad-free but stops reporting — the user's
+// at-own-risk choice. Paid accounts are unaffected.
+func SetAdsDisabled(disabled bool) bool {
+	if c := curClient(); c != nil {
+		c.SetAdsDisabled(disabled)
+	}
+	return ok(config.SaveAdsDisabled(disabled))
+}
+
+// AdsDisabled reports whether the free-tier ads/play-reporting opt-out is on.
+func AdsDisabled() bool {
+	if c := curClient(); c != nil {
+		return c.AdsDisabled()
+	}
+	return config.LoadAdsDisabled()
 }
 
 func Pause() {

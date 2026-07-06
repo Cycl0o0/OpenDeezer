@@ -900,6 +900,46 @@
         <source>Retry</source>
         <translation>إعادة المحاولة</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1318" />
+        <source>Preview</source>
+        <translation>مقتطف</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1582" />
+        <source>Free · standard quality (128 kbps)</source>
+        <translation>مجاني · جودة قياسية (128 kbps)</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1583" />
+        <source>Deezer Free streams at standard quality (128 kbps). Upgrade for High and HiFi quality, and for downloads.</source>
+        <translation>يبثّ Deezer Free بجودة قياسية (128 kbps). قم بالترقية للحصول على جودة عالية وHiFi، وللتنزيلات.</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1959" />
+        <source>Downloads require a paid Deezer plan</source>
+        <translation>تتطلب التنزيلات اشتراك Deezer مدفوعًا</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1962" />
+        <source>Downloading…</source>
+        <translation>جارٍ التنزيل…</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1972" />
+        <source>Saved to %1</source>
+        <translation>تم الحفظ في %1</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1974" />
+        <source>Download failed</source>
+        <translation>فشل التنزيل</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="2198" />
+        <source>Requires a paid Deezer plan</source>
+        <translation>يتطلب اشتراك Deezer مدفوعًا</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1130,6 +1170,46 @@
         <location filename="../src/settingsdialog.cpp" line="592" />
         <source>Couldn't check for updates — try again later.</source>
         <translation>تعذّر التحقق من التحديثات — حاول مرة أخرى لاحقًا.</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="253" />
+        <source>Downloads</source>
+        <translation>التنزيلات</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="256" />
+        <source>Default folder</source>
+        <translation>المجلد الافتراضي</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="261" />
+        <source>Browse…</source>
+        <translation>استعراض…</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="264" />
+        <source>Choose download folder</source>
+        <translation>اختر مجلد التنزيل</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="271" />
+        <source>Download folder</source>
+        <translation>مجلد التنزيل</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="280" />
+        <source>Ads</source>
+        <translation>الإعلانات</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="282" />
+        <source>Disable ads</source>
+        <translation>تعطيل الإعلانات</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="285" />
+        <source>Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.</source>
+        <translation>يعتمد Deezer Free على الإعلانات. إنّ الإبلاغ عن مرّات استماعك — مثل التطبيق الرسمي — يدعم الفنانين ويشغّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه يوقف الإبلاغ عن مرّات استماعك، مما يحرم الفنانين من عدد مرّات الاستماع الخاص بهم ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة.</translation>
     </message>
 </context>
 </TS>

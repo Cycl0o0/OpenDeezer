@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"net"
@@ -45,7 +46,6 @@ const (
 	screenRemote      // remote-control: device picker (discovered peers)
 	screenRemoteInput // remote-control: type a peer address by hand
 	screenRemoteCtl   // remote-control: driving a connected peer
-	screenBlocked     // Free account — playback not available
 	screenWebRemote   // phone web remote: QR + pairing code
 	screenNoInternet  // transport-level connectivity loss — offer retry, don't log out
 )
@@ -95,6 +95,7 @@ type Model struct {
 	searchPodcast bool           // search screen is in podcast mode
 	episodeMode   bool           // current queue is podcast episodes (plain streams)
 	sleepStep     int            // sleep-timer cycle position (see cycleSleepTimer)
+	downloading   bool           // a track download (D key) is in flight
 
 	// GitHub release check (see updatecheck.go / internal/update). The
 	// startup check is silent unless a newer version is found; a manual
@@ -542,6 +543,13 @@ type artMsg struct {
 	img     image.Image
 }
 
+// downloadDoneMsg reports the result of a track download (D key).
+type downloadDoneMsg struct {
+	name string
+	path string
+	err  error
+}
+
 // Init kicks off login + the UI tick. The update check runs alongside them in
 // the background (see updatecheck.go) and never delays startup.
 func (m *Model) Init() tea.Cmd {
@@ -733,6 +741,27 @@ func (m *Model) streamCmd(t deezer.Track) tea.Cmd {
 			return errMsg{fmt.Errorf("resolve %q: %w", t.Name, err)}
 		}
 		return streamReadyMsg{plan: plan, track: t}
+	}
+}
+
+// nowPlayingCmd reports a track play to Deezer (gw log.listen) off the update
+// loop, so the free tier's ad accounting and artist play-counts work like the
+// official client. A no-op when the user has disabled ads/reporting.
+func (m *Model) nowPlayingCmd(id string) tea.Cmd {
+	return func() tea.Msg {
+		_ = m.client.NowPlaying(id)
+		return nil
+	}
+}
+
+// downloadCmd saves a full track to the shared download folder off the update
+// loop (D key). Downloads are premium-only; the client enforces the gate
+// (deezer.ErrPremiumRequired), so a free account gets a clear failure message.
+func (m *Model) downloadCmd(t deezer.Track) tea.Cmd {
+	id, name := t.ID, t.Name
+	return func() tea.Msg {
+		path, err := m.client.SaveTrack(context.Background(), id, config.LoadDownloadDir())
+		return downloadDoneMsg{name: name, path: path, err: err}
 	}
 }
 

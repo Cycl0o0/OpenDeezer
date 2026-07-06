@@ -201,3 +201,18 @@
 "No Internet Connection" = "لا يوجد اتصال بالإنترنت";
 "Check your connection and try again." = "تحقق من اتصالك وحاول مرة أخرى.";
 "Retry" = "إعادة المحاولة";
+
+/* Downloads + preview + free tier */
+"Downloads" = "التنزيلات";
+"Where downloaded tracks are saved." = "المكان الذي تُحفظ فيه المقاطع المُنزَّلة.";
+"Default folder" = "المجلد الافتراضي";
+"Choose…" = "اختيار…";
+"Choose" = "اختيار";
+"Requires a paid Deezer plan" = "يتطلب اشتراك Deezer مدفوعًا";
+"Downloading “%@”…" = "جارٍ تنزيل «%@»…";
+"Saved “%@”" = "تم حفظ «%@»";
+"Download failed." = "فشل التنزيل.";
+"Preview" = "معاينة";
+"Free account · standard quality (128 kbps)" = "حساب مجاني · جودة عادية (128 kbps)";
+"Disable ads" = "تعطيل الإعلانات";
+"Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "‏Deezer Free مدعوم بالإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي — يمنح الفنانين حقهم ويُشغّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه يوقف الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات تشغيلهم ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة.";

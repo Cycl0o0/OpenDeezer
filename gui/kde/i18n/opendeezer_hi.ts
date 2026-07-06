@@ -872,6 +872,46 @@
         <source>Retry</source>
         <translation>पुनः प्रयास करें</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1318" />
+        <source>Preview</source>
+        <translation>झलक</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1582" />
+        <source>Free · standard quality (128 kbps)</source>
+        <translation>मुफ़्त · मानक गुणवत्ता (128 kbps)</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1583" />
+        <source>Deezer Free streams at standard quality (128 kbps). Upgrade for High and HiFi quality, and for downloads.</source>
+        <translation>Deezer Free मानक गुणवत्ता (128 kbps) में स्ट्रीम करता है। उच्च और HiFi गुणवत्ता तथा डाउनलोड के लिए अपग्रेड करें।</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1959" />
+        <source>Downloads require a paid Deezer plan</source>
+        <translation>डाउनलोड के लिए एक सशुल्क Deezer योजना आवश्यक है</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1962" />
+        <source>Downloading…</source>
+        <translation>डाउनलोड हो रहा है…</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1972" />
+        <source>Saved to %1</source>
+        <translation>%1 में सहेजा गया</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1974" />
+        <source>Download failed</source>
+        <translation>डाउनलोड विफल</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="2198" />
+        <source>Requires a paid Deezer plan</source>
+        <translation>एक सशुल्क Deezer योजना आवश्यक है</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1102,6 +1142,46 @@
         <location filename="../src/settingsdialog.cpp" line="592" />
         <source>Couldn't check for updates — try again later.</source>
         <translation>अपडेट जाँच नहीं सके — बाद में पुनः प्रयास करें।</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="253" />
+        <source>Downloads</source>
+        <translation>डाउनलोड</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="256" />
+        <source>Default folder</source>
+        <translation>डिफ़ॉल्ट फ़ोल्डर</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="261" />
+        <source>Browse…</source>
+        <translation>ब्राउज़ करें…</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="264" />
+        <source>Choose download folder</source>
+        <translation>डाउनलोड फ़ोल्डर चुनें</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="271" />
+        <source>Download folder</source>
+        <translation>डाउनलोड फ़ोल्डर</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="280" />
+        <source>Ads</source>
+        <translation>विज्ञापन</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="282" />
+        <source>Disable ads</source>
+        <translation>विज्ञापन बंद करें</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="285" />
+        <source>Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.</source>
+        <translation>Deezer Free विज्ञापनों पर आधारित है। आपके प्ले की रिपोर्ट करना — आधिकारिक ऐप की तरह — कलाकारों को श्रेय देता है और विज्ञापनों को चलाता है। इसे बंद करने से विज्ञापन हट जाते हैं लेकिन आपके प्ले की रिपोर्ट करना रुक जाता है, जिससे कलाकारों को उनकी प्ले संख्या नहीं मिलती और Deezer की उपयोग की शर्तें टूटती हैं। इसका उपयोग अपने जोखिम पर करें।</translation>
     </message>
 </context>
 </TS>

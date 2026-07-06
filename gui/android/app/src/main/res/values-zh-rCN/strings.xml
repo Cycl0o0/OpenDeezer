@@ -209,4 +209,19 @@
     <plurals name="pauses_in_minutes">
         <item quantity="other">%1$d 分钟后暂停</item>
     </plurals>
+    <!-- Downloads / preview / free account / ads -->
+    <string name="settings_downloads">下载</string>
+    <string name="download_folder_title">下载文件夹</string>
+    <string name="download_folder_default">默认文件夹</string>
+    <string name="download_requires_premium">需要付费的 Deezer 套餐</string>
+    <string name="download_started">正在下载 %1$s…</string>
+    <string name="download_saved">已保存到 %1$s</string>
+    <string name="download_saved_generic">已下载 %1$s</string>
+    <string name="download_failed">下载失败：%1$s</string>
+    <string name="download_failed_generic">下载失败</string>
+    <string name="preview_chip">试听</string>
+    <string name="account_free_hint">免费账户 · 标准音质（128 kbps）</string>
+    <string name="settings_ads">广告</string>
+    <string name="setting_disable_ads_title">关闭广告</string>
+    <string name="setting_disable_ads_disclaimer">Deezer Free 靠广告支持。像官方应用一样上报你的播放记录，可以为艺人计入收益并支撑广告投放。关闭此项会移除广告，但会停止上报你的播放记录，使艺人无法获得播放计数，并违反 Deezer 的使用条款。请自行承担风险。</string>
 </resources>

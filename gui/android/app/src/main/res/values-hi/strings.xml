@@ -213,4 +213,19 @@
         <item quantity="one">%1$d मिनट में पॉज़ होगा</item>
         <item quantity="other">%1$d मिनट में पॉज़ होगा</item>
     </plurals>
+    <!-- Downloads / preview / free account / ads -->
+    <string name="settings_downloads">डाउनलोड</string>
+    <string name="download_folder_title">डाउनलोड फ़ोल्डर</string>
+    <string name="download_folder_default">डिफ़ॉल्ट फ़ोल्डर</string>
+    <string name="download_requires_premium">सशुल्क Deezer योजना आवश्यक है</string>
+    <string name="download_started">%1$s डाउनलोड हो रहा है…</string>
+    <string name="download_saved">%1$s में सहेजा गया</string>
+    <string name="download_saved_generic">%1$s डाउनलोड हो गया</string>
+    <string name="download_failed">डाउनलोड विफल: %1$s</string>
+    <string name="download_failed_generic">डाउनलोड विफल</string>
+    <string name="preview_chip">झलक</string>
+    <string name="account_free_hint">मुफ़्त खाता · मानक गुणवत्ता (128 kbps)</string>
+    <string name="settings_ads">विज्ञापन</string>
+    <string name="setting_disable_ads_title">विज्ञापन बंद करें</string>
+    <string name="setting_disable_ads_disclaimer">Deezer Free विज्ञापन-समर्थित है. अपने प्ले की रिपोर्ट करना — आधिकारिक ऐप की तरह — कलाकारों को श्रेय देता है और विज्ञापनों को सक्षम बनाता है. इसे बंद करने से विज्ञापन हट जाते हैं लेकिन आपके प्ले की रिपोर्टिंग रुक जाती है, जिससे कलाकार अपनी प्ले गिनती से वंचित हो जाते हैं और Deezer की उपयोग की शर्तों का उल्लंघन होता है. इसे अपने जोखिम पर उपयोग करें.</string>
 </resources>

@@ -73,6 +73,15 @@ struct SettingsView: View {
     @State private var controlAddr = ""
     @State private var controlToken = ""
 
+    // Download folder — engine-owned (single source of truth in config, not in
+    // settings.json). Loaded from Core.downloadDir() on appear; changed via the
+    // Choose… panel below. Empty means the engine's default folder.
+    @State private var downloadFolder = ""
+
+    // Free-tier ads / play-reporting opt-out — engine-owned, shown only for a
+    // Deezer Free account (premium plans have no ads). Loaded on appear.
+    @State private var adsDisabled = false
+
     // Sleep timer remaining, refreshed once a second while the sheet is open.
     // The armed mode itself lives in AppState (app.sleepMode); the engine owns
     // the countdown, so we only mirror the "12:34" display here.
@@ -307,6 +316,55 @@ struct SettingsView: View {
                 .tint(DZ.accent)
             }
 
+            // Downloads — the folder is owned by the engine (single source of
+            // truth in ~/.config/opendeezer), so we read/write it via Core and
+            // never persist a copy in settings.json. Downloads are premium-only.
+            settingsCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(L("Downloads"), systemImage: "arrow.down.circle")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                    Text(L("Where downloaded tracks are saved."))
+                        .font(.caption).foregroundStyle(DZ.textSec)
+                    HStack(spacing: 8) {
+                        Text(downloadFolder.isEmpty ? L("Default folder") : downloadFolder)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(DZ.textSec)
+                            .lineLimit(1).truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button(L("Choose…")) { chooseDownloadFolder() }
+                            .buttonStyle(.glass).tint(DZ.accent)
+                    }
+                    if !app.isPremium {
+                        Label(L("Requires a paid Deezer plan"),
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(DZ.accentMag)
+                    }
+                }
+            }
+
+            // Disable ads — Deezer Free only (premium plans carry no ads). The
+            // opt-out is engine-owned; loading on appear and applied immediately.
+            if !app.isPremium {
+                settingsCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(isOn: Binding(
+                            get: { adsDisabled },
+                            set: { on in
+                                adsDisabled = on
+                                Task.detached { Core.setAdsDisabled(on) }
+                            })) {
+                            Label(L("Disable ads"), systemImage: "megaphone.slash")
+                                .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                        }
+                        .toggleStyle(.switch)
+                        .tint(DZ.accent)
+                        Text(L("Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk."))
+                            .font(.caption).foregroundStyle(DZ.textSec)
+                    }
+                }
+            }
+
             // Background playback
             settingsCard {
                 Toggle(isOn: Binding(
@@ -438,6 +496,8 @@ struct SettingsView: View {
             loadWebRemoteInfo()
             loadControlConfig()
             loadEQState()
+            loadDownloadFolder()
+            loadAdsDisabled()
             updateSleepRemaining()
         }
         .onReceive(sleepTick) { _ in updateSleepRemaining() }
@@ -571,6 +631,42 @@ struct SettingsView: View {
         guard ms > 0 else { sleepRemaining = ""; return }
         let secs = Int(ms / 1000)
         sleepRemaining = String(format: "%d:%02d", secs / 60, secs % 60)
+    }
+
+    // MARK: downloads
+
+    // Read the engine's current download folder off the main thread.
+    private func loadDownloadFolder() {
+        Task.detached {
+            let dir = Core.downloadDir()
+            await MainActor.run { downloadFolder = dir }
+        }
+    }
+
+    // Read the engine's free-tier ads opt-out (Deezer Free only) off the main
+    // thread. Skipped for premium accounts, which never show the toggle.
+    private func loadAdsDisabled() {
+        guard !app.isPremium else { return }
+        Task.detached {
+            let on = Core.adsDisabled()
+            await MainActor.run { adsDisabled = on }
+        }
+    }
+
+    // Pick a new download folder; persist it in the engine and refresh the row.
+    private func chooseDownloadFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = L("Choose")
+        if !downloadFolder.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: downloadFolder)
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if Core.setDownloadDir(url.path) {
+            downloadFolder = Core.downloadDir()
+        }
     }
 
     private func loadWebRemoteInfo() {

@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>उस डिवाइस तक नहीं पहुँचा जा सका।</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>Premium आवश्यक है</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>आपका खाता ({0}) Premium नहीं है। deezer.com पर सदस्यता लें, फिर OpenDeezer को दोबारा शुरू करें।</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>निःशुल्क खाता · मानक गुणवत्ता (128 kbps)</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>इंटरनेट कनेक्शन नहीं है</value>
@@ -597,5 +594,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} सेकंड</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>डाउनलोड करें</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>सशुल्क Deezer योजना आवश्यक है</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>डाउनलोड फ़ोल्डर</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>ब्राउज़ करें…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>डाउनलोड पूर्ण</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>यहाँ सहेजा गया: {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>डाउनलोड विफल</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>यह ट्रैक डाउनलोड नहीं हो सका।</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>पूर्वावलोकन</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>विज्ञापन बंद करें</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह अपने प्ले की रिपोर्ट करने से कलाकारों को श्रेय मिलता है और विज्ञापन चलते हैं। इसे बंद करने से विज्ञापन हट जाते हैं लेकिन आपके प्ले की रिपोर्ट होना भी रुक जाता है, जिससे कलाकार अपनी प्ले-गिनती से वंचित रह जाते हैं और Deezer की उपयोग शर्तों का उल्लंघन होता है। अपने जोखिम पर उपयोग करें।</value>
   </data>
 </root>

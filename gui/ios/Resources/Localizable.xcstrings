@@ -1773,43 +1773,84 @@
         }
       }
     },
-    "Deezer Premium required": {
+    "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.": {
       "extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يتطلب Deezer Premium"
+            "value": "‏Deezer Free مدعوم بالإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي — يمنح الفنانين حقهم ويُشغّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه يوقف الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات تشغيلهم ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Se requiere Deezer Premium"
+            "value": "Deezer Free se financia con anuncios. Informar de tus reproducciones —como hace la app oficial— acredita a los artistas e impulsa los anuncios. Desactivar esto elimina los anuncios, pero deja de informar de tus reproducciones, lo que priva a los artistas de su recuento de reproducciones e incumple las condiciones de uso de Deezer. Úsalo bajo tu propia responsabilidad."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deezer Premium requis"
+            "value": "Deezer Free est financé par la publicité. Signaler vos écoutes — comme l'app officielle — crédite les artistes et alimente les publicités. Désactiver cette option supprime les publicités mais cesse de signaler vos écoutes, ce qui prive les artistes de leur nombre d'écoutes et enfreint les conditions d'utilisation de Deezer. À utiliser à vos propres risques."
           }
         },
         "hi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deezer Premium आवश्यक है"
+            "value": "Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह आपके प्ले की रिपोर्टिंग कलाकारों को श्रेय देती है और विज्ञापनों को सक्षम बनाती है। इसे बंद करने पर विज्ञापन हट जाते हैं, लेकिन आपके प्ले की रिपोर्टिंग भी रुक जाती है, जिससे कलाकारों को उनकी प्ले गिनती नहीं मिलती और Deezer की उपयोग शर्तों का उल्लंघन होता है। इसका उपयोग अपने जोखिम पर करें।"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Требуется Deezer Premium"
+            "value": "Deezer Free поддерживается рекламой. Передача данных о прослушиваниях — как в официальном приложении — засчитывает их артистам и обеспечивает работу рекламы. Отключение убирает рекламу, но прекращает передачу данных о прослушиваниях, из-за чего артисты лишаются засчитанных прослушиваний, а также нарушаются условия использования Deezer. Используйте на свой страх и риск."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 Deezer Premium"
+            "value": "Deezer Free 依靠广告支持。像官方应用一样上报你的播放记录，可为艺术家计入播放量并支撑广告投放。关闭此项会移除广告，但同时停止上报你的播放记录，从而使艺术家失去应得的播放量，并违反 Deezer 的使用条款。请自行承担风险。"
+          }
+        }
+      }
+    },
+    "Default folder": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المجلد الافتراضي"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carpeta predeterminada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dossier par défaut"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "डिफ़ॉल्ट फ़ोल्डर"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папка по умолчанию"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认文件夹"
           }
         }
       }
@@ -1978,6 +2019,47 @@
         }
       }
     },
+    "Disable ads": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعطيل الإعلانات"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desactivar anuncios"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactiver les publicités"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "विज्ञापन बंद करें"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отключить рекламу"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭广告"
+          }
+        }
+      }
+    },
     "Discoverable as": {
       "extractionState": "manual",
       "localizations": {
@@ -2138,6 +2220,129 @@
           "stringUnit": {
             "state": "translated",
             "value": "下载 %@"
+          }
+        }
+      }
+    },
+    "Download failed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فشل التنزيل."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al descargar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec du téléchargement."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "डाउनलोड विफल रहा।"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось загрузить."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载失败。"
+          }
+        }
+      }
+    },
+    "Downloading “%@”…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ تنزيل «%@»…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargando «%@»…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement de « %@ »…"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” डाउनलोड हो रहा है…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка «%@»…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载“%@”…"
+          }
+        }
+      }
+    },
+    "Downloads": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التنزيلات"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargements"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "डाउनलोड"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузки"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载"
           }
         }
       }
@@ -2593,6 +2798,47 @@
         }
       }
     },
+    "Free account · standard quality (128 kbps)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حساب مجاني · جودة عادية (128 kbps)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta gratuita · calidad estándar (128 kbps)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte gratuit · qualité standard (128 kbps)"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "निःशुल्क खाता · मानक गुणवत्ता (128 kbps)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Бесплатный аккаунт · стандартное качество (128 kbps)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费账户 · 标准音质（128 kbps）"
+          }
+        }
+      }
+    },
     "Gapless Playback": {
       "extractionState": "manual",
       "localizations": {
@@ -2753,47 +2999,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "早上好"
-          }
-        }
-      }
-    },
-    "Hi %@ — your account is on Deezer Free.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مرحبًا %@ — حسابك على Deezer Free."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hola, %@: tu cuenta es Deezer Free."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bonjour %@ — votre compte est sur Deezer Free."
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "नमस्ते %@ — आपका खाता Deezer Free पर है।"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Привет, %@! У вас аккаунт Deezer Free."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你好，%@——你的账户是 Deezer Free。"
           }
         }
       }
@@ -3245,47 +3450,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 Deezer 登录"
-          }
-        }
-      }
-    },
-    "Log out": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تسجيل الخروج"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cerrar sesión"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Se déconnecter"
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "साइन आउट करें"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Выйти из аккаунта"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出登录"
           }
         }
       }
@@ -3864,6 +4028,47 @@
         }
       }
     },
+    "On iOS, tracks are saved inside OpenDeezer and available in the Files app. Choosing another folder isn't supported.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "على iOS، تُحفظ المقاطع داخل OpenDeezer وتتوفر في تطبيق «الملفات». اختيار مجلد آخر غير مدعوم."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En iOS, las canciones se guardan dentro de OpenDeezer y están disponibles en la app Archivos. No se admite elegir otra carpeta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur iOS, les titres sont enregistrés dans OpenDeezer et disponibles dans l'app Fichiers. Choisir un autre dossier n'est pas pris en charge."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS पर, ट्रैक OpenDeezer के अंदर सहेजे जाते हैं और Files ऐप में उपलब्ध होते हैं। दूसरा फ़ोल्डर चुनना समर्थित नहीं है।"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На iOS треки сохраняются внутри OpenDeezer и доступны в приложении «Файлы». Выбор другой папки не поддерживается."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 iOS 上，曲目保存在 OpenDeezer 内，并可在“文件” App 中查看。不支持选择其他文件夹。"
+          }
+        }
+      }
+    },
     "OpenDeezer %@ available": {
       "extractionState": "manual",
       "localizations": {
@@ -3942,47 +4147,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "OpenDeezer Connect"
-          }
-        }
-      }
-    },
-    "OpenDeezer streams full tracks with your Deezer account, which requires a paid plan (Premium, Family or HiFi).": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يبث OpenDeezer الأغاني كاملة عبر حساب Deezer الخاص بك، ما يتطلب خطة مدفوعة (Premium أو Family أو HiFi)."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenDeezer reproduce canciones completas con tu cuenta de Deezer, lo que requiere un plan de pago (Premium, Family o HiFi)."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenDeezer diffuse les titres complets avec votre compte Deezer, ce qui nécessite un abonnement payant (Premium, Family ou HiFi)."
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenDeezer आपके Deezer खाते से पूरे ट्रैक स्ट्रीम करता है, जिसके लिए सशुल्क प्लान (Premium, Family या HiFi) आवश्यक है।"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenDeezer воспроизводит полные треки через ваш аккаунт Deezer — для этого нужен платный тариф (Premium, Family или HiFi)."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenDeezer 使用你的 Deezer 账户播放完整歌曲，这需要付费方案（Premium、Family 或 HiFi）。"
           }
         }
       }
@@ -4561,6 +4725,47 @@
         }
       }
     },
+    "Preview": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "معاينة"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vista previa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extrait"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "झलक"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фрагмент"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试听"
+          }
+        }
+      }
+    },
     "Remove": {
       "extractionState": "manual",
       "localizations": {
@@ -4725,6 +4930,47 @@
         }
       }
     },
+    "Requires a paid Deezer plan": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتطلب اشتراك Deezer مدفوعًا"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requiere un plan de pago de Deezer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessite un abonnement Deezer payant"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "सशुल्क Deezer प्लान आवश्यक है"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требуется платная подписка Deezer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要付费的 Deezer 套餐"
+          }
+        }
+      }
+    },
     "Retry": {
       "extractionState": "manual",
       "localizations": {
@@ -4844,6 +5090,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存"
+          }
+        }
+      }
+    },
+    "Saved to %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم الحفظ في %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardado en %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré dans %@"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ में सहेजा गया"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранено в %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存到 %@"
           }
         }
       }

@@ -4,6 +4,42 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0]
+
+### Added
+- **Deezer Free accounts are now supported.** Logging in with a free (non-paid)
+  Deezer account no longer blocks any client. A free account streams the **full
+  library at 128 kbps, ad-supported** — exactly what Deezer's own web player does
+  (`get_url` serves the full BF_CBC_STRIPE track at MP3_128 for free accounts).
+  The engine requests only entitled formats (128/64/misc for free, adding
+  320/FLAC for paid). Premium/HiFi are unaffected. The old "Premium required"
+  block screen is gone from every client (TUI, macOS, GNOME, KDE, Windows,
+  Android). If a specific track has no full-length source for the account,
+  playback falls back to Deezer's 30-second preview (`StreamPlan.Preview`, marked
+  in the UI) — the exception, not the rule.
+- **Free-tier ads / play reporting, with an opt-out.** Like the official free
+  tier, OpenDeezer reports each play (`log.listen`) and reads the audio-ad
+  cadence (`deezer.adConfig`) so plays are counted (crediting artists) and ads
+  are driven server-side. Free-account settings on every client expose an
+  **at-your-own-risk "Disable ads" toggle** (stops play reporting — ad-free but
+  denies artists their play count and breaks Deezer's terms), with a disclaimer.
+  Persisted via `$OPENDEEZER_DISABLE_ADS` / `ads-disabled.txt`; engine API
+  `Client.NowPlaying`/`SetAdsDisabled`; exports `DZSetAdsDisabled`/`DZAdsDisabled`
+  (+ gomobile mirrors). (The audio ad itself is served by a third-party ad
+  network and is not fetched/played; the schedule hook is in place for the
+  future.)
+- **Download tracks to disk, on every client.** Save the current or selected
+  track as a decrypted MP3/FLAC — TUI key `D`, and a "Download" action in the
+  track menu of the macOS, GNOME, KDE, Windows and Android GUIs. The download
+  folder is configurable and shared across clients (`$OPENDEEZER_DOWNLOAD_DIR` /
+  `~/.config/opendeezer/download-dir.txt`, default `~/Music/OpenDeezer`).
+  Downloads require a paid plan (a free account has no full-length source to
+  save) and are refused for preview-only tracks. New engine API
+  `Client.SaveTrack`, `internal/deezer.DownloadTrack`; exports
+  `DZDownloadTrack`/`DZDownloadDir`/`DZSetDownloadDir`/`DZIsPreview` (corelib) and
+  `DownloadTrack`/`DownloadDir`/`SetDownloadDir`/`IsPreview` (gomobile); public
+  SDK gains `Client.SaveTrack`.
+
 ## [1.8.3]
 
 ### Changed

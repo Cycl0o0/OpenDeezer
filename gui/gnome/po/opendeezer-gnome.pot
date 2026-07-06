@@ -882,6 +882,90 @@ msgstr ""
 msgid "Download"
 msgstr ""
 
+#: src/main.c:1806
+msgid "Downloads"
+msgstr ""
+
+#: src/main.c:1807
+msgid "Save tracks to this folder (requires Deezer Premium)"
+msgstr ""
+
+#: src/main.c:1811
+msgid "Download folder"
+msgstr ""
+
+#: src/main.c:1799
+msgid "Download folder updated"
+msgstr ""
+
+#: src/main.c:1800
+msgid "Couldn't use that download folder"
+msgstr ""
+
+#: src/main.c:2427
+msgid "Downloads require Deezer Premium"
+msgstr ""
+
+#: src/main.c:2429
+msgid "Downloading…"
+msgstr ""
+
+#: src/main.c:2357
+#, c-format
+msgid "Saved “%s” to %s"
+msgstr ""
+
+#: src/main.c:2359
+#, c-format
+msgid "Saved to %s"
+msgstr ""
+
+#: src/main.c:2361
+msgid "Download complete"
+msgstr ""
+
+#: src/main.c:2363
+#, c-format
+msgid "Download failed: %s"
+msgstr ""
+
+#: src/main.c:2364
+msgid "Couldn't download that track"
+msgstr ""
+
+#: src/main.c:5203
+msgid "Free account · standard quality (128 kbps)"
+msgstr ""
+
+#: src/main.c:1877
+#, c-format
+msgid "%s · Free · standard quality (128 kbps)"
+msgstr ""
+
+#: src/main.c:5662
+msgid "PREVIEW"
+msgstr ""
+
+#: src/main.c:5665
+msgid "Preview only — a 30-second clip"
+msgstr ""
+
+#: src/main.c:1836
+msgid "Ads"
+msgstr ""
+
+#: src/main.c:1839
+msgid "Disable ads"
+msgstr ""
+
+#: src/main.c:1842
+msgid ""
+"Deezer Free is ad-supported. Reporting your plays — like the official app — "
+"credits artists and drives the ads. Disabling this removes ads but stops "
+"reporting your plays, which denies artists their play count and breaks "
+"Deezer's terms of use. Use at your own risk."
+msgstr ""
+
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
 msgstr ""

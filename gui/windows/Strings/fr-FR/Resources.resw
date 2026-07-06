@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>Cet appareil est injoignable.</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>Premium requis</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>Votre compte ({0}) n'est pas Premium. Abonnez-vous sur deezer.com, puis redémarrez OpenDeezer.</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>Compte gratuit · qualité standard (128 kbps)</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>Pas de connexion Internet</value>
@@ -597,5 +594,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} secondes</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>Télécharger</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>Nécessite un abonnement Deezer payant</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>Dossier de téléchargement</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>Parcourir…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>Téléchargement terminé</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>Enregistré dans {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>Échec du téléchargement</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>Impossible de télécharger le titre.</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>Extrait</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>Désactiver les publicités</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>Deezer Free est financé par la publicité. Signaler vos écoutes — comme l'application officielle — crédite les artistes et génère les publicités. Désactiver cette option supprime les publicités mais cesse de signaler vos écoutes, ce qui prive les artistes de leur nombre d'écoutes et enfreint les conditions d'utilisation de Deezer. À utiliser à vos propres risques.</value>
   </data>
 </root>

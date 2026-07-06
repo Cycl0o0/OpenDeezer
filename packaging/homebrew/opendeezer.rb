@@ -5,9 +5,9 @@
 # them as SHA256SUMS.txt). Place this in a tap, e.g. Cycl0o0/homebrew-tap, then:
 #   brew install Cycl0o0/tap/opendeezer
 class Opendeezer < Formula
-  desc "Terminal Deezer client — browse and stream with your Premium ARL"
+  desc "Terminal Deezer client — browse, stream (Free or HiFi) and download with your ARL"
   homepage "https://github.com/Cycl0o0/OpenDeezer"
-  version "1.8.3"
+  version "2.0.0"
   license "AGPL-3.0-or-later"
 
   on_macos do

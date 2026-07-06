@@ -221,4 +221,19 @@
         <item quantity="many">Пауза через %1$d минут</item>
         <item quantity="other">Пауза через %1$d минуты</item>
     </plurals>
+    <!-- Downloads / preview / free account / ads -->
+    <string name="settings_downloads">Загрузки</string>
+    <string name="download_folder_title">Папка загрузок</string>
+    <string name="download_folder_default">Папка по умолчанию</string>
+    <string name="download_requires_premium">Требуется платная подписка Deezer</string>
+    <string name="download_started">Загрузка %1$s…</string>
+    <string name="download_saved">Сохранено в %1$s</string>
+    <string name="download_saved_generic">%1$s загружено</string>
+    <string name="download_failed">Не удалось загрузить: %1$s</string>
+    <string name="download_failed_generic">Не удалось загрузить</string>
+    <string name="preview_chip">Фрагмент</string>
+    <string name="account_free_hint">Бесплатный аккаунт · стандартное качество (128 kbps)</string>
+    <string name="settings_ads">Реклама</string>
+    <string name="setting_disable_ads_title">Отключить рекламу</string>
+    <string name="setting_disable_ads_disclaimer">Deezer Free существует за счёт рекламы. Передача данных о прослушиваниях — как в официальном приложении — вознаграждает исполнителей и поддерживает показ рекламы. Отключение этой функции убирает рекламу, но прекращает передачу данных о прослушиваниях, лишая исполнителей учёта их прослушиваний и нарушая условия использования Deezer. Используйте на свой страх и риск.</string>
 </resources>

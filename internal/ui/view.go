@@ -49,33 +49,12 @@ func (m *Model) View() string {
 		body = m.remoteCtlView()
 	case screenWebRemote:
 		body = m.webRemoteView()
-	case screenBlocked:
-		return m.blockedView() // full screen, no playback footer
 	case screenNoInternet:
 		return m.noInternetView() // full screen, no playback footer
 	default:
 		body = m.list.View()
 	}
 	return body + "\n" + m.footer()
-}
-
-// blockedView is shown for Free accounts: OpenDeezer streams on-demand, which a
-// Deezer Free plan can't do, so the app is gated behind this message.
-func (m *Model) blockedView() string {
-	lines := []string{
-		"",
-		accent.Render("OpenDeezer"),
-		"",
-		statusSty.Render(i18n.T("Premium required.")),
-		"",
-		i18n.T("Streaming needs a Deezer Premium plan."),
-		dim.Render(i18n.Tf("Your account: %s", m.acct.Offer)),
-		"",
-		dim.Render(i18n.T("Subscribe at deezer.com, then restart OpenDeezer.")),
-		"",
-		dim.Render(i18n.T("q to quit")),
-	}
-	return padTo(lines, max(1, m.height))
 }
 
 // noInternetView is shown when a login or browse call fails at the transport
@@ -168,6 +147,9 @@ func (m *Model) nowPlayingView() string {
 		if f := deezer.FormatLabel(m.player.Format()); f != "" {
 			meta = append(meta, dim.Render(i18n.Tf("Output: %s", f)))
 		}
+		if m.player.IsPreview() {
+			meta = append(meta, dim.Render(i18n.T("Preview · 30-second clip (free account)")))
+		}
 	} else {
 		meta = []string{dim.Render(i18n.T("Nothing playing."))}
 	}
@@ -217,6 +199,9 @@ func (m *Model) footer() string {
 			icon, accent.Render(t.Name), dim.Render("· "+t.ArtistLine()))
 		if f := deezer.FormatLabel(m.player.Format()); f != "" {
 			now += dim.Render("  [" + f + "]")
+		}
+		if m.player.IsPreview() {
+			now += dim.Render("  " + i18n.T("· preview"))
 		}
 	} else if e := m.player.LastError(); e != "" {
 		now = dim.Render("⏹ " + i18n.Tf("stopped — %s", e))
@@ -371,6 +356,8 @@ func (m *Model) helpView() string {
 		{"space", "play / pause"},
 		{"n / p", "next / previous track"},
 		{"f", "like the current track"},
+		{"D", "download the selected track (paid plans)"},
+		{"A", "toggle ads / play-reporting (free accounts)"},
 		{"← / →", "seek −10s / +10s"},
 		{"+ / -", "volume up / down"},
 		{"z", "toggle shuffle"},

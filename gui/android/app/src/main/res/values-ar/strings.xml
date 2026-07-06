@@ -229,4 +229,19 @@
         <item quantity="many">يتوقف بعد %1$d دقيقة</item>
         <item quantity="other">يتوقف بعد %1$d دقيقة</item>
     </plurals>
+    <!-- Downloads / preview / free account / ads -->
+    <string name="settings_downloads">التنزيلات</string>
+    <string name="download_folder_title">مجلد التنزيل</string>
+    <string name="download_folder_default">المجلد الافتراضي</string>
+    <string name="download_requires_premium">يتطلب خطة Deezer مدفوعة</string>
+    <string name="download_started">جارٍ تنزيل %1$s…</string>
+    <string name="download_saved">تم الحفظ في %1$s</string>
+    <string name="download_saved_generic">تم تنزيل %1$s</string>
+    <string name="download_failed">فشل التنزيل: %1$s</string>
+    <string name="download_failed_generic">فشل التنزيل</string>
+    <string name="preview_chip">معاينة</string>
+    <string name="account_free_hint">حساب مجاني · جودة قياسية (128 kbps)</string>
+    <string name="settings_ads">الإعلانات</string>
+    <string name="setting_disable_ads_title">تعطيل الإعلانات</string>
+    <string name="setting_disable_ads_disclaimer">Deezer Free مدعوم بالإعلانات. الإبلاغ عن عمليات الاستماع — مثل التطبيق الرسمي — يكافئ الفنانين ويشغّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه يوقف الإبلاغ عن عمليات الاستماع، مما يحرم الفنانين من عدد مرات الاستماع ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة.</string>
 </resources>

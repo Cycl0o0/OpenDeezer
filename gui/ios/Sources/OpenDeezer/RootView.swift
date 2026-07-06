@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Top-level state machine: launch spinner -> login -> premium gate -> app.
+/// Top-level state machine: launch spinner -> login -> app.
 struct RootView: View {
     @StateObject private var session = SessionStore.shared
     @StateObject private var player = PlayerController.shared
     @StateObject private var library = LibraryStore.shared
     @StateObject private var updates = UpdateStore.shared
+    @StateObject private var downloads = DownloadStore.shared
 
     var body: some View {
         Group {
@@ -17,8 +18,6 @@ struct RootView: View {
                 LoginView()
             case .noInternet:
                 NoInternetView()
-            case .gated:
-                PremiumGateView()
             case .ready:
                 MainTabView()
             }
@@ -27,6 +26,7 @@ struct RootView: View {
         .environmentObject(player)
         .environmentObject(library)
         .environmentObject(updates)
+        .environmentObject(downloads)
         .tint(Palette.accent)
         .animation(.easeInOut, value: session.phase)
     }

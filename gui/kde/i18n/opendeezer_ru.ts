@@ -879,6 +879,46 @@
         <source>Retry</source>
         <translation>Повторить</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1318" />
+        <source>Preview</source>
+        <translation>Фрагмент</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1582" />
+        <source>Free · standard quality (128 kbps)</source>
+        <translation>Бесплатно · стандартное качество (128 kbps)</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1583" />
+        <source>Deezer Free streams at standard quality (128 kbps). Upgrade for High and HiFi quality, and for downloads.</source>
+        <translation>Deezer Free воспроизводит в стандартном качестве (128 kbps). Оформите платную подписку для качества Высокое и HiFi, а также для загрузок.</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1959" />
+        <source>Downloads require a paid Deezer plan</source>
+        <translation>Для загрузок требуется платная подписка Deezer</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1962" />
+        <source>Downloading…</source>
+        <translation>Скачивание…</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1972" />
+        <source>Saved to %1</source>
+        <translation>Сохранено в %1</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1974" />
+        <source>Download failed</source>
+        <translation>Не удалось скачать</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="2198" />
+        <source>Requires a paid Deezer plan</source>
+        <translation>Требуется платная подписка Deezer</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1109,6 +1149,46 @@
         <location filename="../src/settingsdialog.cpp" line="592" />
         <source>Couldn't check for updates — try again later.</source>
         <translation>Не удалось проверить обновления — повторите попытку позже.</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="253" />
+        <source>Downloads</source>
+        <translation>Загрузки</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="256" />
+        <source>Default folder</source>
+        <translation>Папка по умолчанию</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="261" />
+        <source>Browse…</source>
+        <translation>Обзор…</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="264" />
+        <source>Choose download folder</source>
+        <translation>Выберите папку для загрузок</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="271" />
+        <source>Download folder</source>
+        <translation>Папка для загрузок</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="280" />
+        <source>Ads</source>
+        <translation>Реклама</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="282" />
+        <source>Disable ads</source>
+        <translation>Отключить рекламу</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="285" />
+        <source>Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.</source>
+        <translation>Deezer Free существует за счёт рекламы. Передача данных о ваших прослушиваниях — как в официальном приложении — приносит доход артистам и обеспечивает показ рекламы. Отключение этой опции убирает рекламу, но прекращает передачу данных о ваших прослушиваниях, что лишает артистов их счётчика прослушиваний и нарушает условия использования Deezer. Используйте на свой страх и риск.</translation>
     </message>
 </context>
 </TS>

@@ -98,6 +98,27 @@ extern int   DZSetEQJSON(char *js);
  * when the immediately preceding DZInit returned != 1. */
 extern int DZLoginErrorKind(void);
 
+/* Track download — save a stream to a file (Premium only). Declared explicitly
+ * (see DZSetRepeat above) so this file compiles against an older libdeezercore.h.
+ *   DZDownloadTrack(trackID, destDir): download trackID into destDir ("" = the
+ *     shared default folder); returns malloc'd JSON {"path":"..."} on success or
+ *     {"error":"..."} on failure — free the result with DZFree.
+ *   DZDownloadDir(): the current default download folder (malloc'd; free with DZFree).
+ *   DZSetDownloadDir(path): set the default download folder; 1 ok, 0 failed.
+ *   DZIsPreview(): 1 while the current stream is a 30 s preview, else 0. */
+extern char *DZDownloadTrack(char *trackID, char *destDir);
+extern char *DZDownloadDir(void);
+extern int   DZSetDownloadDir(char *path);
+extern int   DZIsPreview(void);
+
+/* Ad control — Free accounts only (premium has no ads). Declared explicitly (see
+ * DZSetRepeat above) so this file compiles against an older libdeezercore.h.
+ * Disabling ads also stops reporting plays; the choice is persisted engine-side.
+ *   DZAdsDisabled(): 1 if ads are disabled, else 0.
+ *   DZSetAdsDisabled(disabled): persist the choice; returns 1 ok, 0 failed. */
+extern int DZAdsDisabled(void);
+extern int DZSetAdsDisabled(int disabled);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -173,6 +194,7 @@ typedef struct {
   GtkButton            *play_btn, *prev_btn, *next_btn;
   GtkLabel             *np_title, *np_subtitle, *pos_label, *dur_label;
   GtkWidget            *np_explicit;  /* "E" badge beside the now-playing title */
+  GtkWidget            *np_preview;   /* "PREVIEW" badge — shown when only a 30s preview plays */
   GtkPicture           *np_cover;
   GtkScale             *seek, *volume;
 
@@ -232,8 +254,8 @@ typedef struct {
 
   gboolean              held;          /* g_application_hold is active */
 
-  /* main UI (the split view); swapped out for the Free-account block (we hold an
-   * extra ref so it survives while the block status page is shown instead). */
+  /* main UI (the split view); swapped out for the no-internet gate (we hold an
+   * extra ref so it survives while the gate status page is shown instead). */
   GtkWidget            *root_content;
 
   /* ---- lyrics view (an AdwDialog; synced highlight driven by the 300ms tick) ---- */
@@ -368,8 +390,7 @@ static void check_update_async(App *a, gboolean manual, GtkWidget *btn);
 static void open_login_window(App *a);
 static void start_init(App *a, char *arl, gboolean persist);
 
-/* Free-account gate: swap the whole UI for a blocking message / restore it */
-static void show_free_block(App *a);
+/* Restore the normal split-view UI after the no-internet gate */
 static void show_main_content(App *a);
 static void save_arl(const char *arl);
 static void login_dismiss(App *a);
@@ -1767,6 +1788,71 @@ static AdwPreferencesGroup *build_update_group(App *a) {
   return grp;
 }
 
+/* ---- Downloads group (default save folder; Premium-only feature) ----
+ * The folder lives engine-side (DZDownloadDir / DZSetDownloadDir); this row just
+ * shows it and writes it back when the user confirms (Enter or the apply button),
+ * so a half-typed path is never persisted. */
+static void on_download_dir_apply(AdwEntryRow *row, gpointer data) {
+  (void)data;
+  const char *path = gtk_editable_get_text(GTK_EDITABLE(row));
+  if (path && *path) {
+    if (DZSetDownloadDir((char *)path) == 1) toast(APP, _("Download folder updated"));
+    else                                     toast(APP, _("Couldn't use that download folder"));
+  }
+}
+
+static AdwPreferencesGroup *build_downloads_group(void) {
+  AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+  adw_preferences_group_set_title(grp, _("Downloads"));
+  adw_preferences_group_set_description(
+      grp, _("Save tracks to this folder (requires Deezer Premium)"));
+
+  GtkWidget *dir_row = adw_entry_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(dir_row), _("Download folder"));
+  adw_entry_row_set_show_apply_button(ADW_ENTRY_ROW(dir_row), TRUE);
+
+  /* seed from the engine's current default folder (malloc'd; free with DZFree) */
+  char *dir = DZDownloadDir();
+  gtk_editable_set_text(GTK_EDITABLE(dir_row), dir ? dir : "");
+  if (dir) DZFree(dir);
+
+  /* "apply" (not "changed") so DZSetDownloadDir runs only on a confirmed value */
+  g_signal_connect(dir_row, "apply", G_CALLBACK(on_download_dir_apply), NULL);
+  adw_preferences_group_add(grp, dir_row);
+  return grp;
+}
+
+/* ---- Ads group (Free accounts only) ----
+ * Free plans are ad-supported; disabling ads also disables play reporting, so
+ * the switch carries a plain-language disclaimer. Only added to the page for
+ * Free accounts (premium has no ads). State is persisted engine-side. */
+static void on_ads_disabled_toggled(GObject *row, GParamSpec *ps, gpointer data) {
+  (void)ps; (void)data;
+  DZSetAdsDisabled(adw_switch_row_get_active(ADW_SWITCH_ROW(row)) ? 1 : 0);
+}
+
+static AdwPreferencesGroup *build_ads_group(void) {
+  AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+  adw_preferences_group_set_title(grp, _("Ads"));
+
+  GtkWidget *row = adw_switch_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), _("Disable ads"));
+  adw_action_row_set_subtitle(
+      ADW_ACTION_ROW(row),
+      _("Deezer Free is ad-supported. Reporting your plays — like the official "
+        "app — credits artists and drives the ads. Disabling this removes ads "
+        "but stops reporting your plays, which denies artists their play count "
+        "and breaks Deezer's terms of use. Use at your own risk."));
+  adw_action_row_set_subtitle_lines(ADW_ACTION_ROW(row), 0); /* wrap the full disclaimer */
+
+  /* seed from engine state before wiring the signal, to avoid a write-back */
+  adw_switch_row_set_active(ADW_SWITCH_ROW(row), DZAdsDisabled() != 0);
+  g_signal_connect(row, "notify::active", G_CALLBACK(on_ads_disabled_toggled), NULL);
+
+  adw_preferences_group_add(grp, row);
+  return grp;
+}
+
 static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   (void)action; (void)param; (void)data;
   App *a = APP;
@@ -1783,8 +1869,12 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_action_row_add_prefix(ADW_ACTION_ROW(acct_row),
                             gtk_image_new_from_icon_name("avatar-default-symbolic"));
   if (a->acct_name && *a->acct_name) {
-    char *sub = g_strdup_printf("%s · %s", a->acct_name,
-                                (a->acct_offer && *a->acct_offer) ? a->acct_offer : "Deezer");
+    /* Free accounts stream Deezer's standard 128 kbps quality — note the tier
+     * (premium gates higher-quality streams + downloads). */
+    char *sub = a->premium
+        ? g_strdup_printf("%s · %s", a->acct_name,
+                          (a->acct_offer && *a->acct_offer) ? a->acct_offer : "Deezer")
+        : g_strdup_printf(_("%s · Free · standard quality (128 kbps)"), a->acct_name);
     adw_action_row_set_subtitle(ADW_ACTION_ROW(acct_row), sub);
     g_free(sub);
   } else {
@@ -1887,6 +1977,13 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_preferences_group_add(behave, sleep);
 
   adw_preferences_page_add(page, behave);
+
+  /* ---- Downloads (default save folder; Premium-only) ---- */
+  adw_preferences_page_add(page, build_downloads_group());
+
+  /* ---- Ads (Free accounts only; premium plans have no ads) ---- */
+  if (!a->premium)
+    adw_preferences_page_add(page, build_ads_group());
 
   /* ---- Remote control (control API used by the phone/MCP remotes) ---- */
   adw_preferences_page_add(page, build_remote_control_group());
@@ -2225,6 +2322,60 @@ static void start_like(App *a, const char *id, gboolean like) {
   g_object_unref(t);
 }
 
+/* ---- download a track to a file (Premium only) ----
+ * DZDownloadTrack blocks (network + Blowfish decrypt), so it runs on a worker.
+ * It returns malloc'd JSON — {"path":"..."} on success or {"error":"..."} — which
+ * we parse into ok + msg (freed with the ctx), then toast on the main thread. */
+typedef struct { char *id; char *name; gboolean ok; char *msg; } DlCtx;
+static void dl_ctx_free(gpointer p) { DlCtx *c = p; g_free(c->id); g_free(c->name); g_free(c->msg); g_free(c); }
+static void dl_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)c;
+  DlCtx *x = data;
+  char *st = DZDownloadTrack(x->id, ""); /* "" = shared default download folder */
+  if (st) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, st, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+        JsonObject *o = json_node_get_object(root);
+        char *err = jstr(o, "error"); /* jstr never returns NULL — "" when absent */
+        if (*err) { x->msg = g_steal_pointer(&err); }
+        else      { g_free(err); x->ok = TRUE; x->msg = jstr(o, "path"); }
+      }
+    }
+    g_object_unref(p);
+    DZFree(st);
+  }
+  g_task_return_boolean(task, x->ok);
+}
+static void dl_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)data;
+  DlCtx *x = g_task_get_task_data(G_TASK(res));
+  gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
+  if (ok) {
+    if (x->name && *x->name && x->msg && *x->msg)
+      toastf(APP, _("Saved “%s” to %s"), x->name, x->msg);
+    else if (x->msg && *x->msg)
+      toastf(APP, _("Saved to %s"), x->msg);
+    else
+      toast(APP, _("Download complete"));
+  } else {
+    if (x->msg && *x->msg) toastf(APP, _("Download failed: %s"), x->msg);
+    else                   toast(APP, _("Couldn't download that track"));
+  }
+}
+static void start_download(App *a, const char *id, const char *name) {
+  (void)a;
+  if (!id || !*id) return;
+  DlCtx *x = g_new0(DlCtx, 1);
+  x->id = g_strdup(id);
+  x->name = g_strdup(name ? name : "");
+  GTask *t = g_task_new(NULL, NULL, dl_done, NULL);
+  g_task_set_task_data(t, x, dl_ctx_free);
+  g_task_run_in_thread(t, dl_worker);
+  g_object_unref(t);
+}
+
 static void update_like_button(App *a) {
   if (!a->like_btn) return;
   if (a->cur_liked) gtk_widget_add_css_class(GTK_WIDGET(a->like_btn), "dz-liked");
@@ -2268,6 +2419,17 @@ static void on_tm_artist(GtkButton *b, gpointer mb) {
   if (aid && *aid) open_artist(APP, aid);
   else toast(APP, _("No artist for this track"));
 }
+static void on_tm_download(GtkButton *b, gpointer mb) {
+  (void)b;
+  const char *id = g_object_get_data(G_OBJECT(mb), "tm_id");
+  const char *nm = g_object_get_data(G_OBJECT(mb), "tm_name");
+  tm_popdown(mb);
+  if (!APP || !APP->premium) { toast(APP, _("Downloads require Deezer Premium")); return; }
+  if (id && *id) {
+    toast(APP, _("Downloading…"));
+    start_download(APP, id, nm);
+  }
+}
 
 static GtkWidget *make_track_menu_button(void) {
   GtkMenuButton *mb = GTK_MENU_BUTTON(gtk_menu_button_new());
@@ -2277,10 +2439,14 @@ static GtkWidget *make_track_menu_button(void) {
 
   GtkWidget *pop = gtk_popover_new();
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  struct { const char *label; GCallback cb; } items[] = {
-      {_("Add to Liked Songs"), G_CALLBACK(on_tm_like)},
-      {_("Add to Playlist…"),   G_CALLBACK(on_tm_add)},
-      {_("Go to Artist"),       G_CALLBACK(on_tm_artist)},
+  /* premium_only entries (Download) are desensitized for Free accounts; in
+   * practice the whole app is gated behind Premium, but track_menu_set also
+   * re-applies this on every bind once the account tier is known. */
+  struct { const char *label; GCallback cb; gboolean premium_only; } items[] = {
+      {_("Add to Liked Songs"), G_CALLBACK(on_tm_like),     FALSE},
+      {_("Download"),           G_CALLBACK(on_tm_download),  TRUE},
+      {_("Add to Playlist…"),   G_CALLBACK(on_tm_add),       FALSE},
+      {_("Go to Artist"),       G_CALLBACK(on_tm_artist),    FALSE},
   };
   for (guint i = 0; i < G_N_ELEMENTS(items); i++) {
     GtkWidget *btn = gtk_button_new_with_label(items[i].label);
@@ -2289,6 +2455,11 @@ static GtkWidget *make_track_menu_button(void) {
     GtkWidget *lbl = gtk_button_get_child(GTK_BUTTON(btn));
     if (GTK_IS_LABEL(lbl)) gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
     g_signal_connect(btn, "clicked", items[i].cb, mb);
+    if (items[i].premium_only) {
+      /* stash so track_menu_set can refresh sensitivity once premium is known */
+      g_object_set_data(G_OBJECT(mb), "tm_dl_btn", btn);
+      gtk_widget_set_sensitive(btn, APP && APP->premium);
+    }
     gtk_box_append(GTK_BOX(box), btn);
   }
   gtk_popover_set_child(GTK_POPOVER(pop), box);
@@ -2301,6 +2472,9 @@ static void track_menu_set(GtkWidget *mb, const char *id, const char *name,
   g_object_set_data_full(G_OBJECT(mb), "tm_id", g_strdup(id ? id : ""), g_free);
   g_object_set_data_full(G_OBJECT(mb), "tm_name", g_strdup(name ? name : ""), g_free);
   g_object_set_data_full(G_OBJECT(mb), "tm_artist", g_strdup(artist_id ? artist_id : ""), g_free);
+  /* Download is Premium-only; rows only bind after login, so the tier is known */
+  GtkWidget *dl = g_object_get_data(G_OBJECT(mb), "tm_dl_btn");
+  if (dl) gtk_widget_set_sensitive(dl, APP && APP->premium);
 }
 
 /* ---- add a track to an existing playlist ---- */
@@ -4562,6 +4736,11 @@ static gboolean tick(gpointer data) {
   gtk_label_set_label(a->dur_label, dt);
   g_free(pt); g_free(dt);
 
+  /* preview indicator — the engine falls back to a 30 s preview when a full
+   * stream isn't available (cheap cached read, safe on the tick) */
+  if (a->np_preview)
+    gtk_widget_set_visible(a->np_preview, DZIsPreview() == 1);
+
   /* Keep the now-playing bar in step with the engine truth: DZNowPlayingJSON
    * reports the track ACTUALLY playing — a track started via the control API on
    * this device, or the remote device's current track when routed via OpenDeezer
@@ -4911,67 +5090,17 @@ static void open_login_window(App *a) {
  * login
  * ------------------------------------------------------------------------- */
 
-/* Restore the normal split-view UI (used after a Premium account signs in from
- * the blocked screen). No-op when it is already shown. */
+/* Restore the normal split-view UI (used after recovering from the no-internet
+ * gate). No-op when it is already shown. */
 static void show_main_content(App *a) {
   if (!a->root_content) return;
   if (adw_application_window_get_content(a->win) != a->root_content)
     adw_application_window_set_content(a->win, a->root_content); /* re-refs root_content */
 }
 
-/* Free-account gate. OpenDeezer streams on-demand, which a Deezer Free plan
- * cannot do, so a Free account is blocked behind a full-window message that
- * replaces the entire UI — there is no path back into the app except quitting
- * (or signing in with a Premium account). Playback is stopped first. */
-static void on_free_block_quit(GtkButton *b, gpointer data) {
-  (void)b;
-  g_application_quit(G_APPLICATION(((App *)data)->app));
-}
-static void on_free_block_switch(GtkButton *b, gpointer data) {
-  (void)b;
-  open_login_window((App *)data); /* a Premium login from here unblocks the app */
-}
-static void show_free_block(App *a) {
-  /* never leave a previous (Premium) session playing under the gate; routed
-   * through the transport pool — DZStop blocks when a remote is connected */
-  transport_call(TR_STOP, 0);
-
-  AdwStatusPage *sp = ADW_STATUS_PAGE(adw_status_page_new());
-  adw_status_page_set_icon_name(sp, "dialog-warning-symbolic");
-  adw_status_page_set_title(sp, _("Sorry — your account isn't supported"));
-
-  char *body = g_strdup_printf(
-      _("OpenDeezer needs a Deezer Premium subscription to stream. "
-        "Your account: %s. Subscribe at deezer.com, then restart OpenDeezer."),
-      (a->acct_offer && *a->acct_offer) ? a->acct_offer : _("Deezer Free"));
-  adw_status_page_set_description(sp, body);
-  g_free(body);
-
-  GtkWidget *btns = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-  gtk_widget_set_halign(btns, GTK_ALIGN_CENTER);
-
-  GtkWidget *switch_btn = gtk_button_new_with_label(_("Sign in with a different account"));
-  gtk_widget_add_css_class(switch_btn, "pill");
-  g_signal_connect(switch_btn, "clicked", G_CALLBACK(on_free_block_switch), a);
-  gtk_box_append(GTK_BOX(btns), switch_btn);
-
-  GtkWidget *quit_btn = gtk_button_new_with_label(_("Quit OpenDeezer"));
-  gtk_widget_add_css_class(quit_btn, "pill");
-  gtk_widget_add_css_class(quit_btn, "destructive-action");
-  g_signal_connect(quit_btn, "clicked", G_CALLBACK(on_free_block_quit), a);
-  gtk_box_append(GTK_BOX(btns), quit_btn);
-
-  adw_status_page_set_child(sp, btns);
-
-  /* replace the entire window content — the sidebar, search and queue are gone,
-   * so a Free user can neither browse nor play. (We hold our own ref on
-   * root_content, so it survives being swapped out and can be restored.) */
-  adw_application_window_set_content(a->win, GTK_WIDGET(sp));
-}
-
 /* No-internet gate. DZInit failed because the network was unreachable (as opposed
- * to a bad/expired ARL — see DZLoginErrorKind). Unlike the Free-account block this
- * is a transient condition, so the whole-window message offers a Retry that
+ * to a bad/expired ARL — see DZLoginErrorKind). This is a transient
+ * condition, so the whole-window message offers a Retry that
  * re-runs the sign-in with the same ARL (stashed in pending_arl by start_init). */
 static void on_no_internet_retry(GtkButton *b, gpointer data) {
   App *a = data;
@@ -4993,8 +5122,8 @@ static void show_no_internet(App *a) {
   g_signal_connect(retry, "clicked", G_CALLBACK(on_no_internet_retry), a);
   adw_status_page_set_child(sp, retry);
 
-  /* replace the whole window — same swap as show_free_block; root_content keeps
-   * its extra ref, so show_main_content can restore the UI after a good retry. */
+  /* replace the whole window content; root_content keeps its extra ref, so
+   * show_main_content can restore the UI after a good retry. */
   adw_application_window_set_content(a->win, GTK_WIDGET(sp));
 }
 
@@ -5064,16 +5193,14 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
     if (APP->audio_device && *APP->audio_device)
       DZSetAudioDevice(APP->audio_device);     /* restore the chosen output device */
     load_account(APP);                         /* tier + entitlements (toasts name · offer) */
-    /* Free accounts can't stream on-demand — gate the whole app behind a
-     * blocking message (Premium required). Reached by every login path,
-     * including manual-ARL / account switching. */
-    if (!APP->premium) {
-      show_free_block(APP);
-      return;
-    }
-    show_main_content(APP);                     /* restore UI if returning from the block */
+    show_main_content(APP);                     /* restore UI if returning from the no-internet gate */
     if (!(APP->acct_name && *APP->acct_name))
       toast(APP, _("Connected to Deezer"));       /* fallback when account info is unavailable */
+    /* Free accounts are no longer blocked — the engine streams Deezer's standard
+     * 128 kbps quality for them, so they reach the normal browsing/playback UI.
+     * Note the tier (premium still gates downloads + higher-quality streams). */
+    if (!APP->premium)
+      toast(APP, _("Free account · standard quality (128 kbps)"));
     /* refresh (not just append) so switching accounts replaces the previous
      * account's playlists instead of stacking the new ones underneath */
     sidebar_refresh_playlists(APP);
@@ -5138,7 +5265,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "1.8.3");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "2.0.0");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -5149,7 +5276,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "1.8.3",
+      "version", "2.0.0",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -5206,6 +5333,15 @@ static void load_css(void) {
       "  padding:0px 5px;"
       "  border-radius:4px;"
       "  background-color:alpha(currentColor,0.20);"
+      "}\n"
+      /* preview-only pill: a small accent-colored tag on the now-playing bar */
+      ".dz-preview-badge{"
+      "  font-size:0.68em;"
+      "  font-weight:800;"
+      "  padding:0px 5px;"
+      "  border-radius:4px;"
+      "  color:#ffffff;"
+      "  background-color:" ACCENT ";"
       "}\n";
   GtkCssProvider *p = gtk_css_provider_new();
 #if GTK_CHECK_VERSION(4, 12, 0)
@@ -5522,6 +5658,13 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_visible(a->np_explicit, FALSE);
   gtk_box_append(GTK_BOX(title_row), a->np_explicit);
   gtk_box_append(GTK_BOX(title_row), GTK_WIDGET(a->np_title));
+  /* "PREVIEW" pill — shown when the engine can only stream a 30s preview */
+  a->np_preview = gtk_label_new(_("PREVIEW"));
+  gtk_widget_add_css_class(a->np_preview, "dz-preview-badge");
+  gtk_widget_set_valign(a->np_preview, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(a->np_preview, _("Preview only — a 30-second clip"));
+  gtk_widget_set_visible(a->np_preview, FALSE);
+  gtk_box_append(GTK_BOX(title_row), a->np_preview);
   gtk_box_append(GTK_BOX(titles), title_row);
   gtk_box_append(GTK_BOX(titles), GTK_WIDGET(a->np_subtitle));
   gtk_box_append(GTK_BOX(bar), titles);
@@ -5807,7 +5950,7 @@ static void on_activate(GApplication *app, gpointer data) {
   adw_navigation_split_view_set_content(split, a->content_page);
   adw_navigation_split_view_set_min_sidebar_width(split, 240);
   /* keep an extra ref so the main UI survives being swapped out for the
-   * Free-account block (show_free_block / show_main_content). */
+   * no-internet gate (show_no_internet / show_main_content). */
   a->root_content = g_object_ref_sink(GTK_WIDGET(split));
   adw_application_window_set_content(a->win, a->root_content);
 

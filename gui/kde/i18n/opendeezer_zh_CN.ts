@@ -865,6 +865,46 @@
         <source>Retry</source>
         <translation>重试</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1318" />
+        <source>Preview</source>
+        <translation>试听</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1582" />
+        <source>Free · standard quality (128 kbps)</source>
+        <translation>免费 · 标准音质 (128 kbps)</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1583" />
+        <source>Deezer Free streams at standard quality (128 kbps). Upgrade for High and HiFi quality, and for downloads.</source>
+        <translation>Deezer Free 以标准音质 (128 kbps) 播放。升级后可享受高音质和 HiFi 音质，以及下载功能。</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1959" />
+        <source>Downloads require a paid Deezer plan</source>
+        <translation>下载需要付费的 Deezer 套餐</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1962" />
+        <source>Downloading…</source>
+        <translation>正在下载…</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1972" />
+        <source>Saved to %1</source>
+        <translation>已保存到 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1974" />
+        <source>Download failed</source>
+        <translation>下载失败</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="2198" />
+        <source>Requires a paid Deezer plan</source>
+        <translation>需要付费的 Deezer 套餐</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1095,6 +1135,46 @@
         <location filename="../src/settingsdialog.cpp" line="592" />
         <source>Couldn't check for updates — try again later.</source>
         <translation>无法检查更新——请稍后重试。</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="253" />
+        <source>Downloads</source>
+        <translation>下载</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="256" />
+        <source>Default folder</source>
+        <translation>默认文件夹</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="261" />
+        <source>Browse…</source>
+        <translation>浏览…</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="264" />
+        <source>Choose download folder</source>
+        <translation>选择下载文件夹</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="271" />
+        <source>Download folder</source>
+        <translation>下载文件夹</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="280" />
+        <source>Ads</source>
+        <translation>广告</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="282" />
+        <source>Disable ads</source>
+        <translation>禁用广告</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="285" />
+        <source>Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.</source>
+        <translation>Deezer Free 依靠广告支持。上报你的播放记录（与官方应用一样）可为艺人计入播放量并支撑广告。禁用此项会去除广告，但会停止上报你的播放记录，从而使艺人无法获得播放量，并违反 Deezer 的使用条款。使用风险自负。</translation>
     </message>
 </context>
 </TS>

@@ -12,10 +12,6 @@ enum RepeatMode: Int { case off, all, one }
 @MainActor
 final class AppState: ObservableObject {
     @Published var loggedIn = false
-    // Free-account gate: OpenDeezer needs on-demand streaming (Premium). When a
-    // Deezer Free account logs in (account.premium == false) the whole app is
-    // replaced by FreeAccountBlockedView; no browsing or playback is wired up.
-    @Published var accountBlocked = false
     @Published var loginError: String?
     // No-Internet gate: the launch login failed because the network is
     // unreachable (DZLoginErrorKind == 2), NOT because the ARL is bad. When true
@@ -129,6 +125,12 @@ final class AppState: ObservableObject {
     @Published var shuffle = false
     @Published var repeatMode: RepeatMode = .off
     @Published var playingEpisode = false   // current item is a podcast episode (standalone)
+    @Published var isPreview = false        // current track is a 30-second preview (engine truth, polled by tick)
+
+    // Transient download status toast (RootView renders it): the file path on
+    // success, an error message on failure, or the in-flight "Downloading…"
+    // note. nil hides it. Auto-dismissed by setDownloadStatus.
+    @Published var downloadStatus: String?
 
     // Play queue — playback advances through this, independent of `tracks`
     // (the browsed list), so navigating the library never stops the music.
@@ -241,16 +243,11 @@ final class AppState: ObservableObject {
         noInternet = false   // a successful login always clears the No-Internet gate
         userID = Core.userID
         account = acct
-        // Free-account gate: a Deezer Free plan (premium == false) can't stream
-        // on-demand, so block the app here — skip all session/playback wiring so
-        // browsing and playback are never reachable. Reached by auto, web and
-        // manual-ARL login alike (they all funnel through finishLogin).
-        if let a = acct, !a.premium {
-            accountBlocked = true
-            loggedIn = true   // leave LoginGate; FreeAccountBlockedView takes over
-            return
-        }
-        accountBlocked = false
+        // Free (non-premium) accounts are supported: the engine streams
+        // full-length audio at standard quality (128 kbps) for them, so browsing
+        // + playback are wired up like for a premium account. Premium-only
+        // features (Download, HiFi/HQ) stay gated on isPremium; the "Free
+        // account · standard quality (128 kbps)" note explains the quality cap.
         loggedIn = true
         volume = Core.volume
         replayGain = Core.replayGain
@@ -327,6 +324,11 @@ final class AppState: ObservableObject {
     }
 
     func dismissUpdateBanner() { showUpdateBanner = false }
+
+    // A paid plan that can stream in HiFi/HQ (and download). False for Deezer
+    // Free, which streams full-length at standard quality (128 kbps) — gates the
+    // Download action and drives the "Free account · standard quality" note.
+    var isPremium: Bool { account?.premium ?? false }
 
     // Sidebar/about label for the signed-in account, e.g. "Jane · Premium".
     var accountLabel: String {
@@ -573,6 +575,58 @@ final class AppState: ObservableObject {
         guard let c = current, !playingEpisode else { return }
         toggleLike(c)
     }
+
+    // MARK: downloads
+
+    // Result of DZDownloadTrack — {"path":"..."} on success, {"error":"..."} else.
+    private struct DownloadResult: Decodable {
+        let path: String?
+        let error: String?
+    }
+
+    // Download a track to the shared download folder off the main thread, then
+    // surface a transient status toast with the result. Premium-only: free
+    // accounts can browse/play (standard 128 kbps) but can't download, so guard
+    // here as well as disabling the menu item.
+    func download(_ track: Track) {
+        guard isPremium else {
+            setDownloadStatus(L("Requires a paid Deezer plan"))
+            return
+        }
+        let id = track.id
+        let name = track.name
+        setDownloadStatus(Lf("Downloading “%@”…", name), autoDismiss: false)
+        Task.detached {
+            let js = Core.download(id, to: "")
+            let res = try? JSONDecoder().decode(DownloadResult.self, from: Data(js.utf8))
+            await MainActor.run {
+                if let path = res?.path, !path.isEmpty {
+                    self.setDownloadStatus(Lf("Saved “%@”", name))
+                } else {
+                    self.setDownloadStatus(res?.error ?? L("Download failed."))
+                }
+            }
+        }
+    }
+
+    // Guards against a stale auto-dismiss clearing a newer message.
+    private var downloadStatusToken = 0
+
+    // Show the download toast. autoDismiss (default) clears it after a few
+    // seconds; the in-flight "Downloading…" note passes false so it stays up
+    // until the result replaces it.
+    func setDownloadStatus(_ msg: String?, autoDismiss: Bool = true) {
+        downloadStatus = msg
+        downloadStatusToken += 1
+        guard autoDismiss, msg != nil else { return }
+        let token = downloadStatusToken
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if self.downloadStatusToken == token { self.downloadStatus = nil }
+        }
+    }
+
+    func dismissDownloadStatus() { setDownloadStatus(nil) }
 
     // MARK: add-to-playlist
 
@@ -960,6 +1014,7 @@ final class AppState: ObservableObject {
         }
         state = s
         outputFormat = Core.format
+        isPreview = Core.isPreview()
         // Mirror volume changed externally (phone remote / control API / remote
         // device) while no local send is pending, so the slider tracks reality
         // and the next local nudge can't snap audio to a stale value.

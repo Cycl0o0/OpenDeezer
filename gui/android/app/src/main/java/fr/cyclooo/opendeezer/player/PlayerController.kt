@@ -6,12 +6,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 data class PlayerState(
     val current: Track? = null,
@@ -31,6 +35,14 @@ data class PlayerState(
     val hasPrev: Boolean get() = index > 0
 }
 
+/** One-shot download outcome surfaced to the UI shell (rendered as a snackbar). */
+sealed interface DownloadEvent {
+    val trackName: String
+    data class Started(override val trackName: String) : DownloadEvent
+    data class Saved(override val trackName: String, val path: String) : DownloadEvent
+    data class Failed(override val trackName: String, val error: String) : DownloadEvent
+}
+
 /**
  * Owns the in-app play queue and a ~500ms poll loop that mirrors the engine's
  * playback state into a [StateFlow]. It watches `finishedCount` to auto-advance,
@@ -40,6 +52,16 @@ class PlayerController(private val scope: CoroutineScope) {
 
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state.asStateFlow()
+
+    // Download outcomes are one-shot events, not state, so they ride a SharedFlow
+    // that the app shell collects to show a snackbar. Buffered so an emit from the
+    // player's own scope never suspends waiting for a collector.
+    private val _downloadEvents = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 8)
+    val downloadEvents: SharedFlow<DownloadEvent> = _downloadEvents.asSharedFlow()
+
+    // Set once at login. Downloads are premium-only, so the TrackRow context menu
+    // reads this to enable/disable its Download action.
+    var premium: Boolean = false
 
     private var queue: List<Track> = emptyList()
     private var index: Int = -1
@@ -92,6 +114,28 @@ class PlayerController(private val scope: CoroutineScope) {
             startCurrent()
         }
     }
+
+    /**
+     * Saves [track] to the configured download folder off the main thread and
+     * reports the outcome via [downloadEvents]. Premium-only — the engine rejects
+     * the request for free accounts, which surfaces as a [DownloadEvent.Failed].
+     * Episodes ride a different engine path and aren't downloadable here.
+     */
+    fun download(track: Track) {
+        if (track.isEpisode) return
+        scope.launch {
+            _downloadEvents.emit(DownloadEvent.Started(track.name))
+            _downloadEvents.emit(parseDownload(Engine.download(track.id, ""), track.name))
+        }
+    }
+
+    private fun parseDownload(json: String, trackName: String): DownloadEvent =
+        runCatching {
+            val o = JSONObject(json)
+            val err = o.optString("error")
+            if (err.isNotBlank()) DownloadEvent.Failed(trackName, err)
+            else DownloadEvent.Saved(trackName, o.optString("path"))
+        }.getOrDefault(DownloadEvent.Failed(trackName, ""))
 
     fun next() {
         if (index < queue.lastIndex) {

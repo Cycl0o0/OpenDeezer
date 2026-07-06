@@ -381,6 +381,19 @@ public sealed partial class MainWindow : Window
         };
         col.Children.Add(_homeGreeting);
 
+        // Subtle non-Premium hint: Free accounts play full tracks at 128 kbps, so the
+        // only difference worth surfacing is the standard quality ceiling. Hidden by
+        // default; LoadHome() reveals it once the account tier is known.
+        _homeFreeHint = new TextBlock
+        {
+            Text = Loc.S("Account_FreeQualityHint"),
+            FontSize = 12,
+            Opacity = 0.6,
+            Margin = new Thickness(0, 0, 0, 4),
+            Visibility = Visibility.Collapsed,
+        };
+        col.Children.Add(_homeFreeHint);
+
         // Quick-pick cards: tap to navigate to that existing page.
         var quickRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 8, 0, 4) };
         quickRow.Children.Add(MakeQuickCard(Loc.S("Nav_LikedSongs"), Symbol.Audio, () => { _nav.SelectedItem = _likedItem; }));
@@ -509,6 +522,24 @@ public sealed partial class MainWindow : Window
         _nowArtist = new TextBlock { Opacity = 0.6, FontSize = 12, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
         now.Children.Add(_nowTitle); now.Children.Add(_nowArtist);
         left.Children.Add(now);
+        // "Preview" badge: shown only while the current stream is a 30-second sample
+        // (surfaced by DZIsPreview and toggled in OnTick). Collapsed by default.
+        _previewBadge = new Border
+        {
+            Background = _accent,
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(6, 1, 6, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Child = new TextBlock
+            {
+                Text = Loc.S("Preview_Badge"),
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
+            },
+        };
+        left.Children.Add(_previewBadge);
         _likeBtn = new ToggleButton { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Heart
         ToolTipService.SetToolTip(_likeBtn, Loc.S("Tooltip_Like"));
         _likeBtn.Click += OnLike;
@@ -654,6 +685,17 @@ public sealed partial class MainWindow : Window
             var add = new MenuFlyoutItem { Text = Loc.S("Menu_AddToPlaylist"), Tag = t.Id };
             add.Click += OnRowAddToPlaylist;
             mf.Items.Add(like); mf.Items.Add(add);
+            // Download (premium-only offline export). Disabled with an explanatory
+            // tooltip for Free accounts, which the engine refuses anyway.
+            var dl = new MenuFlyoutItem { Text = Loc.S("Menu_Download"), Tag = t.Id };
+            if (_account.Premium)
+                dl.Click += OnRowDownload;
+            else
+            {
+                dl.IsEnabled = false;
+                ToolTipService.SetToolTip(dl, Loc.S("Menu_DownloadRequiresPremium"));
+            }
+            mf.Items.Add(dl);
             g.ContextFlyout = mf;
         }
         return g;
@@ -821,7 +863,10 @@ public sealed partial class MainWindow : Window
         _nowTitle.Text = Loc.S("Status_CheckingAccount");
         var acct = await Task.Run(() => DeezerCore.Account());
         _account = acct;
-        if (!_account.Premium) { ShowBlocked(); return; } // Free account -> gate the app
+        // A Deezer Free account streams FULL tracks at 128 kbps through the engine
+        // (not 30-second previews), so it uses the app exactly like Premium. Premium
+        // is still tracked to gate the Download menu item; LoadHome surfaces a subtle
+        // "standard quality" hint for Free accounts.
 
         // Restore the app UI if a takeover screen (the no-internet retry page)
         // replaced the window content during login. In the normal login flow Content
@@ -842,60 +887,10 @@ public sealed partial class MainWindow : Window
         _nav.SelectedItem = _homeItem; // -> OnNav -> LoadHome
     }
 
-    // Free-account block: replace the ENTIRE window content with a non-dismissible
-    // message; the only action is Quit. A Premium subscription is required.
-    private void ShowBlocked()
-    {
-        _blocked = true;
-        try { _timer?.Stop(); } catch { }
-        try { DeezerCore.DZStop(); } catch { }
-
-        var page = new Grid { Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x14, 0x04, 0x1E)), FlowDirection = Loc.FlowDirection };
-        var sp = new StackPanel
-        {
-            Spacing = 14,
-            MaxWidth = 560,
-            Padding = new Thickness(24),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        sp.Children.Add(new TextBlock
-        {
-            Text = "OpenDeezer",
-            FontSize = 22,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = _accent,
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
-        sp.Children.Add(new TextBlock
-        {
-            Text = Loc.S("Blocked_Title"),
-            FontSize = 26,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            TextAlignment = TextAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
-        string offer = string.IsNullOrEmpty(_account.Offer) ? "Deezer Free" : _account.Offer;
-        sp.Children.Add(new TextBlock
-        {
-            TextWrapping = TextWrapping.Wrap,
-            TextAlignment = TextAlignment.Center,
-            Opacity = 0.85,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Text = Loc.Format("Blocked_BodyFormat", offer),
-        });
-        var quit = new Button { Content = Loc.S("Btn_Quit"), HorizontalAlignment = HorizontalAlignment.Center };
-        quit.Click += (_, _) => QuitApp();
-        sp.Children.Add(quit);
-        page.Children.Add(sp);
-        Content = page; // wholesale replace -> the app can no longer be used
-    }
-
     // No-internet screen: DZInit failed because the network is unreachable (kind 2),
     // as opposed to an expired ARL. Replace the ENTIRE window content with a
-    // retryable page; Retry re-runs the saved-ARL login flow. Mirrors ShowBlocked's
-    // takeover, but this state is recoverable -- no _blocked flag, no engine stop.
+    // retryable page; Retry re-runs the saved-ARL login flow. A full-window takeover
+    // that is recoverable -- no engine stop, and Retry restores the app UI.
     private void ShowNoInternet()
     {
         var page = new Grid { Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x14, 0x04, 0x1E)), FlowDirection = Loc.FlowDirection };
@@ -1158,6 +1153,8 @@ public sealed partial class MainWindow : Window
         // Refresh the greeting in case the hour changed since the page was built.
         int hour = DateTime.Now.Hour;
         _homeGreeting.Text = hour < 12 ? Loc.S("Greeting_Morning") : hour < 18 ? Loc.S("Greeting_Afternoon") : Loc.S("Greeting_Evening");
+        // Show the "standard quality" hint only for Free accounts.
+        _homeFreeHint.Visibility = _account.Premium ? Visibility.Collapsed : Visibility.Visible;
         FillTrackList(_homeTrackList, _homeTracks);
         FillHomePlaylistRail();
         try { _homeScroll.ChangeView(null, 0.0, null); } catch { }
@@ -1560,6 +1557,27 @@ public sealed partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.Tag is string id && !string.IsNullOrEmpty(id)) ShowAddToPlaylist(id);
     }
+    // Premium-only offline export. Downloads the track to the engine's shared
+    // default folder ("" destDir) off the UI thread, then reports the saved path
+    // or the engine's error via the same modal helper the other row actions use.
+    private async void OnRowDownload(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string id || string.IsNullOrEmpty(id)) return;
+        if (!_account.Premium) { _ = ShowMessage(Loc.S("Dialog_DownloadFailTitle"), Loc.S("Menu_DownloadRequiresPremium")); return; }
+        string json = await Task.Run(() => DeezerCore.Download(id, "")); // "" -> shared default folder
+        string path = "", err = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrEmpty(json) ? "{}" : json);
+            path = doc.RootElement.Str("path");
+            err = doc.RootElement.Str("error");
+        }
+        catch { }
+        if (!string.IsNullOrEmpty(path))
+            _ = ShowMessage(Loc.S("Dialog_DownloadDoneTitle"), Loc.Format("Dialog_DownloadDoneBodyFormat", path));
+        else
+            _ = ShowMessage(Loc.S("Dialog_DownloadFailTitle"), string.IsNullOrEmpty(err) ? Loc.S("Dialog_DownloadFailBody") : err);
+    }
     private void OnAddCurrentToPlaylist(object s, RoutedEventArgs e)
     {
         string id = CurrentTrackId();
@@ -1675,7 +1693,6 @@ public sealed partial class MainWindow : Window
     // ---- playback ------------------------------------------------------------
     private void PlayFrom(List<Track> list, int index)
     {
-        if (_blocked) return; // Free account: playback gated
         _queue = new List<Track>(list);
         _queueIndex = index;
         PlayCurrent();
@@ -1895,6 +1912,18 @@ public sealed partial class MainWindow : Window
         {
             string f = DeezerCore.Format();
             _nowArtist.Text = string.IsNullOrEmpty(f) ? _curArtist : _curArtist + "   ·   " + f;
+        }
+
+        // Preview badge: visible while the current stream is a 30-second sample
+        // (loading / playing / paused). Only touch the tree when it actually flips.
+        if (_previewBadge != null)
+        {
+            bool prev = (st == 1 || st == 2 || st == 3) && DeezerCore.IsPreview();
+            if (prev != _lastPreview)
+            {
+                _previewBadge.Visibility = prev ? Visibility.Visible : Visibility.Collapsed;
+                _lastPreview = prev;
+            }
         }
 
         // Lyrics page (when open): drive the synced highlight off the same tick,
@@ -2206,13 +2235,14 @@ public sealed partial class MainWindow : Window
     private async void ShowSettings()
     {
         // Output devices + current engine audio state read off the UI thread.
-        var (devJson, curDev, curGapless, curCrossfade, ctrlJson, slpActive, slpEot, slpRemMs) = await Task.Run(() =>
+        var (devJson, curDev, curGapless, curCrossfade, ctrlJson, slpActive, slpEot, slpRemMs, ddir) = await Task.Run(() =>
         {
             string dj = DeezerCore.TakeJson(DeezerCore.DZAudioDevicesJSON());
             string cd = DeezerCore.CurrentAudioDevice();
             string cj = DeezerCore.ControlConfig();
             return (dj, cd, DeezerCore.DZGapless() != 0, DeezerCore.DZCrossfadeMS(), cj,
-                    DeezerCore.DZSleepTimerActive() != 0, DeezerCore.DZSleepTimerEndOfTrack() != 0, DeezerCore.DZSleepTimerRemainingMS());
+                    DeezerCore.DZSleepTimerActive() != 0, DeezerCore.DZSleepTimerEndOfTrack() != 0, DeezerCore.DZSleepTimerRemainingMS(),
+                    DeezerCore.DownloadDir());
         });
         var devices = Wire.ParseDevices(devJson);
 
@@ -2351,6 +2381,58 @@ public sealed partial class MainWindow : Window
         tsec.Children.Add(new TextBlock { Text = Loc.S("Settings_BackgroundPlayback"), FontWeight = FontWeights.SemiBold });
         tsec.Children.Add(tray);
 
+        // Download folder: the engine-side default target for premium track exports
+        // ("" = a built-in default). Editable, plus a Browse… picker. Applied on Save,
+        // or immediately when a folder is chosen through Browse.
+        string curDownloadDir = ddir;
+        var dlBox = new TextBox { Text = curDownloadDir, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var browseBtn = new Button { Content = Loc.S("Btn_Browse") };
+        browseBtn.Click += async (_, _) =>
+        {
+            try
+            {
+                var picker = new Windows.Storage.Pickers.FolderPicker();
+                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads;
+                picker.FileTypeFilter.Add("*"); // required, else PickSingleFolderAsync throws
+                // WinUI 3 pickers need the owning HWND (no CoreWindow); reuse the app handle.
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, _appHwnd);
+                var folder = await picker.PickSingleFolderAsync();
+                if (folder != null && !string.IsNullOrEmpty(folder.Path))
+                {
+                    dlBox.Text = folder.Path;
+                    curDownloadDir = folder.Path;
+                    await Task.Run(() => DeezerCore.SetDownloadDir(folder.Path));
+                }
+            }
+            catch { }
+        };
+        var dlGrid = new Grid { ColumnSpacing = 8 };
+        dlGrid.ColumnDefinitions.Add(ColStar());
+        dlGrid.ColumnDefinitions.Add(ColAuto());
+        Grid.SetColumn(dlBox, 0); dlGrid.Children.Add(dlBox);
+        Grid.SetColumn(browseBtn, 1); dlGrid.Children.Add(browseBtn);
+        var dlsec = new StackPanel { Spacing = 4 };
+        dlsec.Children.Add(new TextBlock { Text = Loc.S("Settings_DownloadFolder"), FontWeight = FontWeights.SemiBold });
+        dlsec.Children.Add(dlGrid);
+
+        // Disable ads: Deezer Free ONLY (Premium has no ads). Engine-persisted state,
+        // applied on Save. The disclaimer beneath spells out that this suppresses the
+        // play reporting that credits artists and breaches Deezer's terms of use.
+        CheckBox? adsCheck = null;
+        StackPanel? adsec = null;
+        if (!_account.Premium)
+        {
+            adsCheck = new CheckBox { Content = Loc.S("Settings_DisableAds"), IsChecked = DeezerCore.AdsDisabled() };
+            adsec = new StackPanel { Spacing = 4 };
+            adsec.Children.Add(adsCheck);
+            adsec.Children.Add(new TextBlock
+            {
+                Text = Loc.S("Settings_DisableAdsDisclaimer"),
+                Opacity = 0.7,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
         // Remote control (control API / phone remote): enable, LAN reachability, token.
         // Applies live -- every change is pushed straight to the engine, not gated
         // behind the dialog's Save button.
@@ -2468,6 +2550,8 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(slsec);
         sp.Children.Add(rsec);
         sp.Children.Add(tsec);
+        sp.Children.Add(dlsec);
+        if (adsec != null) sp.Children.Add(adsec); // Free accounts only
         sp.Children.Add(rcsec);
         sp.Children.Add(lsec);
         sp.Children.Add(usec);
@@ -2511,6 +2595,14 @@ public sealed partial class MainWindow : Window
             int ci = cfCombo.SelectedIndex; if (ci < 0 || ci > 3) ci = 0;
             _settings.CrossfadeMs = cfVals[ci];
             DeezerCore.DZSetCrossfadeMS(_settings.CrossfadeMs);
+
+            // Download folder: engine-side state (not persisted to settings.json).
+            // Skip when Browse already applied the same path.
+            string dd = (dlBox.Text ?? "").Trim();
+            if (dd != curDownloadDir) DeezerCore.SetDownloadDir(dd);
+
+            // Disable-ads opt-out (Free accounts only; engine-persisted).
+            if (adsCheck != null) DeezerCore.SetAdsDisabled(adsCheck.IsChecked == true);
 
             // Sleep timer: only touch the engine when the user changed the selection,
             // so re-saving other settings never resets a running timer. Transient
@@ -2866,7 +2958,7 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 1.8.3", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 2.0.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
         sp.Children.Add(new TextBlock { Text = Loc.S("About_Tagline"), TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {
@@ -2927,6 +3019,7 @@ public sealed partial class MainWindow : Window
     private UIElement _homePage = null!;
     private ScrollViewer _homeScroll = null!;
     private TextBlock _homeGreeting = null!;
+    private TextBlock _homeFreeHint = null!;   // "Free account · standard quality (128 kbps)" (Free tier only)
     private ListView _homeTrackList = null!;
     private ScrollViewer _homePlaylistScroll = null!;
     private StackPanel _homePlaylistPanel = null!;
@@ -2935,6 +3028,8 @@ public sealed partial class MainWindow : Window
 
     private Image _cover = null!;
     private TextBlock _nowTitle = null!, _nowArtist = null!, _posText = null!, _durText = null!;
+    private Border _previewBadge = null!;   // "Preview" chip shown for 30-second sample streams
+    private bool _lastPreview;              // last DZIsPreview() state (avoid churning the tree)
     private string _curArtist = "";   // base artist line; format badge appended each tick
     private string _nowId = "";             // id shown in the now-playing bar (engine-truth anchor)
     private string _engineNowId = "";       // last id DZNowPlayingJSON reported
@@ -2980,7 +3075,7 @@ public sealed partial class MainWindow : Window
     private List<Album> _searchAlbums = new();
     private readonly List<Action> _searchActions = new(); // album/playlist tile -> open
 
-    private bool _loggedIn, _blocked, _shuffle, _updatingSeek, _updatingVol, _suppressNav;
+    private bool _loggedIn, _shuffle, _updatingSeek, _updatingVol, _suppressNav;
     private int _lastFinished, _artGen, _playGen, _queueIndex = -1, _repeat;
     private long _lastSeekTick;
     private int _browseGen; // drops stale track-list fetches (mirrors _lyricsGen/_connectGen)

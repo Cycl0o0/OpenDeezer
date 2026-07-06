@@ -872,6 +872,46 @@
         <source>Retry</source>
         <translation>Reintentar</translation>
     </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1318" />
+        <source>Preview</source>
+        <translation>Fragmento</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1582" />
+        <source>Free · standard quality (128 kbps)</source>
+        <translation>Gratis · calidad estándar (128 kbps)</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1583" />
+        <source>Deezer Free streams at standard quality (128 kbps). Upgrade for High and HiFi quality, and for downloads.</source>
+        <translation>Deezer Free reproduce en calidad estándar (128 kbps). Mejora tu plan para obtener calidad Alta y HiFi, y descargas.</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1959" />
+        <source>Downloads require a paid Deezer plan</source>
+        <translation>Las descargas requieren un plan de Deezer de pago</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1962" />
+        <source>Downloading…</source>
+        <translation>Descargando…</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1972" />
+        <source>Saved to %1</source>
+        <translation>Guardado en %1</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="1974" />
+        <source>Download failed</source>
+        <translation>Error al descargar</translation>
+    </message>
+    <message>
+        <location filename="../src/mainwindow.cpp" line="2198" />
+        <source>Requires a paid Deezer plan</source>
+        <translation>Requiere un plan de Deezer de pago</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1102,6 +1142,46 @@
         <location filename="../src/settingsdialog.cpp" line="592" />
         <source>Couldn't check for updates — try again later.</source>
         <translation>No se pudo buscar actualizaciones: inténtalo más tarde.</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="253" />
+        <source>Downloads</source>
+        <translation>Descargas</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="256" />
+        <source>Default folder</source>
+        <translation>Carpeta predeterminada</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="261" />
+        <source>Browse…</source>
+        <translation>Examinar…</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="264" />
+        <source>Choose download folder</source>
+        <translation>Elegir carpeta de descargas</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="271" />
+        <source>Download folder</source>
+        <translation>Carpeta de descargas</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="280" />
+        <source>Ads</source>
+        <translation>Anuncios</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="282" />
+        <source>Disable ads</source>
+        <translation>Desactivar anuncios</translation>
+    </message>
+    <message>
+        <location filename="../src/settingsdialog.cpp" line="285" />
+        <source>Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.</source>
+        <translation>Deezer Free se financia con publicidad. Informar de tus reproducciones —como hace la aplicación oficial— acredita a los artistas e impulsa los anuncios. Desactivar esta opción elimina los anuncios, pero deja de informar de tus reproducciones, lo que priva a los artistas de su recuento de reproducciones e infringe las condiciones de uso de Deezer. Úsalo bajo tu propia responsabilidad.</translation>
     </message>
 </context>
 </TS>

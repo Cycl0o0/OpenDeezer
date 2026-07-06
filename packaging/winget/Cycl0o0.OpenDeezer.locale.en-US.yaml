@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 PackageIdentifier: Cycl0o0.OpenDeezer
-PackageVersion: 1.8.3
+PackageVersion: 2.0.0
 PackageLocale: en-US
 Publisher: Cycl0o0
 PublisherUrl: https://github.com/Cycl0o0
@@ -8,12 +8,13 @@ PackageName: OpenDeezer
 PackageUrl: https://github.com/Cycl0o0/OpenDeezer
 License: AGPL-3.0-or-later
 LicenseUrl: https://github.com/Cycl0o0/OpenDeezer/blob/main/LICENSE
-ShortDescription: Terminal Deezer client — browse and stream in HiFi with your Premium ARL.
+ShortDescription: Terminal Deezer client — browse, stream (Free or HiFi) and download with your ARL.
 Description: >-
   OpenDeezer is a terminal Deezer client (with native GUIs) that streams your
-  Deezer library in HiFi. Log in via the embedded web view, browse liked songs,
+  Deezer library. Log in via the embedded web view, browse liked songs,
   playlists, charts, artists and podcasts, Flow, synced lyrics, and manage your
-  library. Premium account required; streaming only, no downloads.
+  library. Free accounts stream the full library at 128 kbps (ad-supported); a
+  paid plan unlocks higher quality (up to HiFi FLAC) and downloading tracks to disk.
 Moniker: opendeezer
 Tags:
   - deezer
@@ -21,5 +22,6 @@ Tags:
   - tui
   - terminal
   - streaming
+  - download
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

@@ -270,3 +270,60 @@ func LanguageSetting() string {
 func SaveLanguage(code string) error {
 	return writeFile("language.txt", strings.TrimSpace(code))
 }
+
+// DefaultDownloadDir is where downloaded tracks land when the user hasn't chosen
+// a folder: <home>/Music/OpenDeezer, falling back to <home>/Downloads/OpenDeezer
+// and finally "OpenDeezer" in the working directory. Shared across every client
+// so the default is identical everywhere.
+func DefaultDownloadDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		music := filepath.Join(home, "Music")
+		if fi, err := os.Stat(music); err == nil && fi.IsDir() {
+			return filepath.Join(music, "OpenDeezer")
+		}
+		return filepath.Join(home, "Downloads", "OpenDeezer")
+	}
+	return "OpenDeezer"
+}
+
+// LoadDownloadDir returns the folder downloaded tracks are saved to, from
+// $OPENDEEZER_DOWNLOAD_DIR, then ~/.config/opendeezer/download-dir.txt, then
+// [DefaultDownloadDir]. Shared by the TUI and every GUI so a folder chosen in
+// one client applies everywhere.
+func LoadDownloadDir() string {
+	if v := strings.TrimSpace(os.Getenv("OPENDEEZER_DOWNLOAD_DIR")); v != "" {
+		return v
+	}
+	if v := readFile("download-dir.txt"); v != "" {
+		return v
+	}
+	return DefaultDownloadDir()
+}
+
+// SaveDownloadDir persists the download folder. "" clears it (back to the
+// default).
+func SaveDownloadDir(path string) error {
+	return writeFile("download-dir.txt", strings.TrimSpace(path))
+}
+
+// LoadAdsDisabled reports whether the user has opted out of Deezer Free's
+// play-reporting/ads, from $OPENDEEZER_DISABLE_ADS or
+// ~/.config/opendeezer/ads-disabled.txt. Default false (ads/reporting on). This
+// only affects free accounts; it is the user's explicit, at-own-risk choice
+// (see deezer.SetAdsDisabled for the tradeoff). Shared across every client.
+func LoadAdsDisabled() bool {
+	v := strings.TrimSpace(os.Getenv("OPENDEEZER_DISABLE_ADS"))
+	if v == "" {
+		v = readFile("ads-disabled.txt")
+	}
+	return v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
+}
+
+// SaveAdsDisabled persists the free-tier ads opt-out.
+func SaveAdsDisabled(disabled bool) error {
+	v := "0"
+	if disabled {
+		v = "1"
+	}
+	return writeFile("ads-disabled.txt", v)
+}

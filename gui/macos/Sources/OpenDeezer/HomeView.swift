@@ -216,6 +216,13 @@ private struct HomeTrackCard: View {
             Button { app.beginAddToPlaylist(track) } label: {
                 Label(L("Add to Playlist…"), systemImage: "text.badge.plus")
             }
+            // Downloads are premium-only. Disabled (not hidden) so free-plan
+            // users see why via the help tooltip.
+            Button { app.download(track) } label: {
+                Label(L("Download"), systemImage: "arrow.down.circle")
+            }
+            .disabled(!app.isPremium)
+            .help(app.isPremium ? L("Download") : L("Requires a paid Deezer plan"))
             if let aid = track.artists.first?.id {
                 Button { app.openArtist(aid) } label: {
                     Label(L("Go to Artist"), systemImage: "music.mic")

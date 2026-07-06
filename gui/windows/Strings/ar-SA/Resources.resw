@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>تعذّر الوصول إلى ذلك الجهاز.</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>يتطلب Premium</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>حسابك ({0}) ليس Premium. اشترك على deezer.com ثم أعد تشغيل OpenDeezer.</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>حساب مجاني · جودة قياسية (128 kbps)</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>لا يوجد اتصال بالإنترنت</value>
@@ -657,5 +654,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} ثانية</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>تنزيل</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>يتطلب اشتراك Deezer مدفوعًا</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>مجلد التنزيل</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>استعراض…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>اكتمل التنزيل</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>تم الحفظ في {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>فشل التنزيل</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>تعذّر تنزيل المقطع.</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>معاينة</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>تعطيل الإعلانات</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>خدمة Deezer Free مدعومة بالإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي — ينسب الفضل للفنانين ويشغّل الإعلانات. تعطيل هذا يزيل الإعلانات لكنه يوقف الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات تشغيلهم ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة.</value>
   </data>
 </root>

@@ -201,3 +201,18 @@
 "No Internet Connection" = "इंटरनेट कनेक्शन नहीं है";
 "Check your connection and try again." = "अपना कनेक्शन जांचें और फिर से प्रयास करें।";
 "Retry" = "पुनः प्रयास करें";
+
+/* Downloads + preview + free tier */
+"Downloads" = "डाउनलोड";
+"Where downloaded tracks are saved." = "डाउनलोड किए गए ट्रैक यहाँ सहेजे जाते हैं।";
+"Default folder" = "डिफ़ॉल्ट फ़ोल्डर";
+"Choose…" = "चुनें…";
+"Choose" = "चुनें";
+"Requires a paid Deezer plan" = "सशुल्क Deezer प्लान आवश्यक है";
+"Downloading “%@”…" = "“%@” डाउनलोड हो रहा है…";
+"Saved “%@”" = "“%@” सहेजा गया";
+"Download failed." = "डाउनलोड विफल रहा।";
+"Preview" = "झलक";
+"Free account · standard quality (128 kbps)" = "निःशुल्क खाता · मानक गुणवत्ता (128 kbps)";
+"Disable ads" = "विज्ञापन बंद करें";
+"Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह आपके प्ले की रिपोर्टिंग कलाकारों को श्रेय देती है और विज्ञापनों को सक्षम बनाती है। इसे बंद करने पर विज्ञापन हट जाते हैं, लेकिन आपके प्ले की रिपोर्टिंग भी रुक जाती है, जिससे कलाकारों को उनकी प्ले गिनती नहीं मिलती और Deezer की उपयोग शर्तों का उल्लंघन होता है। इसका उपयोग अपने जोखिम पर करें।";

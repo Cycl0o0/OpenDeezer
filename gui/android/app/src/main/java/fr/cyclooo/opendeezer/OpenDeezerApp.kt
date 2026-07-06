@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -16,7 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import fr.cyclooo.opendeezer.player.DownloadEvent
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -35,11 +40,11 @@ import fr.cyclooo.opendeezer.ui.screens.NoInternetScreen
 import fr.cyclooo.opendeezer.ui.screens.NowPlayingScreen
 import fr.cyclooo.opendeezer.ui.screens.PlaylistsScreen
 import fr.cyclooo.opendeezer.ui.screens.PodcastsScreen
-import fr.cyclooo.opendeezer.ui.screens.PremiumGateScreen
 import fr.cyclooo.opendeezer.ui.screens.QueueScreen
 import fr.cyclooo.opendeezer.ui.screens.SearchScreen
 import fr.cyclooo.opendeezer.ui.screens.SettingsScreen
 import fr.cyclooo.opendeezer.ui.screens.TrackListScreen
+import kotlinx.coroutines.launch
 
 @Composable
 fun OpenDeezerApp(vm: AppViewModel) {
@@ -60,12 +65,6 @@ fun OpenDeezerApp(vm: AppViewModel) {
                     onArl = { arl, auto -> vm.login(arl, auto = auto) },
                 )
 
-                AuthStage.NEEDS_PREMIUM -> PremiumGateScreen(
-                    accountName = vm.account?.name.orEmpty(),
-                    offer = vm.account?.offer.orEmpty(),
-                    onLogout = vm::logout,
-                )
-
                 AuthStage.NO_INTERNET -> NoInternetScreen(
                     busy = vm.busy,
                     onRetry = vm::retry,
@@ -83,6 +82,8 @@ private fun MainScaffold(vm: AppViewModel) {
     val player = vm.player
     val playerState by player.state.collectAsState()
     var showConnect by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     fun nav(route: String) = navController.navigate(route)
     val back: () -> Unit = { navController.popBackStack() }
@@ -90,10 +91,30 @@ private fun MainScaffold(vm: AppViewModel) {
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     val hideBarRoutes = setOf(Routes.NOW_PLAYING, Routes.LYRICS)
 
+    // Surface download outcomes app-wide (the action can fire from any track list).
+    LaunchedEffect(player) {
+        player.downloadEvents.collect { event ->
+            val msg = when (event) {
+                is DownloadEvent.Started -> context.getString(R.string.download_started, event.trackName)
+                is DownloadEvent.Saved ->
+                    if (event.path.isBlank()) context.getString(R.string.download_saved_generic, event.trackName)
+                    else context.getString(R.string.download_saved, event.path)
+                is DownloadEvent.Failed ->
+                    if (event.error.isBlank()) context.getString(R.string.download_failed_generic)
+                    else context.getString(R.string.download_failed, event.error)
+            }
+            // Replace any in-flight snackbar so the result supersedes "Downloading…"
+            // without the collector blocking on the previous one's timeout.
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch { snackbarHostState.showSnackbar(msg) }
+        }
+    }
+
     Scaffold(
         // Inner screen Scaffolds manage system-bar insets; this outer one only
         // contributes the bottom player bar so the top inset isn't applied twice.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (playerState.current != null && currentRoute !in hideBarRoutes) {
                 PlayerBar(

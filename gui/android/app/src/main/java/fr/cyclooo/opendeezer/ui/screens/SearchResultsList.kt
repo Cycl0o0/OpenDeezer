@@ -40,7 +40,12 @@ fun SearchResultsList(
         if (results.tracks.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.section_tracks)) }
             itemsIndexed(results.tracks, key = { i, t -> "t-$i-${t.id}" }) { index, track ->
-                TrackRow(track = track, onClick = { player.playQueue(results.tracks, index) })
+                TrackRow(
+                    track = track,
+                    onClick = { player.playQueue(results.tracks, index) },
+                    onDownload = { player.download(track) },
+                    downloadEnabled = player.premium,
+                )
             }
         }
         if (results.albums.isNotEmpty()) {

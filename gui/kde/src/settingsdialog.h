@@ -47,9 +47,12 @@ public:
     // iniPath  = absolute path to ~/.config/opendeezer/settings.ini.
     // devices  = current output devices (from DZAudioDevicesJSON).
     // currentDeviceId = the engine's selected device (DZCurrentAudioDevice).
+    // premium  = MainWindow's m_premium; the "Disable ads" row is shown only when
+    //            false (Free accounts), since Premium has no ads to disable.
     SettingsDialog(const QString &iniPath,
                    const QVector<AudioDevice> &devices,
                    const QString &currentDeviceId,
+                   bool premium,
                    QWidget *parent = nullptr);
 
     // Read persisted values (used by MainWindow at startup, without a dialog).
@@ -86,6 +89,8 @@ private:
     QCheckBox *m_gapless     = nullptr;
     QComboBox *m_crossfade   = nullptr;
     QComboBox *m_sleepTimer  = nullptr;    // Off / 15 / 30 / 45 / 60 min / End of track
+    QLineEdit *m_downloadDir = nullptr;    // engine-owned (DZDownloadDir/DZSetDownloadDir)
+    QCheckBox *m_disableAds  = nullptr;    // Free-only; engine-owned (DZAdsDisabled/DZSetAdsDisabled)
 
     // ---- Equalizer (v1.7) ----
     // Engine-owned state (DZEQJSON / DZSetEQJSON), applied live like the

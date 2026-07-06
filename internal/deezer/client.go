@@ -123,6 +123,13 @@ type Client struct {
 	offerName    string // e.g. "Deezer Premium", "Deezer Free"
 	canHiFi      bool   // account entitled to lossless
 	canHQ        bool   // account entitled to MP3_320
+
+	// Free-tier ads / listen logging (see ads.go). adMu guards the cadence state.
+	adMu        sync.Mutex
+	adOnce      sync.Once   // lazy one-shot deezer.adConfig fetch
+	adCad       AdCadence   // audio-ad schedule (Enabled=false on paid accounts)
+	adPlays     int         // tracks reported this session (drives the cadence)
+	adsDisabled atomic.Bool // user opted out of play-reporting/ads (free, at own risk)
 }
 
 // Account summarizes the logged-in user's plan and entitlements.
@@ -783,6 +790,7 @@ type StreamPlan struct {
 	Format    string
 	GainDB    float64 // track ReplayGain in dB (0 if unknown)
 	Encrypted bool    // false for plain CDN streams (e.g. podcast episodes)
+	Preview   bool    // true when this is Deezer's public 30-second preview
 }
 
 // resolveMediaURL turns a track token into an encrypted CDN URL. get_url can
@@ -795,17 +803,31 @@ func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err 
 		return "", "", fmt.Errorf("missing license or track token")
 	}
 	// Format order is preference order — Deezer serves the first format the
-	// account+track is entitled to, giving automatic fallback.
-	const f128 = `{"cipher":"BF_CBC_STRIPE","format":"MP3_128"}`
-	const f320 = `{"cipher":"BF_CBC_STRIPE","format":"MP3_320"}`
-	const fflac = `{"cipher":"BF_CBC_STRIPE","format":"FLAC"}`
-	formats := f128 + "," + f320 // Normal: prefer 128
-	switch atomic.LoadInt32(&c.quality) {
-	case QualityHigh:
-		formats = f320 + "," + f128
-	case QualityLossless:
-		formats = fflac + "," + f320 + "," + f128 // HiFi, fall back to MP3
+	// account+track is entitled to. We never request a tier the account isn't
+	// entitled to: Deezer's web player omits 320/FLAC for a Deezer Free account
+	// (which streams full tracks at 128 kbps, ad-supported) and requests
+	// MP3_128/MP3_64/MP3_MISC. Requesting only entitled formats guarantees a free
+	// account still resolves the *full* track (not just a preview).
+	const (
+		f128  = `{"cipher":"BF_CBC_STRIPE","format":"MP3_128"}`
+		f64   = `{"cipher":"BF_CBC_STRIPE","format":"MP3_64"}`
+		fmisc = `{"cipher":"BF_CBC_STRIPE","format":"MP3_MISC"}`
+		f320  = `{"cipher":"BF_CBC_STRIPE","format":"MP3_320"}`
+		fflac = `{"cipher":"BF_CBC_STRIPE","format":"FLAC"}`
+	)
+	c.mu.RLock()
+	canHQ, canHiFi := c.canHQ, c.canHiFi
+	c.mu.RUnlock()
+	var order []string
+	if atomic.LoadInt32(&c.quality) == QualityLossless && canHiFi {
+		order = append(order, fflac)
 	}
+	if atomic.LoadInt32(&c.quality) >= QualityHigh && canHQ {
+		order = append(order, f320)
+	}
+	// Always-entitled full-track fallbacks (what a free account is served).
+	order = append(order, f128, f64, fmisc)
+	formats := strings.Join(order, ",")
 
 	urlStr, format, apiErr, err := c.getMediaURL(licenseToken, trackToken, formats)
 	if err != nil {
@@ -881,20 +903,50 @@ func (c *Client) getMediaURL(licenseToken, trackToken, formats string) (urlStr, 
 	return "", "", "", nil
 }
 
-// PrepareStream resolves a track id to a playable encrypted CDN URL.
+// trackPreview fetches a track's public 30-second preview URL via the REST API.
+// The preview is a plain (unencrypted) MP3 on Deezer's CDN, available without a
+// subscription — it is the sanctioned free-tier / anonymous audio source.
+func (c *Client) trackPreview(trackID string) (string, error) {
+	b, err := c.restGet("/track/" + url.PathEscape(trackID))
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		Preview string `json:"preview"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return "", err
+	}
+	return r.Preview, nil
+}
+
+// PrepareStream resolves a track id to a playable stream. It first tries the
+// full, entitled track (encrypted CDN URL). When full-track resolution is
+// refused — a Deezer Free account, or a track not available at full length for
+// this account — it falls back to Deezer's public 30-second preview (a plain
+// MP3, StreamPlan.Preview == true), so free accounts can still play. Premium
+// accounts are unaffected: they resolve the full track as before.
 func (c *Client) PrepareStream(trackID string) (*StreamPlan, error) {
 	if !c.LoggedIn() {
 		return nil, fmt.Errorf("not logged in")
 	}
 	tok, gain, err := c.trackToken(trackID)
+	if err == nil && tok != "" {
+		u, format, mErr := c.resolveMediaURL(tok)
+		if mErr == nil {
+			return &StreamPlan{CDNURL: u, TrackID: trackID, Format: format, GainDB: gain, Encrypted: true}, nil
+		}
+		err = mErr // remember for the fallback failure message
+	}
+	// Fallback: the public 30-second preview (unencrypted). Encrypted == false
+	// so the player and downloader stream it straight through, no Blowfish.
+	if prev, pErr := c.trackPreview(trackID); pErr == nil && prev != "" {
+		return &StreamPlan{CDNURL: prev, TrackID: trackID, Format: "MP3_128", GainDB: gain, Encrypted: false, Preview: true}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	u, format, err := c.resolveMediaURL(tok)
-	if err != nil {
-		return nil, err
-	}
-	return &StreamPlan{CDNURL: u, TrackID: trackID, Format: format, GainDB: gain, Encrypted: true}, nil
+	return nil, fmt.Errorf("no media source (track unavailable for this account)")
 }
 
 // TrackIDOf extracts a numeric id from "deezer:track:123", a URL, or "123".

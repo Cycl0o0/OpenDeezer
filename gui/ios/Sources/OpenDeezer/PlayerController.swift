@@ -39,6 +39,9 @@ final class PlayerController: ObservableObject {
     }
     @Published private(set) var repeatMode: RepeatMode = .off
     @Published private(set) var formatLabel: String = ""
+    /// True when the engine fell back to Deezer's 30-second preview for the
+    /// current track (rare — Free normally streams the full 128 kbps track).
+    @Published private(set) var isPreview = false
     @Published private(set) var artwork: UIImage?
     @Published private(set) var connectedDeviceAddr: String = ""
     @Published private(set) var volume: Double = Engine.volume()
@@ -84,6 +87,7 @@ final class PlayerController: ObservableObject {
         let engineDuration = Engine.durationMS()
         durationMs = engineDuration > 0 ? engineDuration : (current?.durationMs ?? 0)
         formatLabel = Engine.format()
+        isPreview = current != nil && Engine.isPreview()
         connectedDeviceAddr = Engine.connectedDevice()
 
         let finished = Engine.finishedCount()
@@ -209,6 +213,7 @@ final class PlayerController: ObservableObject {
         currentIndex = nil
         queue = []
         state = .stopped
+        isPreview = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 

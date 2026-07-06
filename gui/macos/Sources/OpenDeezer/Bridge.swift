@@ -115,6 +115,35 @@ enum Core {
     static var durationMs: Int64 { DZDurationMS() }
     static var finishedCount: Int { Int(DZFinishedCount()) }
 
+    // MARK: downloads
+
+    // Downloads (premium-only) reuse the same C-string idioms as playback. The
+    // DZDownload*/DZIsPreview symbols land in Clib/libdeezercore.h when
+    // `make corelib` regenerates it; the engine exports already exist.
+
+    /// Downloads `id` into `dir` ("" -> the shared default folder). Returns the
+    /// engine's JSON: {"path":"..."} on success or {"error":"..."} on failure.
+    static func download(_ id: String, to dir: String) -> String {
+        takeString(withC2(id, dir) { DZDownloadTrack($0, $1) })
+    }
+    /// Current download folder (env / config / default).
+    static func downloadDir() -> String { takeString(DZDownloadDir()) }
+    /// Persists the download folder ("" resets to the default); true on success.
+    static func setDownloadDir(_ p: String) -> Bool { withC(p) { DZSetDownloadDir($0) } == 1 }
+    /// True when the current track is Deezer's 30-second preview (fallback).
+    static func isPreview() -> Bool { DZIsPreview() == 1 }
+
+    // MARK: free-tier ads (Deezer Free)
+
+    // The DZAdsDisabled / DZSetAdsDisabled symbols land in Clib/libdeezercore.h
+    // when `make corelib` regenerates it; the engine exports already exist.
+    // Only meaningful for a Deezer Free account — premium plans have no ads.
+
+    /// True when the free-tier ads / play-reporting opt-out is on.
+    static func adsDisabled() -> Bool { DZAdsDisabled() == 1 }
+    /// Turns the free-tier ads / play-reporting opt-out on (off == true) or off.
+    static func setAdsDisabled(_ off: Bool) { _ = DZSetAdsDisabled(off ? 1 : 0) }
+
     // MARK: now playing (engine truth)
 
     // DZNowPlayingJSON returns a jTrack-shaped object for the track the engine is

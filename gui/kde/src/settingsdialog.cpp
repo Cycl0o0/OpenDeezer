@@ -5,6 +5,7 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -58,6 +59,20 @@ extern "C" long long DZSleepTimerRemainingMS(void);
 // the state and applies edits live, like the remote-control group.
 extern "C" char *DZEQJSON(void);        // {"enabled","mono","preampDb","gainsDb":[10],"preset","bands":[10],"presets":[...]}
 extern "C" int   DZSetEQJSON(char *js); // partial update, every key optional; 1 = ok
+
+// Download folder — engine-owned (like the remote-control group), seeded from
+// DZDownloadDir and applied via DZSetDownloadDir. Redeclared here so the dialog
+// still builds against an older generated header; identical redeclarations are
+// harmless. DZDownloadDir's result is malloc'd — free with DZFree.
+extern "C" char *DZDownloadDir(void);       // current default download folder
+extern "C" int   DZSetDownloadDir(char *path); // 1 = ok, 0 = fail; "" = reset to default
+
+// Ad control (Free accounts only). Persisted engine-side. Redeclared here so
+// the dialog still builds against an older generated header; identical
+// redeclarations are harmless. DZAdsDisabled reports the current state (1/0);
+// DZSetAdsDisabled sets + persists it (1/0).
+extern "C" int DZAdsDisabled(void);
+extern "C" int DZSetAdsDisabled(int disabled);
 
 namespace {
 const char *kKeyQuality    = "audio/qualityLevel"; // int: 0=128, 1=320, 2=FLAC
@@ -131,7 +146,8 @@ int SettingsDialog::loadCrossfadeMs(const QString &iniPath) {
 
 SettingsDialog::SettingsDialog(const QString &iniPath,
                                const QVector<AudioDevice> &devices,
-                               const QString &currentDeviceId, QWidget *parent)
+                               const QString &currentDeviceId, bool premium,
+                               QWidget *parent)
     : QDialog(parent), m_iniPath(iniPath), m_initialDevice(currentDeviceId) {
     setWindowTitle(tr("OpenDeezer Settings"));
     setModal(true);
@@ -228,6 +244,57 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
             [this](int) { applySleepTimer(); });
     audioForm->addRow(tr("Sleep timer"), m_sleepTimer);
     root->addWidget(audioBox);
+
+    // ---- Downloads ----
+    // The destination folder for track downloads is engine-owned state
+    // (DZDownloadDir / DZSetDownloadDir), not persisted through m_iniPath — it's
+    // seeded from the engine here and pushed back on OK (see save()). An empty
+    // field means "use the engine's shared default folder".
+    auto *dlBox  = new QGroupBox(tr("Downloads"));
+    auto *dlForm = new QFormLayout(dlBox);
+    m_downloadDir = new QLineEdit;
+    m_downloadDir->setPlaceholderText(tr("Default folder"));
+    if (char *d = DZDownloadDir()) {
+        m_downloadDir->setText(QString::fromUtf8(d));
+        DZFree(d);
+    }
+    auto *dlBrowse = new QPushButton(tr("Browse…"));
+    connect(dlBrowse, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Choose download folder"), m_downloadDir->text());
+        if (!dir.isEmpty())
+            m_downloadDir->setText(dir);
+    });
+    auto *dlRow = new QHBoxLayout;
+    dlRow->addWidget(m_downloadDir, 1);
+    dlRow->addWidget(dlBrowse);
+    dlForm->addRow(tr("Download folder"), dlRow);
+    root->addWidget(dlBox);
+
+    // ---- Ads (Free accounts only) ----
+    // Reporting plays is what credits artists and drives Deezer Free's ads;
+    // disabling it removes the ads but stops play-reporting. Engine-owned and
+    // persisted (DZAdsDisabled / DZSetAdsDisabled), applied on OK. Premium
+    // accounts have no ads, so the whole group is omitted for them.
+    if (!premium) {
+        auto *adsBox = new QGroupBox(tr("Ads"));
+        auto *adsLay = new QVBoxLayout(adsBox);
+        m_disableAds = new QCheckBox(tr("Disable ads"));
+        m_disableAds->setChecked(DZAdsDisabled() != 0);
+        adsLay->addWidget(m_disableAds);
+        auto *adsHint = new QLabel(tr(
+            "Deezer Free is ad-supported. Reporting your plays — like the "
+            "official app — credits artists and drives the ads. Disabling this "
+            "removes ads but stops reporting your plays, which denies artists "
+            "their play count and breaks Deezer's terms of use. Use at your own "
+            "risk."));
+        adsHint->setWordWrap(true);
+        QFont ahf = adsHint->font();
+        ahf.setPointSize(qMax(1, ahf.pointSize() - 1));
+        adsHint->setFont(ahf);
+        adsLay->addWidget(adsHint);
+        root->addWidget(adsBox);
+    }
 
     // ---- Equalizer ----
     // Talks to the engine directly and applies on every change: the DSP,
@@ -470,6 +537,17 @@ void SettingsDialog::save() {
         emit outputDeviceChanged(dev);
     emit gaplessChanged(gap);
     emit crossfadeChanged(xf);
+
+    // Download folder is engine-owned (not persisted through m_iniPath): push it
+    // straight to the engine. Empty text resets it to the shared default. The
+    // QByteArray is a named local so it outlives the DZSetDownloadDir call.
+    const QByteArray dlDir = m_downloadDir->text().toUtf8();
+    DZSetDownloadDir(const_cast<char *>(dlDir.constData()));
+
+    // Disable-ads is Free-only (m_disableAds is null for Premium) and engine-
+    // persisted, so it's pushed straight to the engine here on OK.
+    if (m_disableAds)
+        DZSetAdsDisabled(m_disableAds->isChecked() ? 1 : 0);
 
     // The remote-control group already applies itself live on every change;
     // this just catches a token edit still pending when OK is pressed. Only

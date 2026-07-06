@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>That device could not be reached.</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>Premium required</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>Your account ({0}) isn't Premium. Subscribe at deezer.com, then restart OpenDeezer.</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>Free account · standard quality (128 kbps)</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>No Internet Connection</value>
@@ -597,5 +594,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} seconds</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>Download</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>Requires a paid Deezer plan</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>Download folder</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>Browse…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>Download complete</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>Saved to {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>Download failed</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>The track could not be downloaded.</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>Preview</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>Disable ads</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.</value>
   </data>
 </root>

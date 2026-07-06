@@ -100,6 +100,29 @@ object Engine {
     suspend fun playEpisode(id: String, durationMs: Long = 0L): Boolean =
         io { runCatching { Odmobile.playEpisodeMS(id, durationMs) }.getOrDefault(false) }
 
+    // ---- downloads (premium-only; the engine rejects the request otherwise) ----
+    // Returns the engine's raw JSON: {"path":"..."} on success or {"error":"..."}.
+    // Pass "" for [dir] to save into the shared default download folder.
+    suspend fun download(id: String, dir: String): String =
+        io { runCatching { Odmobile.downloadTrack(id, dir) }.getOrDefault("""{"error":"failed"}""") }
+
+    // The shared default download folder (empty when the engine has none yet).
+    suspend fun downloadDir(): String = io { runCatching { Odmobile.downloadDir() }.getOrDefault("") }
+
+    // Persists a new shared default download folder; false when the engine can't use it.
+    suspend fun setDownloadDir(p: String): Boolean =
+        io { runCatching { Odmobile.setDownloadDir(p) }.getOrDefault(false) }
+
+    // Whether the currently-playing stream is a 30s preview rather than the full track.
+    fun isPreview(): Boolean = runCatching { Odmobile.isPreview() }.getOrDefault(false)
+
+    // ---- ads (Deezer Free only) ----
+    // Whether ad reporting is suppressed. Disabling ads also stops reporting plays,
+    // which breaks Deezer's terms — see the disclaimer in SettingsScreen.
+    suspend fun adsDisabled(): Boolean = io { runCatching { Odmobile.adsDisabled() }.getOrDefault(false) }
+    suspend fun setAdsDisabled(off: Boolean): Boolean =
+        io { runCatching { Odmobile.setAdsDisabled(off) }.getOrDefault(false) }
+
     fun pause() = runCatching { Odmobile.pause() }.let {}
     fun resume() = runCatching { Odmobile.resume() }.let {}
     fun togglePause() = runCatching { Odmobile.togglePause() }.let {}

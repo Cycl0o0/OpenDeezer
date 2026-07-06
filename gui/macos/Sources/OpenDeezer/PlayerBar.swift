@@ -74,6 +74,14 @@ struct PlayerBar: View {
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(DZ.accent.opacity(0.15), in: Capsule())
                     }
+                    // 30-second preview fallback (see Core.isPreview / AppState).
+                    if app.current != nil && app.isPreview {
+                        Text(L("Preview"))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(DZ.accentMag)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(DZ.accentMag.opacity(0.15), in: Capsule())
+                    }
                 }
                 scrubber
             }

@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>无法连接到该设备。</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>需要 Premium</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>你的账户（{0}）不是 Premium。请在 deezer.com 订阅后重新启动 OpenDeezer。</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>免费账户 · 标准音质（128 kbps）</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>无网络连接</value>
@@ -582,5 +579,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} 秒</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>下载</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>需要付费的 Deezer 套餐</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>下载文件夹</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>浏览…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>下载完成</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>已保存到 {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>下载失败</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>无法下载该曲目。</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>试听</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>关闭广告</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>Deezer Free 依靠广告支持。像官方应用一样上报你的播放记录会为艺人计入播放量并支撑广告。关闭此项会去除广告，但也会停止上报你的播放记录，从而使艺人失去应得的播放量，并违反 Deezer 的使用条款。使用风险自负。</value>
   </data>
 </root>

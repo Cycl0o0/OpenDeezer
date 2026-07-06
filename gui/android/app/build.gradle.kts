@@ -12,8 +12,8 @@ android {
         applicationId = "fr.cyclooo.opendeezer"
         minSdk = 24
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.8.3"
+        versionCode = 14
+        versionName = "2.0.0"
     }
 
     // Release signing is driven by env vars set by CI from repo secrets (see

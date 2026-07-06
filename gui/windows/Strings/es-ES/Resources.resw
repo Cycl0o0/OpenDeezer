@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>No se pudo contactar con ese dispositivo.</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>Se requiere Premium</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>Tu cuenta ({0}) no es Premium. Suscríbete en deezer.com y reinicia OpenDeezer.</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>Cuenta gratuita · calidad estándar (128 kbps)</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>Sin conexión a Internet</value>
@@ -597,5 +594,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} segundos</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>Descargar</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>Requiere un plan de pago de Deezer</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>Carpeta de descargas</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>Examinar…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>Descarga completada</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>Guardado en {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>Error de descarga</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>No se pudo descargar la pista.</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>Vista previa</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>Desactivar anuncios</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>Deezer Free se financia con anuncios. Informar de tus reproducciones —como hace la app oficial— acredita a los artistas y genera los anuncios. Desactivar esto elimina los anuncios pero deja de informar de tus reproducciones, lo que priva a los artistas de sus reproducciones e infringe las condiciones de uso de Deezer. Úsalo bajo tu propia responsabilidad.</value>
   </data>
 </root>

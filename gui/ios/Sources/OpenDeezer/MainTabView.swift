@@ -8,6 +8,7 @@ import SwiftUI
 struct MainTabView: View {
     @EnvironmentObject private var player: PlayerController
     @EnvironmentObject private var updates: UpdateStore
+    @EnvironmentObject private var downloads: DownloadStore
 
     private enum Tab { case home, search, library }
     @State private var selectedTab: Tab = .home
@@ -17,10 +18,31 @@ struct MainTabView: View {
         content
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: player.hasNowPlaying)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: updates.hasUpdate)
+            .overlay(alignment: .bottom) { downloadToast }
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: downloads.status)
             .sheet(isPresented: $showNowPlaying) {
                 NowPlayingView()
             }
             .task { updates.checkOnce() }
+    }
+
+    /// Transient download-status note (saved path / error / in-flight), docked
+    /// low so it clears the tab bar and mini player. Tap to dismiss.
+    @ViewBuilder private var downloadToast: some View {
+        if let status = downloads.status {
+            Text(status)
+                .font(.footnote)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(maxWidth: 360)
+                .glassPill()
+                .padding(.horizontal, 24)
+                .padding(.bottom, player.hasNowPlaying ? Palette.miniPlayerHeight + 90 : 90)
+                .onTapGesture { downloads.dismiss() }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     @ViewBuilder private var content: some View {

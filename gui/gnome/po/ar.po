@@ -906,6 +906,94 @@ msgstr "البحث في Deezer"
 msgid "Download"
 msgstr "تنزيل"
 
+#: src/main.c:1806
+msgid "Downloads"
+msgstr "التنزيلات"
+
+#: src/main.c:1807
+msgid "Save tracks to this folder (requires Deezer Premium)"
+msgstr "احفظ الأغاني في هذا المجلد (يتطلّب Deezer Premium)"
+
+#: src/main.c:1811
+msgid "Download folder"
+msgstr "مجلد التنزيلات"
+
+#: src/main.c:1799
+msgid "Download folder updated"
+msgstr "تم تحديث مجلد التنزيلات"
+
+#: src/main.c:1800
+msgid "Couldn't use that download folder"
+msgstr "تعذّر استخدام مجلد التنزيلات هذا"
+
+#: src/main.c:2427
+msgid "Downloads require Deezer Premium"
+msgstr "يتطلّب التنزيل اشتراك Deezer Premium"
+
+#: src/main.c:2429
+msgid "Downloading…"
+msgstr "جارٍ التنزيل…"
+
+#: src/main.c:2357
+#, c-format
+msgid "Saved “%s” to %s"
+msgstr "تم حفظ «%s» في %s"
+
+#: src/main.c:2359
+#, c-format
+msgid "Saved to %s"
+msgstr "تم الحفظ في %s"
+
+#: src/main.c:2361
+msgid "Download complete"
+msgstr "اكتمل التنزيل"
+
+#: src/main.c:2363
+#, c-format
+msgid "Download failed: %s"
+msgstr "فشل التنزيل: %s"
+
+#: src/main.c:2364
+msgid "Couldn't download that track"
+msgstr "تعذّر تنزيل هذه الأغنية"
+
+#: src/main.c:5203
+msgid "Free account · standard quality (128 kbps)"
+msgstr "حساب Free · جودة قياسية (128 kbps)"
+
+#: src/main.c:1877
+#, c-format
+msgid "%s · Free · standard quality (128 kbps)"
+msgstr "%s · Free · جودة قياسية (128 kbps)"
+
+#: src/main.c:5662
+msgid "PREVIEW"
+msgstr "مقتطف"
+
+#: src/main.c:5665
+msgid "Preview only — a 30-second clip"
+msgstr "مقتطف فقط — مقطع مدته 30 ثانية"
+
+#: src/main.c:1836
+msgid "Ads"
+msgstr "الإعلانات"
+
+#: src/main.c:1839
+msgid "Disable ads"
+msgstr "تعطيل الإعلانات"
+
+#: src/main.c:1842
+msgid ""
+"Deezer Free is ad-supported. Reporting your plays — like the official app — "
+"credits artists and drives the ads. Disabling this removes ads but stops "
+"reporting your plays, which denies artists their play count and breaks "
+"Deezer's terms of use. Use at your own risk."
+msgstr ""
+"يعتمد Deezer Free على الإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي — "
+"يمنح الفنانين حقوقهم ويموّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه "
+"يوقف أيضًا الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات التشغيل ويخالف "
+"شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة."
+
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
 msgstr ""

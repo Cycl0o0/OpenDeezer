@@ -45,6 +45,14 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
 
 **Playback**
 - **Quality tiers** — Normal (MP3 128), High (MP3 320), **HiFi (FLAC lossless)**.
+- **Free accounts welcome** — a Deezer Free login streams the **full library at
+  128 kbps** (ad-supported, exactly like Deezer's own web player). A paid plan
+  unlocks 320/FLAC and downloads. (If a specific track has no full-length source
+  for your account, playback falls back to Deezer's 30-second preview, marked as
+  such — but that's the exception, not the rule.)
+- **Download tracks** — save the current or selected track to disk (decrypted
+  MP3/FLAC), on every client. Downloads need a paid Deezer plan; the folder is
+  configurable and shared across clients.
 - **Gapless** transitions, **crossfade**, **ReplayGain** loudness normalization.
 - **Sleep timer** — pause after 15/30/45/60 min or at the end of the current
   track, with a smooth fade-out (on every client + the web remote).
@@ -113,7 +121,9 @@ access to your account.
 
 ## Requirements
 
-- A Deezer **Premium** account (HiFi tier for FLAC).
+- A Deezer account. **Free works** — full-library streaming at 128 kbps,
+  ad-supported (same as Deezer's web player). A **paid plan** unlocks higher
+  quality (Premium for MP3 320, HiFi for FLAC) and **downloads**.
 - Building from source: **Go 1.25+**, a C compiler, and a working audio device.
   The audio backend is [malgo](https://github.com/gen2brain/malgo) (miniaudio),
   so **cgo is required on every platform** (Linux/macOS/Windows).
@@ -150,8 +160,8 @@ access to your account.
 | l | lyrics (synced) | | d | output device |
 | u | queue view | | c | now-playing + art |
 | s | stop | | t | cycle theme |
-| T | sleep timer | | ? | help |
-| i | about | | q | quit |
+| T | sleep timer | | D | download track (paid plans) |
+| i | about | | ? | help · q quit |
 
 Home screen entries: Liked Songs · My Playlists · ⚡ Flow · 📈 Charts ·
 🎙 Podcasts · 🔍 Search (and ▶ Resume when a saved position exists).
@@ -415,16 +425,23 @@ Deezer's public API doesn't allow full-track streaming. The only way to play
 your music is the same authenticated path the official client uses, which needs
 your session (the ARL).
 
-**Why Deezer Premium only?**
-Streaming full, high-quality tracks (and FLAC) is a Premium entitlement. A free
-account can't stream full tracks the way OpenDeezer plays them. OpenDeezer only
-plays content your own account is already entitled to.
+**Do I need Deezer Premium?**
+No — a **free** Deezer account works. Deezer Free streams the full library at
+128 kbps and is **ad-supported**: OpenDeezer plays full tracks (like Deezer's own
+web player) and reports plays so the free tier's ads/artist play-counts work.
+Free settings include an at-your-own-risk toggle to disable ads/play-reporting. A
+**paid plan** unlocks higher quality (Premium for MP3 320, HiFi for FLAC) and
+downloads. (A track with no full-length source for your account falls back to
+Deezer's 30-second preview, marked as such — the exception, not the rule.)
+OpenDeezer only plays what your own account can already reach.
 
-**Why can't I download / save tracks?**
-OpenDeezer plays music, it doesn't rip it. Each track is decrypted and decoded
-**in memory** to play, and never written to disk. Saving decrypted files would
-be piracy, so it doesn't. Play your own entitled music, the same as the official
-app.
+**Can I download tracks?**
+Yes, with a **paid plan** — the current or selected track saves to disk as a
+decrypted MP3/FLAC (TUI key `D`, or the Download action in each GUI's track
+menu), into a configurable folder shared across clients. Downloads are disabled
+on free accounts (which have no full-length source to save — only the public
+preview). Only content your own account is entitled to is ever fetched; keep
+what you save for personal use.
 
 **Does my ARL get uploaded anywhere?**
 No. Login, decrypt and decode all run on your machine; the only requests that
@@ -432,9 +449,9 @@ leave are to Deezer itself. The in-browser config generator never uploads your
 token either.
 
 **Is this legal? Will my account get banned?**
-Grey zone. It reaches Deezer the unofficial way and decrypts your own entitled
-content locally, which almost certainly breaks Deezer's terms for third-party
-apps. Personal/educational use, your own Premium account, your own risk. Not
+Grey zone. It reaches Deezer the unofficial way and plays/decrypts your own
+entitled content locally, which almost certainly breaks Deezer's terms for
+third-party apps. Personal/educational use, your own account, your own risk. Not
 affiliated with Deezer.
 
 **Does it support HiFi / FLAC?**
@@ -451,7 +468,7 @@ Yes, AGPL-3.0. Read it, build it, audit exactly what it does.
 
 ## The fine print
 
-Personal/educational use, your own Premium account, your own risk. It reaches
-Deezer the unofficial way and decrypts your own entitled content locally, which
-almost certainly breaks Deezer's terms for third-party apps. Not affiliated with
-Deezer. AGPL-3.0.
+Personal/educational use, your own account, your own risk. It reaches Deezer the
+unofficial way and plays/decrypts your own entitled content locally, which almost
+certainly breaks Deezer's terms for third-party apps. Not affiliated with Deezer.
+AGPL-3.0.

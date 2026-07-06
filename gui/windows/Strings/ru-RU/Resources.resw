@@ -364,11 +364,8 @@
   <data name="Dialog_ConnectFailBody" xml:space="preserve">
     <value>Не удалось связаться с этим устройством.</value>
   </data>
-  <data name="Blocked_Title" xml:space="preserve">
-    <value>Требуется Premium</value>
-  </data>
-  <data name="Blocked_BodyFormat" xml:space="preserve">
-    <value>Ваш аккаунт ({0}) не Premium. Оформите подписку на deezer.com и перезапустите OpenDeezer.</value>
+  <data name="Account_FreeQualityHint" xml:space="preserve">
+    <value>Бесплатный аккаунт · стандартное качество (128 kbps)</value>
   </data>
   <data name="NoInternet_Title" xml:space="preserve">
     <value>Нет подключения к Интернету</value>
@@ -627,5 +624,38 @@
   </data>
   <data name="Seconds_Other" xml:space="preserve">
     <value>{0} секунды</value>
+  </data>
+  <data name="Menu_Download" xml:space="preserve">
+    <value>Скачать</value>
+  </data>
+  <data name="Menu_DownloadRequiresPremium" xml:space="preserve">
+    <value>Требуется платная подписка Deezer</value>
+  </data>
+  <data name="Settings_DownloadFolder" xml:space="preserve">
+    <value>Папка загрузок</value>
+  </data>
+  <data name="Btn_Browse" xml:space="preserve">
+    <value>Обзор…</value>
+  </data>
+  <data name="Dialog_DownloadDoneTitle" xml:space="preserve">
+    <value>Загрузка завершена</value>
+  </data>
+  <data name="Dialog_DownloadDoneBodyFormat" xml:space="preserve">
+    <value>Сохранено в {0}</value>
+  </data>
+  <data name="Dialog_DownloadFailTitle" xml:space="preserve">
+    <value>Ошибка загрузки</value>
+  </data>
+  <data name="Dialog_DownloadFailBody" xml:space="preserve">
+    <value>Не удалось скачать трек.</value>
+  </data>
+  <data name="Preview_Badge" xml:space="preserve">
+    <value>Фрагмент</value>
+  </data>
+  <data name="Settings_DisableAds" xml:space="preserve">
+    <value>Отключить рекламу</value>
+  </data>
+  <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
+    <value>Deezer Free существует за счёт рекламы. Передача данных о ваших прослушиваниях — как в официальном приложении — засчитывается артистам и обеспечивает показ рекламы. Отключение убирает рекламу, но прекращает передачу данных о прослушиваниях, из-за чего артисты лишаются засчитанных прослушиваний, а также нарушаются условия использования Deezer. Используйте на свой страх и риск.</value>
   </data>
 </root>

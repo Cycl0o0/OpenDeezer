@@ -173,6 +173,24 @@
     <!-- Track list -->
     <string name="tracklist_empty">Nothing here yet.</string>
 
+    <!-- Downloads (premium-only) -->
+    <string name="settings_downloads">Downloads</string>
+    <string name="download_folder_title">Download folder</string>
+    <string name="download_folder_default">Default folder</string>
+    <string name="download_requires_premium">Requires a paid Deezer plan</string>
+    <string name="download_started">Downloading %1$s…</string>
+    <string name="download_saved">Saved to %1$s</string>
+    <string name="download_saved_generic">Downloaded %1$s</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="download_failed_generic">Download failed</string>
+    <string name="preview_chip">Preview</string>
+    <string name="account_free_hint">Free account · standard quality (128 kbps)</string>
+
+    <!-- Ads (Deezer Free only) -->
+    <string name="settings_ads">Ads</string>
+    <string name="setting_disable_ads_title">Disable ads</string>
+    <string name="setting_disable_ads_disclaimer">Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer\'s terms of use. Use at your own risk.</string>
+
     <!-- Update banner -->
     <string name="update_release_notes">Release notes</string>
 

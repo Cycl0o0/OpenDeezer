@@ -142,6 +142,8 @@ struct TrackRow: View {
 
     @EnvironmentObject private var player: PlayerController
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadStore
     @State private var showAddToPlaylist = false
 
     var body: some View {
@@ -220,6 +222,15 @@ struct TrackRow: View {
                 showAddToPlaylist = true
             } label: {
                 Label("Add to Playlist", systemImage: "text.badge.plus")
+            }
+            // Downloads save the full track to disk — premium-only, so it's
+            // shown only for paid accounts (Free streams but can't download).
+            if session.account?.premium == true {
+                Button {
+                    downloads.download(track, isPremium: true)
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
             }
         }
     }

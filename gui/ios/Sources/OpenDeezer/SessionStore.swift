@@ -10,7 +10,6 @@ final class SessionStore: ObservableObject {
         case launching
         case loggedOut
         case noInternet
-        case gated
         case ready
     }
 
@@ -53,26 +52,23 @@ final class SessionStore: ObservableObject {
         if persist { KeychainStore.save(key: arlKey, value: trimmed) }
         AudioPrefs.applyOnLaunch() // re-apply saved quality/gapless/etc. (engine keeps them in memory only)
 
-        if let acct = try? await Engine.account() {
-            account = acct
-            phase = acct.premium ? .ready : .gated
-        } else {
-            // Account parsing failed but Init succeeded — don't strand the user.
-            phase = .ready
-        }
+        // Free and paid accounts both reach the full UI: the engine streams
+        // full-length tracks at standard quality (128 kbps) for Deezer Free,
+        // gating only downloads/HiFi. Account parsing may fail while Init
+        // succeeds — don't strand the user in that case either.
+        account = try? await Engine.account()
+        phase = .ready
 
-        if phase == .ready {
-            PlayerController.shared.start()
-            RemoteHostStore.shared.applyOnLaunch()
-            await LibraryStore.shared.refreshAll()
-        }
+        PlayerController.shared.start()
+        RemoteHostStore.shared.applyOnLaunch()
+        await LibraryStore.shared.refreshAll()
         return true
     }
 
     /// Retries the saved-ARL login after a network failure — driven by the
     /// No-Internet screen's Retry button. `login` re-derives the phase from the
-    /// result: `.ready`/`.gated` once back online, `.noInternet` if still
-    /// offline, `.loggedOut` on a genuine auth failure.
+    /// result: `.ready` once back online, `.noInternet` if still offline,
+    /// `.loggedOut` on a genuine auth failure.
     func retrySavedLogin() async {
         guard let arl = KeychainStore.load(key: arlKey), !arl.isEmpty else {
             phase = .loggedOut

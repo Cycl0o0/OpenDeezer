@@ -55,6 +55,8 @@ fun QueueScreen(player: PlayerController, onBack: () -> Unit) {
                         TrackRow(
                             track = track,
                             onClick = { player.jumpTo(index) },
+                            onDownload = { player.download(track) },
+                            downloadEnabled = player.premium,
                             modifier = if (isCurrent) {
                                 Modifier.background(Color(0x1AA238FF))
                             } else {

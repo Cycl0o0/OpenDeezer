@@ -42,10 +42,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if app.accountBlocked {
-                // Free account: gate the whole app (no browsing / playback).
-                FreeAccountBlockedView()
-            } else if app.loggedIn {
+            if app.loggedIn {
                 NavigationSplitView {
                     Sidebar()
                 } detail: {
@@ -69,6 +66,16 @@ struct RootView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: app.showUpdateBanner)
+        // Download status toast, above the floating player bar. Auto-dismisses;
+        // tap to dismiss early.
+        .overlay(alignment: .bottom) {
+            if let msg = app.downloadStatus {
+                DownloadToast(message: msg)
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: app.downloadStatus)
         .sheet(isPresented: $app.showLoginWeb) { DeezerLoginSheet() }
         .sheet(isPresented: $app.showCredits) { CreditsView() }
         .sheet(isPresented: $app.showSettings) { SettingsView() }
@@ -122,6 +129,29 @@ struct UpdateBanner: View {
     }
 }
 
+// DownloadToast — the transient status shown while a track downloads and when
+// it finishes (or fails), surfaced by AppState.download(). Tap to dismiss.
+struct DownloadToast: View {
+    @EnvironmentObject var app: AppState
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 14)).foregroundStyle(DZ.accent)
+            Text(message)
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(DZ.textPri)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .frame(maxWidth: 420)
+        .glassEffect(.regular, in: Capsule())
+        .shadow(radius: 10, y: 3)
+        .contentShape(Capsule())
+        .onTapGesture { app.dismissDownloadStatus() }
+    }
+}
+
 struct LoginGate: View {
     @EnvironmentObject var app: AppState
     @State private var showManual = false
@@ -167,53 +197,6 @@ struct LoginGate: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DZ.windowBG)
-    }
-}
-
-// FreeAccountBlockedView — shown when a Deezer Free account logs in. OpenDeezer
-// streams on-demand, which a Free plan can't do, so the app is gated behind this
-// message. The only ways out are to quit or to sign in with a Premium account.
-struct FreeAccountBlockedView: View {
-    @EnvironmentObject var app: AppState
-
-    private var offer: String {
-        let o = app.account?.offer ?? ""
-        return o.isEmpty ? "Deezer Free" : o
-    }
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "lock.fill")
-                .font(.system(size: 52)).foregroundStyle(DZ.accent)
-            Text("OpenDeezer").font(.system(size: 22, weight: .bold)).foregroundStyle(DZ.textPri)
-
-            Text(L("Premium required"))
-                .font(.system(size: 26, weight: .bold)).foregroundStyle(DZ.textPri)
-                .multilineTextAlignment(.center)
-
-            Text(Lf("OpenDeezer needs a Deezer Premium subscription to stream. Your account: %@. Subscribe at deezer.com, then restart OpenDeezer.", offer))
-                .font(.title3).foregroundStyle(DZ.textSec)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
-
-            HStack(spacing: 12) {
-                // Allow switching to a Premium account without leaving the block:
-                // a successful Premium login clears accountBlocked and opens the app.
-                Button { app.beginWebLogin() } label: {
-                    Label(L("Log in with a different account"), systemImage: "person.crop.circle")
-                }
-                .buttonStyle(.glass).tint(DZ.accent).controlSize(.large)
-
-                Button { NSApplication.shared.terminate(nil) } label: {
-                    Label(L("Quit OpenDeezer"), systemImage: "power").frame(minWidth: 140)
-                }
-                .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
-            }
-            .padding(.top, 6)
-        }
-        .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DZ.windowBG)
     }
@@ -358,6 +341,12 @@ struct AccountRow: View {
                     .foregroundStyle(DZ.textPri).lineLimit(1)
                 Text(accountSubtitle)
                     .font(.system(size: 11)).foregroundStyle(DZ.textSec).lineLimit(1)
+                // Free accounts stream full-length at standard quality (128 kbps);
+                // a subtle note explains the quality cap (HiFi/HQ need Premium).
+                if app.loggedIn && !app.isPremium {
+                    Text(L("Free account · standard quality (128 kbps)"))
+                        .font(.system(size: 10)).foregroundStyle(DZ.accentMag).lineLimit(1)
+                }
             }
             Spacer()
             // Re-open the existing Deezer login sheet to re-authenticate or
@@ -649,6 +638,13 @@ struct TrackRowView: View {
             Button { app.beginAddToPlaylist(track) } label: {
                 Label(L("Add to Playlist…"), systemImage: "text.badge.plus")
             }
+            // Downloads are premium-only. Disabled (not hidden) so free-plan
+            // users see why via the help tooltip.
+            Button { app.download(track) } label: {
+                Label(L("Download"), systemImage: "arrow.down.circle")
+            }
+            .disabled(!app.isPremium)
+            .help(app.isPremium ? L("Download") : L("Requires a paid Deezer plan"))
             if let aid = track.artists.first?.id {
                 Button { app.openArtist(aid) } label: {
                     Label(L("Go to Artist"), systemImage: "music.mic")

@@ -31,20 +31,6 @@ fun TvApp(vm: AppViewModel) {
                 error = vm.loginError,
                 onArl = { arl, auto -> vm.login(arl, auto = auto) },
             )
-            AuthStage.NEEDS_PREMIUM -> Centered {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(stringResource(R.string.premium_required), style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        stringResource(R.string.tv_premium_body),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(onClick = { vm.logout() }) { Text(stringResource(R.string.tv_use_another_account)) }
-                }
-            }
             AuthStage.NO_INTERNET -> Centered {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
