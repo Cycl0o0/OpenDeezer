@@ -1,0 +1,153 @@
+name: ai-review
+
+# AI code review of every pull request, powered by Claude Fable 5 via the
+# Anthropic Messages API. Posts (and updates, in place) a single review comment.
+#
+# Setup: add a repository secret ANTHROPIC_API_KEY (Settings -> Secrets and
+# variables -> Actions). Without it, the job is a graceful no-op (so PRs from
+# forks, where secrets aren't exposed, don't fail).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
+
+# One review per PR at a time; a new push cancels the in-flight review.
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Claude Fable 5 review
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check for API key
+        id: gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY not set — skipping AI review."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the base commit to diff against
+
+      - name: Build the diff
+        if: steps.gate.outputs.skip == 'false'
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # For workflow_dispatch (no PR), diff the last commit; otherwise the PR range.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            RANGE="$BASE_SHA...$HEAD_SHA"
+          else
+            RANGE="HEAD~1...HEAD"
+          fi
+          # Review source + docs; skip binaries, generated bindings, lockfiles and
+          # huge project files that add noise and cost without value.
+          git diff --diff-filter=ACMR "$RANGE" -- . \
+            ':(exclude)go.sum' \
+            ':(exclude)**/*.a' \
+            ':(exclude)**/*.pbxproj' \
+            ':(exclude)**/Odmobile.xcframework/**' \
+            ':(exclude)**/*.xcstrings' \
+            ':(exclude)**/build/**' \
+            ':(exclude)**/*.png' ':(exclude)**/*.jpg' ':(exclude)**/*.ico' ':(exclude)**/*.icns' ':(exclude)**/*.qm' \
+            > /tmp/pr.diff || true
+          # Cap the payload so a giant PR stays within token/cost limits.
+          MAX=120000
+          if [ "$(wc -c < /tmp/pr.diff)" -gt "$MAX" ]; then
+            head -c "$MAX" /tmp/pr.diff > /tmp/pr.diff.cut
+            printf '\n\n[... diff truncated at %s bytes ...]\n' "$MAX" >> /tmp/pr.diff.cut
+            mv /tmp/pr.diff.cut /tmp/pr.diff
+          fi
+          if [ ! -s /tmp/pr.diff ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Review with Claude Fable 5
+        if: steps.gate.outputs.skip == 'false' && steps.diff.outputs.empty == 'false'
+        id: claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          SYSTEM='You are a senior software engineer reviewing a GitHub pull request diff for the OpenDeezer project (a Go engine with native GUI clients). Review ONLY the diff. Be concise and specific: cite file paths and, where useful, functions or line context. Prioritise correctness bugs, security issues, race conditions, resource leaks, and broken error handling; then note clear simplifications. Skip nitpicks and style unless they cause bugs. If the diff looks good, say so briefly. Output GitHub-flavoured markdown: a one-line verdict, then bullet findings grouped by severity. Do not invent code that is not in the diff.'
+          # Build the request body safely (jq handles all escaping of the diff).
+          jq -n \
+            --arg model "claude-fable-5" \
+            --arg system "$SYSTEM" \
+            --rawfile diff /tmp/pr.diff \
+            '{
+              model: $model,
+              max_tokens: 2048,
+              system: $system,
+              messages: [ { role: "user", content: ("Review this pull request diff:\n\n```diff\n" + $diff + "\n```") } ]
+            }' > /tmp/req.json
+
+          HTTP=$(curl -sS -o /tmp/resp.json -w '%{http_code}' https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            --data @/tmp/req.json) || { echo "::error::Anthropic API request failed"; exit 1; }
+
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Anthropic API returned HTTP $HTTP"
+            jq -r '.error.message // .' /tmp/resp.json || cat /tmp/resp.json
+            exit 1
+          fi
+
+          jq -r '.content[]? | select(.type=="text") | .text' /tmp/resp.json > /tmp/review.md
+          if [ ! -s /tmp/review.md ]; then
+            echo "::error::Empty review from the model"
+            cat /tmp/resp.json
+            exit 1
+          fi
+
+      - name: Post / update the review comment
+        if: steps.gate.outputs.skip == 'false' && steps.diff.outputs.empty == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [ -z "${PR:-}" ] && { echo "No PR number (manual run) — printing review to the log:"; cat /tmp/review.md; exit 0; }
+          MARKER='<!-- claude-fable-5-review -->'
+          {
+            echo "$MARKER"
+            echo "## 🤖 Claude Fable 5 review"
+            echo
+            cat /tmp/review.md
+            echo
+            echo "<sub>Automated review of the PR diff. Advisory only — a human still decides.</sub>"
+          } > /tmp/comment.md
+
+          # Find an existing review comment to update in place (no comment spam on
+          # each push); otherwise create a new one.
+          EXISTING=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq "map(select(.body | startswith(\"$MARKER\"))) | .[0].id // empty")
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$EXISTING" -F body=@/tmp/comment.md >/dev/null
+            echo "Updated review comment $EXISTING."
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@/tmp/comment.md >/dev/null
+            echo "Posted a new review comment."
+          fi
