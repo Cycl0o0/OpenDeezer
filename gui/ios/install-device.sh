@@ -12,14 +12,13 @@
 #                 Apple ID has one too.
 #
 #   --no-multicast  Strip the OpenDeezer Connect multicast entitlement before
-#                 signing. REQUIRED for a free Apple ID: Apple grants the
-#                 "Multicast Networking" capability only to PAID Developer
-#                 accounts, so signing fails with it present. Cost: Connect can't
+#                 signing. REQUIRED for a free Apple ID or any team Apple has not
+#                 approved for Multicast Networking. Cost: Connect can't
 #                 auto-discover devices on the LAN (you can still add them by IP);
 #                 everything else — playback, EQ, podcasts — works.
 #
 # Prerequisites: Xcode + command-line tools, xcodegen (brew install xcodegen),
-# Go (for the gomobile bind), and the iPhone plugged in and trusted. First run:
+# jq, Go (for the gomobile bind), and the iPhone plugged in and trusted. First run:
 # open Xcode ▸ Settings ▸ Accounts and add your Apple ID once so automatic
 # signing can mint a provisioning profile.
 set -euo pipefail
@@ -76,7 +75,26 @@ APP="$IOS_DIR/build/Build/Products/Release-iphoneos/OpenDeezer.app"
 
 # Install to the first connected device. devicectl ships with Xcode 15+.
 echo "==> locating connected iPhone"
-UDID="$(xcrun devicectl list devices 2>/dev/null | awk '/connected/ && /iPhone/ {print $(NF-1); exit}')"
+command -v jq >/dev/null || {
+  echo "error: jq is required to read devicectl's supported JSON output." >&2
+  exit 1
+}
+DEVICE_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opendeezer-devices.XXXXXX")"
+trap 'rm -rf "$DEVICE_TMP_DIR"' EXIT
+DEVICE_JSON="$DEVICE_TMP_DIR/devices.json"
+xcrun devicectl list devices --quiet --json-output "$DEVICE_JSON"
+UDID="$(jq -r '
+  [(.result.devices // [])[]
+    | select(
+        .hardwareProperties.platform == "iOS"
+        and .hardwareProperties.reality == "physical"
+        and .deviceProperties.bootState == "booted"
+        and .deviceProperties.developerModeStatus == "enabled"
+        and .connectionProperties.pairingState == "paired"
+        and .connectionProperties.tunnelState != "unavailable"
+      )
+  ][0].identifier // empty
+' "$DEVICE_JSON")"
 if [[ -z "$UDID" ]]; then
   echo "No connected iPhone found via devicectl. Plug in + trust the phone, or" >&2
   echo "open OpenDeezer.xcodeproj in Xcode, pick your iPhone, and press Run." >&2
