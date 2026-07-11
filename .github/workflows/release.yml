@@ -296,7 +296,7 @@ jobs:
         # Signs only the launcher exe (SmartScreen assesses the exe the user runs;
         # the WinAppSDK DLLs are already Microsoft-signed and libdeezercore.dll is
         # loaded by the signed exe, so re-signing every DLL is unnecessary).
-        uses: azure/trusted-signing-action@v0
+        uses: azure/trusted-signing-action@v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
