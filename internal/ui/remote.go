@@ -202,7 +202,7 @@ func clamp01(v float64) float64 {
 }
 
 // remoteEntryView is the connect screen (address input).
-func (m *Model) remoteEntryView() string {
+func (m *Model) remoteEntryView(rows int) string {
 	lines := []string{
 		"📡 " + i18n.T("Remote control") + " — " + i18n.T("drive another OpenDeezer client"),
 		"",
@@ -217,11 +217,11 @@ func (m *Model) remoteEntryView() string {
 	if m.status != "" {
 		lines = append(lines, "", m.status)
 	}
-	return padTo(lines, max(1, m.height-footerHeight))
+	return padTo(lines, rows)
 }
 
 // remoteCtlView shows the connected peer's playback + remote key hints.
-func (m *Model) remoteCtlView() string {
+func (m *Model) remoteCtlView(rows int) string {
 	st := m.remoteState
 	name := m.remoteName
 	if name == "" {
@@ -262,7 +262,7 @@ func (m *Model) remoteCtlView() string {
 	if m.status != "" {
 		lines = append(lines, "", m.status)
 	}
-	return padTo(lines, max(1, m.height-footerHeight))
+	return padTo(lines, rows)
 }
 
 func boolLabel(b bool) string {

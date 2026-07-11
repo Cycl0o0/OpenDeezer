@@ -20,9 +20,17 @@ struct AlbumDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity)
             } else if let error = errorText {
-                ContentUnavailableMessage(systemImage: "wifi.slash", title: "Couldn't load album", message: error)
+                ContentUnavailableMessage(
+                    systemImage: "wifi.slash", title: "Couldn't load album", message: error,
+                    retry: { Task { await load() } }
+                )
+            } else if tracks.isEmpty {
+                ContentUnavailableMessage(
+                    systemImage: "square.stack", title: "Albums",
+                    message: String(localized: "This album is empty.")
+                )
             } else {
-                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
                     TrackRow(track: track, tracks: tracks, showArtwork: false, indexLabel: index + 1)
                 }
             }
@@ -30,6 +38,7 @@ struct AlbumDetailView: View {
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private var header: some View {
@@ -50,18 +59,19 @@ struct AlbumDetailView: View {
             .tint(Palette.accent)
             .padding(.horizontal, 40)
             .padding(.top, 4)
+            .disabled(tracks.isEmpty)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
     }
 
     private func load() async {
-        isLoading = true
+        isLoading = tracks.isEmpty
         do {
             tracks = try await Engine.albumTracks(album.id)
             errorText = nil
         } catch {
-            errorText = error.localizedDescription
+            if tracks.isEmpty { errorText = error.localizedDescription }
         }
         isLoading = false
     }

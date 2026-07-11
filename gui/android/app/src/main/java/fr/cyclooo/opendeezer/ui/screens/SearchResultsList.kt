@@ -1,8 +1,6 @@
 package fr.cyclooo.opendeezer.ui.screens
 
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -36,7 +34,10 @@ fun SearchResultsList(
     onPlaylist: (Playlist) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(modifier) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(bottom = 16.dp),
+    ) {
         if (results.tracks.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.section_tracks)) }
             itemsIndexed(results.tracks, key = { i, t -> "t-$i-${t.id}" }) { index, track ->
@@ -51,7 +52,7 @@ fun SearchResultsList(
         if (results.albums.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.section_albums)) }
             item {
-                LazyRow {
+                LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
                     items(results.albums, key = { "a-${it.id}" }) { album ->
                         MediaCard(album.name, album.artistLine, album.artworkUrl, { onAlbum(album) })
                     }
@@ -61,7 +62,7 @@ fun SearchResultsList(
         if (results.artists.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.section_artists)) }
             item {
-                LazyRow {
+                LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
                     items(results.artists, key = { "ar-${it.id}" }) { artist ->
                         MediaCard(
                             artist.name,
@@ -77,13 +78,12 @@ fun SearchResultsList(
         if (results.playlists.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.section_playlists)) }
             item {
-                LazyRow {
+                LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
                     items(results.playlists, key = { "p-${it.id}" }) { pl ->
                         MediaCard(pl.name, pl.owner, pl.artworkUrl, { onPlaylist(pl) })
                     }
                 }
             }
         }
-        item { Spacer(Modifier.height(96.dp)) }
     }
 }

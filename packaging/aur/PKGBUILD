@@ -1,7 +1,7 @@
 # Maintainer: Cycl0o0 <cyclolysis0@gmail.com>
 # OpenDeezer terminal client (builds from the tagged source).
 pkgname=opendeezer
-pkgver=2.0.0
+pkgver=2.1.0
 pkgrel=1
 pkgdesc="Terminal Deezer client — browse, stream (Free or HiFi) and download with your ARL"
 arch=('x86_64' 'aarch64')

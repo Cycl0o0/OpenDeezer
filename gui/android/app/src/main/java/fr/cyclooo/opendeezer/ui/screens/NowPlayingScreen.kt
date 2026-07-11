@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Cast
@@ -122,12 +125,16 @@ fun NowPlayingScreen(
         }
 
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(24.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Artwork(
                 track.artworkUrl,
-                Modifier.fillMaxWidth().aspectRatio(1f),
+                Modifier.widthIn(max = 480.dp).fillMaxWidth().aspectRatio(1f),
                 corner = 16,
             )
             Spacer(Modifier.height(24.dp))
@@ -286,6 +293,7 @@ fun NowPlayingScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

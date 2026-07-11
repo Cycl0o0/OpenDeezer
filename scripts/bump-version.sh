@@ -59,6 +59,9 @@ echo "  · gui/macos/Info.plist"
 # ---- GNOME ----
 sub gui/gnome/meson.build "s/version: '[0-9.]*'/version: '$NEW'/"
 sub gui/gnome/src/main.c "s/\"$CUR\"/\"$NEW\"/g"
+for f in gui/gnome/po/*.po gui/gnome/po/*.pot; do
+  sub "$f" "s/Project-Id-Version: opendeezer-gnome [0-9.]*/Project-Id-Version: opendeezer-gnome $NEW/"
+done
 
 # ---- KDE ----
 sub gui/kde/src/mainwindow.cpp "s/OpenDeezer $CUR/OpenDeezer $NEW/g"
@@ -100,7 +103,7 @@ done
 echo
 echo "leftover occurrences of $CUR (excluding CHANGELOG/history — review manually):"
 grep -rn --exclude-dir=.git --exclude=CHANGELOG.md --exclude-dir=scripts -F "$CUR" \
-  internal/version gui/macos/Info.plist gui/gnome/meson.build gui/kde/src/mainwindow.cpp \
+  internal/version gui/macos/Info.plist gui/gnome/meson.build gui/gnome/po gui/kde/src/mainwindow.cpp \
   gui/windows/app.manifest gui/android/app/build.gradle.kts gui/ios/project.yml \
   packaging 2>/dev/null || echo "  (none)"
 echo

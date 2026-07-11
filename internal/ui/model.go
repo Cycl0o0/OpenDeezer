@@ -61,6 +61,7 @@ type Model struct {
 	search     textinput.Model
 	spinner    spinner.Model
 	status     string // transient status / error line
+	helpOffset int    // first keybinding shown on the scrollable help screen
 	loading    bool   // a network request is in flight
 	ready      bool
 	width      int
@@ -93,6 +94,7 @@ type Model struct {
 	acct          deezer.Account // logged-in plan + entitlements
 	pendingSeek   int64          // ms to seek to once the next stream is ready (resume)
 	searchPodcast bool           // search screen is in podcast mode
+	searchReturn  screen         // screen restored when search is cancelled
 	episodeMode   bool           // current queue is podcast episodes (plain streams)
 	sleepStep     int            // sleep-timer cycle position (see cycleSleepTimer)
 	downloading   bool           // a track download (D key) is in flight

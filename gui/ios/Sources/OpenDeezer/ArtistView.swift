@@ -13,7 +13,10 @@ struct ArtistView: View {
             if isLoading {
                 ProgressView().padding(.top, 60)
             } else if let error = errorText {
-                ContentUnavailableMessage(systemImage: "person.wave.2", title: "Couldn't load artist", message: error)
+                ContentUnavailableMessage(
+                    systemImage: "person.wave.2", title: "Couldn't load artist", message: error,
+                    retry: { Task { await load() } }
+                )
                     .padding(.top, 40)
             } else if let profile {
                 VStack(alignment: .leading, spacing: 24) {
@@ -33,7 +36,7 @@ struct ArtistView: View {
                     if !profile.top.isEmpty {
                         SectionHeader(title: "Top Tracks")
                         VStack(spacing: 0) {
-                            ForEach(Array(profile.top.prefix(10).enumerated()), id: \.element.id) { index, track in
+                            ForEach(Array(profile.top.prefix(10).enumerated()), id: \.offset) { index, track in
                                 TrackRow(track: track, tracks: profile.top, showArtwork: true, indexLabel: index + 1)
                                     .padding(.horizontal, 20)
                                 Divider().padding(.leading, 78)
@@ -55,15 +58,16 @@ struct ArtistView: View {
         .navigationTitle(artistName)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {
-        isLoading = true
+        isLoading = profile == nil
         do {
             profile = try await Engine.artistProfile(artistID)
             errorText = nil
         } catch {
-            errorText = error.localizedDescription
+            if profile == nil { errorText = error.localizedDescription }
         }
         isLoading = false
     }

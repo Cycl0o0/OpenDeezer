@@ -13,8 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const footerHeight = 4
-
 // menuRows is the home screen. A "Resume" row is prepended when a saved
 // playback position exists.
 func (m *Model) menuRows() []list.Item {
@@ -46,7 +44,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.list.SetSize(msg.Width, max(1, msg.Height-footerHeight))
+		// View sizes the list against the footer it actually renders. Give it a
+		// usable interim size here so resize messages never leave a zero viewport.
+		m.list.SetSize(max(1, msg.Width), max(1, msg.Height))
 		m.ready = true
 		m.refreshCover()
 		return m, nil
@@ -593,7 +593,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.screen == screenSearch {
 		switch msg.String() {
 		case "esc":
-			m.screen = screenMenu
+			m.search.Blur()
+			m.screen = m.searchReturn
 			return m, nil
 		case "enter":
 			q := m.search.Value()
@@ -611,6 +612,31 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Update(msg)
 		return m, cmd
+	}
+
+	// Help is taller than many terminals. Scroll it directly instead of moving
+	// the hidden list underneath the overlay.
+	if m.screen == screenHelp {
+		switch msg.String() {
+		case "down", "j":
+			m.helpOffset++
+			return m, nil
+		case "up", "k":
+			m.helpOffset = max(0, m.helpOffset-1)
+			return m, nil
+		case "pgdown":
+			m.helpOffset += max(1, m.height/2)
+			return m, nil
+		case "pgup":
+			m.helpOffset = max(0, m.helpOffset-max(1, m.height/2))
+			return m, nil
+		case "home", "g":
+			m.helpOffset = 0
+			return m, nil
+		case "end", "G":
+			m.helpOffset = 1 << 30 // clamped to the last page by helpView
+			return m, nil
+		}
 	}
 
 	// Let the list own keys while filtering (so typing works).
@@ -849,14 +875,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.playing = false
 		return m, nil
 	case "/":
-		m.search.SetValue("")
-		m.search.Focus()
-		m.screen = screenSearch
+		m.openSearch(false)
 		return m, nil
 	case "c":
 		m.toggleScreen(screenNowPlaying)
 		return m, nil
 	case "?":
+		if m.screen != screenHelp {
+			m.helpOffset = 0
+		}
 		m.toggleScreen(screenHelp)
 		return m, nil
 	case "i":
@@ -897,6 +924,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// openSearch records where the search overlay was opened and resets its mode.
+// Keeping a dedicated return screen avoids corrupting prevScreen, which belongs
+// to now-playing/help/lyrics overlays that may themselves open search.
+func (m *Model) openSearch(podcasts bool) {
+	m.searchReturn = m.screen
+	m.searchPodcast = podcasts
+	m.search.SetValue("")
+	m.search.Focus()
+	m.status = ""
+	m.screen = screenSearch
+}
+
 // activate handles Enter on the selected row.
 func (m *Model) activate() (tea.Model, tea.Cmd) {
 	it, ok := m.list.SelectedItem().(row)
@@ -923,16 +962,10 @@ func (m *Model) activate() (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, m.flowCmd()
 		case actSearch:
-			m.searchPodcast = false
-			m.search.SetValue("")
-			m.search.Focus()
-			m.screen = screenSearch
+			m.openSearch(false)
 			return m, nil
 		case actPodcasts:
-			m.searchPodcast = true
-			m.search.SetValue("")
-			m.search.Focus()
-			m.screen = screenSearch
+			m.openSearch(true)
 			return m, nil
 		case actRemote:
 			m.loading = true

@@ -15,31 +15,34 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                VStack(spacing: 0) {
-                    artwork(size: min(geo.size.width - 64, 360))
-                        .padding(.top, 12)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        artwork(size: artworkSize(in: geo.size))
+                            .padding(.top, 12)
 
-                    titleRow
-                        .padding(.top, 28)
-                        .padding(.horizontal, 28)
+                        titleRow
+                            .padding(.top, 28)
+                            .padding(.horizontal, 28)
 
-                    scrubber
-                        .padding(.top, 18)
-                        .padding(.horizontal, 28)
+                        scrubber
+                            .padding(.top, 18)
+                            .padding(.horizontal, 28)
 
-                    transport
-                        .padding(.top, 22)
-                        .padding(.horizontal, 12)
+                        transport
+                            .padding(.top, 22)
+                            .padding(.horizontal, 12)
 
-                    volumeRow
-                        .padding(.top, 26)
-                        .padding(.horizontal, 28)
+                        volumeRow
+                            .padding(.top, 26)
+                            .padding(.horizontal, 28)
 
-                    Spacer(minLength: 12)
+                        Spacer(minLength: 16)
 
-                    bottomBar
-                        .padding(.horizontal, 28)
-                        .padding(.bottom, 8)
+                        bottomBar
+                            .padding(.horizontal, 28)
+                            .padding(.bottom, 8)
+                    }
+                    .frame(minHeight: geo.size.height)
                 }
             }
             .background(nowPlayingBackground)
@@ -51,6 +54,7 @@ struct NowPlayingView: View {
                         Image(systemName: "chevron.down")
                             .font(.headline)
                     }
+                    .accessibilityLabel("Done")
                 }
                 if !player.connectedDeviceAddr.isEmpty {
                     ToolbarItem(placement: .principal) {
@@ -68,6 +72,9 @@ struct NowPlayingView: View {
         }
         .sheet(isPresented: $showDevices) {
             DevicePickerView()
+        }
+        .onChange(of: player.hasNowPlaying) { _, hasNowPlaying in
+            if !hasNowPlaying { dismiss() }
         }
     }
 
@@ -106,6 +113,7 @@ struct NowPlayingView: View {
                     .font(.title3)
                     .foregroundStyle(Palette.accent)
             }
+            .accessibilityLabel(isFavorite ? String(localized: "Unlike") : String(localized: "Like"))
         }
     }
 
@@ -128,6 +136,7 @@ struct NowPlayingView: View {
                 }
             )
             .tint(Palette.accent)
+            .accessibilityLabel("Playback position")
 
             HStack {
                 Text(Track.timeText(isScrubbing ? Int64(scrubValue) : player.positionMs))
@@ -149,30 +158,48 @@ struct NowPlayingView: View {
                 Image(systemName: "shuffle")
                     .font(.system(size: 18))
                     .foregroundStyle(player.isShuffle ? Palette.accent : .secondary)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
+            .disabled(player.queue.count < 2)
+            .accessibilityLabel("Shuffle")
+            .accessibilityAddTraits(player.isShuffle ? .isSelected : [])
             Button { player.previous() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: 26))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
+            .accessibilityLabel("Previous")
             Button { player.togglePlayPause() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 34))
-                    .frame(width: 72, height: 72)
+                Group {
+                    if player.state == .loading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 34))
+                    }
+                }
+                .frame(width: 72, height: 72)
             }
             .glassCircle(interactive: true)
+            .disabled(player.state == .loading)
+            .accessibilityLabel(playPauseAccessibilityLabel)
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 26))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
+            .disabled(!player.canGoNext)
+            .accessibilityLabel("Next")
             Button { player.cycleRepeat() } label: {
                 Image(systemName: player.repeatMode.systemImage)
                     .font(.system(size: 18))
                     .foregroundStyle(player.repeatMode == .off ? .secondary : Palette.accent)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
+            .disabled(player.queue.isEmpty)
+            .accessibilityLabel("Repeat")
+            .accessibilityValue(player.repeatMode.accessibilityValue)
+            .accessibilityAddTraits(player.repeatMode == .off ? [] : .isSelected)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
@@ -180,10 +207,17 @@ struct NowPlayingView: View {
 
     private var volumeRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "speaker.fill").font(.caption).foregroundStyle(.secondary)
+            Image(systemName: "speaker.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Slider(value: Binding(get: { player.volume }, set: { player.setVolume($0) }), in: 0...1)
                 .tint(.secondary)
-            Image(systemName: "speaker.wave.3.fill").font(.caption).foregroundStyle(.secondary)
+                .accessibilityLabel("Volume")
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
     }
 
@@ -194,6 +228,7 @@ struct NowPlayingView: View {
                     .font(.system(size: 18))
                     .frame(width: 44, height: 44)
             }
+            .accessibilityLabel("Lyrics")
             Spacer()
             Button { showDevices = true } label: {
                 Image(systemName: player.connectedDeviceAddr.isEmpty ? "hifispeaker" : "hifispeaker.fill")
@@ -201,6 +236,7 @@ struct NowPlayingView: View {
                     .foregroundStyle(player.connectedDeviceAddr.isEmpty ? .primary : Palette.accent)
                     .frame(width: 44, height: 44)
             }
+            .accessibilityLabel("Devices")
         }
         .glassCard(cornerRadius: 22)
         .padding(.horizontal, 4)
@@ -218,6 +254,21 @@ struct NowPlayingView: View {
             Color(.systemBackground).ignoresSafeArea()
         }
     }
+
+    private var isFavorite: Bool {
+        player.current.map { library.isFavorite($0.id) } ?? false
+    }
+
+    private var playPauseAccessibilityLabel: String {
+        if player.state == .loading { return String(localized: "Loading") }
+        return player.isPlaying ? String(localized: "Pause") : String(localized: "Play")
+    }
+
+    private func artworkSize(in size: CGSize) -> CGFloat {
+        let width = max(size.width - 64, 160)
+        let height = min(max(size.height * 0.42, 180), 360)
+        return min(width, height)
+    }
 }
 
 /// Small red "E" badge for explicit tracks, reused across list rows.
@@ -229,6 +280,7 @@ struct ExplicitBadge: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
             .background(RoundedRectangle(cornerRadius: 3).stroke(Color.secondary, lineWidth: 1))
+            .accessibilityLabel("Explicit")
     }
 }
 

@@ -6,6 +6,7 @@ struct PodcastsView: View {
     @State private var isLoading = false
     @State private var errorText: String?
     @State private var hasSearched = false
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -17,7 +18,10 @@ struct PodcastsView: View {
             } else if isLoading {
                 ProgressView()
             } else if let error = errorText {
-                ContentUnavailableMessage(systemImage: "mic.slash", title: "Search failed", message: error)
+                ContentUnavailableMessage(
+                    systemImage: "mic.slash", title: "Search failed", message: error,
+                    retry: startSearch
+                )
             } else if podcasts.isEmpty {
                 ContentUnavailableMessage(systemImage: "mic.slash", title: "No podcasts found", message: String(localized: "Try a different search."))
             } else {
@@ -34,24 +38,54 @@ struct PodcastsView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .navigationTitle("Podcasts")
         .searchable(text: $query, prompt: "Search podcasts")
-        .onSubmit(of: .search) { Task { await search() } }
+        .onSubmit(of: .search) { startSearch() }
+        .onChange(of: query) { _, _ in
+            searchTask?.cancel()
+            searchTask = nil
+            podcasts = []
+            errorText = nil
+            hasSearched = false
+            isLoading = false
+        }
+        .onDisappear {
+            let wasSearching = searchTask != nil
+            searchTask?.cancel()
+            searchTask = nil
+            isLoading = false
+            if wasSearching { hasSearched = false }
+        }
     }
 
-    private func search() async {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+    private func startSearch() {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return }
+        searchTask?.cancel()
         isLoading = true
         hasSearched = true
+        errorText = nil
+        searchTask = Task { await search(term) }
+    }
+
+    private func search(_ term: String) async {
         do {
-            podcasts = try await Engine.searchPodcasts(query)
+            let response = try await Engine.searchPodcasts(term)
+            guard !Task.isCancelled,
+                  term == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            podcasts = response
             errorText = nil
         } catch {
+            guard !Task.isCancelled,
+                  term == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            podcasts = []
             errorText = error.localizedDescription
         }
         isLoading = false
+        searchTask = nil
     }
 }
 
@@ -87,39 +121,63 @@ struct PodcastDetailView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity)
             } else if let error = errorText {
-                ContentUnavailableMessage(systemImage: "mic.slash", title: "Couldn't load episodes", message: error)
+                ContentUnavailableMessage(
+                    systemImage: "mic.slash", title: "Couldn't load episodes", message: error,
+                    retry: { Task { await load() } }
+                )
+            } else if episodes.isEmpty {
+                ContentUnavailableMessage(
+                    systemImage: "mic.slash", title: "No episodes found",
+                    message: String(localized: "Try again later.")
+                )
             } else {
                 ForEach(episodes) { episode in
                     Button {
                         player.playEpisode(episode)
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(episode.title).font(.body).foregroundStyle(.primary)
-                            Text(episode.releaseDate).font(.caption2).foregroundStyle(.secondary)
-                            if !episode.description.isEmpty {
-                                Text(episode.description)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(episode.title).font(.body).foregroundStyle(.primary)
+                                if !episode.releaseDate.isEmpty {
+                                    Text(episode.releaseDate).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                if !episode.description.isEmpty {
+                                    Text(episode.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                if episode.durationMs > 0 {
+                                    Text(episode.durationText).font(.caption2).foregroundStyle(.secondary)
+                                }
                             }
-                            Text(episode.durationText).font(.caption2).foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            Image(systemName: player.current?.id == episode.id && player.isPlaying
+                                  ? "speaker.wave.2.fill" : "play.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(player.current?.id == episode.id ? Palette.accent : .secondary)
+                                .accessibilityHidden(true)
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Play")
                 }
             }
         }
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {
-        isLoading = true
+        isLoading = episodes.isEmpty
         do {
             episodes = try await Engine.podcastEpisodes(podcast.id)
             errorText = nil
         } catch {
-            errorText = error.localizedDescription
+            if episodes.isEmpty { errorText = error.localizedDescription }
         }
         isLoading = false
     }

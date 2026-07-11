@@ -235,6 +235,11 @@
         <translation>退出(&amp;Q)</translation>
     </message>
     <message>
+        <location filename="../src/mainwindow.cpp" line="874" />
+        <source>Edit</source>
+        <translation>编辑</translation>
+    </message>
+    <message>
         <location filename="../src/mainwindow.cpp" line="853" />
         <source>&amp;Help</source>
         <translation>帮助(&amp;H)</translation>

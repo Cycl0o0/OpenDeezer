@@ -4,6 +4,7 @@
 
     <string name="action_back">वापस</string>
     <string name="action_close">बंद करें</string>
+    <string name="action_clear">साफ़ करें</string>
     <string name="action_download">डाउनलोड करें</string>
     <string name="action_retry">पुनः प्रयास करें</string>
     <string name="action_refresh">ताज़ा करें</string>

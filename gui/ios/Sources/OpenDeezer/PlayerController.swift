@@ -14,6 +14,14 @@ enum RepeatMode: Int, CaseIterable {
         case .one: return "repeat.1"
         }
     }
+
+    var accessibilityValue: String {
+        switch self {
+        case .off: return String(localized: "Off")
+        case .all: return String(localized: "Repeat All")
+        case .one: return String(localized: "Repeat One")
+        }
+    }
 }
 
 /// Owns the play queue and mirrors the Go engine's transport state for the UI.
@@ -48,11 +56,19 @@ final class PlayerController: ObservableObject {
 
     var isPlaying: Bool { state == .playing }
     var hasNowPlaying: Bool { current != nil }
+    var canGoNext: Bool {
+        guard let currentIndex, !queue.isEmpty else { return false }
+        return (isShuffle && queue.count > 1) || repeatMode == .all || currentIndex < queue.count - 1
+    }
 
     private var timer: Timer?
     private var lastFinished = 0
     private var artworkToken = 0
+    private var playbackToken = 0
+    private var playbackRequestPending = false
+    private var seekToken = 0
     private var seeking = false
+    private var volumeTask: Task<Void, Never>?
     private var wasPlayingBeforeInterruption = false
     private var outputSuspended = false
     private var idleSince: Date?
@@ -80,18 +96,22 @@ final class PlayerController: ObservableObject {
     }
 
     private func tick() {
-        state = PlayerState(rawValue: Engine.state()) ?? .stopped
-        if !seeking { positionMs = Engine.positionMS() }
-        // The engine reports 0 for podcast episodes; fall back to the
-        // client-known duration so the scrubber / lock screen stay usable.
-        let engineDuration = Engine.durationMS()
-        durationMs = engineDuration > 0 ? engineDuration : (current?.durationMs ?? 0)
-        formatLabel = Engine.format()
-        isPreview = current != nil && Engine.isPreview()
+        if !playbackRequestPending {
+            state = PlayerState(rawValue: Engine.state()) ?? .stopped
+            if !seeking { positionMs = Engine.positionMS() }
+            // The engine reports 0 for podcast episodes; fall back to the
+            // client-known duration so the scrubber / lock screen stay usable.
+            let engineDuration = Engine.durationMS()
+            durationMs = engineDuration > 0 ? engineDuration : (current?.durationMs ?? 0)
+            formatLabel = Engine.format()
+            isPreview = current != nil && Engine.isPreview()
+        }
         connectedDeviceAddr = Engine.connectedDevice()
 
         let finished = Engine.finishedCount()
-        if finished != lastFinished {
+        if playbackRequestPending {
+            lastFinished = finished
+        } else if finished != lastFinished {
             lastFinished = finished
             advance(auto: true)
         }
@@ -120,26 +140,55 @@ final class PlayerController: ObservableObject {
         queue = []
         currentIndex = nil
         current = Track(episode: episode)
+        seekToken += 1
+        seeking = false
+        positionMs = 0
+        durationMs = episode.durationMs
+        state = .loading
+        formatLabel = ""
+        isPreview = false
         loadArtwork(url: episode.artworkUrl)
         // Re-baseline so a finish from the previous track landing in the same
         // poll window doesn't trigger a spurious advance.
         lastFinished = Engine.finishedCount()
         beginAudioPlayback()
-        Task { _ = await Engine.playEpisode(id: episode.id, durationMs: episode.durationMs) }
+        playbackToken += 1
+        let token = playbackToken
+        playbackRequestPending = true
+        Task {
+            let started = await Engine.playEpisode(id: episode.id, durationMs: episode.durationMs)
+            guard token == playbackToken else { return }
+            lastFinished = Engine.finishedCount()
+            playbackRequestPending = false
+            state = started ? (PlayerState(rawValue: Engine.state()) ?? .loading) : .errored
+        }
     }
 
     private func playCurrent() {
         guard let idx = currentIndex, queue.indices.contains(idx) else { return }
         let track = queue[idx]
         current = track
+        seekToken += 1
+        seeking = false
         loadArtwork(url: track.artworkUrl)
         positionMs = 0
+        durationMs = track.durationMs
+        state = .loading
+        formatLabel = ""
+        isPreview = false
         // Re-baseline so a finish from the previous track landing in the same
         // poll window doesn't trigger a spurious advance past this one.
         lastFinished = Engine.finishedCount()
         beginAudioPlayback()
+        playbackToken += 1
+        let token = playbackToken
+        playbackRequestPending = true
         Task {
-            _ = await Engine.play(id: track.id, durationMs: track.durationMs)
+            let started = await Engine.play(id: track.id, durationMs: track.durationMs)
+            guard token == playbackToken else { return }
+            lastFinished = Engine.finishedCount()
+            playbackRequestPending = false
+            state = started ? (PlayerState(rawValue: Engine.state()) ?? .loading) : .errored
         }
     }
 
@@ -155,11 +204,13 @@ final class PlayerController: ObservableObject {
     }
 
     func seek(to ms: Int64) {
+        seekToken += 1
+        let token = seekToken
         seeking = true
         positionMs = ms
         Task {
             await Engine.seek(ms: ms)
-            seeking = false
+            if token == seekToken { seeking = false }
         }
     }
 
@@ -208,6 +259,10 @@ final class PlayerController: ObservableObject {
     }
 
     func stopPlayback() {
+        playbackToken += 1
+        playbackRequestPending = false
+        seekToken += 1
+        seeking = false
         Task { await Engine.stop() }
         current = nil
         currentIndex = nil
@@ -227,7 +282,20 @@ final class PlayerController: ObservableObject {
 
     func setVolume(_ v: Double) {
         volume = v
-        Task { await Engine.setVolume(v) }
+        // Coalesce slider updates before they reach the serial engine queue;
+        // a Connect-routed volume request can otherwise block for 15 seconds.
+        volumeTask?.cancel()
+        let delay: UInt64 = connectedDeviceAddr.isEmpty ? 30_000_000 : 200_000_000
+        volumeTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await Engine.setVolume(v)
+            if !Task.isCancelled { volumeTask = nil }
+        }
     }
 
     // MARK: - Audio session / output lifecycle
@@ -366,14 +434,30 @@ final class PlayerController: ObservableObject {
 
     private func configureRemoteCommandCenter() {
         let cc = MPRemoteCommandCenter.shared()
-        cc.playCommand.addTarget { [weak self] _ in self?.resume(); return .success }
-        cc.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
-        cc.togglePlayPauseCommand.addTarget { [weak self] _ in self?.togglePlayPause(); return .success }
-        cc.nextTrackCommand.addTarget { [weak self] _ in self?.next(); return .success }
-        cc.previousTrackCommand.addTarget { [weak self] _ in self?.previous(); return .success }
+        cc.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.resume() }
+            return .success
+        }
+        cc.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.pause() }
+            return .success
+        }
+        cc.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.togglePlayPause() }
+            return .success
+        }
+        cc.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.next() }
+            return .success
+        }
+        cc.previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.previous() }
+            return .success
+        }
         cc.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            self?.seek(to: Int64(event.positionTime * 1000))
+            let position = Int64(event.positionTime * 1000)
+            Task { @MainActor in self?.seek(to: position) }
             return .success
         }
     }

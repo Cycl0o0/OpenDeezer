@@ -16,68 +16,80 @@ struct LoginView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 28) {
-                Spacer()
+            GeometryReader { geo in
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 28) {
+                        Spacer(minLength: 24)
 
-                VStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Palette.accent.opacity(0.25))
-                            .frame(width: 96, height: 96)
-                        Image(systemName: "music.note")
-                            .font(.system(size: 40, weight: .bold))
-                            .foregroundStyle(Palette.accent)
-                    }
-                    Text("OpenDeezer")
-                        .font(.largeTitle.bold())
-                        .foregroundStyle(.white)
-                    Text("Sign in with your Deezer account to stream your library, playlists and Flow.")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.65))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
+                        VStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(Palette.accent.opacity(0.25))
+                                    .frame(width: 96, height: 96)
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 40, weight: .bold))
+                                    .foregroundStyle(Palette.accent)
+                                    .accessibilityHidden(true)
+                            }
+                            Text("OpenDeezer")
+                                .font(.largeTitle.bold())
+                                .foregroundStyle(.white)
+                            Text("Sign in with your Deezer account to stream your library, playlists and Flow.")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.65))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                        }
 
-                Spacer()
+                        Spacer(minLength: 28)
 
-                VStack(spacing: 14) {
-                    if isLoggingIn {
-                        ProgressView().tint(.white)
-                    }
-                    if let error = session.lastError {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
+                        VStack(spacing: 14) {
+                            if isLoggingIn {
+                                ProgressView().tint(.white)
+                            }
+                            if let error = session.lastError {
+                                Text(error)
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 32)
+                            }
+
+                            Button {
+                                showWebLogin = true
+                            } label: {
+                                Text("Log in with Deezer")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                            }
+                            .glassButton(prominent: true)
+                            .tint(Palette.accent)
                             .padding(.horizontal, 32)
-                    }
+                            .disabled(isLoggingIn)
 
-                    Button {
-                        showWebLogin = true
-                    } label: {
-                        Text("Log in with Deezer")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            Button("Paste ARL cookie manually") {
+                                showManualEntry = true
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.75))
+                            .disabled(isLoggingIn)
+                        }
+                        .padding(.bottom, 48)
                     }
-                    .glassButton(prominent: true)
-                    .tint(Palette.accent)
-                    .padding(.horizontal, 32)
-
-                    Button("Paste ARL cookie manually") {
-                        showManualEntry = true
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(minHeight: geo.size.height)
                 }
-                .padding(.bottom, 48)
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .sheet(isPresented: $showWebLogin) {
-            DeezerWebLoginView { arl in
-                showWebLogin = false
-                Task { await attemptLogin(arl) }
-            }
+            DeezerWebLoginView(
+                onARL: { arl in
+                    showWebLogin = false
+                    Task { await attemptLogin(arl) }
+                },
+                onCancel: { showWebLogin = false }
+            )
         }
         .alert("Paste ARL cookie", isPresented: $showManualEntry) {
             TextField("arl", text: $manualARL)
@@ -89,6 +101,7 @@ struct LoginView: View {
                 manualARL = ""
                 Task { await attemptLogin(value) }
             }
+            .disabled(manualARL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         } message: {
             Text("On deezer.com, open developer tools > Application > Cookies and copy the value of \"arl\".")
         }
@@ -105,21 +118,25 @@ struct LoginView: View {
 /// the user finishes signing in, then hands it back to `LoginView`.
 struct DeezerWebLoginView: UIViewControllerRepresentable {
     var onARL: (String) -> Void
+    var onCancel: () -> Void
 
     func makeUIViewController(context: Context) -> WebLoginViewController {
-        WebLoginViewController(onARL: onARL)
+        WebLoginViewController(onARL: onARL, onCancel: onCancel)
     }
     func updateUIViewController(_ uiViewController: WebLoginViewController, context: Context) {}
 }
 
 final class WebLoginViewController: UIViewController {
     private let onARL: (String) -> Void
+    private let onCancel: () -> Void
     private var webView: WKWebView!
     private var pollTimer: Timer?
     private var resolved = false
+    private var isActive = true
 
-    init(onARL: @escaping (String) -> Void) {
+    init(onARL: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
         self.onARL = onARL
+        self.onCancel = onCancel
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable)
@@ -136,6 +153,7 @@ final class WebLoginViewController: UIViewController {
         let closeButton = UIButton(type: .system)
         closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         closeButton.tintColor = .secondaryLabel
+        closeButton.accessibilityLabel = String(localized: "Done")
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(closeButton)
@@ -150,10 +168,10 @@ final class WebLoginViewController: UIViewController {
             bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bar.heightAnchor.constraint(equalToConstant: 44),
 
-            closeButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            closeButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -4),
             closeButton.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 30),
-            closeButton.heightAnchor.constraint(equalToConstant: 30),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
 
             webView.topAnchor.constraint(equalTo: bar.bottomAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -161,22 +179,42 @@ final class WebLoginViewController: UIViewController {
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        webView.load(URLRequest(url: URL(string: "https://www.deezer.com/login")!))
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.checkCookie()
+        clearCookiesAndLoadLogin()
+    }
+
+    @objc private func closeTapped() {
+        isActive = false
+        pollTimer?.invalidate()
+        onCancel()
+    }
+
+    /// A previous web sign-in leaves an ARL in WKWebView's cookie jar even
+    /// after the app logs out. Remove it before showing Deezer or the poller
+    /// immediately signs the user back into the old account.
+    private func clearCookiesAndLoadLogin() {
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: [WKWebsiteDataTypeCookies], modifiedSince: .distantPast
+        ) { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.isActive else { return }
+                self.webView.load(URLRequest(url: URL(string: "https://www.deezer.com/login")!))
+                self.pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                    self?.checkCookie()
+                }
+            }
         }
     }
 
-    @objc private func closeTapped() { dismiss(animated: true) }
-
     private func checkCookie() {
-        guard !resolved else { return }
+        guard isActive, !resolved else { return }
         webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            guard let self, !self.resolved else { return }
             guard let arl = cookies.first(where: { $0.name == "arl" && $0.domain.contains("deezer.com") }) else { return }
-            self.resolved = true
-            self.pollTimer?.invalidate()
-            DispatchQueue.main.async { self.onARL(arl.value) }
+            DispatchQueue.main.async {
+                guard let self, self.isActive, !self.resolved else { return }
+                self.resolved = true
+                self.pollTimer?.invalidate()
+                self.onARL(arl.value)
+            }
         }
     }
 

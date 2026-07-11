@@ -17,6 +17,7 @@ struct NoInternetView: View {
                     Image(systemName: "wifi.slash")
                         .font(.system(size: 36, weight: .semibold))
                         .foregroundStyle(Palette.accent)
+                        .accessibilityHidden(true)
                 }
                 Text("No Internet Connection")
                     .font(.title2.bold())

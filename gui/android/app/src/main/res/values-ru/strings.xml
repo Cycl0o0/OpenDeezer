@@ -4,6 +4,7 @@
 
     <string name="action_back">Назад</string>
     <string name="action_close">Закрыть</string>
+    <string name="action_clear">Очистить</string>
     <string name="action_download">Скачать</string>
     <string name="action_retry">Повторить</string>
     <string name="action_refresh">Обновить</string>

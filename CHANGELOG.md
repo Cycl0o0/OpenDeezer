@@ -4,6 +4,38 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0]
+
+### Added
+- **Fast, consistent search access across every client.** Android phone now has
+  a first-viewport search bar, Android TV exposes complete track/album/artist/
+  playlist results, the TUI preserves the screen that opened search, and the
+  macOS, Windows, GNOME and KDE clients use the native `Cmd/Ctrl+F` shortcut to
+  open and focus Search.
+
+### Changed
+- **Mobile UI states and accessibility.** iOS and Android now keep playback
+  controls reachable on compact and landscape screens, provide clearer
+  loading/empty/error/retry states, use larger labelled transport targets, and
+  avoid redundant list spacing. New mobile copy remains localized across all
+  seven supported languages.
+- **Terminal layout responsiveness.** The TUI sizes content from the footer it
+  actually renders, compacts shortcut hints and progress output on narrow
+  terminals, clamps short viewports, and keeps Help usable when space is tight.
+
+### Fixed
+- **iOS state and mutation races.** Search, podcast search, artwork, seek,
+  playback and volume updates no longer publish stale work; the web login no
+  longer reuses the previous account cookie; playlist rename/delete/remove and
+  add operations now confirm destructive actions and surface failures.
+- **Android search routing and failures.** The existing phone search route is
+  reachable, keyboard focus and clear/retry behavior work as expected, and
+  engine/network failures are distinct from legitimate empty results on phone
+  and TV.
+- **Mobile binding builds.** `gobind` is now a pinned Go tool dependency, as
+  required by current `gomobile`, so Android and iOS bindings can be regenerated
+  reproducibly instead of relying on stale generated frameworks.
+
 ## [2.0.0]
 
 ### Added

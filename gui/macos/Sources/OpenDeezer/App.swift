@@ -33,6 +33,16 @@ struct OpenDeezerApp: App {
             CommandGroup(after: .appSettings) {
                 Button(L("Log in / Switch account…")) { app.beginWebLogin() }
             }
+            // Match the platform-standard Find command: reveal Search and move
+            // keyboard focus into its field even when Search is already open.
+            CommandGroup(after: .textEditing) {
+                Button(L("Search")) {
+                    app.section = .search
+                    app.searchFocusRequest &+= 1
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(!app.loggedIn)
+            }
         }
     }
 }
@@ -765,12 +775,15 @@ struct PlaylistCard: View {
 
 struct SearchView: View {
     @EnvironmentObject var app: AppState
+    @FocusState private var searchFocused: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(DZ.textSec)
                 TextField(L("Search tracks, albums, playlists"), text: $app.query)
                     .textFieldStyle(.plain).foregroundStyle(DZ.textPri)
+                    .focused($searchFocused)
                     .onSubmit { app.runSearch() }
             }
             .padding(12)
@@ -823,6 +836,8 @@ struct SearchView: View {
             .scrollContentBackground(.hidden)
         }
         .background(DZ.windowBG)
+        .onAppear { searchFocused = true }
+        .onChange(of: app.searchFocusRequest) { searchFocused = true }
     }
 
     private func searchSection<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {

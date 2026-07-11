@@ -4,6 +4,7 @@
 
     <string name="action_back">Retour</string>
     <string name="action_close">Fermer</string>
+    <string name="action_clear">Effacer</string>
     <string name="action_download">Télécharger</string>
     <string name="action_retry">Réessayer</string>
     <string name="action_refresh">Actualiser</string>

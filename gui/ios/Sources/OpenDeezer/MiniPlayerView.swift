@@ -8,6 +8,7 @@ import SwiftUI
 struct MiniPlayerView: View {
     @EnvironmentObject private var player: PlayerController
     var accessory = false
+    let onOpen: () -> Void
 
     var body: some View {
         if accessory {
@@ -28,40 +29,57 @@ struct MiniPlayerView: View {
 
     private var row: some View {
         HStack(spacing: 12) {
-            RemoteArtwork(url: player.current?.artworkUrl ?? "", cornerRadius: 8)
-                .frame(width: 40, height: 40)
+            Button(action: onOpen) {
+                HStack(spacing: 12) {
+                    RemoteArtwork(url: player.current?.artworkUrl ?? "", cornerRadius: 8)
+                        .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(player.current?.name ?? "")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(player.current?.artistLine ?? "")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(player.current?.name ?? "")
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Text(player.current?.artistLine ?? "")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-
-            Spacer(minLength: 8)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Now Playing")
+            .accessibilityValue(nowPlayingAccessibilityValue)
 
             Button {
                 player.togglePlayPause()
             } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+                Group {
+                    if player.state == .loading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 18))
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(player.state == .loading)
+            .accessibilityLabel(playPauseAccessibilityLabel)
 
             Button {
                 player.next()
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 16))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!player.canGoNext)
+            .accessibilityLabel("Next")
         }
     }
 
@@ -78,6 +96,18 @@ struct MiniPlayerView: View {
 
     private var progressFraction: CGFloat {
         guard player.durationMs > 0 else { return 0 }
-        return CGFloat(Double(player.positionMs) / Double(player.durationMs))
+        return CGFloat(min(max(Double(player.positionMs) / Double(player.durationMs), 0), 1))
+    }
+
+    private var nowPlayingAccessibilityValue: String {
+        [player.current?.name, player.current?.artistLine]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
+
+    private var playPauseAccessibilityLabel: String {
+        if player.state == .loading { return String(localized: "Loading") }
+        return player.isPlaying ? String(localized: "Pause") : String(localized: "Play")
     }
 }

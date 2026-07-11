@@ -235,6 +235,11 @@
         <translation>إنهاء(&amp;Q)</translation>
     </message>
     <message>
+        <location filename="../src/mainwindow.cpp" line="874" />
+        <source>Edit</source>
+        <translation>تحرير</translation>
+    </message>
+    <message>
         <location filename="../src/mainwindow.cpp" line="853" />
         <source>&amp;Help</source>
         <translation>مساعدة(&amp;H)</translation>

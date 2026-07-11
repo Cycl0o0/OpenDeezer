@@ -870,11 +870,21 @@ void MainWindow::buildMenu() {
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &MainWindow::quitApp);
 
+    auto *edit = menuBar()->addMenu(tr("Edit"));
+    auto *search = edit->addAction(tr("Search"));
+    search->setShortcut(QKeySequence::Find);
+    connect(search, &QAction::triggered, this, [this] {
+        // Selecting the sidebar row performs the normal page transition and
+        // focuses the search field in onSidebarChanged().
+        if (m_sidebar)
+            m_sidebar->setCurrentRow(4);
+    });
+
     auto *help = menuBar()->addMenu(tr("&Help"));
     auto *about = help->addAction(tr("&About OpenDeezer"));
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            QStringLiteral("<h3>OpenDeezer 2.0.0</h3><p>") +
+            QStringLiteral("<h3>OpenDeezer 2.1.0</h3><p>") +
             tr("A Deezer client for the desktop.") + QStringLiteral("</p>");
         // Show the signed-in account tier (from DZAccountJSON) when available.
         if (m_haveAccount && !m_accountName.isEmpty())

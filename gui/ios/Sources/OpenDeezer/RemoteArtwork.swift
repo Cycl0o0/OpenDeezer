@@ -19,13 +19,14 @@ actor ImageCache {
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: nil
-        ) { [cache] _ in
-            cache.removeAllObjects() // NSCache is thread-safe
+        ) { _ in
+            Task { await ImageCache.shared.removeAll() }
         }
     }
 
     func image(for url: String) -> UIImage? { cache.object(forKey: url as NSString) }
     func set(_ image: UIImage, for url: String) { cache.setObject(image, forKey: url as NSString) }
+    private func removeAll() { cache.removeAllObjects() }
 }
 
 /// Square artwork view backed by `OdmobileFetch`, with a placeholder while
@@ -36,6 +37,7 @@ struct RemoteArtwork: View {
     var cornerRadius: CGFloat = 8
 
     @State private var image: UIImage?
+    @State private var displayedURL: String?
 
     var body: some View {
         ZStack {
@@ -53,18 +55,27 @@ struct RemoteArtwork: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .accessibilityHidden(true)
         .task(id: url) { await load() }
     }
 
     private func load() async {
-        guard !url.isEmpty else { image = nil; return }
+        // A RemoteArtwork often survives while its URL changes (the mini
+        // player is the common case). Clear the previous cover immediately so
+        // it is never displayed for the newly selected track.
+        if displayedURL != url {
+            displayedURL = url
+            image = nil
+        }
+        guard !url.isEmpty else { return }
         if let cached = await ImageCache.shared.image(for: url) {
+            guard !Task.isCancelled, displayedURL == url else { return }
             image = cached
             return
         }
         guard let data = await Engine.fetch(url), let img = UIImage(data: data) else { return }
         await ImageCache.shared.set(img, for: url)
-        if Task.isCancelled { return }
+        guard !Task.isCancelled, displayedURL == url else { return }
         image = img
     }
 }

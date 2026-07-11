@@ -22,7 +22,10 @@ struct HomeView: View {
                 if isLoading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
                 } else if let error = errorText {
-                    ContentUnavailableMessage(systemImage: "wifi.slash", title: "Couldn't load Home", message: error)
+                    ContentUnavailableMessage(
+                        systemImage: "wifi.slash", title: "Couldn't load Home", message: error,
+                        retry: { Task { await load() } }
+                    )
                         .padding(.top, 24)
                 } else {
                     if let tracks = home?.topTracks, !tracks.isEmpty {
@@ -83,7 +86,7 @@ struct HomeView: View {
             home = try await Engine.home()
             errorText = nil
         } catch {
-            errorText = error.localizedDescription
+            if home == nil { errorText = error.localizedDescription }
         }
         isLoading = false
         await library.refreshPlaylists()

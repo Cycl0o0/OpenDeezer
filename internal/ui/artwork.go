@@ -54,7 +54,7 @@ func (m *Model) refreshCover() {
 		m.curCover = ""
 		return
 	}
-	rows := m.height - footerHeight - 4
+	rows := availableBodyHeight(m.height, m.footer()) - 4
 	if rows > 18 {
 		rows = 18
 	}

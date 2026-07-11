@@ -73,6 +73,8 @@ struct EqualizerView: View {
                         if !editing { Engine.setEQPreamp(preamp) }
                     }
                     .tint(Palette.accent)
+                    .accessibilityLabel("Preamp")
+                    .accessibilityValue(String(localized: "\(gainText(preamp)) dB"))
                 }
             } footer: {
                 Text("Lower the preamp if boosted bands make loud tracks clip.")
@@ -105,6 +107,7 @@ struct EqualizerView: View {
             Text(gainText(gains[index]))
                 .font(.system(size: 9).monospacedDigit())
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Slider(value: bandBinding(index), in: -12...12, step: 0.5) { editing in
                 if !editing { Engine.setEQBand(index: index, gainDb: gains[index]) }
             }
@@ -112,9 +115,12 @@ struct EqualizerView: View {
             .frame(width: 150)
             .rotationEffect(.degrees(-90))
             .frame(width: 24, height: 150)
+            .accessibilityLabel(bandLabel(index))
+            .accessibilityValue(String(localized: "\(gainText(gains[index])) dB"))
             Text(bandLabel(index))
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity)
     }
@@ -168,7 +174,8 @@ struct EqualizerView: View {
     /// Engine presets plus the engine-managed "custom" state so the picker
     /// always has a row to select when the user has edited bands.
     private var pickerPresets: [String] {
-        presets.isEmpty ? [preset] : presets + ["custom"]
+        guard !presets.isEmpty else { return [preset] }
+        return presets.contains("custom") ? presets : presets + ["custom"]
     }
 
     /// "bass-boost" → "Bass Boost".

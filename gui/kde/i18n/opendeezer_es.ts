@@ -235,6 +235,11 @@
         <translation>&amp;Salir</translation>
     </message>
     <message>
+        <location filename="../src/mainwindow.cpp" line="874" />
+        <source>Edit</source>
+        <translation>Editar</translation>
+    </message>
+    <message>
         <location filename="../src/mainwindow.cpp" line="853" />
         <source>&amp;Help</source>
         <translation>A&amp;yuda</translation>

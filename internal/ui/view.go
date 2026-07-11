@@ -27,34 +27,50 @@ func (m *Model) View() string {
 	if !m.ready {
 		return "starting…"
 	}
+	if m.screen == screenNoInternet {
+		return m.noInternetView() // full screen, no playback footer
+	}
+	footer := m.footer()
+	if m.height <= 1 {
+		return footer
+	}
+	bodyRows := availableBodyHeight(m.height, footer)
+	// Footer height changes with status, sleep-timer, and update notices. Size
+	// the list from the rendered footer on every frame so those lines never push
+	// content below the terminal viewport.
+	m.list.SetSize(max(1, m.width), bodyRows)
+
 	var body string
 	switch m.screen {
 	case screenSearch:
-		body = m.searchView()
+		body = m.searchView(bodyRows)
 	case screenNowPlaying:
-		body = m.nowPlayingView()
+		body = m.nowPlayingView(bodyRows)
 	case screenCredits:
-		body = m.creditsView()
+		body = m.creditsView(bodyRows)
 	case screenQueue:
-		body = m.queueView()
+		body = m.queueView(bodyRows)
 	case screenLyrics:
-		body = m.lyricsView()
+		body = m.lyricsView(bodyRows)
 	case screenHelp:
-		body = m.helpView()
+		body = m.helpView(bodyRows)
 	case screenRemote:
 		body = m.list.View() // device picker
 	case screenRemoteInput:
-		body = m.remoteEntryView()
+		body = m.remoteEntryView(bodyRows)
 	case screenRemoteCtl:
-		body = m.remoteCtlView()
+		body = m.remoteCtlView(bodyRows)
 	case screenWebRemote:
-		body = m.webRemoteView()
-	case screenNoInternet:
-		return m.noInternetView() // full screen, no playback footer
+		body = m.webRemoteView(bodyRows)
 	default:
 		body = m.list.View()
 	}
-	return body + "\n" + m.footer()
+	body = lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(bodyRows).Render(body)
+	return body + "\n" + footer
+}
+
+func availableBodyHeight(total int, footer string) int {
+	return max(1, total-lipgloss.Height(footer))
 }
 
 // noInternetView is shown when a login or browse call fails at the transport
@@ -76,24 +92,29 @@ func (m *Model) noInternetView() string {
 		"",
 		dim.Render(hint + "  ·  " + i18n.T("q to quit")),
 	}
-	return padTo(lines, max(1, m.height))
+	view := padTo(lines, max(1, m.height))
+	return lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render(view)
 }
 
-func (m *Model) searchView() string {
+func (m *Model) searchView(rows int) string {
 	// Refresh the placeholder each render so a live locale change is reflected.
 	m.search.Placeholder = i18n.T("Search Deezer…")
+	title := i18n.T("Search Deezer")
+	if m.searchPodcast {
+		title = i18n.T("Podcasts")
+	}
 	lines := []string{
-		accent.Render(i18n.T("Search Deezer")),
+		accent.Render(title),
 		"",
 		m.search.View(),
 		"",
 		dim.Render(i18n.T("enter to search · esc to go back")),
 	}
 	// Pad to roughly fill the list area.
-	for len(lines) < max(1, m.height-footerHeight) {
+	for len(lines) < rows {
 		lines = append(lines, "")
 	}
-	return strings.Join(lines, "\n")
+	return padTo(lines, rows)
 }
 
 // Credits text, shown on the credits screen.
@@ -103,7 +124,7 @@ const creditsAuthor = "Cycl0o0"
 // release number so library users get the right value without main).
 var Version = version.Number
 
-func (m *Model) creditsView() string {
+func (m *Model) creditsView(rows int) string {
 	lines := []string{
 		accent.Render("OpenDeezer") + dim.Render(" "+Version),
 		dim.Render(i18n.T("An open source reimplementation of Deezer")),
@@ -131,10 +152,10 @@ func (m *Model) creditsView() string {
 		lines = append(lines, dim.Render(i18n.T("u to check for updates")))
 	}
 	lines = append(lines, "", dim.Render(i18n.T("? or esc to go back")))
-	return padTo(lines, max(1, m.height-footerHeight))
+	return padTo(lines, rows)
 }
 
-func (m *Model) nowPlayingView() string {
+func (m *Model) nowPlayingView(rows int) string {
 	var meta []string
 	if t, ok := m.q.Current(); ok {
 		meta = []string{
@@ -168,18 +189,22 @@ func (m *Model) nowPlayingView() string {
 	info := lipgloss.JoinVertical(lipgloss.Left, meta...)
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
 		cover, lipgloss.NewStyle().PaddingLeft(2).Render(info))
-	return padTo([]string{row}, max(1, m.height-footerHeight))
+	return padTo([]string{row}, rows)
 }
 
 // padTo joins lines and pads with blanks to fill n rows.
 func padTo(lines []string, n int) string {
-	out := strings.Join(lines, "\n")
-	have := strings.Count(out, "\n") + 1
-	for have < n {
-		out += "\n"
-		have++
+	if n < 1 {
+		n = 1
 	}
-	return out
+	rendered := strings.Split(strings.Join(lines, "\n"), "\n")
+	if len(rendered) > n {
+		rendered = rendered[:n]
+	}
+	for len(rendered) < n {
+		rendered = append(rendered, "")
+	}
+	return strings.Join(rendered, "\n")
 }
 
 func (m *Model) footer() string {
@@ -215,8 +240,7 @@ func (m *Model) footer() string {
 	if m.q.Shuffle() {
 		shuf = i18n.T("on")
 	}
-	help := dim.Render(i18n.Tf(
-		"space play · n/p · z shuf:%s · r rep:%s · +/- %d%% · / search · l lyrics · u queue · h qual · ? help · q quit",
+	help := dim.Render(m.footerHelp(
 		shuf, i18n.T(m.q.Repeat().String()), int(m.player.Volume()*100+0.5)))
 
 	status := ""
@@ -240,23 +264,53 @@ func (m *Model) footer() string {
 			"⬆ v%s available — U to open · X to dismiss", m.updateInfo.Latest))
 		content = notice + "\n" + content
 	}
-	return footerBox.Width(max(10, m.width)).Render(content)
+	width := max(1, m.width)
+	maxHeight := max(1, m.height-1) // reserve at least one row for body content
+	return footerBox.Width(width).MaxWidth(width).MaxHeight(maxHeight).Render(content)
+}
+
+// footerHelp keeps the primary controls discoverable without letting the full
+// shortcut legend run off narrow terminals. The complete legend remains on
+// wide screens and on the dedicated ? help screen.
+func (m *Model) footerHelp(shuffle, repeat string, volume int) string {
+	switch {
+	case m.width >= 112:
+		return i18n.Tf(
+			"space play · n/p · z shuf:%s · r rep:%s · +/- %d%% · / search · l lyrics · u queue · h qual · ? help · q quit",
+			shuffle, repeat, volume)
+	case m.width >= 62:
+		return "space " + i18n.T("play / pause") + " · n/p · +/- · / " +
+			i18n.T("Search") + " · ? · q " + i18n.T("quit")
+	case m.width >= 38:
+		return "space · n/p · / " + i18n.T("Search") + " · ? · q"
+	default:
+		return "space · / · ? · q"
+	}
 }
 
 func (m *Model) progressBar() string {
 	pos := m.player.PositionMS()
 	dur := m.player.DurationMS()
-	width := max(10, m.width-20)
+	width := max(1, m.width)
+	times := fmt.Sprintf("%s / %s", fmtMS(pos), fmtMS(dur))
+	timesWidth := lipgloss.Width(times)
+	if timesWidth >= width {
+		return lipgloss.NewStyle().MaxWidth(width).Render(times)
+	}
+	barWidth := width - timesWidth - 1
 	filled := 0
 	if dur > 0 {
-		filled = int(int64(width) * pos / dur)
-		if filled > width {
-			filled = width
+		filled = int(int64(barWidth) * pos / dur)
+		if filled < 0 {
+			filled = 0
+		}
+		if filled > barWidth {
+			filled = barWidth
 		}
 	}
 	bar := barFill.Render(strings.Repeat("━", filled)) +
-		barEmpty.Render(strings.Repeat("━", width-filled))
-	return fmt.Sprintf("%s %s / %s", bar, fmtMS(pos), fmtMS(dur))
+		barEmpty.Render(strings.Repeat("━", barWidth-filled))
+	return bar + " " + times
 }
 
 func fmtMS(ms int64) string {
@@ -268,13 +322,13 @@ func fmtMS(ms int64) string {
 }
 
 // queueView lists the upcoming tracks with the current one highlighted.
-func (m *Model) queueView() string {
+func (m *Model) queueView(bodyRows int) string {
 	ts := m.q.Tracks()
 	if len(ts) == 0 {
-		return padTo([]string{dim.Render(i18n.T("Queue is empty."))}, max(1, m.height-footerHeight))
+		return padTo([]string{dim.Render(i18n.T("Queue is empty."))}, bodyRows)
 	}
 	cur := m.q.Index()
-	rows := max(1, m.height-footerHeight-2)
+	rows := max(1, bodyRows-2)
 	lines := []string{accent.Render(i18n.Tn("Queue (%d track)", "Queue (%d tracks)", len(ts))), ""}
 	// Window around the current track so long queues stay readable.
 	start := 0
@@ -293,12 +347,12 @@ func (m *Model) queueView() string {
 		}
 		lines = append(lines, marker+line)
 	}
-	return padTo(lines, max(1, m.height-footerHeight))
+	return padTo(lines, bodyRows)
 }
 
 // lyricsView shows lyrics; synced lyrics auto-scroll with playback position and
 // highlight the current line.
-func (m *Model) lyricsView() string {
+func (m *Model) lyricsView(bodyRows int) string {
 	// When driving a remote peer, show its now-playing track and position (the
 	// local queue/player are unrelated to what the peer is playing).
 	t, ok := m.q.Current()
@@ -308,13 +362,13 @@ func (m *Model) lyricsView() string {
 		pos = m.remoteState.PositionMS
 	}
 	if !ok {
-		return padTo([]string{dim.Render(i18n.T("Nothing playing."))}, max(1, m.height-footerHeight))
+		return padTo([]string{dim.Render(i18n.T("Nothing playing."))}, bodyRows)
 	}
 	header := accent.Render(t.Name) + dim.Render(" — "+t.ArtistLine())
 	if m.lyrics == nil {
-		return padTo([]string{header, "", dim.Render(i18n.T("(loading lyrics…)"))}, max(1, m.height-footerHeight))
+		return padTo([]string{header, "", dim.Render(i18n.T("(loading lyrics…)"))}, bodyRows)
 	}
-	rows := max(3, m.height-footerHeight-2)
+	rows := max(3, bodyRows-2)
 
 	if m.lyrics.IsSynced() {
 		active := 0
@@ -336,18 +390,18 @@ func (m *Model) lyricsView() string {
 				lines = append(lines, dim.Render(ln))
 			}
 		}
-		return padTo(lines, max(1, m.height-footerHeight))
+		return padTo(lines, bodyRows)
 	}
 
 	if m.lyrics.Plain == "" {
-		return padTo([]string{header, "", dim.Render(i18n.T("(no lyrics available)"))}, max(1, m.height-footerHeight))
+		return padTo([]string{header, "", dim.Render(i18n.T("(no lyrics available)"))}, bodyRows)
 	}
 	lines := append([]string{header, ""}, strings.Split(m.lyrics.Plain, "\n")...)
-	return padTo(lines, max(1, m.height-footerHeight))
+	return padTo(lines, bodyRows)
 }
 
 // helpView lists every keybinding.
-func (m *Model) helpView() string {
+func (m *Model) helpView(rows int) string {
 	binds := [][2]string{
 		{"↑/↓ or j/k", "move selection"},
 		{"g / G", "jump to top / bottom"},
@@ -381,10 +435,23 @@ func (m *Model) helpView() string {
 		{"esc", "back"},
 		{"q", "quit"},
 	}
-	lines := []string{accent.Render(i18n.T("Keybindings")), ""}
+	bindingLines := make([]string, 0, len(binds))
 	for _, b := range binds {
-		lines = append(lines, "  "+accent.Render(fmt.Sprintf("%-12s", b[0]))+dim.Render(i18n.T(b[1])))
+		bindingLines = append(bindingLines,
+			"  "+accent.Render(fmt.Sprintf("%-12s", b[0]))+dim.Render(i18n.T(b[1])))
 	}
-	lines = append(lines, "", dim.Render(i18n.T("? or esc to go back")))
-	return padTo(lines, max(1, m.height-footerHeight))
+	visible := max(1, rows-3) // title + spacer + scroll/back hint
+	maxOffset := max(0, len(bindingLines)-visible)
+	m.helpOffset = min(max(0, m.helpOffset), maxOffset)
+	end := min(len(bindingLines), m.helpOffset+visible)
+
+	lines := []string{accent.Render(i18n.T("Keybindings")), ""}
+	lines = append(lines, bindingLines[m.helpOffset:end]...)
+	if maxOffset > 0 {
+		lines = append(lines, dim.Render(fmt.Sprintf(
+			"↑/↓  %d-%d/%d  ·  esc %s", m.helpOffset+1, end, len(bindingLines), i18n.T("back"))))
+	} else {
+		lines = append(lines, dim.Render(i18n.T("? or esc to go back")))
+	}
+	return padTo(lines, rows)
 }

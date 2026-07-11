@@ -235,6 +235,11 @@
         <translation>&amp;Выход</translation>
     </message>
     <message>
+        <location filename="../src/mainwindow.cpp" line="874" />
+        <source>Edit</source>
+        <translation>Правка</translation>
+    </message>
+    <message>
         <location filename="../src/mainwindow.cpp" line="853" />
         <source>&amp;Help</source>
         <translation>&amp;Справка</translation>

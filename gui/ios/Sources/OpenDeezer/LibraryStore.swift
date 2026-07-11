@@ -41,11 +41,15 @@ final class LibraryStore: ObservableObject {
         if favoriteIDs.contains(id) {
             favoriteIDs.remove(id)
             favorites.removeAll { $0.id == id }
-            Task { _ = await Engine.removeFavorite(id) }
+            Task {
+                if !(await Engine.removeFavorite(id)) { await refreshFavorites() }
+            }
         } else {
             favoriteIDs.insert(id)
             favorites.insert(track, at: 0)
-            Task { _ = await Engine.addFavorite(id) }
+            Task {
+                if !(await Engine.addFavorite(id)) { await refreshFavorites() }
+            }
         }
     }
 
@@ -56,14 +60,18 @@ final class LibraryStore: ObservableObject {
         return id
     }
 
-    func renamePlaylist(_ id: String, title: String) async {
-        _ = await Engine.renamePlaylist(id, title: title)
-        await refreshPlaylists()
+    @discardableResult
+    func renamePlaylist(_ id: String, title: String) async -> Bool {
+        let renamed = await Engine.renamePlaylist(id, title: title)
+        if renamed { await refreshPlaylists() }
+        return renamed
     }
 
-    func deletePlaylist(_ id: String) async {
-        _ = await Engine.deletePlaylist(id)
-        await refreshPlaylists()
+    @discardableResult
+    func deletePlaylist(_ id: String) async -> Bool {
+        let deleted = await Engine.deletePlaylist(id)
+        if deleted { await refreshPlaylists() }
+        return deleted
     }
 
     func addToPlaylist(_ playlistID: String, track: Track) async -> Bool {

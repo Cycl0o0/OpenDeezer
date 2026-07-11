@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.cyclooo.opendeezer.AppViewModel
 import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Album
+import fr.cyclooo.opendeezer.engine.ArtistInfo
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.HomeData
 import fr.cyclooo.opendeezer.engine.Playlist
@@ -90,6 +91,10 @@ fun TvRootScreen(vm: AppViewModel) {
         val tracks = Engine.albumTracks(a.id)
         if (tracks.isNotEmpty()) detail = TvDetailData(a.name, a.artistLine, a.artworkUrl, tracks)
     }
+    fun openArtist(a: ArtistInfo) = scope.launch {
+        val tracks = Engine.artistTop(a.id)
+        if (tracks.isNotEmpty()) detail = TvDetailData(a.name, "", a.artworkUrl, tracks)
+    }
     fun openPlaylist(p: Playlist) = scope.launch {
         val tracks = Engine.playlistTracks(p.id)
         if (tracks.isNotEmpty()) detail = TvDetailData(p.name, p.owner, p.artworkUrl, tracks)
@@ -116,6 +121,7 @@ fun TvRootScreen(vm: AppViewModel) {
                         TvNav.Search -> TvSearch(
                             onPlayTracks = playTracks,
                             onOpenAlbum = { openAlbum(it) },
+                            onOpenArtist = { openArtist(it) },
                             onOpenPlaylist = { openPlaylist(it) },
                         )
                         TvNav.Library -> TvLibrary(
@@ -269,11 +275,14 @@ private fun TvBrowse(
 private fun TvSearch(
     onPlayTracks: (List<Track>, Int) -> Unit,
     onOpenAlbum: (Album) -> Unit,
+    onOpenArtist: (ArtistInfo) -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<SearchResults?>(null) }
     var searching by remember { mutableStateOf(false) }
+    var searchFailed by remember { mutableStateOf(false) }
+    var searchGeneration by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     val fieldFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { fieldFocus.requestFocus() } }
@@ -281,11 +290,15 @@ private fun TvSearch(
     val runSearch = {
         val q = query.trim()
         if (q.isNotEmpty()) {
+            searchGeneration += 1
+            val generation = searchGeneration
             searching = true
+            searchFailed = false
             scope.launch {
-                try {
-                    results = Engine.search(q)
-                } finally {
+                val searchResults = Engine.searchOrNull(q)
+                if (generation == searchGeneration) {
+                    results = searchResults
+                    searchFailed = searchResults == null
                     searching = false
                 }
             }
@@ -303,7 +316,16 @@ private fun TvSearch(
         ) {
             androidx.compose.material3.OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { value ->
+                    query = value
+                    // An explicit TV search may still be running in the Go
+                    // engine. Editing invalidates that response so results for
+                    // the previous text never appear under the new query.
+                    searchGeneration += 1
+                    searching = false
+                    searchFailed = false
+                    results = null
+                },
                 singleLine = true,
                 label = { Text(stringResource(R.string.tv_search_hint)) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TvPalette.Purple) },
@@ -314,26 +336,58 @@ private fun TvSearch(
             TvPill(stringResource(R.string.search_title), onClick = runSearch, leadingIcon = Icons.Filled.Search)
         }
 
-        if (searching) {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        when {
+            searching -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = TvPalette.Purple)
             }
-        }
-        results?.let { r ->
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(30.dp)) {
-                item {
-                    TvRow(stringResource(R.string.section_tracks), r.tracks) { i, t ->
-                        TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(r.tracks, i) })
+            searchFailed -> Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(stringResource(R.string.tv_load_error), color = TvPalette.TextDim)
+                TvPill(stringResource(R.string.action_retry), onClick = runSearch)
+            }
+            results?.isEmpty == true -> Text(
+                stringResource(R.string.search_no_results),
+                color = TvPalette.TextDim,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            results == null -> Text(
+                stringResource(R.string.search_empty_prompt),
+                color = TvPalette.TextDim,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            else -> results?.let { r ->
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(30.dp)) {
+                    if (r.tracks.isNotEmpty()) item {
+                        TvRow(stringResource(R.string.section_tracks), r.tracks) { i, t ->
+                            TvCard(t.name, t.artistLine, t.artworkUrl, onClick = { onPlayTracks(r.tracks, i) })
+                        }
                     }
-                }
-                item {
-                    TvRow(stringResource(R.string.section_albums), r.albums) { _, a ->
-                        TvCard(a.name, a.artistLine, a.artworkUrl, onClick = { onOpenAlbum(a) })
+                    if (r.albums.isNotEmpty()) item {
+                        TvRow(stringResource(R.string.section_albums), r.albums) { _, a ->
+                            TvCard(a.name, a.artistLine, a.artworkUrl, onClick = { onOpenAlbum(a) })
+                        }
                     }
-                }
-                item {
-                    TvRow(stringResource(R.string.section_playlists), r.playlists) { _, p ->
-                        TvCard(p.name, p.owner, p.artworkUrl, onClick = { onOpenPlaylist(p) })
+                    if (r.artists.isNotEmpty()) item {
+                        TvRow(stringResource(R.string.section_artists), r.artists) { _, a ->
+                            TvCard(
+                                a.name,
+                                if (a.nbFans > 0) {
+                                    pluralStringResource(R.plurals.n_fans, a.nbFans, a.nbFans)
+                                } else {
+                                    ""
+                                },
+                                a.artworkUrl,
+                                onClick = { onOpenArtist(a) },
+                            )
+                        }
+                    }
+                    if (r.playlists.isNotEmpty()) item {
+                        TvRow(stringResource(R.string.section_playlists), r.playlists) { _, p ->
+                            TvCard(p.name, p.owner, p.artworkUrl, onClick = { onOpenPlaylist(p) })
+                        }
                     }
                 }
             }

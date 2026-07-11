@@ -63,6 +63,7 @@ final class AppState: ObservableObject {
     @Published var searchAlbums: [Album] = []
     @Published var searchArtists: [ArtistInfo] = []
     @Published var searchPlaylists: [Playlist] = []
+    @Published var searchFocusRequest = 0
     @Published var query = ""
 
     // Liked-track ids — seeded from favorites, toggled locally for the heart UI.

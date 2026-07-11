@@ -12,7 +12,10 @@ struct FlowView: View {
             if isLoading {
                 ProgressView()
             } else if let error = errorText {
-                ContentUnavailableMessage(systemImage: "waveform", title: "Flow unavailable", message: error)
+                ContentUnavailableMessage(
+                    systemImage: "waveform", title: "Flow unavailable", message: error,
+                    retry: { Task { await load() } }
+                )
             } else if tracks.isEmpty {
                 ContentUnavailableMessage(systemImage: "waveform", title: "Flow is empty", message: String(localized: "Try again later."))
             } else {
@@ -45,7 +48,7 @@ struct FlowView: View {
             tracks = try await Engine.flow()
             errorText = nil
         } catch {
-            errorText = error.localizedDescription
+            if tracks.isEmpty { errorText = error.localizedDescription }
         }
         isLoading = false
     }

@@ -10,28 +10,39 @@ struct ChartsView: View {
             if isLoading {
                 ProgressView().padding(.top, 60)
             } else if let error = errorText {
-                ContentUnavailableMessage(systemImage: "chart.line.uptrend.xyaxis", title: "Charts unavailable", message: error)
+                ContentUnavailableMessage(
+                    systemImage: "chart.line.uptrend.xyaxis", title: "Charts unavailable", message: error,
+                    retry: { Task { await load() } }
+                )
                     .padding(.top, 40)
             } else if let charts {
-                VStack(alignment: .leading, spacing: 28) {
-                    if !charts.tracks.isEmpty {
-                        SectionHeader(title: "Top Tracks")
-                        TrackRail(tracks: charts.tracks)
+                if charts.tracks.isEmpty && charts.albums.isEmpty && charts.artists.isEmpty && charts.playlists.isEmpty {
+                    ContentUnavailableMessage(
+                        systemImage: "chart.line.uptrend.xyaxis", title: "Charts unavailable",
+                        message: String(localized: "Try again later."), retry: { Task { await load() } }
+                    )
+                    .frame(minHeight: 320)
+                } else {
+                    VStack(alignment: .leading, spacing: 28) {
+                        if !charts.tracks.isEmpty {
+                            SectionHeader(title: "Top Tracks")
+                            TrackRail(tracks: charts.tracks)
+                        }
+                        if !charts.albums.isEmpty {
+                            SectionHeader(title: "Top Albums")
+                            AlbumRail(albums: charts.albums)
+                        }
+                        if !charts.artists.isEmpty {
+                            SectionHeader(title: "Top Artists")
+                            ArtistRail(artists: charts.artists)
+                        }
+                        if !charts.playlists.isEmpty {
+                            SectionHeader(title: "Top Playlists")
+                            PlaylistRail(playlists: charts.playlists)
+                        }
                     }
-                    if !charts.albums.isEmpty {
-                        SectionHeader(title: "Top Albums")
-                        AlbumRail(albums: charts.albums)
-                    }
-                    if !charts.artists.isEmpty {
-                        SectionHeader(title: "Top Artists")
-                        ArtistRail(artists: charts.artists)
-                    }
-                    if !charts.playlists.isEmpty {
-                        SectionHeader(title: "Top Playlists")
-                        PlaylistRail(playlists: charts.playlists)
-                    }
+                    .padding(.vertical, 12)
                 }
-                .padding(.vertical, 12)
             }
         }
         .navigationTitle("Charts")
@@ -45,7 +56,7 @@ struct ChartsView: View {
             charts = try await Engine.charts()
             errorText = nil
         } catch {
-            errorText = error.localizedDescription
+            if charts == nil { errorText = error.localizedDescription }
         }
         isLoading = false
     }

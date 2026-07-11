@@ -9,6 +9,7 @@ struct DevicePickerView: View {
     @State private var devices: [Device] = []
     @State private var isScanning = false
     @State private var connectingAddr: String?
+    @State private var showConnectionError = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +31,7 @@ struct DevicePickerView: View {
                             }
                         }
                     }
+                    .disabled(connectingAddr != nil)
                 }
 
                 Section("Nearby devices") {
@@ -38,7 +40,16 @@ struct DevicePickerView: View {
                             Text(isScanning ? String(localized: "Searching…") : String(localized: "No devices found"))
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            if isScanning { ProgressView() }
+                            if isScanning {
+                                ProgressView()
+                            } else {
+                                Button {
+                                    Task { await scan() }
+                                } label: {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                                .accessibilityLabel("Retry")
+                            }
                         }
                     }
                     ForEach(devices) { device in
@@ -47,7 +58,11 @@ struct DevicePickerView: View {
                                 connectingAddr = device.addr
                                 let ok = await player.connect(to: device)
                                 connectingAddr = nil
-                                if ok { dismiss() }
+                                if ok {
+                                    dismiss()
+                                } else {
+                                    showConnectionError = true
+                                }
                             }
                         } label: {
                             HStack {
@@ -65,6 +80,7 @@ struct DevicePickerView: View {
                             }
                         }
                         .foregroundStyle(.primary)
+                        .disabled(connectingAddr != nil)
                     }
                 }
             }
@@ -77,6 +93,11 @@ struct DevicePickerView: View {
             }
             .task { await scan() }
             .refreshable { await scan() }
+            .alert("Devices", isPresented: $showConnectionError) {
+                Button("Done", role: .cancel) {}
+            } message: {
+                Text("Try again later.")
+            }
         }
     }
 

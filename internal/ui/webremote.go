@@ -274,7 +274,7 @@ func (m *Model) handleWebRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // webRemoteView renders the Web Remote screen.
-func (m *Model) webRemoteView() string {
+func (m *Model) webRemoteView(rows int) string {
 	lines := []string{
 		accent.Render("📱 "+i18n.T("Web Remote")) + dim.Render("  — "+i18n.T("control from your phone")),
 		"",
@@ -334,5 +334,5 @@ func (m *Model) webRemoteView() string {
 	if m.status != "" {
 		lines = append(lines, "", statusSty.Render(m.status))
 	}
-	return padTo(lines, max(1, m.height-footerHeight))
+	return padTo(lines, rows)
 }

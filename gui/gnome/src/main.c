@@ -189,6 +189,7 @@ typedef struct {
 
   /* sidebar */
   GtkListBox           *sidebar;
+  GtkWidget            *search;       /* global header search entry */
 
   /* now-playing bar */
   GtkButton            *play_btn, *prev_btn, *next_btn;
@@ -3223,6 +3224,13 @@ static void on_search_activate(GtkSearchEntry *entry, gpointer data) {
   }
 }
 
+static void on_focus_search(GSimpleAction *action, GVariant *parameter, gpointer data) {
+  (void)action; (void)parameter;
+  App *a = data;
+  if (a->search && gtk_widget_get_mapped(a->search))
+    gtk_widget_grab_focus(a->search);
+}
+
 /* ---------------------------------------------------------------------------
  * lyrics + artist detail views
  *
@@ -5265,7 +5273,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "2.0.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "2.1.0");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -5276,7 +5284,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "2.0.0",
+      "version", "2.1.0",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -5878,6 +5886,12 @@ static void on_activate(GApplication *app, gpointer data) {
   g_object_unref(settings_act);
   const char *settings_accels[] = {"<Ctrl>comma", NULL};
   gtk_application_set_accels_for_action(GTK_APPLICATION(app), "app.settings", settings_accels);
+  GSimpleAction *search_act = g_simple_action_new("search", NULL);
+  g_signal_connect(search_act, "activate", G_CALLBACK(on_focus_search), a);
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(search_act));
+  g_object_unref(search_act);
+  const char *search_accels[] = {"<Ctrl>f", NULL};
+  gtk_application_set_accels_for_action(GTK_APPLICATION(app), "app.search", search_accels);
   GSimpleAction *login_act = g_simple_action_new("login", NULL);
   g_signal_connect(login_act, "activate", G_CALLBACK(on_login), NULL);
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(login_act));
@@ -5916,6 +5930,7 @@ static void on_activate(GApplication *app, gpointer data) {
   AdwToolbarView *content_tv = ADW_TOOLBAR_VIEW(adw_toolbar_view_new());
   GtkWidget *content_hb = adw_header_bar_new();
   GtkWidget *search = gtk_search_entry_new();
+  a->search = search;
   gtk_widget_set_size_request(search, 280, -1);
   g_object_set(search, "placeholder-text", _("Search Deezer"), NULL);
   /* GtkSearchEntry::activate only exists on GTK >= 4.14; connect to the

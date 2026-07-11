@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Flathub requires this AppStream MetaInfo file. Validate before submitting:
-       appstreamcli validate --explain org.opendeezer.OpenDeezer.unified.metainfo.xml
+<!-- Flathub requires this AppStream MetaInfo file. Validate before submitting
+     with appstreamcli and its explain option:
+       appstreamcli validate org.opendeezer.OpenDeezer.unified.metainfo.xml
      TODO before submission:
        * host at least one real screenshot (aspect 1:1..2:1, PNG/JPG) at the URLs
          below (e.g. under https://opendeezer.org/screenshots/) and confirm they
@@ -80,6 +81,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.1.0" date="2026-07-11">
+      <description>
+        <p>Improves search access, compact-screen playback controls, accessibility, loading and error states, and UI reliability across every native and terminal client.</p>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-07-06">
       <description>
         <p>Deezer Free accounts now stream the full library at 128 kbps (ad-supported), download tracks to disk (paid plans) on every client, and a free-only setting to disable ads/play-reporting.</p>

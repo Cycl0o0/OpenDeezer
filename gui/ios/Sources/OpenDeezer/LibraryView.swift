@@ -5,7 +5,11 @@ struct LibraryView: View {
     @EnvironmentObject private var session: SessionStore
     @State private var showCreatePlaylist = false
     @State private var newPlaylistTitle = ""
+    @State private var showCreateError = false
     @State private var showSettings = false
+    @State private var playlistPendingDeletion: Playlist?
+    @State private var showDeleteConfirm = false
+    @State private var showDeleteError = false
 
     var body: some View {
         List {
@@ -57,6 +61,11 @@ struct LibraryView: View {
             }
 
             Section("Playlists") {
+                if library.isLoading && library.playlists.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                }
                 ForEach(library.playlists) { playlist in
                     NavigationLink { PlaylistDetailView(playlist: playlist) } label: {
                         HStack {
@@ -68,11 +77,13 @@ struct LibraryView: View {
                             }
                         }
                     }
-                }
-                .onDelete { offsets in
-                    for index in offsets {
-                        let playlist = library.playlists[index]
-                        Task { await library.deletePlaylist(playlist.id) }
+                    .swipeActions {
+                        Button(role: .destructive) {
+                            playlistPendingDeletion = playlist
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("Delete Playlist", systemImage: "trash")
+                        }
                     }
                 }
 
@@ -89,6 +100,7 @@ struct LibraryView: View {
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape")
                 }
+                .accessibilityLabel("Settings")
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
@@ -98,9 +110,33 @@ struct LibraryView: View {
             Button("Create") {
                 let title = newPlaylistTitle
                 newPlaylistTitle = ""
-                guard !title.isEmpty else { return }
-                Task { await library.createPlaylist(title: title) }
+                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                Task {
+                    if await library.createPlaylist(title: trimmed) == nil { showCreateError = true }
+                }
             }
+            .disabled(newPlaylistTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .alert("New Playlist", isPresented: $showCreateError) {
+            Button("Done", role: .cancel) {}
+        } message: {
+            Text("Try again later.")
+        }
+        .confirmationDialog("Delete this playlist?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete Playlist", role: .destructive) {
+                guard let playlist = playlistPendingDeletion else { return }
+                playlistPendingDeletion = nil
+                Task {
+                    if !(await library.deletePlaylist(playlist.id)) { showDeleteError = true }
+                }
+            }
+            Button("Cancel", role: .cancel) { playlistPendingDeletion = nil }
+        }
+        .alert("Delete Playlist", isPresented: $showDeleteError) {
+            Button("Done", role: .cancel) {}
+        } message: {
+            Text("Try again later.")
         }
         .task { await library.refreshAll() }
         .refreshable { await library.refreshAll() }
@@ -110,13 +146,16 @@ struct LibraryView: View {
 struct LikedSongsView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerController
+    @State private var isLoading = true
 
     var body: some View {
         Group {
-            if library.favorites.isEmpty {
+            if isLoading && library.favorites.isEmpty {
+                ProgressView()
+            } else if library.favorites.isEmpty {
                 ContentUnavailableMessage(
                     systemImage: "heart", title: "No liked songs",
-                    message: "Tracks you like will show up here."
+                    message: String(localized: "Tracks you like will show up here.")
                 )
             } else {
                 List {
@@ -128,7 +167,10 @@ struct LikedSongsView: View {
             }
         }
         .navigationTitle("Liked Songs")
-        .task { await library.refreshFavorites() }
+        .task {
+            await library.refreshFavorites()
+            isLoading = false
+        }
         .refreshable { await library.refreshFavorites() }
     }
 }
@@ -179,6 +221,7 @@ struct TrackRow: View {
                     Image(systemName: "speaker.wave.2.fill")
                         .foregroundStyle(Palette.accent)
                         .font(.caption)
+                        .accessibilityLabel("Playing")
                 } else {
                     Text(track.durationText)
                         .font(.caption)
@@ -192,7 +235,10 @@ struct TrackRow: View {
             Button {
                 library.toggleFavorite(track)
             } label: {
-                Label("Like", systemImage: library.isFavorite(track.id) ? "heart.slash" : "heart")
+                Label(
+                    library.isFavorite(track.id) ? "Unlike" : "Like",
+                    systemImage: library.isFavorite(track.id) ? "heart.slash" : "heart"
+                )
             }
             .tint(Palette.accent)
         }

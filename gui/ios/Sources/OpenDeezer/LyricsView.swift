@@ -43,7 +43,7 @@ struct LyricsView: View {
                     Button { dismiss() } label: { Image(systemName: "chevron.down").font(.headline) }
                 }
             }
-            .task { await load() }
+            .task(id: track.id) { await load() }
         }
     }
 
@@ -84,6 +84,8 @@ struct LyricsView: View {
                                 .scaleEffect(index == activeIndex ? 1.0 : 0.96, anchor: .leading)
                                 .animation(.easeOut(duration: 0.25), value: activeIndex)
                                 .contentShape(Rectangle())
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAddTraits(index == activeIndex ? .isSelected : [])
                                 .id(index)
                                 .onTapGesture { player.seek(to: line.timeMs) }
                         }
@@ -148,9 +150,12 @@ struct LyricsView: View {
 
     private func load() async {
         isLoading = true
+        lyrics = nil
         // Deliberately swallow errors: a gw failure (no lyrics) must render the
         // clean empty state, not the raw engine/gw error string.
-        lyrics = try? await Engine.lyrics(track.id)
+        let response = try? await Engine.lyrics(track.id)
+        guard !Task.isCancelled else { return }
+        lyrics = response
         isLoading = false
     }
 }
@@ -161,18 +166,25 @@ struct ContentUnavailableMessage: View {
     let systemImage: String
     let title: LocalizedStringKey
     let message: String
+    var retry: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(title).font(.headline)
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+            if let retry {
+                Button("Retry", action: retry)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

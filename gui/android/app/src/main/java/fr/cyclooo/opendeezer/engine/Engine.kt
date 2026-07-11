@@ -81,6 +81,8 @@ object Engine {
     // and retry UIs can actually trigger.
     suspend fun homeOrNull(): HomeData? =
         io { raw(runCatching { Odmobile.home() }.getOrNull())?.let(Json::home) }
+    suspend fun searchOrNull(q: String): SearchResults? =
+        io { raw(runCatching { Odmobile.search(q) }.getOrNull())?.let(Json::search) }
     suspend fun chartsOrNull(): SearchResults? =
         io { raw(runCatching { Odmobile.charts() }.getOrNull())?.let(Json::search) }
     suspend fun flowOrNull(): List<Track>? =

@@ -235,6 +235,11 @@
         <translation>बाहर निकलें(&amp;Q)</translation>
     </message>
     <message>
+        <location filename="../src/mainwindow.cpp" line="874" />
+        <source>Edit</source>
+        <translation>संपादन</translation>
+    </message>
+    <message>
         <location filename="../src/mainwindow.cpp" line="853" />
         <source>&amp;Help</source>
         <translation>सहायता(&amp;H)</translation>

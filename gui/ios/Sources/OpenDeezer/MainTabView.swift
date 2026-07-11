@@ -22,6 +22,7 @@ struct MainTabView: View {
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: downloads.status)
             .sheet(isPresented: $showNowPlaying) {
                 NowPlayingView()
+                    .presentationDragIndicator(.visible)
             }
             .task { updates.checkOnce() }
     }
@@ -50,18 +51,16 @@ struct MainTabView: View {
             tabs
                 .tabViewBottomAccessory {
                     if player.hasNowPlaying {
-                        MiniPlayerView(accessory: true)
-                            .onTapGesture { showNowPlaying = true }
+                        MiniPlayerView(accessory: true) { showNowPlaying = true }
                     }
                 }
         } else {
             tabs
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if player.hasNowPlaying {
-                        MiniPlayerView()
+                        MiniPlayerView { showNowPlaying = true }
                             .padding(.horizontal, 8)
                             .padding(.bottom, 6)
-                            .onTapGesture { showNowPlaying = true }
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }

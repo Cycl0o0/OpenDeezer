@@ -11,9 +11,10 @@ struct UpdateBanner: View {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.down.circle.fill")
                     .foregroundStyle(Palette.accent)
+                    .accessibilityHidden(true)
                 Text("OpenDeezer \(info.latest) available")
                     .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Spacer(minLength: 8)
                 Button("Download") {
                     if let url = URL(string: info.url) {
@@ -29,6 +30,7 @@ struct UpdateBanner: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityLabel("Done")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

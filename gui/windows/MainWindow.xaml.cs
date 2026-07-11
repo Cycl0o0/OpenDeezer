@@ -115,6 +115,22 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(bar, 2);
         RootGrid.Children.Add(bar);
 
+        // Ctrl+F follows the Windows Find convention from anywhere in the app:
+        // reveal Search in the navigation view and put the caret in its field.
+        var find = new KeyboardAccelerator
+        {
+            Key = VirtualKey.F,
+            Modifiers = VirtualKeyModifiers.Control,
+        };
+        find.Invoked += (_, args) =>
+        {
+            if (!_loggedIn) return;
+            _nav.SelectedItem = _searchItem;
+            _searchBox.Focus(FocusState.Keyboard);
+            args.Handled = true;
+        };
+        RootGrid.KeyboardAccelerators.Add(find);
+
         // Arabic (and any RTL UI language): mirror the whole visual tree. ContentDialogs
         // are mirrored separately in ShowDialog(); the Connect flyout in BuildTransport.
         if (Loc.IsRtl) RootGrid.FlowDirection = FlowDirection.RightToLeft;
@@ -2958,7 +2974,7 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 2.0.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 2.1.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
         sp.Children.Add(new TextBlock { Text = Loc.S("About_Tagline"), TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {

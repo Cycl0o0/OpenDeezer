@@ -37,12 +37,21 @@ static int prefers_qt(void) {
     return 0;
 }
 
-static int try_backend(const char *lib, int argc, char **argv) {
+static int try_backend(const char *lib, int argc, char **argv,
+                       char *error, size_t error_size) {
     void *h = dlopen(lib, RTLD_NOW | RTLD_LOCAL);
-    if (!h)
+    if (!h) {
+        const char *loader_error = dlerror();
+        snprintf(error, error_size, "%s",
+                 loader_error ? loader_error : "unknown loader error");
         return -1; /* toolkit libs missing — caller tries the fallback */
+    }
+    dlerror(); /* clear any stale loader error before dlsym */
     run_fn run = (run_fn)dlsym(h, "opendeezer_run");
-    if (!run) {
+    const char *symbol_error = dlerror();
+    if (!run || symbol_error) {
+        snprintf(error, error_size, "%s",
+                 symbol_error ? symbol_error : "opendeezer_run is unavailable");
         dlclose(h);
         return -1;
     }
@@ -52,18 +61,24 @@ static int try_backend(const char *lib, int argc, char **argv) {
 int main(int argc, char **argv) {
     const char *qt = "libopendeezer-qt.so";
     const char *gtk = "libopendeezer-gtk.so";
-    const char *first = prefers_qt() ? qt : gtk;
-    const char *second = prefers_qt() ? gtk : qt;
+    const int qt_first = prefers_qt();
+    const char *first = qt_first ? qt : gtk;
+    const char *second = qt_first ? gtk : qt;
+    char first_error[512] = "unknown loader error";
+    char second_error[512] = "unknown loader error";
 
-    int rc = try_backend(first, argc, argv);
+    int rc = try_backend(first, argc, argv, first_error, sizeof first_error);
     if (rc != -1)
         return rc;
-    rc = try_backend(second, argc, argv);
+    rc = try_backend(second, argc, argv, second_error, sizeof second_error);
     if (rc != -1)
         return rc;
 
     fprintf(stderr,
             "OpenDeezer: no usable GUI backend found.\n"
-            "Install GTK4 + libadwaita (GNOME) or Qt6 (KDE) runtime libraries.\n");
+            "  %s: %s\n"
+            "  %s: %s\n"
+            "Install GTK4 + libadwaita (GNOME) or Qt6 (KDE) runtime libraries.\n",
+            first, first_error, second, second_error);
     return 1;
 }

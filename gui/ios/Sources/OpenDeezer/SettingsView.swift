@@ -78,6 +78,7 @@ struct SettingsView: View {
                 Section("Audio Quality") {
                     ForEach(qualities, id: \.0) { level, name, detail in
                         Button {
+                            guard canUseQuality(level) else { return }
                             quality = level
                             AudioPrefs.quality = level
                             Engine.setQuality(level)
@@ -86,13 +87,23 @@ struct SettingsView: View {
                                 VStack(alignment: .leading) {
                                     Text(name).foregroundStyle(.primary)
                                     Text(detail).font(.caption).foregroundStyle(.secondary)
+                                    if !canUseQuality(level) {
+                                        Text(isPremium
+                                             ? String(localized: "Not available with your plan")
+                                             : String(localized: "Requires a paid Deezer plan"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                                 Spacer()
-                                if quality == level {
+                                if !canUseQuality(level) {
+                                    Image(systemName: "lock.fill").foregroundStyle(.secondary)
+                                } else if quality == level {
                                     Image(systemName: "checkmark").foregroundStyle(Palette.accent)
                                 }
                             }
                         }
+                        .disabled(!canUseQuality(level))
                     }
                 }
 
@@ -110,6 +121,10 @@ struct SettingsView: View {
                         }
                         Slider(value: $crossfadeMs, in: 0...12000, step: 1000)
                             .tint(Palette.accent)
+                            .accessibilityLabel("Crossfade")
+                            .accessibilityValue(crossfadeMs == 0
+                                                ? String(localized: "Off")
+                                                : String(localized: "\(Int(crossfadeMs / 1000))s"))
                             .onChange(of: crossfadeMs) { _, value in AudioPrefs.crossfadeMs = Int(value); Engine.setCrossfadeMS(Int(value)) }
                     }
                     NavigationLink("Equalizer") { EqualizerView() }
@@ -199,6 +214,7 @@ struct SettingsView: View {
                                     .interpolation(.none)
                                     .resizable()
                                     .frame(width: 160, height: 160)
+                                    .accessibilityHidden(true)
                             }
                             Text(info.code)
                                 .font(.title3.monospaced().weight(.bold))
@@ -297,5 +313,15 @@ struct SettingsView: View {
 
     private func refreshConnect() async {
         connectInfo = await Engine.connectHostInfo()
+    }
+
+    private func canUseQuality(_ level: Int) -> Bool {
+        guard let account = session.account else { return true }
+        switch level {
+        case 0: return true
+        case 1: return account.canHq
+        case 2: return account.canHifi
+        default: return false
+        }
     }
 }
