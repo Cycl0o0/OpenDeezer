@@ -21,7 +21,7 @@ jobs:
       windows: ${{ steps.c.outputs.windows }}
       linux: ${{ steps.c.outputs.linux }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: c
         run: |
           for d in macos gnome kde windows linux; do
@@ -46,8 +46,8 @@ jobs:
           - { goos: darwin,  goarch: amd64, runner: macos-latest,     cgo: 1 }
           - { goos: windows, goarch: amd64, runner: windows-latest,   cgo: 1 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - name: Install ALSA (linux)
@@ -98,12 +98,12 @@ jobs:
     env:
       SIGN: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.APPLE_API_KEY_P8 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Select Xcode 26
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: "26.0"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - name: Build universal app bundle (arm64 + x86_64)
@@ -187,8 +187,8 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - name: Install deps
@@ -215,8 +215,8 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - name: Install deps
@@ -243,8 +243,8 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - name: Install deps
@@ -271,8 +271,8 @@ jobs:
     env:
       SIGN: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.TRUSTED_SIGNING_ACCOUNT_NAME != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - uses: actions/setup-dotnet@v4
@@ -329,8 +329,8 @@ jobs:
     env:
       ANDROID_SIGN: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - uses: actions/setup-java@v4
@@ -426,7 +426,7 @@ jobs:
     runs-on: macos-26
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Select Xcode 26
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -437,7 +437,7 @@ jobs:
         # "iOS 26.0 is not installed". Fetch it first (idempotent, cached image
         # may already have it).
         run: xcodebuild -downloadPlatform iOS || sudo xcodebuild -downloadPlatform iOS
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
       - name: Build Odmobile.xcframework (gomobile bind ios)
