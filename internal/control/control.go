@@ -9,15 +9,15 @@
 //   - Token: a bearer token in "X-OpenDeezer-Token". Strongest.
 //   - Same-account: no token, but a controller must prove it is logged into the
 //     SAME Deezer account by sending its OWN Deezer user id in
-//     "X-OpenDeezer-Account". A controller learns that id from its own login, not
-//     from this server — /whoami deliberately does NOT echo the user id, so a
-//     bystander can't read the credential and replay it. Convenience auth for a
-//     trusted LAN: the user copies no token; their own devices just connect.
-//     The user id is only semi-private, so this is LAN-trust grade, not a secret.
+//     "X-OpenDeezer-Account". This is accepted directly from loopback clients
+//     (backward compat) and from LAN peers (for token-less same-account Connect
+//     and the LAN-trust tradeoff); the plaintext id is accepted on non-loopback
+//     binds. Pairing via short-TTL single-use 6-digit code may still be used to
+//     obtain a per-device session token (X-OpenDeezer-Session) instead.
 //   - Session (web remote): a phone pairs with a 6-digit code minted at enable
 //     time; on success it receives a short-lived session token sent as
-//     X-OpenDeezer-Session. CSRF-safe because the token lives in localStorage (not
-//     a cookie) and custom headers cannot be set cross-origin.
+//     X-OpenDeezer-Session. The code is now single-use + time-limited; failed
+//     verifies have lockout. Per-device ids allow individual revocation.
 //   - None: open (only safe bound to localhost).
 //
 // Mutating endpoints require POST and reject requests carrying a browser Origin
@@ -211,6 +211,12 @@ type Whoami struct {
 	Device  string `json:"device,omitempty"`  // human device label ("OpenDeezer TUI")
 }
 
+// session holds metadata for a per-device authenticated session token.
+type session struct {
+	expiry time.Time
+	id     string // public identifier for this session (for individual revocation)
+}
+
 // Server serves the control API.
 type Server struct {
 	status      func() State
@@ -232,9 +238,12 @@ type Server struct {
 	pairMu           sync.Mutex
 	pairEnabled      bool
 	pairCode         string
-	sessions         map[string]time.Time // hex token → expiry
+	pairCodeExpiry   time.Time
+	sessions         map[string]session // token → {expiry, per-device id}
 	pairAttempts     int
 	pairAttemptReset time.Time
+	pairLockoutUntil time.Time
+	pairedAccount    string // account UserID sessions were created for; switch revokes all
 }
 
 //go:embed webui/remote.html
@@ -248,7 +257,7 @@ func New(cfg Config, status func() State, account func() Account, cmds Commands,
 		status: status, account: account, cmds: cmds, client: client,
 		token: cfg.Token, sameAccount: cfg.SameAccountOnly, webRemote: cfg.WebRemote,
 		addr:     cfg.Addr,
-		sessions: make(map[string]time.Time),
+		sessions: make(map[string]session),
 	}
 }
 
@@ -270,24 +279,39 @@ func (s *Server) Addr() string {
 }
 
 // EnablePairing mints a fresh 6-digit code, activates pairing, and returns the
-// code. Safe to call multiple times; each call resets the code.
+// code. Safe to call multiple times; each call resets the code. The code is
+// single-use and short-TTL (5 minutes).
 func (s *Server) EnablePairing() string {
 	code, _ := mintCode()
 	s.pairMu.Lock()
+	curr := s.accountID()
+	if s.pairedAccount != "" && curr != "" && s.pairedAccount != curr {
+		s.sessions = make(map[string]session)
+		s.pairedAccount = ""
+	}
+	s.webRemote = true
 	s.pairEnabled = true
 	s.pairCode = code
+	s.pairCodeExpiry = time.Now().Add(5 * time.Minute)
 	s.pairAttempts = 0
 	s.pairAttemptReset = time.Time{}
+	s.pairLockoutUntil = time.Time{}
 	s.pairMu.Unlock()
 	return code
 }
 
-// DisablePairing clears the pairing code so no new phones can pair. Existing
-// valid session tokens remain usable for their remaining TTL.
+// DisablePairing clears the pairing code so no new phones can pair and revokes
+// all existing session tokens (individual sessions can be revoked via their
+// per-device id). It also disables the web remote SPA.
 func (s *Server) DisablePairing() {
 	s.pairMu.Lock()
+	s.webRemote = false
 	s.pairEnabled = false
 	s.pairCode = ""
+	s.pairCodeExpiry = time.Time{}
+	s.pairLockoutUntil = time.Time{}
+	s.sessions = make(map[string]session)
+	s.pairedAccount = ""
 	s.pairMu.Unlock()
 }
 
@@ -303,6 +327,23 @@ func (s *Server) PairingCode() string {
 	s.pairMu.Lock()
 	defer s.pairMu.Unlock()
 	return s.pairCode
+}
+
+// RevokeSession revokes the session by its public identifier (returned as "id"
+// from successful /pair) or by its token. Used for per-device revocation and
+// by account-switch / DisablePairing logic.
+func (s *Server) RevokeSession(idOrToken string) {
+	if idOrToken == "" {
+		return
+	}
+	s.pairMu.Lock()
+	defer s.pairMu.Unlock()
+	for tok, se := range s.sessions {
+		if se.id == idOrToken || tok == idOrToken {
+			delete(s.sessions, tok)
+			return
+		}
+	}
 }
 
 // Start binds the port and serves in a background goroutine.
@@ -344,7 +385,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) routes(mux *http.ServeMux) {
-	// Web remote: serve the SPA (no auth; gated by pairEnabled) and the pair endpoint.
+	// Web remote: serve the SPA (no auth; gated by webRemote) and the pair endpoint.
 	mux.HandleFunc("/remote", s.handleRemote)
 	mux.HandleFunc("/pair", s.requireMethod(http.MethodPost, s.handlePair))
 	// GET, unauthenticated: identity/discovery (name + auth mode only).
@@ -455,6 +496,11 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		case s.sameAccount:
+			// Accept the X-OpenDeezer-Account header for same-account auth from
+			// both loopback and LAN clients. We preserve account auth for
+			// non-loopback LAN peers (the documented LAN-trust tradeoff): the
+			// built-in control client only ever sends the account id (no
+			// session-token path), and /whoami advertises "account".
 			want := s.accountID()
 			got := r.Header.Get("X-OpenDeezer-Account")
 			// Constant-time compare (defense-in-depth; the id is only semi-secret).
@@ -477,6 +523,7 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 
 // hasValidSession reports whether tok is a currently-valid session token.
 // All comparisons are constant-time to prevent timing oracle on token values.
+// An account switch (detected via the snapshot provider) revokes all sessions.
 func (s *Server) hasValidSession(tok string) bool {
 	if tok == "" {
 		return false
@@ -484,11 +531,18 @@ func (s *Server) hasValidSession(tok string) bool {
 	s.pairMu.Lock()
 	defer s.pairMu.Unlock()
 	now := time.Now()
+	// Account switch revokes sessions for previous account.
+	currAcct := s.accountID()
+	if s.pairedAccount != "" && currAcct != "" && s.pairedAccount != currAcct {
+		s.sessions = make(map[string]session)
+		s.pairedAccount = ""
+		return false
+	}
 	found := false
-	for stored, exp := range s.sessions {
+	for stored, se := range s.sessions {
 		// Constant-time compare even if the token isn't in the map (timing leak
 		// on map presence is negligible vs 64-char entropy, but we do it right).
-		if subtle.ConstantTimeCompare([]byte(tok), []byte(stored)) == 1 && now.Before(exp) {
+		if subtle.ConstantTimeCompare([]byte(tok), []byte(stored)) == 1 && now.Before(se.expiry) {
 			found = true
 		}
 	}
@@ -498,8 +552,8 @@ func (s *Server) hasValidSession(tok string) bool {
 // reapSessions removes expired session tokens. Must be called with pairMu held.
 func (s *Server) reapSessions() {
 	now := time.Now()
-	for tok, exp := range s.sessions {
-		if now.After(exp) {
+	for tok, se := range s.sessions {
+		if now.After(se.expiry) {
 			delete(s.sessions, tok)
 		}
 	}
@@ -508,21 +562,19 @@ func (s *Server) reapSessions() {
 // injectSession plants a session with the given expiry. Used in tests.
 func (s *Server) injectSession(tok string, exp time.Time) {
 	s.pairMu.Lock()
-	s.sessions[tok] = exp
+	s.sessions[tok] = session{expiry: exp, id: "test-" + tok}
 	s.pairMu.Unlock()
 }
 
-// handleRemote serves the embedded web remote SPA. Only active when pairing is
-// enabled; returns 404 otherwise. No auth — the SPA itself enforces pairing.
+// handleRemote serves the embedded web remote SPA. Only active when web remote
+// is enabled (persistent flag); returns 404 otherwise. The pairing code itself
+// remains single-use. No auth — the SPA itself enforces pairing.
 func (s *Server) handleRemote(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
-	s.pairMu.Lock()
-	enabled := s.pairEnabled
-	s.pairMu.Unlock()
-	if !enabled {
+	if !s.webRemote {
 		http.NotFound(w, r)
 		return
 	}
@@ -532,7 +584,8 @@ func (s *Server) handleRemote(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePair handles POST /pair: validates the 6-digit code and, on success,
-// issues a session token. Rate-limited to ~5 attempts per minute.
+// issues a per-device session token (and id). The code is single-use and
+// time-limited (5min TTL). Failed attempts are rate-limited with lockout.
 func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	// Read the code from the JSON body only. The pairing code is a credential that
 	// mints a 12h session token, so it must never travel in the query string (which
@@ -553,13 +606,17 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rate limiting: allow ~5 wrong attempts per minute, then cool down.
 	now := time.Now()
-	if now.After(s.pairAttemptReset) {
-		s.pairAttempts = 0
-		s.pairAttemptReset = now.Add(time.Minute)
+	if !s.pairCodeExpiry.IsZero() && now.After(s.pairCodeExpiry) {
+		s.pairEnabled = false
+		s.pairCode = ""
+		s.pairCodeExpiry = time.Time{}
+		http.Error(w, `{"error":"pairing code expired"}`, http.StatusUnauthorized)
+		return
 	}
-	if s.pairAttempts >= 5 {
+
+	// Lockout after too many failed attempts (6-digit codes are brute-forceable).
+	if !s.pairLockoutUntil.IsZero() && now.Before(s.pairLockoutUntil) {
 		http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
 		return
 	}
@@ -567,21 +624,36 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	// Constant-time compare to prevent timing oracle on the 6-digit code.
 	if subtle.ConstantTimeCompare([]byte(code), []byte(s.pairCode)) != 1 {
 		s.pairAttempts++
+		if s.pairAttempts >= 5 {
+			s.pairLockoutUntil = now.Add(15 * time.Minute)
+			s.pairAttempts = 0
+		}
 		http.Error(w, `{"error":"invalid code"}`, http.StatusUnauthorized)
 		return
 	}
 
-	// Success: mint a session token, reap old ones, reset attempt counter.
+	// Success: single-use (invalidate code now), mint per-device session (token + id),
+	// reap, set paired account, reset counters.
 	tok, err := mintToken()
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
+	sid, err := mintSessionID()
+	if err != nil {
+		sid = "sid-error"
+	}
 	s.reapSessions()
-	s.sessions[tok] = now.Add(12 * time.Hour)
+	exp := now.Add(12 * time.Hour)
+	s.sessions[tok] = session{expiry: exp, id: sid}
+	s.pairedAccount = s.accountID()
 	s.pairAttempts = 0
+	s.pairLockoutUntil = time.Time{}
+	s.pairEnabled = false
+	s.pairCode = ""
+	s.pairCodeExpiry = time.Time{}
 
-	writeJSON(w, map[string]string{"token": tok})
+	writeJSON(w, map[string]string{"token": tok, "id": sid})
 }
 
 // checkHost wraps the mux with a DNS-rebinding guard. A browser tricked into
@@ -916,6 +988,16 @@ func mintCode() (string, error) {
 // mintToken returns a cryptographically random 32-byte session token as hex.
 func mintToken() (string, error) {
 	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// mintSessionID returns a random non-secret identifier for a session (used as
+// the per-device id for revocation). It is returned to the pairing client.
+func mintSessionID() (string, error) {
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}

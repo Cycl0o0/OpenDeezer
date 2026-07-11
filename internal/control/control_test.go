@@ -3,6 +3,7 @@ package control
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -268,14 +269,16 @@ func TestPairingFlow(t *testing.T) {
 	t.Cleanup(s.Close)
 	base := "http://" + s.Addr()
 
-	// 1. Pairing not yet enabled → GET /remote returns 404.
+	// 1. With WebRemote enabled at New, GET /remote serves the SPA even before
+	// a pairing code is active (the SPA presents the pairing UI; /pair will
+	// report "not active" until EnablePairing).
 	resp, err := http.Get(base + "/remote")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("/remote (pairing off) = %d, want 404", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/remote (web remote on, before enable) = %d, want 200", resp.StatusCode)
 	}
 
 	// 2. No session accepted when pairing is off.
@@ -294,7 +297,7 @@ func TestPairingFlow(t *testing.T) {
 		}
 	}
 
-	// 4. /remote now serves the SPA.
+	// 4. /remote continues to serve the SPA.
 	resp, err = http.Get(base + "/remote")
 	if err != nil {
 		t.Fatal(err)
@@ -338,6 +341,18 @@ func TestPairingFlow(t *testing.T) {
 	sessToken := pairResp["token"]
 	if len(sessToken) == 0 {
 		t.Fatal("pair response missing token")
+	}
+
+	// After successful pair the code is single-use (pairEnabled=false), but
+	// /remote must still serve (gated on persistent webRemote) so the just-paired
+	// SPA can reload and a second device can load the SPA.
+	resp, err = http.Get(base + "/remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/remote after successful pair = %d, want 200 (SPA must remain available while web remote enabled)", resp.StatusCode)
 	}
 
 	// 7. Session token in X-OpenDeezer-Session authorizes GET /status.
@@ -390,7 +405,8 @@ func TestPairingFlow(t *testing.T) {
 		t.Fatalf("expired session = %d, want 401", code)
 	}
 
-	// 12. After DisablePairing, /remote returns 404 again; valid sessions still work.
+	// 12. After DisablePairing (which clears webRemote), /remote returns 404 again;
+	// existing sessions are now revoked.
 	s.DisablePairing()
 	resp3, err := http.Get(base + "/remote")
 	if err != nil {
@@ -400,9 +416,9 @@ func TestPairingFlow(t *testing.T) {
 	if resp3.StatusCode != http.StatusNotFound {
 		t.Fatalf("/remote after DisablePairing = %d, want 404", resp3.StatusCode)
 	}
-	// The session minted before disabling is still valid.
-	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Session": sessToken}); code != http.StatusOK {
-		t.Fatalf("session after DisablePairing = %d, want 200 (sessions survive disable)", code)
+	// Sessions are revoked on DisablePairing.
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Session": sessToken}); code != http.StatusUnauthorized {
+		t.Fatalf("session after DisablePairing = %d, want 401 (sessions now revoked on disable)", code)
 	}
 
 	// 13. Rate limiting: re-enable and hammer with wrong codes.
@@ -420,5 +436,190 @@ func TestPairingFlow(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("rate limit = %d, want 429", resp.StatusCode)
+	}
+}
+
+// TestSameAccountAcceptsAccountIdOnNonLoopback (LAN Connect / wildcard case).
+// Matching X-OpenDeezer-Account is accepted even on non-loopback bind (the
+// LAN-trust tradeoff); wrong id is still rejected. Pairing for sessions remains
+// available on top.
+func TestSameAccountAcceptsAccountIdOnNonLoopback(t *testing.T) {
+	acct := func() Account { return Account{UserID: "42", Name: "me"} }
+	s := New(Config{Addr: "0.0.0.0:0", SameAccountOnly: true},
+		func() State { return State{} },
+		acct,
+		Commands{}, nil)
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+
+	// Derive a connectable base (127.0.0.1 works for a wildcard bind).
+	_, port, err := net.SplitHostPort(s.Addr())
+	if err != nil {
+		t.Fatalf("addr parse: %v", err)
+	}
+	base := "http://127.0.0.1:" + port
+
+	// Correct account id is accepted on non-loopback (for LAN Connect peers).
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Account": "42"}); code != http.StatusOK {
+		t.Fatalf("matching account id on non-loopback = %d, want 200", code)
+	}
+	// Wrong account id is rejected.
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Account": "999"}); code != http.StatusUnauthorized {
+		t.Fatalf("wrong account id on non-loopback = %d, want 401", code)
+	}
+
+	// Pairing must be used to obtain session.
+	pairCode := s.EnablePairing()
+	body, _ := json.Marshal(map[string]string{"code": pairCode})
+	req, _ := http.NewRequest(http.MethodPost, base+"/pair", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pair on nonloop sameacct = %d, want 200", resp.StatusCode)
+	}
+	var pr map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		t.Fatal(err)
+	}
+	sessTok := pr["token"]
+	if sessTok == "" {
+		t.Fatal("no token from pair")
+	}
+
+	// Valid session grants access (no need for account header).
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Session": sessTok}); code != http.StatusOK {
+		t.Fatalf("session on nonloop sameacct = %d, want 200", code)
+	}
+}
+
+// TestPairingCodeSingleUse verifies the code becomes invalid after one success.
+func TestPairingCodeSingleUse(t *testing.T) {
+	s := New(Config{Addr: "127.0.0.1:0", WebRemote: true},
+		func() State { return State{} }, nil, Commands{}, nil)
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	base := "http://" + s.Addr()
+
+	pairCode := s.EnablePairing()
+	if pairCode == "" {
+		t.Fatal("no code")
+	}
+
+	// Successful pair.
+	body, _ := json.Marshal(map[string]string{"code": pairCode})
+	req, _ := http.NewRequest(http.MethodPost, base+"/pair", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first pair = %d", resp.StatusCode)
+	}
+
+	// Code should be cleared (single-use).
+	if s.PairingCode() != "" {
+		t.Fatalf("pairing code not cleared after use")
+	}
+
+	// Reuse of same code must fail.
+	req2, _ := http.NewRequest(http.MethodPost, base+"/pair", bytes.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized && resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("reuse code = %d, want 401/404", resp2.StatusCode)
+	}
+}
+
+// TestPairingLockoutAfterFailedAttempts verifies lockout after N fails.
+func TestPairingLockoutAfterFailedAttempts(t *testing.T) {
+	s := New(Config{Addr: "127.0.0.1:0", WebRemote: true},
+		func() State { return State{} }, nil, Commands{}, nil)
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	base := "http://" + s.Addr()
+
+	_ = s.EnablePairing()
+	for i := 0; i < 5; i++ {
+		req, _ := http.NewRequest(http.MethodPost, base+"/pair", bytes.NewReader([]byte(`{"code":"000000"}`)))
+		req.Header.Set("Content-Type", "application/json")
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("fail %d = %d, want 401", i, resp.StatusCode)
+		}
+	}
+	// Next attempt (6th) must be locked out.
+	req, _ := http.NewRequest(http.MethodPost, base+"/pair", bytes.NewReader([]byte(`{"code":"000000"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("after 5 fails = %d, want 429", resp.StatusCode)
+	}
+}
+
+// TestSessionRevocation covers per-device id revocation and account switch.
+func TestSessionRevocation(t *testing.T) {
+	var uid string = "42"
+	acct := func() Account { return Account{UserID: uid} }
+	s := New(Config{Addr: "127.0.0.1:0", SameAccountOnly: true},
+		func() State { return State{} },
+		acct, Commands{}, nil)
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	base := "http://" + s.Addr()
+
+	// Pair to get a session (pairing works in same-account too).
+	pcode := s.EnablePairing()
+	body, _ := json.Marshal(map[string]string{"code": pcode})
+	req, _ := http.NewRequest(http.MethodPost, base+"/pair", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pair = %d", resp.StatusCode)
+	}
+	// Use inject + Revoke for the revocation tests below (pair body already consumed).
+	// First test manual revoke using inject + Revoke by token (supported by RevokeSession).
+	s.injectSession("revoketok1234567890abcdef", time.Now().Add(1*time.Hour))
+	// manually set an id for it (tests can reach private via other? use Revoke by token too)
+	s.RevokeSession("revoketok1234567890abcdef")
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Session": "revoketok1234567890abcdef"}); code != http.StatusUnauthorized {
+		t.Fatalf("revoke by token = %d, want 401", code)
+	}
+
+	// Now test account switch revokes: first Enable to record pairedAccount, then inject.
+	_ = s.EnablePairing() // records pairedAccount="42"
+	s.injectSession("switchtok1234567890abcdef", time.Now().Add(1*time.Hour))
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Session": "switchtok1234567890abcdef"}); code != http.StatusOK {
+		t.Fatalf("pre-switch session = %d, want 200", code)
+	}
+	uid = "99" // switch account
+	if code := getWith(t, base+"/status", map[string]string{"X-OpenDeezer-Session": "switchtok1234567890abcdef"}); code != http.StatusUnauthorized {
+		t.Fatalf("post-switch session = %d, want 401 (account switch revokes)", code)
 	}
 }

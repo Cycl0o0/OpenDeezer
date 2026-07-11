@@ -31,6 +31,7 @@ import (
 	"unsafe"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/bridge"
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
@@ -70,59 +71,12 @@ func loginKind(err error) int32 {
 	}
 }
 
-// ---- JSON DTOs (stable wire shape for the native UIs) ----
+// Stable JSON DTOs and Deezer-to-wire conversions live in internal/bridge.
+// These aliases keep the sibling c-archive source compatible without
+// reintroducing a binding-local wire type or conversion implementation.
+type jTrack = bridge.Track
 
-type jArtist struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-type jTrack struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	DurationMS int64     `json:"durationMs"`
-	Artists    []jArtist `json:"artists"`
-	ArtistLine string    `json:"artistLine"`
-	ArtistID   string    `json:"artistId,omitempty"` // primary artist id (convenience field)
-	AlbumName  string    `json:"albumName"`
-	ArtworkURL string    `json:"artworkUrl"`
-	Explicit   bool      `json:"explicit"`
-}
-type jAlbum struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Artists    []jArtist `json:"artists"`
-	ArtworkURL string    `json:"artworkUrl"`
-}
-type jPlaylist struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Owner      string `json:"owner"`
-	TrackCount int    `json:"trackCount"`
-	ArtworkURL string `json:"artworkUrl"`
-}
-
-func toJTrack(t deezer.Track) jTrack {
-	as := make([]jArtist, len(t.Artists))
-	for i, a := range t.Artists {
-		as[i] = jArtist{ID: a.ID, Name: a.Name}
-	}
-	artistID := ""
-	if len(t.Artists) > 0 {
-		artistID = t.Artists[0].ID
-	}
-	return jTrack{
-		ID: t.ID, Name: t.Name, DurationMS: t.DurationMS, Artists: as,
-		ArtistLine: t.ArtistLine(), ArtistID: artistID, AlbumName: t.AlbumName,
-		ArtworkURL: t.ArtworkURL, Explicit: t.Explicit,
-	}
-}
-func toJTracks(ts []deezer.Track) []jTrack {
-	out := make([]jTrack, len(ts))
-	for i, t := range ts {
-		out[i] = toJTrack(t)
-	}
-	return out
-}
+func toJTrack(track deezer.Track) bridge.Track { return bridge.FromTrack(track) }
 
 // jsonStr marshals v (or an {"error":...} object) to a malloc'd C string.
 func jsonStr(v any, err error) *C.char {
@@ -196,9 +150,23 @@ func DZInit(arl *C.char) C.int {
 		}
 		player = p
 		player.SetOnFinish(func() {
-			mu.Lock()
-			finished++
-			mu.Unlock()
+			// Engine-side auto-advance: when a queued track ends naturally, move to
+			// the next track in the engine queue and start it. The network resolve +
+			// Play is offloaded to its own goroutine inside engineAdvanceOnFinish, so
+			// this callback — invoked from the player's manage() goroutine — never
+			// blocks on I/O.
+			//
+			// engineAdvanceOnFinish reports whether the engine queue actually owned
+			// this finish. Only bump the GUI-facing finished counter (which native
+			// c-archive GUIs poll via DZFinishedCount to run their OWN queue) when it
+			// did NOT, so exactly one queue mechanism advances per natural finish —
+			// otherwise a remote-controlled GUI that also has its own queue loaded
+			// would double-advance.
+			if !engineAdvanceOnFinish() {
+				mu.Lock()
+				finished++
+				mu.Unlock()
+			}
 		})
 	}
 	mu.Unlock()
@@ -220,6 +188,11 @@ func DZInit(arl *C.char) C.int {
 	odlog.Info("logged in: %s (%s)", c.Account().Name, c.Account().Offer)
 	// Start engine-hosted services (Discord RP + control API) once.
 	startServices(c)
+	// On a re-login with a different ARL, rebuild the control server around the
+	// new client so an account switch stops serving the previous account's
+	// library (startServices runs under a sync.Once and won't re-run). No-op on
+	// the first login and on a same-account re-login.
+	refreshControlServer(c)
 	return 1
 }
 
@@ -319,7 +292,7 @@ func DZFavoritesJSON() *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	ts, err := c.Favorites()
-	return jsonStr(map[string]any{"tracks": toJTracks(ts)}, err)
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
 }
 
 //export DZPlaylistsJSON
@@ -331,11 +304,7 @@ func DZPlaylistsJSON() *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	ps, err := c.Playlists()
-	out := make([]jPlaylist, len(ps))
-	for i, p := range ps {
-		out[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
-	}
-	return jsonStr(map[string]any{"playlists": out}, err)
+	return jsonStr(map[string]any{"playlists": bridge.FromPlaylists(ps)}, err)
 }
 
 //export DZPlaylistTracksJSON
@@ -347,7 +316,7 @@ func DZPlaylistTracksJSON(id *C.char) *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	ts, err := c.PlaylistTracks(C.GoString(id))
-	return jsonStr(map[string]any{"tracks": toJTracks(ts)}, err)
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
 }
 
 //export DZAlbumTracksJSON
@@ -359,7 +328,7 @@ func DZAlbumTracksJSON(id *C.char) *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	ts, err := c.AlbumTracks(C.GoString(id))
-	return jsonStr(map[string]any{"tracks": toJTracks(ts)}, err)
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
 }
 
 //export DZSearchJSON
@@ -374,21 +343,9 @@ func DZSearchJSON(q *C.char) *C.char {
 	if err != nil {
 		return jsonStr(nil, err)
 	}
-	albums := make([]jAlbum, len(r.Albums))
-	for i, a := range r.Albums {
-		as := make([]jArtist, len(a.Artists))
-		for j, ar := range a.Artists {
-			as[j] = jArtist{ID: ar.ID, Name: ar.Name}
-		}
-		albums[i] = jAlbum{ID: a.ID, Name: a.Name, Artists: as, ArtworkURL: a.ArtworkURL}
-	}
-	pls := make([]jPlaylist, len(r.Playlists))
-	for i, p := range r.Playlists {
-		pls[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
-	}
 	return jsonStr(map[string]any{
-		"tracks": toJTracks(r.Tracks), "albums": albums,
-		"artists": toJArtistInfos(r.Artists), "playlists": pls,
+		"tracks": bridge.FromTracks(r.Tracks), "albums": bridge.FromAlbums(r.Albums),
+		"artists": bridge.FromArtistInfos(r.Artists), "playlists": bridge.FromPlaylists(r.Playlists),
 	}, nil)
 }
 
@@ -680,33 +637,6 @@ func DZAdsDisabled() C.int {
 
 // ---- account / browse / lyrics / loudness (added for the v0.3 roadmap) ----
 
-type jArtistInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ArtworkURL string `json:"artworkUrl"`
-	NbFans     int    `json:"nbFans"`
-}
-
-func toJArtistInfos(as []deezer.ArtistInfo) []jArtistInfo {
-	out := make([]jArtistInfo, len(as))
-	for i, a := range as {
-		out[i] = jArtistInfo{ID: a.ID, Name: a.Name, ArtworkURL: a.ArtworkURL, NbFans: a.NbFans}
-	}
-	return out
-}
-
-func toJAlbums(as []deezer.Album) []jAlbum {
-	out := make([]jAlbum, len(as))
-	for i, a := range as {
-		ar := make([]jArtist, len(a.Artists))
-		for j, x := range a.Artists {
-			ar[j] = jArtist{ID: x.ID, Name: x.Name}
-		}
-		out[i] = jAlbum{ID: a.ID, Name: a.Name, Artists: ar, ArtworkURL: a.ArtworkURL}
-	}
-	return out
-}
-
 // DZAccountJSON returns the logged-in plan + entitlements as JSON
 // {userId,name,offer,canHq,canHifi,loggedIn} so GUIs can show the tier and
 // explain why a quality tier is unavailable.
@@ -737,19 +667,11 @@ func DZChartsJSON() *C.char {
 		return jsonStr(nil, err)
 	}
 	return jsonStr(map[string]any{
-		"tracks":    toJTracks(ch.Tracks),
-		"albums":    toJAlbums(ch.Albums),
-		"artists":   toJArtistInfos(ch.Artists),
-		"playlists": toJPlaylists(ch.Playlists),
+		"tracks":    bridge.FromTracks(ch.Tracks),
+		"albums":    bridge.FromAlbums(ch.Albums),
+		"artists":   bridge.FromArtistInfos(ch.Artists),
+		"playlists": bridge.FromPlaylists(ch.Playlists),
 	}, nil)
-}
-
-func toJPlaylists(ps []deezer.Playlist) []jPlaylist {
-	out := make([]jPlaylist, len(ps))
-	for i, p := range ps {
-		out[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
-	}
-	return out
 }
 
 // DZHomeJSON aggregates the Home-screen sections in one call so every GUI shows
@@ -773,9 +695,9 @@ func DZHomeJSON() *C.char {
 	}
 	ps, _ := c.Playlists()
 	return jsonStr(map[string]any{
-		"topTracks": toJTracks(tracks),
-		"topAlbums": toJAlbums(albums),
-		"playlists": toJPlaylists(ps),
+		"topTracks": bridge.FromTracks(tracks),
+		"topAlbums": bridge.FromAlbums(albums),
+		"playlists": bridge.FromPlaylists(ps),
 	}, nil)
 }
 
@@ -799,7 +721,7 @@ func DZArtistTopJSON(id *C.char) *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	ts, err := c.ArtistTop(C.GoString(id))
-	return jsonStr(map[string]any{"tracks": toJTracks(ts)}, err)
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
 }
 
 // DZArtistProfileJSON returns an artist profile with top tracks, albums and
@@ -817,12 +739,12 @@ func DZArtistProfileJSON(id *C.char) *C.char {
 	if err != nil {
 		return jsonStr(nil, err)
 	}
-	info := jArtistInfo{ID: pg.Artist.ID, Name: pg.Artist.Name, ArtworkURL: pg.Artist.ArtworkURL, NbFans: pg.Artist.NbFans}
+	info := bridge.FromArtistInfo(pg.Artist)
 	return jsonStr(map[string]any{
 		"artist":  info,
-		"top":     toJTracks(pg.Top),
-		"albums":  toJAlbums(pg.Albums),
-		"related": toJArtistInfos(pg.Related),
+		"top":     bridge.FromTracks(pg.Top),
+		"albums":  bridge.FromAlbums(pg.Albums),
+		"related": bridge.FromArtistInfos(pg.Related),
 	}, nil)
 }
 
@@ -965,28 +887,10 @@ func DZFlowJSON() *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	ts, err := c.Flow()
-	return jsonStr(map[string]any{"tracks": toJTracks(ts)}, err)
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
 }
 
 // ---- podcasts (v0.4) ----
-
-type jPodcast struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	ArtworkURL   string `json:"artworkUrl"`
-	EpisodeCount int    `json:"episodeCount"`
-}
-
-type jEpisode struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ArtworkURL  string `json:"artworkUrl"`
-	DurationMS  int64  `json:"durationMs"`
-	ReleaseDate string `json:"releaseDate"`
-	PodcastName string `json:"podcastName"`
-}
 
 // DZSearchPodcastsJSON returns {podcasts:[...]} for a query.
 //
@@ -1000,11 +904,7 @@ func DZSearchPodcastsJSON(q *C.char) *C.char {
 	if err != nil {
 		return jsonStr(nil, err)
 	}
-	out := make([]jPodcast, len(ps))
-	for i, p := range ps {
-		out[i] = jPodcast{ID: p.ID, Name: p.Name, Description: p.Description, ArtworkURL: p.ArtworkURL, EpisodeCount: p.EpisodeCount}
-	}
-	return jsonStr(map[string]any{"podcasts": out}, nil)
+	return jsonStr(map[string]any{"podcasts": bridge.FromPodcasts(ps)}, nil)
 }
 
 // DZPodcastEpisodesJSON returns {episodes:[...]} for a show id.
@@ -1019,11 +919,7 @@ func DZPodcastEpisodesJSON(podcastID *C.char) *C.char {
 	if err != nil {
 		return jsonStr(nil, err)
 	}
-	out := make([]jEpisode, len(es))
-	for i, e := range es {
-		out[i] = jEpisode{ID: e.ID, Title: e.Title, Description: e.Description, ArtworkURL: e.ArtworkURL, DurationMS: e.DurationMS, ReleaseDate: e.ReleaseDate, PodcastName: e.PodcastName}
-	}
-	return jsonStr(map[string]any{"episodes": out}, nil)
+	return jsonStr(map[string]any{"episodes": bridge.FromEpisodes(es)}, nil)
 }
 
 // ---- audio: devices, gapless, crossfade, preload (v0.4) ----

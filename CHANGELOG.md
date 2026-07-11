@@ -4,6 +4,28 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1]
+
+### Added
+- **Discord Rich Presence on Windows.** Now-playing status reaches Discord on
+  Windows too, over the Discord IPC named pipe (previously Unix-only).
+
+### Fixed
+- **Remote playlist/album playback advances.** Starting a playlist or album from
+  the control API or another device now plays through the whole list instead of
+  stopping after the first track, via a shared engine-side playback queue.
+- **Account switch no longer serves the old library.** Re-logging into a
+  different account rebuilds the control server around the new session, so its
+  browse endpoints stop returning the previous account's playlists/favorites.
+
+### Changed
+- **Hardened control-API pairing.** Pairing codes are now single-use and expire
+  after 5 minutes, repeated failed attempts are locked out, and sessions are
+  per-device revocable and dropped on an account switch.
+- **Internal:** the FFI JSON DTOs are now shared between the desktop c-archive
+  and the mobile binding (`internal/bridge`), locked by a golden wire-compat
+  test; no client-visible format change.
+
 ## [2.1.0]
 
 ### Added

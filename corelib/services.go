@@ -23,6 +23,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/internal/discord"
 	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
 	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/internal/queue"
 	"github.com/Cycl0o0/OpenDeezer/internal/version"
 )
 
@@ -32,8 +33,25 @@ var (
 	ctrlSrv      *control.Server
 	coreVersion  = version.Number
 
+	// ctrlCfg + ctrlSrvUserID remember how ctrlSrv was built so
+	// refreshControlServer can rebuild it around a new client after an account
+	// switch (re-login), instead of the sync.Once keeping the old account's
+	// session alive forever. We track the account UserID (not the *deezer.Client
+	// pointer) because DZInit allocates a fresh client on every call, so a
+	// same-account re-login must compare equal and stay a no-op.
+	ctrlCfg       control.Config
+	ctrlSrvUserID string
+
 	curMu    sync.Mutex
 	curTrack deezer.Track
+
+	// engineQ is the engine-side playback queue. enginePlayPlaylist /
+	// enginePlayTrack load the full track list into it and play the current track;
+	// when a track ends naturally the player's onFinish callback advances this
+	// queue and starts the next track, so remote/control-driven playlist playback
+	// walks every track instead of stopping after the first. Guarded by queueMu.
+	queueMu sync.Mutex
+	engineQ = queue.New()
 )
 
 func setCurrentTrack(t deezer.Track) {
@@ -96,8 +114,9 @@ func startServices(c *deezer.Client) {
 			// Build + Start on a local var, then publish under mu: the exported
 			// control funcs read/write ctrlSrv on the UI thread while this runs on
 			// a DZInit worker, and a reader must never see a not-yet-listening srv.
+			ccfg := control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount}
 			srv := control.New(
-				control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount},
+				ccfg,
 				engineState,
 				engineAccount,
 				engineCommands(),
@@ -118,6 +137,7 @@ func startServices(c *deezer.Client) {
 				addr := srv.Addr()
 				mu.Lock()
 				ctrlSrv = srv
+				ctrlCfg, ctrlSrvUserID = ccfg, c.Account().UserID
 				mu.Unlock()
 				odlog.Info("control api on %s", addr)
 				// Advertise on the LAN (OpenDeezer Connect) only when bound to a
@@ -136,6 +156,61 @@ func startServices(c *deezer.Client) {
 
 		go serviceTicker()
 	})
+}
+
+// refreshControlServer rebuilds the control server around the current client
+// after a re-login: control.New snapshots the *deezer.Client for the browse
+// endpoints (/playlists, /search), so without this an account switch (a second
+// DZInit with a new ARL) keeps serving the previous account's library on its
+// stale session — startServices runs under a sync.Once and never re-runs.
+// Pairing sessions are dropped deliberately: a phone paired under the old
+// account must re-pair. No-op when there is no server or it already holds c.
+//
+// The server rebinds to the same host:port, so the discovery responder started
+// by startServices (which reads identity live via advertInfo and points at that
+// unchanged port) keeps advertising correctly — no re-advertise needed.
+func refreshControlServer(c *deezer.Client) {
+	mu.Lock()
+	srv, cfg := ctrlSrv, ctrlCfg
+	stale := srv != nil && ctrlSrvUserID != c.Account().UserID
+	mu.Unlock()
+	if !stale {
+		return
+	}
+	cfg.Addr = srv.Addr() // keep the actual bound host:port (cfg may have said :0)
+	pairing := srv.PairingActive()
+	srv.Close()
+	id, dev := clientInfo()
+	s := control.New(cfg, engineState, engineAccount, engineCommands(), c)
+	s.SetVersion(coreVersion)
+	s.SetClientInfo(id, dev)
+	s.SetEQ(engineEQ())
+	if err := s.Start(); err != nil {
+		odlog.Warn("control api restart: %v", err)
+		mu.Lock()
+		if ctrlSrv == srv {
+			// Reset the tracked identity too, so a later DZInit sees srv==nil is
+			// stale-worthy again (srv!=nil is required to detect staleness) and the
+			// control API isn't left permanently down.
+			ctrlSrv, ctrlSrvUserID = nil, ""
+		}
+		mu.Unlock()
+		return
+	}
+	if pairing {
+		s.EnablePairing() // fresh code; old sessions must not carry across accounts
+	}
+	mu.Lock()
+	// Only publish if nobody swapped ctrlSrv out from under us since we captured
+	// srv; otherwise close the server we just started to avoid a leak.
+	if ctrlSrv == srv {
+		ctrlSrv, ctrlSrvUserID = s, c.Account().UserID
+		mu.Unlock()
+		odlog.Info("control api rebound on %s for new account", s.Addr())
+	} else {
+		mu.Unlock()
+		s.Close()
+	}
 }
 
 // serviceTicker pushes Discord presence once a second.
@@ -274,12 +349,16 @@ func engineAccount() control.Account {
 	return control.Account{UserID: a.UserID, Name: a.Name, Offer: a.Offer}
 }
 
-// engineCommands maps control commands to player-level actions. next/prev live
-// in the GUI's queue; shuffle/repeat are no-ops locally but forward to the
-// connected remote (if any) so a controller can drive the remote's queue.
+// engineCommands maps control commands to player-level actions. next/prev drive
+// the engine playback queue (engineQ) when playing locally, or forward to the
+// connected remote when a device is selected; shuffle/repeat are no-ops locally
+// but forward to the connected remote (if any) so a controller can drive the
+// remote's queue.
 func engineCommands() control.Commands {
 	return control.Commands{
 		PlayPause:    func() { withPlayer(func(p *audio.Player) { p.TogglePause() }) },
+		Next:         engineNext,
+		Prev:         enginePrev,
 		Stop:         func() { withPlayer(func(p *audio.Player) { p.Stop() }) },
 		Restart:      func() { withPlayer(func(p *audio.Player) { p.SeekMS(0) }) },
 		Seek:         func(ms int64) { withPlayer(func(p *audio.Player) { p.SeekMS(ms) }) },
@@ -326,6 +405,34 @@ func fetchEpisodeMeta(c *deezer.Client, id string) {
 	}
 }
 
+// enginePlayResolved resolves a stream for t and starts it on the player,
+// recording it as the current track. Blocking (network round-trip); callers must
+// be off the realtime audio path.
+func enginePlayResolved(c *deezer.Client, p *audio.Player, t deezer.Track) bool {
+	plan, err := c.PrepareStream(t.ID)
+	if err != nil {
+		return false
+	}
+	if p.Play(plan, t.DurationMS) != nil {
+		return false
+	}
+	setCurrentTrack(t)
+	return true
+}
+
+// engineLoadAndPlay replaces the engine queue with ts (cursor at start) and
+// plays the current track, so a natural finish auto-advances through the rest.
+func engineLoadAndPlay(c *deezer.Client, p *audio.Player, ts []deezer.Track, start int) bool {
+	queueMu.Lock()
+	engineQ.Set(ts, start)
+	t, ok := engineQ.Current()
+	queueMu.Unlock()
+	if !ok {
+		return false
+	}
+	return enginePlayResolved(c, p, t)
+}
+
 func enginePlayTrack(id string) {
 	c, p := curClient(), curPlayer()
 	if c == nil || p == nil {
@@ -335,13 +442,10 @@ func enginePlayTrack(id string) {
 	if err != nil {
 		return
 	}
-	plan, err := c.PrepareStream(id)
-	if err != nil {
-		return
-	}
-	if p.Play(plan, t.DurationMS) == nil {
-		setCurrentTrack(t)
-	}
+	// A single-track "queue": nothing to auto-advance to, but loading it keeps the
+	// engine queue in sync with what's actually playing, so a previously loaded
+	// playlist can't auto-advance after this ad-hoc single track finishes.
+	engineLoadAndPlay(c, p, []deezer.Track{t}, 0)
 }
 
 func enginePlayPlaylist(id string) {
@@ -353,12 +457,89 @@ func enginePlayPlaylist(id string) {
 	if err != nil || len(ts) == 0 {
 		return
 	}
-	t := ts[0]
-	plan, err := c.PrepareStream(t.ID)
-	if err != nil {
+	engineLoadAndPlay(c, p, ts, 0)
+}
+
+// engineQueueAdvance advances the engine queue when the track finishedID ends
+// naturally and returns the next track to play. It advances only when finishedID
+// is the queue's current track, so an ad-hoc DZPlay (which bypasses the engine
+// queue) can't trigger a stale auto-advance into an unrelated playlist. Pure
+// queue logic — the caller performs the network resolve + Play.
+func engineQueueAdvance(finishedID string) (deezer.Track, bool) {
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	cur, ok := engineQ.Current()
+	if !ok || cur.ID == "" || cur.ID != finishedID {
+		return deezer.Track{}, false
+	}
+	if !engineQ.AdvanceAuto() {
+		return deezer.Track{}, false
+	}
+	return engineQ.Current()
+}
+
+// engineAdvanceOnFinish is wired to the player's onFinish callback (DZInit) and
+// runs on the player's manage() goroutine when a track ends naturally. It
+// advances the engine queue and starts the next track on a FRESH goroutine, so
+// the callback never blocks the manager on the network resolve + Play (which
+// would stall prebuffer promotion + the sleep-timer fade).
+//
+// It returns true only when the engine queue actually drove this finish (the
+// finished track was the engine queue's current track). The onFinish callback
+// uses that to decide whether to also bump the GUI finished-counter, so the
+// engine queue and a native GUI's own queue never both advance on one finish.
+func engineAdvanceOnFinish() bool {
+	next, ok := engineQueueAdvance(currentTrack().ID)
+	if !ok {
+		return false
+	}
+	go func() {
+		c, p := curClient(), curPlayer()
+		if c == nil || p == nil {
+			return
+		}
+		enginePlayResolved(c, p, next)
+	}()
+	return true
+}
+
+// engineNext / enginePrev back the control API's /next + /prev. When a remote
+// device is selected they forward to it (local playback is stopped); otherwise
+// they move the engine queue and play the new current track locally.
+func engineNext() {
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.Next(); err == nil {
+			setRemoteState(st)
+		}
 		return
 	}
-	if p.Play(plan, t.DurationMS) == nil {
-		setCurrentTrack(t)
+	queueMu.Lock()
+	moved := engineQ.Next()
+	t, ok := engineQ.Current()
+	queueMu.Unlock()
+	if !moved || !ok {
+		return
+	}
+	if c, p := curClient(), curPlayer(); c != nil && p != nil {
+		enginePlayResolved(c, p, t)
+	}
+}
+
+func enginePrev() {
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.Prev(); err == nil {
+			setRemoteState(st)
+		}
+		return
+	}
+	queueMu.Lock()
+	moved := engineQ.Prev()
+	t, ok := engineQ.Current()
+	queueMu.Unlock()
+	if !moved || !ok {
+		return
+	}
+	if c, p := curClient(), curPlayer(); c != nil && p != nil {
+		enginePlayResolved(c, p, t)
 	}
 }

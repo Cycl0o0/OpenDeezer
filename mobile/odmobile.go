@@ -26,6 +26,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/Cycl0o0/OpenDeezer/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/internal/bridge"
 	"github.com/Cycl0o0/OpenDeezer/internal/config"
 	"github.com/Cycl0o0/OpenDeezer/internal/control"
 	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
@@ -54,72 +55,7 @@ var (
 	curGen   uint64 // bumped by setCurrentTrack; lets async meta fetches detect a newer track
 )
 
-// ---- JSON DTOs (same wire shape as the desktop GUIs) ----
-
-type jArtist struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-type jTrack struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	DurationMS int64     `json:"durationMs"`
-	Artists    []jArtist `json:"artists"`
-	ArtistLine string    `json:"artistLine"`
-	ArtistID   string    `json:"artistId,omitempty"` // primary artist id (convenience field)
-	AlbumName  string    `json:"albumName"`
-	ArtworkURL string    `json:"artworkUrl"`
-	Explicit   bool      `json:"explicit"`
-}
-type jAlbum struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Artists    []jArtist `json:"artists"`
-	ArtworkURL string    `json:"artworkUrl"`
-}
-type jPlaylist struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Owner      string `json:"owner"`
-	TrackCount int    `json:"trackCount"`
-	ArtworkURL string `json:"artworkUrl"`
-}
-type jArtistInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ArtworkURL string `json:"artworkUrl"`
-	NbFans     int    `json:"nbFans"`
-}
-
-func toJTrack(t deezer.Track) jTrack {
-	as := make([]jArtist, len(t.Artists))
-	for i, a := range t.Artists {
-		as[i] = jArtist{ID: a.ID, Name: a.Name}
-	}
-	artistID := ""
-	if len(t.Artists) > 0 {
-		artistID = t.Artists[0].ID
-	}
-	return jTrack{
-		ID: t.ID, Name: t.Name, DurationMS: t.DurationMS, Artists: as,
-		ArtistLine: t.ArtistLine(), ArtistID: artistID, AlbumName: t.AlbumName,
-		ArtworkURL: t.ArtworkURL, Explicit: t.Explicit,
-	}
-}
-func toJTracks(ts []deezer.Track) []jTrack {
-	out := make([]jTrack, len(ts))
-	for i, t := range ts {
-		out[i] = toJTrack(t)
-	}
-	return out
-}
-func toJArtistInfos(as []deezer.ArtistInfo) []jArtistInfo {
-	out := make([]jArtistInfo, len(as))
-	for i, a := range as {
-		out[i] = jArtistInfo{ID: a.ID, Name: a.Name, ArtworkURL: a.ArtworkURL, NbFans: a.NbFans}
-	}
-	return out
-}
+// Stable JSON DTOs and Deezer-to-wire conversions live in internal/bridge.
 
 func jstr(v any, err error) string {
 	if err != nil {
@@ -333,41 +269,37 @@ func withClient(fn func(c *deezer.Client) (any, error)) string {
 func Favorites() string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ts, err := c.Favorites()
-		return map[string]any{"tracks": toJTracks(ts)}, err
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
 }
 func Playlists() string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ps, err := c.Playlists()
-		out := make([]jPlaylist, len(ps))
-		for i, p := range ps {
-			out[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
-		}
-		return map[string]any{"playlists": out}, err
+		return map[string]any{"playlists": bridge.FromPlaylists(ps)}, err
 	})
 }
 func PlaylistTracks(id string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ts, err := c.PlaylistTracks(id)
-		return map[string]any{"tracks": toJTracks(ts)}, err
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
 }
 func AlbumTracks(id string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ts, err := c.AlbumTracks(id)
-		return map[string]any{"tracks": toJTracks(ts)}, err
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
 }
 func Flow() string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ts, err := c.Flow()
-		return map[string]any{"tracks": toJTracks(ts)}, err
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
 }
 func ArtistTop(id string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ts, err := c.ArtistTop(id)
-		return map[string]any{"tracks": toJTracks(ts)}, err
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
 }
 func ArtistProfile(id string) string {
@@ -409,81 +341,34 @@ func Home() string {
 		if ch, err := c.Charts("0"); err == nil && ch != nil {
 			tracks, albums = ch.Tracks, ch.Albums
 		}
-		al := make([]jAlbum, len(albums))
-		for i, a := range albums {
-			as := make([]jArtist, len(a.Artists))
-			for j, ar := range a.Artists {
-				as[j] = jArtist{ID: ar.ID, Name: ar.Name}
-			}
-			al[i] = jAlbum{ID: a.ID, Name: a.Name, Artists: as, ArtworkURL: a.ArtworkURL}
-		}
 		ps, _ := c.Playlists()
-		pl := make([]jPlaylist, len(ps))
-		for i, p := range ps {
-			pl[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
-		}
-		return map[string]any{"topTracks": toJTracks(tracks), "topAlbums": al, "playlists": pl}, nil
+		return map[string]any{
+			"topTracks": bridge.FromTracks(tracks),
+			"topAlbums": bridge.FromAlbums(albums),
+			"playlists": bridge.FromPlaylists(ps),
+		}, nil
 	})
 }
 
 func searchJSON(tracks []deezer.Track, albums []deezer.Album, artists []deezer.ArtistInfo, playlists []deezer.Playlist) string {
-	al := make([]jAlbum, len(albums))
-	for i, a := range albums {
-		as := make([]jArtist, len(a.Artists))
-		for j, ar := range a.Artists {
-			as[j] = jArtist{ID: ar.ID, Name: ar.Name}
-		}
-		al[i] = jAlbum{ID: a.ID, Name: a.Name, Artists: as, ArtworkURL: a.ArtworkURL}
-	}
-	pl := make([]jPlaylist, len(playlists))
-	for i, p := range playlists {
-		pl[i] = jPlaylist{ID: p.ID, Name: p.Name, Owner: p.Owner, TrackCount: p.TrackCount, ArtworkURL: p.ArtworkURL}
-	}
 	return jstr(map[string]any{
-		"tracks": toJTracks(tracks), "albums": al,
-		"artists": toJArtistInfos(artists), "playlists": pl,
+		"tracks": bridge.FromTracks(tracks), "albums": bridge.FromAlbums(albums),
+		"artists": bridge.FromArtistInfos(artists), "playlists": bridge.FromPlaylists(playlists),
 	}, nil)
 }
 
 // ---- podcasts ----
 
-// jPodcast / jEpisode mirror corelib's DTOs: deezer.Podcast/Episode have no
-// json tags, so marshaling them raw would break the lowercase wire contract.
-type jPodcast struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	ArtworkURL   string `json:"artworkUrl"`
-	EpisodeCount int    `json:"episodeCount"`
-}
-type jEpisode struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ArtworkURL  string `json:"artworkUrl"`
-	DurationMS  int64  `json:"durationMs"`
-	ReleaseDate string `json:"releaseDate"`
-	PodcastName string `json:"podcastName"`
-}
-
 func SearchPodcasts(q string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ps, err := c.SearchPodcasts(q)
-		out := make([]jPodcast, len(ps))
-		for i, p := range ps {
-			out[i] = jPodcast{ID: p.ID, Name: p.Name, Description: p.Description, ArtworkURL: p.ArtworkURL, EpisodeCount: p.EpisodeCount}
-		}
-		return map[string]any{"podcasts": out}, err
+		return map[string]any{"podcasts": bridge.FromPodcasts(ps)}, err
 	})
 }
 func PodcastEpisodes(id string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		es, err := c.PodcastEpisodes(id)
-		out := make([]jEpisode, len(es))
-		for i, e := range es {
-			out[i] = jEpisode{ID: e.ID, Title: e.Title, Description: e.Description, ArtworkURL: e.ArtworkURL, DurationMS: e.DurationMS, ReleaseDate: e.ReleaseDate, PodcastName: e.PodcastName}
-		}
-		return map[string]any{"episodes": out}, err
+		return map[string]any{"episodes": bridge.FromEpisodes(es)}, err
 	})
 }
 
@@ -783,7 +668,7 @@ func FinishedCount() int {
 func NowPlaying() string {
 	if routedRemote() != nil {
 		if t := remoteSnapshot().Track; t != nil {
-			return jstr(jTrack{
+			return jstr(bridge.Track{
 				ID: t.ID, Name: t.Title, ArtistLine: t.Artist, ArtistID: t.ArtistID,
 				AlbumName: t.Album, Explicit: t.Explicit, DurationMS: t.DurationMS,
 				ArtworkURL: t.ArtworkURL,
@@ -792,7 +677,7 @@ func NowPlaying() string {
 		return jstr(map[string]any{}, nil)
 	}
 	if cur := currentTrack(); cur.ID != "" {
-		return jstr(toJTrack(cur), nil)
+		return jstr(bridge.FromTrack(cur), nil)
 	}
 	return jstr(map[string]any{}, nil)
 }

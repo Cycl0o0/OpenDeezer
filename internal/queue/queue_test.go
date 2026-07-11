@@ -191,6 +191,30 @@ func TestSetIndexRecordsHistory(t *testing.T) {
 	}
 }
 
+// TestAdvanceAutoWalksEveryTrack is the contract the engine-side auto-advance
+// relies on: repeatedly calling AdvanceAuto on a linear RepeatOff queue visits
+// every remaining track exactly once, in order, then stops at the end.
+func TestAdvanceAutoWalksEveryTrack(t *testing.T) {
+	q := New()
+	q.Set(tracks(4), 0) // a,b,c,d starting on a
+	var seq []string
+	for q.AdvanceAuto() {
+		seq = append(seq, curID(q))
+	}
+	want := []string{"b", "c", "d"}
+	if len(seq) != len(want) {
+		t.Fatalf("AdvanceAuto walk = %v, want %v", seq, want)
+	}
+	for i := range want {
+		if seq[i] != want[i] {
+			t.Fatalf("AdvanceAuto walk[%d]=%q want %q (%v)", i, seq[i], want[i], seq)
+		}
+	}
+	if curID(q) != "d" {
+		t.Fatalf("cursor should rest at the last track, got %q", curID(q))
+	}
+}
+
 func TestCycleRepeat(t *testing.T) {
 	q := New()
 	if q.CycleRepeat() != RepeatAll || q.CycleRepeat() != RepeatOne || q.CycleRepeat() != RepeatOff {

@@ -90,8 +90,8 @@ func (s *Server) SetClientInfo(client, device string) { s.s.SetClientInfo(client
 // phone web remote at http://<addr>/remote. Each call resets the code.
 func (s *Server) EnablePairing() string { return s.s.EnablePairing() }
 
-// DisablePairing clears the pairing code. Existing valid session tokens remain
-// usable for their remaining TTL (12 hours).
+// DisablePairing clears the pairing code so no new devices can pair and revokes
+// all existing session tokens (individual sessions can be revoked via their id).
 func (s *Server) DisablePairing() { s.s.DisablePairing() }
 
 // PairingActive reports whether a pairing code is currently active.

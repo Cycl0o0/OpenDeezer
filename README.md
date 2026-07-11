@@ -221,7 +221,7 @@ Endpoints (reads are `GET`, mutations are `POST`):
 | POST | `/playpause` `/next` `/prev` `/stop` `/restart` | transport |
 | POST | `/repeat` `/shuffle` | cycle repeat / toggle shuffle |
 | POST | `/seek?ms=` `/volume?v=` | position / volume (0..1) |
-| POST | `/play/track?id=` `/play/playlist?id=` | play by id |
+| POST | `/play/track?id=` `/play/playlist?id=` | play by id (a playlist/album plays through the whole list) |
 
 **Auth.** Credentials are sent via request **headers only**:
 
@@ -304,14 +304,15 @@ Portal](https://discord.com/developers/applications); optionally upload an art
 asset named `opendeezer`):
 
 ```sh
-# Linux:  ~/.config/opendeezer/discord-app-id.txt
-# macOS:  ~/Library/Application Support/opendeezer/discord-app-id.txt
+# Linux:   ~/.config/opendeezer/discord-app-id.txt
+# macOS:   ~/Library/Application Support/opendeezer/discord-app-id.txt
+# Windows: %AppData%\opendeezer\discord-app-id.txt
 echo your-application-id > ~/.config/opendeezer/discord-app-id.txt
 # (env var also works for the TUI: export OPENDEEZER_DISCORD_APP_ID=...)
 ```
 
 With Discord running, your now-playing track appears as "Listening to …" with a
-live progress bar. macOS/Linux only (Windows pending). If Discord isn't running
+live progress bar. Works on macOS, Linux, and Windows. If Discord isn't running
 it's silently skipped.
 
 > **GUI users (esp. macOS):** apps launched from Finder/Activities do **not**
