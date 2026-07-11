@@ -579,7 +579,7 @@ func TestPairingLockoutAfterFailedAttempts(t *testing.T) {
 
 // TestSessionRevocation covers per-device id revocation and account switch.
 func TestSessionRevocation(t *testing.T) {
-	var uid string = "42"
+	uid := "42"
 	acct := func() Account { return Account{UserID: uid} }
 	s := New(Config{Addr: "127.0.0.1:0", SameAccountOnly: true},
 		func() State { return State{} },
