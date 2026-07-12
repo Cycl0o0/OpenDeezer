@@ -68,25 +68,31 @@ fun TrackListScreen(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (val list = tracks) {
-                null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-                else -> if (list.isEmpty()) {
-                    CenteredMessage(stringResource(R.string.tracklist_empty))
-                } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { index, track ->
-                            TrackRow(
-                                track = track,
-                                onClick = { player.playQueue(list, index) },
-                                onDownload = { player.download(track) },
-                                downloadEnabled = player.premium,
-                            )
-                        }
-                        item { Spacer(Modifier.height(88.dp)) }
+        TrackList(tracks, player, Modifier.fillMaxSize().padding(padding))
+    }
+}
+
+/** Track list body (spinner / empty message / rows), reusable in fold-aware layouts. */
+@Composable
+fun TrackList(tracks: List<Track>?, player: PlayerController, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        when (val list = tracks) {
+            null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            else -> if (list.isEmpty()) {
+                CenteredMessage(stringResource(R.string.tracklist_empty))
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { index, track ->
+                        TrackRow(
+                            track = track,
+                            onClick = { player.playQueue(list, index) },
+                            onDownload = { player.download(track) },
+                            downloadEnabled = player.premium,
+                        )
                     }
+                    item { Spacer(Modifier.height(88.dp)) }
                 }
             }
         }

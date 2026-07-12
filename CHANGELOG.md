@@ -4,6 +4,16 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2]
+
+### Added
+- **Foldable support on Android.** When the phone is half-open, the layout
+  silently adapts around the hinge: in tabletop (flex) mode, Now Playing splits
+  with artwork and synced lyrics on the upright half and the transport controls
+  on the flat half; in book mode, Playlists and Liked Songs become a two-pane
+  library — list on the left page, tracks on the right. Flat phones, cover
+  screens and Android TV render exactly as before.
+
 ## [2.1.1]
 
 ### Added

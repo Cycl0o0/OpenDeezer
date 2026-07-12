@@ -27,6 +27,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.ui.LocalFoldState
 import fr.cyclooo.opendeezer.ui.components.PlayerBar
 import fr.cyclooo.opendeezer.ui.components.UpdateBanner
 import fr.cyclooo.opendeezer.ui.screens.ChartsScreen
@@ -38,6 +39,7 @@ import fr.cyclooo.opendeezer.ui.screens.LoginScreen
 import fr.cyclooo.opendeezer.ui.screens.LyricsScreen
 import fr.cyclooo.opendeezer.ui.screens.NoInternetScreen
 import fr.cyclooo.opendeezer.ui.screens.NowPlayingScreen
+import fr.cyclooo.opendeezer.ui.screens.PlaylistsBookScreen
 import fr.cyclooo.opendeezer.ui.screens.PlaylistsScreen
 import fr.cyclooo.opendeezer.ui.screens.PodcastsScreen
 import fr.cyclooo.opendeezer.ui.screens.QueueScreen
@@ -144,13 +146,27 @@ private fun MainScaffold(vm: AppViewModel) {
                 )
             }
             composable(Routes.LIKED) {
-                TrackListScreen(stringResource(R.string.home_liked), player, back) { Engine.favorites() }
+                // Book posture: browse the library on the left page while the
+                // liked/selected tracks fill the right one.
+                val fold = LocalFoldState.current
+                val hinge = fold.hingeBounds
+                if (fold.isBook && hinge != null) {
+                    PlaylistsBookScreen(player = player, hingeBounds = hinge, onBack = back)
+                } else {
+                    TrackListScreen(stringResource(R.string.home_liked), player, back) { Engine.favorites() }
+                }
             }
             composable(Routes.FLOW) {
                 TrackListScreen("Flow", player, back) { Engine.flow() }
             }
             composable(Routes.PLAYLISTS) {
-                PlaylistsScreen(onBack = back, onOpen = { nav(Routes.playlist(it.id, it.name)) })
+                val fold = LocalFoldState.current
+                val hinge = fold.hingeBounds
+                if (fold.isBook && hinge != null) {
+                    PlaylistsBookScreen(player = player, hingeBounds = hinge, onBack = back)
+                } else {
+                    PlaylistsScreen(onBack = back, onOpen = { nav(Routes.playlist(it.id, it.name)) })
+                }
             }
             composable(Routes.PLAYLIST) { entry ->
                 val id = entry.arguments?.getString("id").orEmpty()

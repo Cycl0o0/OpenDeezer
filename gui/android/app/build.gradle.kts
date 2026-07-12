@@ -12,8 +12,8 @@ android {
         applicationId = "fr.cyclooo.opendeezer"
         minSdk = 24
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.1.1"
+        versionCode = 17
+        versionName = "2.1.2"
     }
 
     // Release signing is driven by env vars set by CI from repo secrets (see
@@ -107,6 +107,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("androidx.navigation:navigation-compose:2.8.0")
+
+    // Foldable posture (FoldingFeature: tabletop/book) for the split layouts.
+    implementation("androidx.window:window:1.5.1")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
 

@@ -40,6 +40,25 @@ import androidx.compose.runtime.collectAsState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LyricsScreen(player: PlayerController, onBack: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.lyrics_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        LyricsContent(player, Modifier.fillMaxSize().padding(padding))
+    }
+}
+
+/** Lyrics body without the app-bar chrome, reusable inside fold-aware layouts. */
+@Composable
+fun LyricsContent(player: PlayerController, modifier: Modifier = Modifier) {
     val playerState by player.state.collectAsState()
     // B3: when routed to a Connect device, the local queue track may differ from
     //     what is actually playing on the remote. Use Engine.nowPlaying() (which
@@ -58,33 +77,20 @@ fun LyricsScreen(player: PlayerController, onBack: () -> Unit) {
         lyrics = if (trackId.isNullOrBlank()) Lyrics("", emptyList()) else Engine.lyrics(trackId)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.lyrics_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
-                    }
-                },
+    Box(modifier) {
+        val lyr = lyrics
+        when {
+            lyr == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            lyr.isSynced -> SyncedLyrics(lyr, position)
+            lyr.plain.isNotBlank() -> Text(
+                lyr.plain,
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                style = MaterialTheme.typography.bodyLarge,
             )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            val lyr = lyrics
-            when {
-                lyr == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-                lyr.isSynced -> SyncedLyrics(lyr, position)
-                lyr.plain.isNotBlank() -> Text(
-                    lyr.plain,
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.lyrics_none), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.lyrics_none), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

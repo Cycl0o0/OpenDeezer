@@ -9,4 +9,4 @@
 package version
 
 // Number is the current release, without a leading "v".
-const Number = "2.1.1"
+const Number = "2.1.2"

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,8 +58,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.engine.Track
 import fr.cyclooo.opendeezer.player.PlayerController
 import fr.cyclooo.opendeezer.player.PlayerState
+import fr.cyclooo.opendeezer.ui.HingeSplit
+import fr.cyclooo.opendeezer.ui.LocalFoldState
 import fr.cyclooo.opendeezer.ui.components.Artwork
 import fr.cyclooo.opendeezer.ui.components.formatDuration
 import kotlinx.coroutines.launch
@@ -74,23 +78,6 @@ fun NowPlayingScreen(
     onCast: () -> Unit,
 ) {
     val track = state.current
-    val scope = rememberCoroutineScope()
-
-    var liked by remember(track?.id) { mutableStateOf(false) }
-    var scrubbing by remember { mutableStateOf(false) }
-    var scrubValue by remember { mutableFloatStateOf(0f) }
-    var volDrag by remember { mutableStateOf<Float?>(null) }
-
-    // Reconcile the heart with the engine's real favourite state so an
-    // already-liked track shows filled and the first tap removes it.
-    LaunchedEffect(track?.id) {
-        val t = track
-        liked = t != null && !t.isEpisode && Engine.isFavorite(t.id)
-    }
-
-    val duration = state.durationMs.coerceAtLeast(1L)
-    val livePosFraction = (state.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    val sliderValue = if (scrubbing) scrubValue else livePosFraction
 
     Scaffold(
         topBar = {
@@ -124,176 +111,248 @@ fun NowPlayingScreen(
             return@Scaffold
         }
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Artwork(
-                track.artworkUrl,
-                Modifier.widthIn(max = 480.dp).fillMaxWidth().aspectRatio(1f),
-                corner = 16,
-            )
-            Spacer(Modifier.height(24.dp))
-            Text(
-                track.name.ifBlank { stringResource(R.string.unknown_title) },
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-            val sub = track.artistLine.ifBlank { track.albumName }
-            if (sub.isNotBlank()) {
-                Text(
-                    sub,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (state.connectedDevice.isNotBlank()) {
-                Text(
-                    stringResource(R.string.np_playing_on, state.connectedDevice),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            // 30s preview (e.g. an unavailable/region-locked track): flag it so the
-            // user knows this isn't the full stream.
-            if (Engine.isPreview()) {
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Text(
-                        stringResource(R.string.preview_chip),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Slider(
-                value = sliderValue,
-                onValueChange = { scrubbing = true; scrubValue = it },
-                onValueChangeFinished = {
-                    player.seek((scrubValue * duration).toLong())
-                    scrubbing = false
+        val fold = LocalFoldState.current
+        val hinge = fold.hingeBounds
+        if (fold.isTableTop && hinge != null) {
+            // Tabletop posture (half-opened, horizontal hinge): the upright half
+            // shows artwork + live lyrics, the flat half keeps the transport
+            // controls under the fingers, split at the physical hinge.
+            HingeSplit(
+                hingeBounds = hinge,
+                horizontalHinge = true,
+                modifier = Modifier.fillMaxSize().padding(padding),
+                first = {
+                    Row(
+                        Modifier.fillMaxSize().padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        // Both panes take weighted halves so the artwork (measured as
+                        // the largest square fitting its half) can never starve the
+                        // lyrics pane of width on tall, narrow flex-mode panes.
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            Artwork(track.artworkUrl, Modifier.aspectRatio(1f), corner = 16)
+                        }
+                        LyricsContent(player, Modifier.weight(1f).fillMaxHeight())
+                    }
+                },
+                second = {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        TrackInfo(track, state)
+                        Spacer(Modifier.height(8.dp))
+                        PlayerControls(state, player, track, onLyrics)
+                    }
                 },
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatDuration((sliderValue * duration).toLong()), style = MaterialTheme.typography.labelSmall)
-                Text(formatDuration(state.durationMs), style = MaterialTheme.typography.labelSmall)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+        } else {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                IconButton(
-                    onClick = {
-                        liked = !liked
-                        scope.launch {
-                            if (liked) Engine.addFavorite(track.id) else Engine.removeFavorite(track.id)
-                        }
-                    },
-                    enabled = !track.isEpisode,
-                ) {
-                    Icon(
-                        if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = stringResource(R.string.cd_like),
-                        tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                IconButton(onClick = player::prev, enabled = state.hasPrev) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = stringResource(R.string.action_previous), modifier = Modifier.size(36.dp))
-                }
-                FilledIconButton(
-                    onClick = player::togglePause,
-                    modifier = Modifier.size(64.dp),
-                ) {
-                    Icon(
-                        if (state.state == Engine.PLAYING) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = stringResource(R.string.cd_play_pause),
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
-                IconButton(onClick = player::next, enabled = state.hasNext) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = stringResource(R.string.action_next), modifier = Modifier.size(36.dp))
-                }
-                IconButton(onClick = onLyrics, enabled = !track.isEpisode) {
-                    Icon(Icons.Filled.Lyrics, contentDescription = stringResource(R.string.lyrics_title))
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // B4: Shuffle and Repeat controls. Clicking them updates local queue
-            //     behaviour and forwards the new mode to any connected remote device
-            //     via Engine.setRepeat / Engine.setShuffle.
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = { player.setShuffle(!state.shuffle) }) {
-                    Icon(
-                        Icons.Filled.Shuffle,
-                        contentDescription = stringResource(R.string.cd_shuffle),
-                        tint = if (state.shuffle) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                IconButton(onClick = { player.setRepeat((state.repeatMode + 1) % 3) }) {
-                    Icon(
-                        if (state.repeatMode == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                        contentDescription = stringResource(R.string.cd_repeat),
-                        tint = if (state.repeatMode != 0) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.VolumeUp, contentDescription = stringResource(R.string.cd_volume), modifier = Modifier.size(20.dp))
-                Spacer(Modifier.size(8.dp))
-                Slider(
-                    value = volDrag ?: state.volume.toFloat().coerceIn(0f, 1f),
-                    onValueChange = {
-                        volDrag = it
-                        // Local volume tracks the drag; a Connect remote would do one
-                        // HTTP round-trip per frame, so it only gets the final value.
-                        if (state.connectedDevice.isBlank()) player.setVolume(it.toDouble())
-                    },
-                    onValueChangeFinished = {
-                        volDrag?.let { player.setVolume(it.toDouble()) }
-                        volDrag = null
-                    },
-                    modifier = Modifier.weight(1f),
+                Artwork(
+                    track.artworkUrl,
+                    Modifier.widthIn(max = 480.dp).fillMaxWidth().aspectRatio(1f),
+                    corner = 16,
                 )
+                Spacer(Modifier.height(24.dp))
+                TrackInfo(track, state)
+                Spacer(Modifier.height(16.dp))
+                PlayerControls(state, player, track, onLyrics)
             }
-
-            if (state.format.isNotBlank()) {
-                Text(
-                    state.format,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+/** Track title, artist line, remote-device note and the preview chip. */
+@Composable
+private fun TrackInfo(track: Track, state: PlayerState) {
+    Text(
+        track.name.ifBlank { stringResource(R.string.unknown_title) },
+        style = MaterialTheme.typography.headlineSmall,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+    )
+    val sub = track.artistLine.ifBlank { track.albumName }
+    if (sub.isNotBlank()) {
+        Text(
+            sub,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (state.connectedDevice.isNotBlank()) {
+        Text(
+            stringResource(R.string.np_playing_on, state.connectedDevice),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    // 30s preview (e.g. an unavailable/region-locked track): flag it so the
+    // user knows this isn't the full stream.
+    if (Engine.isPreview()) {
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Text(
+                stringResource(R.string.preview_chip),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+/** Seek bar, transport buttons, shuffle/repeat, volume and the format line. */
+@Composable
+private fun PlayerControls(
+    state: PlayerState,
+    player: PlayerController,
+    track: Track,
+    onLyrics: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+
+    var liked by remember(track.id) { mutableStateOf(false) }
+    var scrubbing by remember { mutableStateOf(false) }
+    var scrubValue by remember { mutableFloatStateOf(0f) }
+    var volDrag by remember { mutableStateOf<Float?>(null) }
+
+    // Reconcile the heart with the engine's real favourite state so an
+    // already-liked track shows filled and the first tap removes it.
+    LaunchedEffect(track.id) {
+        liked = !track.isEpisode && Engine.isFavorite(track.id)
+    }
+
+    val duration = state.durationMs.coerceAtLeast(1L)
+    val livePosFraction = (state.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val sliderValue = if (scrubbing) scrubValue else livePosFraction
+
+    Slider(
+        value = sliderValue,
+        onValueChange = { scrubbing = true; scrubValue = it },
+        onValueChangeFinished = {
+            player.seek((scrubValue * duration).toLong())
+            scrubbing = false
+        },
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(formatDuration((sliderValue * duration).toLong()), style = MaterialTheme.typography.labelSmall)
+        Text(formatDuration(state.durationMs), style = MaterialTheme.typography.labelSmall)
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = {
+                liked = !liked
+                scope.launch {
+                    if (liked) Engine.addFavorite(track.id) else Engine.removeFavorite(track.id)
+                }
+            },
+            enabled = !track.isEpisode,
+        ) {
+            Icon(
+                if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                contentDescription = stringResource(R.string.cd_like),
+                tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        IconButton(onClick = player::prev, enabled = state.hasPrev) {
+            Icon(Icons.Filled.SkipPrevious, contentDescription = stringResource(R.string.action_previous), modifier = Modifier.size(36.dp))
+        }
+        FilledIconButton(
+            onClick = player::togglePause,
+            modifier = Modifier.size(64.dp),
+        ) {
+            Icon(
+                if (state.state == Engine.PLAYING) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = stringResource(R.string.cd_play_pause),
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        IconButton(onClick = player::next, enabled = state.hasNext) {
+            Icon(Icons.Filled.SkipNext, contentDescription = stringResource(R.string.action_next), modifier = Modifier.size(36.dp))
+        }
+        IconButton(onClick = onLyrics, enabled = !track.isEpisode) {
+            Icon(Icons.Filled.Lyrics, contentDescription = stringResource(R.string.lyrics_title))
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    // B4: Shuffle and Repeat controls. Clicking them updates local queue
+    //     behaviour and forwards the new mode to any connected remote device
+    //     via Engine.setRepeat / Engine.setShuffle.
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = { player.setShuffle(!state.shuffle) }) {
+            Icon(
+                Icons.Filled.Shuffle,
+                contentDescription = stringResource(R.string.cd_shuffle),
+                tint = if (state.shuffle) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        IconButton(onClick = { player.setRepeat((state.repeatMode + 1) % 3) }) {
+            Icon(
+                if (state.repeatMode == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                contentDescription = stringResource(R.string.cd_repeat),
+                tint = if (state.repeatMode != 0) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.VolumeUp, contentDescription = stringResource(R.string.cd_volume), modifier = Modifier.size(20.dp))
+        Spacer(Modifier.size(8.dp))
+        Slider(
+            value = volDrag ?: state.volume.toFloat().coerceIn(0f, 1f),
+            onValueChange = {
+                volDrag = it
+                // Local volume tracks the drag; a Connect remote would do one
+                // HTTP round-trip per frame, so it only gets the final value.
+                if (state.connectedDevice.isBlank()) player.setVolume(it.toDouble())
+            },
+            onValueChangeFinished = {
+                volDrag?.let { player.setVolume(it.toDouble()) }
+                volDrag = null
+            },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    if (state.format.isNotBlank()) {
+        Text(
+            state.format,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.height(16.dp))
 }

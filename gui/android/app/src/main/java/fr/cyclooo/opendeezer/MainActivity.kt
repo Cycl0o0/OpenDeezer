@@ -10,8 +10,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import fr.cyclooo.opendeezer.ui.LocalFoldState
+import fr.cyclooo.opendeezer.ui.rememberFoldState
 import fr.cyclooo.opendeezer.ui.theme.OpenDeezerTheme
 
 class MainActivity : ComponentActivity() {
@@ -31,7 +34,11 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background,
                 ) {
                     val vm: AppViewModel = viewModel()
-                    OpenDeezerApp(vm)
+                    // Foldable posture (tabletop/book) drives the optional split
+                    // layouts; flat devices keep the classic single-pane UI.
+                    CompositionLocalProvider(LocalFoldState provides rememberFoldState(this)) {
+                        OpenDeezerApp(vm)
+                    }
                 }
             }
         }
