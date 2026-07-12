@@ -338,6 +338,10 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v4
+        with:
+          # "tools" (default) drags in an Android Emulator update we never
+          # use and whose download flakes; platform-tools is all we need.
+          packages: platform-tools
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264" "platforms;android-34" "build-tools;34.0.0"
       - name: Build odmobile.aar (gomobile)

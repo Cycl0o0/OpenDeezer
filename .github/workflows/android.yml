@@ -31,6 +31,10 @@ jobs:
 
       - name: Set up Android SDK + NDK
         uses: android-actions/setup-android@v4
+        with:
+          # Default is "tools platform-tools"; "tools" drags in an Android
+          # Emulator update (~300 MB) we never use and whose download flakes.
+          packages: platform-tools
 
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264" "platforms;android-34" "build-tools;34.0.0"
