@@ -165,6 +165,41 @@ data class HomeData(
     }
 }
 
+// One machine-local listening-history entry (mirrors history.Entry's JSON tags).
+data class HistoryEntry(
+    val trackId: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val startedAt: Long,        // unix seconds
+    val durationPlayedSec: Long,
+)
+
+// Aggregated listening stats over a window (mirrors HistoryStatsJSON).
+data class TrackStat(
+    val trackId: String,
+    val title: String,
+    val artist: String,
+    val plays: Int,
+    val totalSec: Long,
+)
+
+data class ArtistStat(
+    val artist: String,
+    val plays: Int,
+    val totalSec: Long,
+)
+
+data class HistoryStats(
+    val topTracks: List<TrackStat>,
+    val topArtists: List<ArtistStat>,
+    val totalSeconds: Long,
+) {
+    companion object {
+        val EMPTY = HistoryStats(emptyList(), emptyList(), 0L)
+    }
+}
+
 // ---- parsing (org.json; tolerant of {"error":...} payloads) ----
 
 object Json {
@@ -432,6 +467,56 @@ object Json {
             topTracks = tracksOf(o.optJSONArray("topTracks")),
             topAlbums = albumsOf(o.optJSONArray("topAlbums")),
             playlists = playlistsOf(o.optJSONArray("playlists")),
+        )
+    }
+
+    // HistoryRecentJSON returns a bare JSON array (not an envelope), newest first.
+    fun historyRecent(s: String?): List<HistoryEntry> {
+        val arr = try {
+            if (s.isNullOrBlank()) null else JSONArray(s)
+        } catch (_: Throwable) {
+            null
+        } ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let {
+                HistoryEntry(
+                    trackId = it.optString("trackId"),
+                    title = it.optString("title"),
+                    artist = it.optString("artist"),
+                    album = it.optString("album"),
+                    startedAt = it.optLong("startedAt"),
+                    durationPlayedSec = it.optLong("durationPlayedSec"),
+                )
+            }
+        }
+    }
+
+    fun historyStats(s: String?): HistoryStats {
+        val o = obj(s) ?: return HistoryStats.EMPTY
+        val tt = o.optJSONArray("topTracks")
+        val ta = o.optJSONArray("topArtists")
+        return HistoryStats(
+            topTracks = if (tt == null) emptyList() else (0 until tt.length()).mapNotNull { i ->
+                tt.optJSONObject(i)?.let {
+                    TrackStat(
+                        trackId = it.optString("trackId"),
+                        title = it.optString("title"),
+                        artist = it.optString("artist"),
+                        plays = it.optInt("plays"),
+                        totalSec = it.optLong("totalSec"),
+                    )
+                }
+            },
+            topArtists = if (ta == null) emptyList() else (0 until ta.length()).mapNotNull { i ->
+                ta.optJSONObject(i)?.let {
+                    ArtistStat(
+                        artist = it.optString("artist"),
+                        plays = it.optInt("plays"),
+                        totalSec = it.optLong("totalSec"),
+                    )
+                }
+            },
+            totalSeconds = o.optLong("totalSeconds"),
         )
     }
 

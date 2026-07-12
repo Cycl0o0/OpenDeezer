@@ -18,6 +18,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSlider>
+#include <QSpinBox>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -73,6 +74,15 @@ extern "C" int   DZSetDownloadDir(char *path); // 1 = ok, 0 = fail; "" = reset t
 // DZSetAdsDisabled sets + persists it (1/0).
 extern "C" int DZAdsDisabled(void);
 extern "C" int DZSetAdsDisabled(int disabled);
+
+// Raw-stream disk cache budget (v2.2.0), engine-owned + persisted in media.json.
+// Redeclared here so the dialog still builds against an older generated header;
+// identical redeclarations are harmless. DZMediaCacheMB reports the current
+// budget in megabytes (0 = cache off); DZSetMediaCacheMB persists a new budget
+// (0 or negative disables it). The cache is attached once at startup, so a
+// change only takes effect at the next launch. Both return the value / 1|0 ok.
+extern "C" int DZMediaCacheMB(void);
+extern "C" int DZSetMediaCacheMB(int mb);
 
 namespace {
 const char *kKeyQuality    = "audio/qualityLevel"; // int: 0=128, 1=320, 2=FLAC
@@ -243,6 +253,27 @@ SettingsDialog::SettingsDialog(const QString &iniPath,
     connect(m_sleepTimer, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int) { applySleepTimer(); });
     audioForm->addRow(tr("Sleep timer"), m_sleepTimer);
+
+    // Stream cache — engine-owned raw-stream disk cache (media.json), not
+    // persisted through m_iniPath: seeded from DZMediaCacheMB here and pushed
+    // via DZSetMediaCacheMB on OK. The cache is attached once at startup, so a
+    // change only takes effect at the next launch.
+    m_mediaCache = new QSpinBox;
+    m_mediaCache->setRange(0, 65536);          // MB; 0 = cache disabled
+    m_mediaCache->setSuffix(tr(" MB"));
+    m_mediaCache->setSpecialValueText(tr("Off")); // shown at the minimum (0)
+    m_mediaCache->setValue(DZMediaCacheMB());
+    audioForm->addRow(tr("Stream cache (MB), 0 = off"), m_mediaCache);
+    {
+        auto *cacheHint = new QLabel(tr("Caches decoded streams on disk to avoid "
+                                        "re-downloading. Takes effect at the next "
+                                        "launch."));
+        cacheHint->setWordWrap(true);
+        QFont chf = cacheHint->font();
+        chf.setPointSize(qMax(1, chf.pointSize() - 1));
+        cacheHint->setFont(chf);
+        audioForm->addRow(QString(), cacheHint);
+    }
     root->addWidget(audioBox);
 
     // ---- Downloads ----
@@ -543,6 +574,10 @@ void SettingsDialog::save() {
     // QByteArray is a named local so it outlives the DZSetDownloadDir call.
     const QByteArray dlDir = m_downloadDir->text().toUtf8();
     DZSetDownloadDir(const_cast<char *>(dlDir.constData()));
+
+    // Stream cache is engine-owned too (media.json): push the MB budget straight
+    // to the engine. It only attaches at startup, so this applies next launch.
+    DZSetMediaCacheMB(m_mediaCache->value());
 
     // Disable-ads is Free-only (m_disableAds is null for Premium) and engine-
     // persisted, so it's pushed straight to the engine here on OK.

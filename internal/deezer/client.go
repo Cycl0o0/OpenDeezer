@@ -488,8 +488,12 @@ type restTrackDTO struct {
 	Title         string      `json:"title"`
 	Duration      json.Number `json:"duration"`
 	ExplicitLyric bool        `json:"explicit_lyrics"`
-	Artist        restArtist  `json:"artist"`
-	Album         struct {
+	// TrackPosition is the album track number, present on album-tracks listings.
+	TrackPosition json.Number `json:"track_position"`
+	// ReleaseDate is an ISO date ("2021-06-15"); present on track/album objects.
+	ReleaseDate string     `json:"release_date"`
+	Artist      restArtist `json:"artist"`
+	Album       struct {
 		Title       string `json:"title"`
 		CoverMedium string `json:"cover_medium"`
 	} `json:"album"`
@@ -497,15 +501,34 @@ type restTrackDTO struct {
 
 func (r restTrackDTO) toTrack() Track {
 	durSec, _ := r.Duration.Int64()
+	pos, _ := r.TrackPosition.Int64()
 	return Track{
-		ID:         r.ID.String(),
-		Name:       r.Title,
-		DurationMS: durSec * 1000,
-		Artists:    []Artist{{ID: r.Artist.ID.String(), Name: r.Artist.Name}},
-		AlbumName:  r.Album.Title,
-		ArtworkURL: r.Album.CoverMedium,
-		Explicit:   r.ExplicitLyric,
+		ID:          r.ID.String(),
+		Name:        r.Title,
+		DurationMS:  durSec * 1000,
+		Artists:     []Artist{{ID: r.Artist.ID.String(), Name: r.Artist.Name}},
+		AlbumName:   r.Album.Title,
+		ArtworkURL:  r.Album.CoverMedium,
+		Explicit:    r.ExplicitLyric,
+		TrackNumber: int(pos),
+		Year:        yearFromDate(r.ReleaseDate),
 	}
+}
+
+// yearFromDate extracts a 4-digit release year from a Deezer ISO date
+// ("2021-06-15" -> "2021"). It returns "" when the date is absent or does not
+// begin with four digits, so the tagger leaves the year field unset.
+func yearFromDate(date string) string {
+	if len(date) < 4 {
+		return ""
+	}
+	y := date[:4]
+	for i := 0; i < 4; i++ {
+		if y[i] < '0' || y[i] > '9' {
+			return ""
+		}
+	}
+	return y
 }
 
 // ---- gw DTOs (mixed string/number ids; ALL-CAPS keys) ----

@@ -234,7 +234,7 @@ func (c *Client) saveTrack(ctx context.Context, t Track, dir string, plan *Strea
 	// Best-effort tagging, applied to the temp file before it becomes visible
 	// under the final name. Never fails the download.
 	au := upgradeArtworkURL(t.ArtworkURL)
-	if tagErr := tagFile(ctx, tmp, t, au, 0, "", fetch); tagErr != nil {
+	if tagErr := tagFile(ctx, tmp, t, au, t.TrackNumber, t.Year, fetch); tagErr != nil {
 		odlog.Warn("download: tagging %s failed (non-fatal, file left as raw audio): %v", path, tagErr)
 	}
 	if err := os.Rename(tmp, path); err != nil {

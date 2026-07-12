@@ -3,10 +3,14 @@ import SwiftUI
 struct AlbumDetailView: View {
     let album: Album
     @EnvironmentObject private var player: PlayerController
+    @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadStore
 
     @State private var tracks: [Track] = []
     @State private var isLoading = true
     @State private var errorText: String?
+
+    private var isPremium: Bool { session.account?.premium ?? false }
 
     var body: some View {
         List {
@@ -37,6 +41,24 @@ struct AlbumDetailView: View {
         }
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Downloads are premium-only (Free streams but can't download), so
+            // the menu is shown only for a paid plan.
+            if isPremium {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            downloads.downloadAlbum(id: album.id, name: album.name, isPremium: true)
+                        } label: {
+                            Label("Download Album", systemImage: "arrow.down.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More")
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
     }

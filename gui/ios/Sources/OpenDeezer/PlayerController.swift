@@ -146,6 +146,7 @@ final class PlayerController: ObservableObject {
         queue = list
         currentIndex = idx
         playCurrent()
+        syncEngineQueue()
     }
 
     func playQueue(_ tracks: [Track], startAt index: Int = 0) {
@@ -153,6 +154,7 @@ final class PlayerController: ObservableObject {
         queue = tracks
         currentIndex = min(max(index, 0), tracks.count - 1)
         playCurrent()
+        syncEngineQueue()
     }
 
     func playEpisode(_ episode: Episode) {
@@ -161,6 +163,8 @@ final class PlayerController: ObservableObject {
         // Episodes empty the queue, so any armed next-track preload is stale.
         preloadedId = nil
         Task { await Engine.clearPreload() }
+        // Mirror the now-empty queue to the engine (podcasts aren't queue items).
+        syncEngineQueue()
         current = Track(episode: episode)
         seekToken += 1
         seeking = false
@@ -280,6 +284,8 @@ final class PlayerController: ObservableObject {
         loadArtwork(url: track.artworkUrl)
         preloadedId = nil
         armPreload()
+        // Keep the engine cursor aligned after a gapless promote.
+        syncEngineQueueIndex()
         updateNowPlayingInfo()
     }
 
@@ -319,6 +325,7 @@ final class PlayerController: ObservableObject {
         }
         currentIndex = newIndex
         playCurrent()
+        syncEngineQueueIndex()
     }
 
     private func advance(auto: Bool) {
@@ -347,6 +354,7 @@ final class PlayerController: ObservableObject {
         }
         currentIndex = newIndex
         playCurrent()
+        syncEngineQueueIndex()
     }
 
     func stopPlayback() {
@@ -364,7 +372,50 @@ final class PlayerController: ObservableObject {
         queue = []
         state = .stopped
         isPreview = false
+        // Clear the engine-mirrored queue too so remotes don't show a stale one.
+        syncEngineQueue()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    // MARK: - Engine queue sync (app queue -> engine)
+
+    /// Push the whole app queue + current index into the engine so web/Connect
+    /// remotes see the real queue and `/next`+`/prev` walk it. Called whenever the
+    /// queue CONTENT changes; index-only moves use `syncEngineQueueIndex()`.
+    /// Best-effort — the JSON is built on the main actor, the sync runs off it.
+    private func syncEngineQueue() {
+        let json = Engine.queueJSON(queue)
+        let idx = currentIndex ?? -1
+        Task {
+            await Engine.setQueueJSON(json)
+            await Engine.setQueueIndex(idx)
+        }
+    }
+
+    /// Align the engine queue's cursor to the current index after an index-only
+    /// change (advance / previous / seamless gapless promote).
+    private func syncEngineQueueIndex() {
+        let idx = currentIndex ?? -1
+        Task { await Engine.setQueueIndex(idx) }
+    }
+
+    // MARK: - Radio (song / artist mixes)
+
+    /// Start a "song radio" seeded from `track`. Mirrors the Flow load+play path;
+    /// falls back to just the seed track if the mix can't be fetched.
+    func startRadio(seededBy track: Track) {
+        Task {
+            let mix = (try? await Engine.trackMix(track.id)) ?? []
+            if mix.isEmpty { play(track) } else { playQueue(mix, startAt: 0) }
+        }
+    }
+
+    /// Start an "artist radio" seeded from an artist id. No-op if the mix is empty.
+    func startArtistRadio(artistID: String) {
+        Task {
+            let mix = (try? await Engine.artistMix(artistID)) ?? []
+            if !mix.isEmpty { playQueue(mix, startAt: 0) }
+        }
     }
 
     func toggleShuffle() { isShuffle.toggle() }

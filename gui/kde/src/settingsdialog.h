@@ -30,6 +30,7 @@ class QLineEdit;
 class QLabel;
 class QPushButton;
 class QSlider;
+class QSpinBox;
 class QTimer;
 QT_END_NAMESPACE
 
@@ -89,6 +90,7 @@ private:
     QCheckBox *m_gapless     = nullptr;
     QComboBox *m_crossfade   = nullptr;
     QComboBox *m_sleepTimer  = nullptr;    // Off / 15 / 30 / 45 / 60 min / End of track
+    QSpinBox  *m_mediaCache  = nullptr;    // engine-owned raw-stream cache MB (DZMediaCacheMB); 0 = off, applies next launch
     QLineEdit *m_downloadDir = nullptr;    // engine-owned (DZDownloadDir/DZSetDownloadDir)
     QCheckBox *m_disableAds  = nullptr;    // Free-only; engine-owned (DZAdsDisabled/DZSetAdsDisabled)
 

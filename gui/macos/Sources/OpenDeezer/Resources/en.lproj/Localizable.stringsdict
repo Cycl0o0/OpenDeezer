@@ -82,5 +82,37 @@
             <string>Fades out and pauses after %d minutes.</string>
         </dict>
     </dict>
+    <key>%d plays</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d play</string>
+            <key>other</key>
+            <string>%d plays</string>
+        </dict>
+    </dict>
+    <key>Saved %d tracks</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@v@</string>
+        <key>v</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Saved %d track</string>
+            <key>other</key>
+            <string>Saved %d tracks</string>
+        </dict>
+    </dict>
 </dict>
 </plist>

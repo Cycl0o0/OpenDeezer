@@ -215,6 +215,14 @@ struct ArtistView: View {
                     Text(Lp("%d fans", a.nbFans))
                         .font(.title3).foregroundStyle(DZ.textPri.opacity(0.9))
                 }
+                // Start an "artist radio" mix seeded from this artist — loads +
+                // plays it through the same code path Flow uses (dismisses the
+                // sheet into the shared track-list screen).
+                Button { app.startArtistRadio(id: a.id, name: a.name) } label: {
+                    Label(L("Start radio"), systemImage: "dot.radiowaves.left.and.right")
+                }
+                .buttonStyle(.glassProminent).tint(DZ.accent).controlSize(.large)
+                .padding(.top, 4)
             }
             Spacer()
         }

@@ -4,6 +4,7 @@ struct ArtistView: View {
     let artistID: String
     let artistName: String
 
+    @EnvironmentObject private var player: PlayerController
     @State private var profile: ArtistProfilePage?
     @State private var isLoading = true
     @State private var errorText: String?
@@ -30,6 +31,16 @@ struct ArtistView: View {
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
+                        Button {
+                            player.startArtistRadio(artistID: artistID)
+                        } label: {
+                            Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .glassButton(prominent: true)
+                        .tint(Palette.accent)
+                        .padding(.horizontal, 40)
+                        .padding(.top, 4)
                     }
                     .frame(maxWidth: .infinity)
 

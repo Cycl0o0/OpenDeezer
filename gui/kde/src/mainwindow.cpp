@@ -161,6 +161,36 @@ extern "C" char *DZCheckUpdateJSON(void); // {"current","latest","hasUpdate","ur
 // 0 = ok / logged in, 1 = ARL expired or invalid, 2 = no internet, 3 = other.
 extern "C" int DZLoginErrorKind(void);
 
+// v2.2.0 additions. Redeclared here (like the blocks above) so the GUI still
+// builds against an older generated header; identical redeclarations are
+// harmless. *JSON results are malloc'd C strings — free with DZFree.
+//   DZTrackMixJSON / DZArtistMixJSON: "Start radio" mixes — {"tracks":[...]},
+//     the exact wire shape DZFlowJSON returns, so the Flow parse+play path is
+//     reused. Seeded from a track / an artist respectively.
+//   DZHistoryRecentJSON(n): the newest n local listening-history entries as a
+//     JSON array [{trackId,title,artist,album,startedAt,durationPlayedSec}]
+//     (newest first; n<=0 = all; "[]" when unavailable).
+//   DZHistoryStatsJSON(sinceDays): {"topTracks":[{trackId,title,artist,plays,
+//     totalSec}],"topArtists":[{artist,plays,totalSec}],"totalSeconds":N}.
+//   DZDownloadAlbum / DZDownloadPlaylist: batch download of a whole album /
+//     playlist to the shared download folder — {"saved":N,"failed":N,"dir":
+//     "...","error":""} — blocking + premium-only, like DZDownloadTrack.
+//   DZQueueSet(js): replace the engine-side queue with the GUI's (js = JSON
+//     array in the shared wire shape); 1 = ok, 0 = parse error. Once its cursor
+//     is aligned (DZQueueSetIndex) the engine owns natural-finish auto-advance.
+//   DZQueueSetIndex(i): align the engine queue cursor with the playing row.
+//   DZQueueIndex(): the engine queue cursor (-1 when empty/unsynced) — polled in
+//     tick() to follow an engine-driven advance once the queue is synced.
+extern "C" char *DZTrackMixJSON(char *id);
+extern "C" char *DZArtistMixJSON(char *id);
+extern "C" char *DZHistoryRecentJSON(int n);
+extern "C" char *DZHistoryStatsJSON(int sinceDays);
+extern "C" char *DZDownloadAlbum(char *id);
+extern "C" char *DZDownloadPlaylist(char *id);
+extern "C" int   DZQueueSet(char *js);
+extern "C" void  DZQueueSetIndex(int i);
+extern "C" int   DZQueueIndex(void);
+
 namespace {
 
 const char *kAccent = "#A238FF"; // Deezer "Electric Violet"
@@ -412,6 +442,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_stack->addWidget(buildChartsPage());          // index 6
     m_stack->addWidget(buildPodcastsPage());        // index 7
     m_stack->addWidget(buildPodcastEpisodesPage()); // index 8
+    m_stack->addWidget(buildHistoryPage());         // index 9
 
     auto *split = new QSplitter(Qt::Horizontal);
     split->addWidget(m_sidebar);
@@ -884,7 +915,7 @@ void MainWindow::buildMenu() {
     auto *about = help->addAction(tr("&About OpenDeezer"));
     connect(about, &QAction::triggered, this, [this] {
         QString text =
-            QStringLiteral("<h3>OpenDeezer 2.2.0</h3><p>") +
+            QStringLiteral("<h3>OpenDeezer 2.2.1</h3><p>") +
             tr("A Deezer client for the desktop.") + QStringLiteral("</p>");
         // Show the signed-in account tier (from DZAccountJSON) when available.
         if (m_haveAccount && !m_accountName.isEmpty())
@@ -908,6 +939,7 @@ void MainWindow::buildSidebar() {
     m_sidebar->addItem(QStringLiteral("⌕  ") + tr("Search"));       // 4
     m_sidebar->addItem(QStringLiteral("★  ") + tr("Charts"));       // 5
     m_sidebar->addItem(QStringLiteral("◉  ") + tr("Podcasts"));     // 6
+    m_sidebar->addItem(QStringLiteral("↺  ") + tr("Recently played")); // 7
     connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainWindow::onSidebarChanged);
 }
 
@@ -942,6 +974,10 @@ void MainWindow::onSidebarChanged(int row) {
         m_stack->setCurrentIndex(7);
         if (m_podcastSearchEdit)
             m_podcastSearchEdit->setFocus();
+        break;
+    case 7:                                 // Recently played + listening stats
+        m_stack->setCurrentIndex(9);
+        loadHistory();
         break;
     default:
         break;
@@ -1188,12 +1224,24 @@ QTableWidget *MainWindow::makeTrackTable() {
 QWidget *MainWindow::buildTracksPage() {
     auto *w = new QWidget;
     auto *v = new QVBoxLayout(w);
+
+    auto *head = new QHBoxLayout;
     m_tracksHeader = new QLabel(tr("Liked Songs"));
     QFont f = m_tracksHeader->font();
     f.setPointSize(f.pointSize() + 6);
     f.setBold(true);
     m_tracksHeader->setFont(f);
-    v->addWidget(m_tracksHeader);
+    head->addWidget(m_tracksHeader);
+    head->addStretch(1);
+    // "Download album"/"Download playlist" — visible only while an album or a
+    // playlist is displayed (see updateListDownloadButton), premium-gated like
+    // the single-track download.
+    m_downloadListBtn = new QPushButton(tr("Download album"));
+    m_downloadListBtn->setVisible(false);
+    connect(m_downloadListBtn, &QPushButton::clicked, this,
+            &MainWindow::downloadCurrentList);
+    head->addWidget(m_downloadListBtn);
+    v->addLayout(head);
 
     m_trackTable = makeTrackTable();
     // cellActivated fires on Enter + (single/double)-click per the KDE setting.
@@ -1670,6 +1718,8 @@ void MainWindow::loadFavorites() {
         return;
     m_tracksHeader->setText(tr("Liked Songs"));
     m_currentPlaylistId.clear();
+    m_currentAlbumId.clear();
+    updateListDownloadButton();          // Liked Songs isn't a downloadable unit
     statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         const QVector<Track> tracks = parseTracks(takeJson(DZFavoritesJSON()));
@@ -1693,6 +1743,8 @@ void MainWindow::loadFlow() {
         return;
     m_tracksHeader->setText(QStringLiteral("Flow"));
     m_currentPlaylistId.clear();
+    m_currentAlbumId.clear();
+    updateListDownloadButton();          // Flow isn't a downloadable unit
     statusBar()->showMessage(tr("Loading…"));
     QtConcurrent::run([this] {
         const QVector<Track> tracks = parseTracks(takeJson(DZFlowJSON()));
@@ -1705,6 +1757,54 @@ void MainWindow::loadFlow() {
                 playFrom(tracks, 0); // Flow auto-plays
         }, Qt::QueuedConnection);
     });
+}
+
+// ---- start radio (song/artist mix) ----------------------------------------
+
+// "Start radio" from a track: DZTrackMixJSON returns the same {tracks:[...]}
+// shape as Flow, so this mirrors loadFlow — fetch on a worker, then playMix.
+void MainWindow::startTrackRadio(const QString &trackId) {
+    if (!m_loggedIn || trackId.isEmpty())
+        return;
+    statusBar()->showMessage(tr("Starting radio…"));
+    const QByteArray idb = trackId.toUtf8();
+    QtConcurrent::run([this, idb] {
+        const QVector<Track> tracks = parseTracks(takeJson(DZTrackMixJSON(cstr(idb))));
+        QMetaObject::invokeMethod(this, [this, tracks] { playMix(tracks); },
+                                  Qt::QueuedConnection);
+    });
+}
+
+// "Start radio" from an artist: DZArtistMixJSON, same {tracks:[...]} shape.
+void MainWindow::startArtistRadio(const QString &artistId) {
+    if (!m_loggedIn || artistId.isEmpty())
+        return;
+    statusBar()->showMessage(tr("Starting radio…"));
+    const QByteArray idb = artistId.toUtf8();
+    QtConcurrent::run([this, idb] {
+        const QVector<Track> tracks = parseTracks(takeJson(DZArtistMixJSON(cstr(idb))));
+        QMetaObject::invokeMethod(this, [this, tracks] { playMix(tracks); },
+                                  Qt::QueuedConnection);
+    });
+}
+
+// Shared radio landing: show the mix in the shared track table (stack 1) and
+// auto-play from the top, exactly like Flow.
+void MainWindow::playMix(const QVector<Track> &tracks) {
+    if (tracks.isEmpty()) {
+        statusBar()->showMessage(tr("No radio available for this"), 3000);
+        return;
+    }
+    m_tracksHeader->setText(tr("Radio"));
+    m_currentPlaylistId.clear();
+    m_currentAlbumId.clear();
+    updateListDownloadButton();
+    const int gen = ++m_artGen;
+    m_tableTracks = tracks;
+    fillTrackTable(m_trackTable, tracks, gen);
+    m_stack->setCurrentIndex(1);
+    playFrom(tracks, 0);
+    statusBar()->showMessage(tr("Radio — %n track(s)", "", int(tracks.size())), 3000);
 }
 
 // Global charts: tracks fill the charts track table; albums, artists and
@@ -1801,6 +1901,9 @@ void MainWindow::openPlaylist(const Playlist &p) {
     statusBar()->showMessage(tr("Loading…"));
     m_tracksHeader->setText(p.owner.isEmpty() ? p.name : p.name + "   ·   " + p.owner);
     m_currentPlaylistId = p.id; // enables "Remove from this playlist" in the track menu
+    m_currentPlaylistName = p.name;
+    m_currentAlbumId.clear();
+    updateListDownloadButton(); // shows "Download playlist"
     const QByteArray id = p.id.toUtf8();
     QtConcurrent::run([this, id] {
         const QVector<Track> tracks = parseTracks(takeJson(DZPlaylistTracksJSON(cstr(id))));
@@ -1818,6 +1921,9 @@ void MainWindow::openAlbum(const Album &a) {
     statusBar()->showMessage(tr("Loading…"));
     m_tracksHeader->setText(a.artistLine.isEmpty() ? a.name : a.name + "   ·   " + a.artistLine);
     m_currentPlaylistId.clear(); // album is not a removable-from playlist
+    m_currentAlbumId = a.id;
+    m_currentAlbumName = a.name;
+    updateListDownloadButton(); // shows "Download album"
     const QByteArray id = a.id.toUtf8();
     QtConcurrent::run([this, id] {
         const QVector<Track> tracks = parseTracks(takeJson(DZAlbumTracksJSON(cstr(id))));
@@ -1987,6 +2093,84 @@ void MainWindow::download(const QString &id) {
             }
         }, Qt::QueuedConnection);
     });
+}
+
+// Save a whole album / playlist to disk (premium-only). Like the single-track
+// download, the entire batch — fetch, Blowfish decrypt and file writes — runs
+// in the engine, so it goes on a worker and reports the summary back on the GUI
+// thread. Both return {"saved":N,"failed":N,"dir":"...","error":""}.
+void MainWindow::downloadAlbum(const QString &id, const QString &name) {
+    downloadBatch(id, name, /*album=*/true);
+}
+void MainWindow::downloadPlaylist(const QString &id, const QString &name) {
+    downloadBatch(id, name, /*album=*/false);
+}
+void MainWindow::downloadBatch(const QString &id, const QString &name, bool album) {
+    if (!m_loggedIn || id.isEmpty())
+        return;
+    if (!m_premium) { // belt-and-braces: the header button is disabled on Free plans
+        statusBar()->showMessage(tr("Downloads require a paid Deezer plan"), 4000);
+        return;
+    }
+    statusBar()->showMessage(album ? tr("Downloading album…")
+                                   : tr("Downloading playlist…"));
+    const QByteArray idb = id.toUtf8();
+    QtConcurrent::run([this, idb, album, name] {
+        // takeJson frees the malloc'd result. The batch runs entirely engine-side.
+        const QByteArray status = takeJson(album ? DZDownloadAlbum(cstr(idb))
+                                                 : DZDownloadPlaylist(cstr(idb)));
+        const QJsonObject o = QJsonDocument::fromJson(status).object();
+        const int     saved  = o.value("saved").toInt();
+        const int     failed = o.value("failed").toInt();
+        const QString dir    = o.value("dir").toString();
+        const QString err    = o.value("error").toString();
+        QMetaObject::invokeMethod(this, [this, name, saved, failed, dir, err] {
+            if (saved > 0 && failed == 0) {
+                statusBar()->showMessage(
+                    tr("Saved %n track(s) to %1", "", saved).arg(dir), 6000);
+            } else if (saved > 0) {
+                statusBar()->showMessage(
+                    tr("Saved %1, %2 failed").arg(saved).arg(failed), 6000);
+                QMessageBox::warning(this, tr("Download"),
+                    tr("Downloaded \"%1\": %2 saved, %3 failed.")
+                        .arg(name).arg(saved).arg(failed) +
+                    (err.isEmpty() ? QString() : QStringLiteral("\n") + err));
+            } else {
+                statusBar()->showMessage(tr("Download failed"), 5000);
+                QMessageBox::warning(this, tr("Download"),
+                                     err.isEmpty() ? tr("Download failed") : err);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+// Header "Download album/playlist" button: dispatch to whichever unit the shared
+// track table is currently showing (album takes precedence, then playlist).
+void MainWindow::downloadCurrentList() {
+    if (!m_currentAlbumId.isEmpty())
+        downloadAlbum(m_currentAlbumId, m_currentAlbumName);
+    else if (!m_currentPlaylistId.isEmpty())
+        downloadPlaylist(m_currentPlaylistId, m_currentPlaylistName);
+}
+
+// Show + label the header download button for the current view. Hidden for
+// non-unit views (Liked Songs / Flow / Radio / search etc.); shown but greyed
+// out with a hint on Free plans, mirroring the single-track menu entry.
+void MainWindow::updateListDownloadButton() {
+    if (!m_downloadListBtn)
+        return;
+    const bool album    = !m_currentAlbumId.isEmpty();
+    const bool playlist = !m_currentPlaylistId.isEmpty();
+    if (!album && !playlist) {
+        m_downloadListBtn->setVisible(false);
+        return;
+    }
+    m_downloadListBtn->setText(album ? tr("Download album")
+                                     : tr("Download playlist"));
+    m_downloadListBtn->setVisible(true);
+    m_downloadListBtn->setEnabled(m_premium);
+    m_downloadListBtn->setToolTip(m_premium ? QString()
+                                            : tr("Requires a paid Deezer plan"));
 }
 
 // ---- add to playlist ------------------------------------------------------
@@ -2196,6 +2380,7 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                 QAction *goArtist = menu.addAction(tr("Go to Artist"));
                 goArtist->setEnabled(!t.artistId.isEmpty());
                 QAction *showLy = menu.addAction(tr("Show Lyrics"));
+                QAction *radio  = menu.addAction(tr("Start radio"));
                 menu.addSeparator();
                 QAction *like  = menu.addAction(tr("Add to Liked Songs"));
                 QAction *addPl = menu.addAction(tr("Add to Playlist…"));
@@ -2216,6 +2401,8 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                     openArtist(t.artistId);
                 else if (chosen == showLy)
                     openLyricsFor(t.id, t.name + QStringLiteral("   ·   ") + t.artistLine);
+                else if (chosen == radio)
+                    startTrackRadio(t.id);
                 else if (chosen == like)
                     likeTrack(t.id, true);
                 else if (chosen == addPl)
@@ -2228,11 +2415,11 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
 }
 
 // Only the browse pages — home(0), tracks(1), playlists(2), search(3),
-// charts(6), podcasts(7) — are valid "Back" targets, never another detour page,
-// so Back from lyrics/artist always lands somewhere sensible.
+// charts(6), podcasts(7), history(9) — are valid "Back" targets, never another
+// detour page, so Back from lyrics/artist always lands somewhere sensible.
 void MainWindow::rememberReturnPage() {
     const int cur = m_stack->currentIndex();
-    if (cur == 0 || cur == 1 || cur == 2 || cur == 3 || cur == 6 || cur == 7)
+    if (cur == 0 || cur == 1 || cur == 2 || cur == 3 || cur == 6 || cur == 7 || cur == 9)
         m_returnPage = cur;
 }
 
@@ -2296,6 +2483,14 @@ QWidget *MainWindow::buildArtistPage() {
     names->addWidget(m_artistFans);
     names->addStretch(1);
     head->addLayout(names, 1);
+    // "Start radio" for this artist (DZArtistMixJSON → playMix).
+    auto *radioBtn = new QPushButton(QString::fromUtf8("\xE2\x96\xB6 ") + tr("Start radio")); // ▶
+    radioBtn->setStyleSheet(QString(
+        "QPushButton{background:%1;color:white;padding:6px 16px;border-radius:4px;}")
+        .arg(kAccent));
+    connect(radioBtn, &QPushButton::clicked, this,
+            [this] { startArtistRadio(m_currentArtistId); });
+    head->addWidget(radioBtn, 0, Qt::AlignTop);
     v->addLayout(head);
 
     v->addWidget(new QLabel(tr("Top Tracks")));
@@ -2451,6 +2646,139 @@ QWidget *MainWindow::buildPodcastEpisodesPage() {
     return w;
 }
 
+// ---- history page (recently played + listening stats) ---------------------
+
+QWidget *MainWindow::buildHistoryPage() {
+    auto *w = new QWidget;
+    auto *v = new QVBoxLayout(w);
+
+    auto *title = new QLabel(tr("Recently played"));
+    QFont f = title->font();
+    f.setPointSize(f.pointSize() + 6);
+    f.setBold(true);
+    title->setFont(f);
+    v->addWidget(title);
+
+    // Recently played — a normal track table (plays by id via playFrom), so it
+    // gets the shared track context menu ("Start radio", "Show Lyrics", …) too.
+    m_historyTable = makeTrackTable();
+    connect(m_historyTable, &QTableWidget::cellActivated, this,
+            [this](int row, int) { playFrom(m_historyTracks, row); });
+    installTrackMenu(m_historyTable, &m_historyTracks);
+    v->addWidget(m_historyTable, 2);
+
+    auto *statsTitle = new QLabel(tr("Listening stats"));
+    QFont sf = statsTitle->font();
+    sf.setPointSize(sf.pointSize() + 2);
+    sf.setBold(true);
+    statsTitle->setFont(sf);
+    v->addWidget(statsTitle);
+
+    m_statsTotal = new QLabel;
+    v->addWidget(m_statsTotal);
+
+    // Two columns: top tracks (playable by id) | top artists (informational —
+    // the stats carry an artist name but no id, so no navigation).
+    auto *cols = new QHBoxLayout;
+    auto *ttCol = new QVBoxLayout;
+    ttCol->addWidget(new QLabel(tr("Top Tracks")));
+    m_statsTopTracks = new QListWidget;
+    connect(m_statsTopTracks, &QListWidget::itemActivated, this,
+            [this](QListWidgetItem *it) {
+                const int idx = it->data(Qt::UserRole).toInt();
+                if (idx >= 0 && idx < m_statsTrackList.size())
+                    playFrom(m_statsTrackList, idx);
+            });
+    ttCol->addWidget(m_statsTopTracks);
+    cols->addLayout(ttCol, 1);
+
+    auto *taCol = new QVBoxLayout;
+    taCol->addWidget(new QLabel(tr("Top Artists")));
+    m_statsTopArtists = new QListWidget;
+    m_statsTopArtists->setSelectionMode(QAbstractItemView::NoSelection);
+    m_statsTopArtists->setFocusPolicy(Qt::NoFocus);
+    taCol->addWidget(m_statsTopArtists);
+    cols->addLayout(taCol, 1);
+
+    v->addLayout(cols, 1);
+    return w;
+}
+
+// Load the machine-local listening history (DZHistoryRecentJSON) + stats
+// (DZHistoryStatsJSON over the last 30 days) off the GUI thread, then populate
+// the table + the two stat lists. Both are cheap local reads but are marshalled
+// like every other DZ*JSON call for consistency.
+void MainWindow::loadHistory() {
+    if (!m_loggedIn)
+        return;
+    statusBar()->showMessage(tr("Loading…"));
+    QtConcurrent::run([this] {
+        const QByteArray recentJson = takeJson(DZHistoryRecentJSON(100));
+        const QByteArray statsJson  = takeJson(DZHistoryStatsJSON(30));
+        QMetaObject::invokeMethod(this, [this, recentJson, statsJson] {
+            const int gen = ++m_artGen;
+
+            // Recently played — build playable Track rows (id + display fields;
+            // the entry carries no track length, so Duration shows 0:00 and the
+            // engine reports the real duration once a row is played).
+            m_historyTracks.clear();
+            for (const QJsonValue &v : QJsonDocument::fromJson(recentJson).array()) {
+                const QJsonObject o = v.toObject();
+                Track t;
+                t.id         = o.value("trackId").toString();
+                t.name       = o.value("title").toString();
+                t.artistLine = o.value("artist").toString();
+                t.albumName  = o.value("album").toString();
+                if (!t.id.isEmpty())
+                    m_historyTracks.push_back(t);
+            }
+            fillTrackTable(m_historyTable, m_historyTracks, gen);
+
+            // Stats — total listening time, top tracks (playable), top artists.
+            const QJsonObject stats = QJsonDocument::fromJson(statsJson).object();
+            const qint64 totalSec =
+                static_cast<qint64>(stats.value("totalSeconds").toDouble());
+            m_statsTotal->setText(tr("Listening time (last 30 days): %1h %2m")
+                                      .arg(totalSec / 3600)
+                                      .arg((totalSec % 3600) / 60));
+
+            m_statsTrackList.clear();
+            m_statsTopTracks->clear();
+            for (const QJsonValue &v : stats.value("topTracks").toArray()) {
+                const QJsonObject o = v.toObject();
+                Track t;
+                t.id         = o.value("trackId").toString();
+                t.name       = o.value("title").toString();
+                t.artistLine = o.value("artist").toString();
+                auto *it = new QListWidgetItem(
+                    t.name + QStringLiteral(" — ") + t.artistLine +
+                    QStringLiteral("   ") +
+                    tr("(%n play(s))", "", o.value("plays").toInt()));
+                it->setData(Qt::UserRole, m_statsTrackList.size());
+                m_statsTopTracks->addItem(it);
+                m_statsTrackList.push_back(t);
+            }
+            if (m_statsTrackList.isEmpty())
+                m_statsTopTracks->addItem(new QListWidgetItem(tr("No data yet.")));
+
+            m_statsTopArtists->clear();
+            const QJsonArray topArtists = stats.value("topArtists").toArray();
+            for (const QJsonValue &v : topArtists) {
+                const QJsonObject o = v.toObject();
+                m_statsTopArtists->addItem(new QListWidgetItem(
+                    o.value("artist").toString() + QStringLiteral("   ") +
+                    tr("(%n play(s))", "", o.value("plays").toInt())));
+            }
+            if (topArtists.isEmpty())
+                m_statsTopArtists->addItem(new QListWidgetItem(tr("No data yet.")));
+
+            statusBar()->showMessage(
+                tr("Recently played — %n track(s)", "", int(m_historyTracks.size())),
+                3000);
+        }, Qt::QueuedConnection);
+    });
+}
+
 // ---- podcasts flow --------------------------------------------------------
 
 void MainWindow::runPodcastSearch() {
@@ -2544,6 +2872,7 @@ void MainWindow::playEpisode(const Episode &e) {
         return;
     m_queue.clear();
     m_queueIndex = -1;
+    syncQueueToEngine(); // clear the engine queue too (episodes sit outside it)
     Track t;
     t.id         = e.id;
     t.name       = e.title;
@@ -2758,6 +3087,7 @@ void MainWindow::openArtistForCurrent() {
 void MainWindow::openArtist(const QString &artistId) {
     if (!m_loggedIn || artistId.isEmpty())
         return;
+    m_currentArtistId = artistId; // drives the artist-page "Start radio" button
     rememberReturnPage();
     m_stack->setCurrentIndex(5);
     statusBar()->showMessage(tr("Loading…"));
@@ -2901,6 +3231,47 @@ void MainWindow::fetchImage(const QString &url, int gen, std::function<void(cons
     });
 }
 
+// ---- engine queue sync ----------------------------------------------------
+
+// Mirror the whole GUI queue to the engine (DZQueueSet) and align its cursor to
+// the playing row (DZQueueSetIndex). Called on every queue (re)build. Both are
+// cheap, local engine-state writes (no network / no remote forward — DZQueueSet
+// only parses the array and swaps an in-memory slice), so they run directly on
+// the GUI thread like DZSetGapless, keeping the engine cursor in lock-step with
+// what is audible. The wire shape matches every list call
+// ({id,name,durationMs,artistLine,artistId,artists:[{id,name}],albumName,
+// artworkUrl,explicit}); js is a named local so it outlives the copying call.
+void MainWindow::syncQueueToEngine() {
+    QJsonArray arr;
+    for (const Track &t : m_queue) {
+        QJsonObject o;
+        o["id"]         = t.id;
+        o["name"]       = t.name;
+        o["durationMs"] = static_cast<double>(t.durationMs);
+        o["artistLine"] = t.artistLine;
+        o["artistId"]   = t.artistId;
+        o["albumName"]  = t.albumName;
+        o["artworkUrl"] = t.artworkUrl;
+        o["explicit"]   = t.isExplicit;
+        if (!t.artistId.isEmpty() || !t.artistLine.isEmpty()) {
+            QJsonObject a;
+            a["id"]   = t.artistId;
+            a["name"] = t.artistLine;
+            o["artists"] = QJsonArray{a};
+        }
+        arr.push_back(o);
+    }
+    const QByteArray js = QJsonDocument(arr).toJson(QJsonDocument::Compact);
+    DZQueueSet(cstr(js));
+    DZQueueSetIndex(m_queueIndex);
+}
+
+// Realign just the engine queue cursor after an index-only change (next / prev /
+// repeat-one), without re-sending the queue contents.
+void MainWindow::syncQueueIndex() {
+    DZQueueSetIndex(m_queueIndex);
+}
+
 // ---- playback -------------------------------------------------------------
 
 void MainWindow::playFrom(const QVector<Track> &list, int index) {
@@ -2908,6 +3279,7 @@ void MainWindow::playFrom(const QVector<Track> &list, int index) {
         return;
     m_queue = list;
     m_queueIndex = index;
+    syncQueueToEngine(); // remote controllers see + walk this queue
     playCurrent();
 }
 
@@ -2923,6 +3295,7 @@ void MainWindow::playCurrent() {
     m_seek->setValue(0);
     m_posLabel->setText("0:00");
     m_durLabel->setText(timeText(t.durationMs));
+    syncQueueIndex(); // keep the engine cursor on the row we're starting
     const QByteArray id = t.id.toUtf8();
     const qint64 dur = t.durationMs;
     // DZPlay prepares the stream over the network — run it off the GUI thread.
@@ -3246,6 +3619,22 @@ void MainWindow::tick() {
             m_currentIsEpisode = false;
             setNowPlaying(nt);
         }
+    }
+
+    // Follow the engine queue cursor. Once the GUI mirrors its queue to the
+    // engine (DZQueueSet + DZQueueSetIndex), the ENGINE owns natural-finish
+    // auto-advance and DZFinishedCount stops bumping for those finishes — so the
+    // counter-driven block at the bottom won't fire for them. Adopt an
+    // engine-driven advance into the GUI's queue pointer (now-playing was
+    // already refreshed above from DZNowPlayingJSON) and re-arm the
+    // deterministic preload so gapless/crossfade keeps working for later tracks.
+    // qi == -1 means no synced queue (e.g. a podcast episode) — leave the
+    // DZFinishedCount path in charge there. A user-initiated next/prev keeps the
+    // cursor aligned via syncQueueIndex(), so qi == m_queueIndex and this no-ops.
+    const int qi = DZQueueIndex();
+    if (qi >= 0 && qi < m_queue.size() && qi != m_queueIndex) {
+        m_queueIndex = qi;
+        preloadNext();
     }
 
     // Show the actual output format next to the now-playing title.

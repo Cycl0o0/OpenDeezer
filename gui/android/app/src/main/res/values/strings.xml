@@ -253,7 +253,31 @@
     <string name="tv_toggle_on">ON</string>
     <string name="tv_toggle_off">OFF</string>
 
+    <!-- v2.2 features: radio, batch download, history, stream cache -->
+    <string name="action_start_radio">Start radio</string>
+    <string name="action_download_album">Download album</string>
+    <string name="action_download_playlist">Download playlist</string>
+    <string name="cd_more">More options</string>
+    <string name="cd_decrease">Decrease</string>
+    <string name="cd_increase">Increase</string>
+    <string name="download_batch_saved">Downloaded %1$d tracks</string>
+    <string name="download_batch_partial">Downloaded %1$d tracks, %2$d failed</string>
+    <string name="history_title">Recently played</string>
+    <string name="history_empty">No listening history yet.</string>
+    <string name="history_stats_section">Last 30 days</string>
+    <string name="history_top_artists">Top Artists</string>
+    <string name="history_total">%1$s listened</string>
+    <string name="dur_hm">%1$dh %2$dm</string>
+    <string name="dur_m">%1$dm</string>
+    <string name="settings_stream_cache">Stream cache</string>
+    <string name="stream_cache_mb">%1$d MB</string>
+    <string name="stream_cache_hint">Applies at next launch. 0 = off.</string>
+
     <!-- Plurals -->
+    <plurals name="n_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
     <plurals name="n_tracks">
         <item quantity="one">%1$d track</item>
         <item quantity="other">%1$d tracks</item>

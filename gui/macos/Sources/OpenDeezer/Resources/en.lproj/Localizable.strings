@@ -216,3 +216,25 @@
 "Free account · standard quality (128 kbps)" = "Free account · standard quality (128 kbps)";
 "Disable ads" = "Disable ads";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk.";
+
+/* Radio / mixes (v2.2) */
+"Start radio" = "Start radio";
+"%@ Radio" = "%@ Radio";
+
+/* Recently played + stats (v2.2) */
+"Recently played" = "Recently played";
+"History" = "History";
+"Last 30 days" = "Last 30 days";
+"Total listening time" = "Total listening time";
+"No listening history yet" = "No listening history yet";
+"Play something and it'll show up here." = "Play something and it'll show up here.";
+
+/* Album / playlist download (v2.2) */
+"Download album" = "Download album";
+"Download playlist" = "Download playlist";
+"Saved %1$d, %2$d failed" = "Saved %1$d, %2$d failed";
+
+/* Stream cache setting (v2.2) */
+"Stream cache" = "Stream cache";
+"%d MB" = "%d MB";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "On-disk cache for streamed audio (0 = off). Applies at next launch.";

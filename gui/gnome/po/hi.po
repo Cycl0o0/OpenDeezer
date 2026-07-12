@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: opendeezer-gnome 2.2.0\n"
+"Project-Id-Version: opendeezer-gnome 2.2.1\n"
 "Report-Msgid-Bugs-To: https://github.com/Cycl0o0/OpenDeezer/issues\n"
 "POT-Creation-Date: 2026-07-03 09:29+0200\n"
 "PO-Revision-Date: 2026-07-02 22:00+0000\n"
@@ -991,3 +991,84 @@ msgstr "Deezer का एक ओपन सोर्स पुनर्कार�
 #: data/org.opendeezer.OpenDeezer.desktop.in:11
 msgid "music;deezer;streaming;player;"
 msgstr "संगीत;deezer;स्ट्रीमिंग;प्लेयर;music;"
+
+#: src/main.c
+msgid "Start radio"
+msgstr ""
+
+#: src/main.c
+msgid "Radio"
+msgstr ""
+
+#: src/main.c
+msgid "Download album"
+msgstr ""
+
+#: src/main.c
+msgid "Download playlist"
+msgstr ""
+
+#: src/main.c
+msgid "Downloading album…"
+msgstr ""
+
+#: src/main.c
+msgid "Downloading playlist…"
+msgstr ""
+
+#: src/main.c
+msgid "no tracks were saved"
+msgstr ""
+
+#: src/main.c
+msgid "Stream cache (MB)"
+msgstr ""
+
+#: src/main.c
+msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgstr ""
+
+#: src/main.c
+msgid "Recently played"
+msgstr ""
+
+#: src/main.c
+msgid "No listening history yet"
+msgstr ""
+
+#: src/main.c
+msgid "Listening stats (last 30 days)"
+msgstr ""
+
+#: src/main.c
+msgid "Total listening time"
+msgstr ""
+
+#: src/main.c
+msgid "Top Artists"
+msgstr ""
+
+#: src/main.c
+#, c-format
+msgid "Saved %d tracks, %d failed"
+msgstr ""
+
+#: src/main.c
+#, c-format
+msgid "%lld h %lld min"
+msgstr ""
+
+#: src/main.c
+#, c-format
+msgid "Saved %d track to %s"
+msgid_plural "Saved %d tracks to %s"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/main.c
+#, c-format
+msgid "%lld play"
+msgid_plural "%lld plays"
+msgstr[0] ""
+msgstr[1] ""
+

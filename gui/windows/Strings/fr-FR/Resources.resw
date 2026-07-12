@@ -628,4 +628,58 @@
   <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
     <value>Deezer Free est financé par la publicité. Signaler vos écoutes — comme l'application officielle — crédite les artistes et génère les publicités. Désactiver cette option supprime les publicités mais cesse de signaler vos écoutes, ce qui prive les artistes de leur nombre d'écoutes et enfreint les conditions d'utilisation de Deezer. À utiliser à vos propres risques.</value>
   </data>
+  <data name="Nav_Recent" xml:space="preserve">
+    <value>Récents</value>
+  </data>
+  <data name="Menu_StartRadio" xml:space="preserve">
+    <value>Lancer une radio</value>
+  </data>
+  <data name="Radio_SongHeader" xml:space="preserve">
+    <value>Radio du titre</value>
+  </data>
+  <data name="Radio_ArtistHeader" xml:space="preserve">
+    <value>Radio de l'artiste</value>
+  </data>
+  <data name="Dialog_RadioFailTitle" xml:space="preserve">
+    <value>Impossible de lancer la radio</value>
+  </data>
+  <data name="Dialog_RadioFailBody" xml:space="preserve">
+    <value>Aucune radio n'a pu être lancée à partir de cet élément.</value>
+  </data>
+  <data name="Section_RecentlyPlayed" xml:space="preserve">
+    <value>Écoutés récemment</value>
+  </data>
+  <data name="Section_TopArtists" xml:space="preserve">
+    <value>Meilleurs artistes</value>
+  </data>
+  <data name="Recent_ListenTimeFormat" xml:space="preserve">
+    <value>Temps d'écoute (30 derniers jours) : {0} h {1} min</value>
+  </data>
+  <data name="Recent_Empty" xml:space="preserve">
+    <value>Rien pour l'instant. Écoutez de la musique pour créer votre historique.</value>
+  </data>
+  <data name="Plays_One" xml:space="preserve">
+    <value>{0} écoute</value>
+  </data>
+  <data name="Plays_Other" xml:space="preserve">
+    <value>{0} écoutes</value>
+  </data>
+  <data name="Btn_DownloadAlbum" xml:space="preserve">
+    <value>Télécharger l'album</value>
+  </data>
+  <data name="Btn_DownloadPlaylist" xml:space="preserve">
+    <value>Télécharger la playlist</value>
+  </data>
+  <data name="Status_Downloading" xml:space="preserve">
+    <value>Téléchargement…</value>
+  </data>
+  <data name="Dialog_DownloadBatchDoneFormat" xml:space="preserve">
+    <value>{0} enregistrés, {1} échoués. Dossier : {2}</value>
+  </data>
+  <data name="Settings_StreamCache" xml:space="preserve">
+    <value>Cache de streaming</value>
+  </data>
+  <data name="Settings_StreamCacheDesc" xml:space="preserve">
+    <value>Cache disque pour l'audio diffusé (Mo, 0 = désactivé). Appliqué au prochain démarrage.</value>
+  </data>
 </root>

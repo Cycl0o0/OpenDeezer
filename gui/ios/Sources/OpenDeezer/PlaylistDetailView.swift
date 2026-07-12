@@ -4,6 +4,8 @@ struct PlaylistDetailView: View {
     let playlist: Playlist
     @EnvironmentObject private var player: PlayerController
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadStore
 
     @State private var trackItems: [PlaylistTrackItem] = []
     @State private var isLoading = true
@@ -52,14 +54,25 @@ struct PlaylistDetailView: View {
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if canEdit {
+            // The menu carries owner-only edit actions (rename/delete) and, for a
+            // paid plan, a whole-playlist download — so it shows when either applies.
+            if canEdit || isPremium {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button { renameText = displayName; showRename = true } label: {
-                            Label("Rename", systemImage: "pencil")
+                        if isPremium {
+                            Button {
+                                downloads.downloadPlaylist(id: playlist.id, name: displayName, isPremium: true)
+                            } label: {
+                                Label("Download Playlist", systemImage: "arrow.down.circle")
+                            }
                         }
-                        Button(role: .destructive) { showDeleteConfirm = true } label: {
-                            Label("Delete Playlist", systemImage: "trash")
+                        if canEdit {
+                            Button { renameText = displayName; showRename = true } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) { showDeleteConfirm = true } label: {
+                                Label("Delete Playlist", systemImage: "trash")
+                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -157,6 +170,8 @@ struct PlaylistDetailView: View {
     private var canEdit: Bool {
         library.playlists.contains { $0.id == playlist.id }
     }
+
+    private var isPremium: Bool { session.account?.premium ?? false }
 
     private var displayTrackCount: Int {
         isLoading || errorText != nil ? playlist.trackCount : trackItems.count

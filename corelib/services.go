@@ -1073,6 +1073,53 @@ func setHistoryStore(s *history.Store) {
 	histMu.Unlock()
 }
 
+// jTrackStat / jArtistStat are the stable wire shapes for the history-stats
+// exports (history.TrackStat/ArtistStat carry no JSON tags, so we don't marshal
+// them directly).
+type jTrackStat struct {
+	TrackID  string `json:"trackId"`
+	Title    string `json:"title"`
+	Artist   string `json:"artist"`
+	Plays    int    `json:"plays"`
+	TotalSec int64  `json:"totalSec"`
+}
+
+type jArtistStat struct {
+	Artist   string `json:"artist"`
+	Plays    int    `json:"plays"`
+	TotalSec int64  `json:"totalSec"`
+}
+
+// historyStats computes the listening-stats summary backing DZHistoryStatsJSON:
+// {topTracks:[...], topArtists:[...], totalSeconds:N} over the last sinceDays
+// (sinceDays <= 0 = all history). Always returns the full shape (empty arrays +
+// 0) when the store is unavailable or empty.
+func historyStats(sinceDays int) map[string]any {
+	topTracks := []jTrackStat{}
+	topArtists := []jArtistStat{}
+	var total int64
+	if st := historyStore(); st != nil {
+		var since time.Time // zero = all history
+		if sinceDays > 0 {
+			since = time.Now().AddDate(0, 0, -sinceDays)
+		}
+		if tt, err := st.TopTracks(since, 50); err == nil {
+			topTracks = make([]jTrackStat, len(tt))
+			for i, t := range tt {
+				topTracks[i] = jTrackStat{TrackID: t.TrackID, Title: t.Title, Artist: t.Artist, Plays: t.Plays, TotalSec: t.TotalSec}
+			}
+		}
+		if ta, err := st.TopArtists(since, 50); err == nil {
+			topArtists = make([]jArtistStat, len(ta))
+			for i, a := range ta {
+				topArtists[i] = jArtistStat{Artist: a.Artist, Plays: a.Plays, TotalSec: a.TotalSec}
+			}
+		}
+		total, _ = st.TotalListenedSec(since)
+	}
+	return map[string]any{"topTracks": topTracks, "topArtists": topArtists, "totalSeconds": total}
+}
+
 // listenEntry converts an outgoing track + listened milliseconds into a
 // history entry. ok=false when it isn't worth recording: no track id, or under
 // a second of listening (start-skips, double-taps).

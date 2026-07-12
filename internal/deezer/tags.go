@@ -87,12 +87,19 @@ func tagFile(ctx context.Context, path string, t Track, artworkURL string, track
 	return tagMP3(path, t, art, trackNumber, date)
 }
 
-func tagMP3(path string, t Track, art []byte, trackNumber int, date string) error {
+func tagMP3(path string, t Track, art []byte, trackNumber int, date string) (err error) {
 	tag, err := id3v2.Open(path, id3v2.Options{Parse: false})
 	if err != nil {
 		return fmt.Errorf("id3v2 open: %w", err)
 	}
-	defer tag.Close()
+	// Close closes the underlying file, flushing the write done by Save. If Save
+	// succeeded, surface a Close/flush error instead of silently dropping it; if
+	// Save already failed, keep that error (it's the more informative one).
+	defer func() {
+		if cerr := tag.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("id3v2 close: %w", cerr)
+		}
+	}()
 
 	tag.SetDefaultEncoding(id3v2.EncodingUTF8)
 	tag.SetTitle(t.Name)
@@ -140,14 +147,26 @@ func tagFLAC(path string, t Track, art []byte, trackNumber int, date string) err
 	}
 
 	cmts := flacvorbis.New()
-	cmts.Add(flacvorbis.FIELD_TITLE, t.Name)
-	cmts.Add(flacvorbis.FIELD_ARTIST, t.ArtistLine())
-	cmts.Add(flacvorbis.FIELD_ALBUM, t.AlbumName)
+	// flacvorbis.Add only rejects malformed field names, and ours are library
+	// constants, so this never fails in practice — but aggregate the errors
+	// rather than silently dropping a comment on the floor.
+	var addErr error
+	add := func(field, val string) {
+		if addErr == nil {
+			addErr = cmts.Add(field, val)
+		}
+	}
+	add(flacvorbis.FIELD_TITLE, t.Name)
+	add(flacvorbis.FIELD_ARTIST, t.ArtistLine())
+	add(flacvorbis.FIELD_ALBUM, t.AlbumName)
 	if trackNumber > 0 {
-		cmts.Add(flacvorbis.FIELD_TRACKNUMBER, fmt.Sprintf("%d", trackNumber))
+		add(flacvorbis.FIELD_TRACKNUMBER, fmt.Sprintf("%d", trackNumber))
 	}
 	if date != "" {
-		cmts.Add(flacvorbis.FIELD_DATE, date)
+		add(flacvorbis.FIELD_DATE, date)
+	}
+	if addErr != nil {
+		return fmt.Errorf("flac vorbis comment: %w", addErr)
 	}
 	cm := cmts.Marshal()
 	newMeta = append(newMeta, &cm)

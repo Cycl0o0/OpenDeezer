@@ -119,6 +119,57 @@ extern int   DZIsPreview(void);
 extern int DZAdsDisabled(void);
 extern int DZSetAdsDisabled(int disabled);
 
+/* v2.2.0 additions — declared explicitly (see DZSetRepeat above) so this file
+ * compiles against an older libdeezercore.h; the generated header carries
+ * identical declarations once the archive is rebuilt.
+ *
+ *   Radio / mixes — a seeded "song radio"/"artist radio" stream returned in the
+ *   same {"tracks":[...]} wire shape as DZFlowJSON, so the Flow parse+play path
+ *   is reused. Free the result with DZFree.
+ *     DZTrackMixJSON(id):  song radio seeded from a track (seed kept first).
+ *     DZArtistMixJSON(id): artist radio seeded from an artist.
+ *
+ *   Local listening history (machine-local, same shape the control API serves).
+ *     DZHistoryRecentJSON(n): newest n entries as a JSON array
+ *       [{trackId,title,artist,album,startedAt,durationPlayedSec}] (n<=0 = all,
+ *       "[]" when empty). Free with DZFree.
+ *     DZHistoryStatsJSON(sinceDays): stats over the last sinceDays (<=0 = all) as
+ *       {topTracks:[{trackId,title,artist,plays,totalSec}],
+ *        topArtists:[{artist,plays,totalSec}], totalSeconds:N}. Free with DZFree.
+ *
+ *   Batch downloads (Premium only, same gate + folder as DZDownloadTrack). Both
+ *   BLOCK (network + Blowfish decrypt) — run on a worker like DZDownloadTrack —
+ *   and return the summary {"saved":N,"failed":N,"dir":"...","error":""};
+ *   "error" is "" on full success. Free with DZFree.
+ *     DZDownloadAlbum(id) / DZDownloadPlaylist(id).
+ *
+ *   On-disk raw-stream cache budget in megabytes (media.json; 0 = disabled, the
+ *   default). Attached to the player once at startup, so a change applies at the
+ *   next launch.
+ *     DZMediaCacheMB(): current budget. DZSetMediaCacheMB(mb): persist; 1 ok, 0 fail.
+ *
+ *   Engine queue sync — mirror the GUI queue so remote controllers see it on
+ *   /status and /next|/prev walk it. js = a JSON array of tracks in the shared
+ *   wire shape ({id,name,durationMs,artistLine,artistId,artists,albumName,
+ *   artworkUrl,explicit}); only id is required, durationMs recommended. "[]"
+ *   clears. DZQueueSet resets the cursor to 0 — follow with DZQueueSetIndex to
+ *   point it at the playing row. Once the cursor is aligned with the playing
+ *   track the ENGINE owns auto-advance on natural finishes (DZFinishedCount no
+ *   longer bumps for those; poll DZQueueIndex to follow the engine cursor).
+ *     DZQueueSet(js): 1 ok, 0 parse error.  DZQueueSetIndex(i): align cursor.
+ *     DZQueueIndex(): cursor (-1 when empty/unsynced). */
+extern char *DZTrackMixJSON(char *id);
+extern char *DZArtistMixJSON(char *id);
+extern char *DZHistoryRecentJSON(int n);
+extern char *DZHistoryStatsJSON(int sinceDays);
+extern char *DZDownloadAlbum(char *id);
+extern char *DZDownloadPlaylist(char *id);
+extern int   DZMediaCacheMB(void);
+extern int   DZSetMediaCacheMB(int mb);
+extern int   DZQueueSet(char *js);
+extern void  DZQueueSetIndex(int i);
+extern int   DZQueueIndex(void);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -319,15 +370,35 @@ typedef struct {
   GtkWidget            *update_banner;  /* AdwBanner, top of the content pane; hidden until a
                                          * newer release is found */
   char                 *update_url;     /* release page opened by the banner's Download button */
+
+  /* ---- Recently played + listening stats (v2.2.0; a "history" stack page) ---- */
+  GtkWidget            *history_box;    /* inner VBox in the history scrolled window;
+                                         * cleared + repopulated each time the page is opened */
+  GPtrArray            *history_tracks; /* DzTrack* owned — the recently-played queue source
+                                         * (mirrored into track_store on play) */
+  guint                 history_gen;    /* drops stale async history fetches */
+
+  /* ---- album/playlist "page" download (v2.2.0; a header button) ---- */
+  GtkWidget            *list_dl_btn;    /* content-header Download button; shown for album/playlist */
+  int                   list_kind;      /* LoadKind of the current track view, -1 = none/ad-hoc */
+  char                 *list_id;        /* id backing the current album/playlist view */
+
+  /* ---- engine queue sync (v2.2.0; DZQueueSet / DZQueueSetIndex / DZQueueIndex) ---- */
+  gboolean              queue_synced;   /* the current track_store was mirrored to the engine
+                                         * queue — the engine then owns natural-finish advance,
+                                         * so tick() follows DZQueueIndex instead of DZFinishedCount */
 } App;
 
 static App *APP; /* single window — a global keeps GTask plumbing tidy */
 
 /* sidebar row kinds */
-enum { ROW_HOME = 0, ROW_LIKED = 1, ROW_PLAYLIST = 2, ROW_CHARTS = 3, ROW_FLOW = 4, ROW_PODCASTS = 5 };
+enum { ROW_HOME = 0, ROW_LIKED = 1, ROW_PLAYLIST = 2, ROW_CHARTS = 3, ROW_FLOW = 4,
+       ROW_PODCASTS = 5, ROW_HISTORY = 6 };
 
-/* browse kinds */
-typedef enum { LOAD_FAVORITES, LOAD_PLAYLIST, LOAD_ALBUM, LOAD_SEARCH, LOAD_CHARTS, LOAD_FLOW } LoadKind;
+/* browse kinds (LOAD_TRACK_MIX/LOAD_ARTIST_MIX carry an id and reuse the Flow
+ * parse+auto-play path — see load_worker / load_done) */
+typedef enum { LOAD_FAVORITES, LOAD_PLAYLIST, LOAD_ALBUM, LOAD_SEARCH, LOAD_CHARTS,
+               LOAD_FLOW, LOAD_TRACK_MIX, LOAD_ARTIST_MIX } LoadKind;
 
 /* small dialog callback shapes */
 typedef void (*TextCb)(App *a, const char *text, gpointer ud);
@@ -344,6 +415,14 @@ static void toast(App *a, const char *msg);
 /* home view (defined after browse view section) */
 static void load_home_async(App *a);
 static void show_home(App *a);
+
+/* recently-played + stats view (defined after the home view section) */
+static void load_history_async(App *a);
+static void show_history(App *a);
+
+/* engine queue sync (defined just above populate_tracks) */
+static void sync_engine_queue(App *a);
+static void update_list_dl_button(App *a);
 
 /* v0.4 wiring (defined in later sections) */
 static void update_now_playing_ui(App *a, DzTrack *t, int idx);
@@ -625,17 +704,72 @@ static void load_worker(GTask *task, gpointer src, gpointer data, GCancellable *
     case LOAD_SEARCH:    j = DZSearchJSON(ctx->arg); break;
     case LOAD_CHARTS:    j = DZChartsJSON(); break;
     case LOAD_FLOW:      j = DZFlowJSON(); break;
+    case LOAD_TRACK_MIX: j = DZTrackMixJSON(ctx->arg); break;  /* song radio ({tracks:[...]}) */
+    case LOAD_ARTIST_MIX:j = DZArtistMixJSON(ctx->arg); break; /* artist radio ({tracks:[...]}) */
   }
   char *dup = g_strdup(j ? j : "{}");
   if (j) DZFree(j);
   g_task_return_pointer(task, dup, g_free);
 }
 
+/* Serialize the play queue (track_store) to the engine-queue wire shape and push
+ * it (DZQueueSet) so remote controllers see it on /status and /next|/prev walk
+ * it. Mirrors every DzTrack we hold; only id is strictly required, but durationMs
+ * is set so controllers' end-of-track detection works. json-glib builds the array
+ * so track/artist names with quotes or backslashes are escaped correctly. Sets
+ * queue_synced when non-empty, so tick() follows the engine cursor (DZQueueIndex)
+ * for engine-owned natural-finish auto-advance. */
+static void sync_engine_queue(App *a) {
+  guint n = g_list_model_get_n_items(G_LIST_MODEL(a->track_store));
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_array(b);
+  for (guint i = 0; i < n; i++) {
+    DzTrack *t = g_list_model_get_item(G_LIST_MODEL(a->track_store), i); /* owns ref */
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "id");         json_builder_add_string_value(b, t->id ? t->id : "");
+    json_builder_set_member_name(b, "name");       json_builder_add_string_value(b, t->name ? t->name : "");
+    json_builder_set_member_name(b, "durationMs"); json_builder_add_int_value(b, t->duration_ms);
+    json_builder_set_member_name(b, "artistLine"); json_builder_add_string_value(b, t->artist ? t->artist : "");
+    json_builder_set_member_name(b, "artistId");   json_builder_add_string_value(b, t->artist_id ? t->artist_id : "");
+    json_builder_set_member_name(b, "albumName");  json_builder_add_string_value(b, t->album ? t->album : "");
+    json_builder_set_member_name(b, "artworkUrl"); json_builder_add_string_value(b, t->artwork ? t->artwork : "");
+    json_builder_set_member_name(b, "explicit");   json_builder_add_boolean_value(b, t->explicit);
+    json_builder_end_object(b);
+    g_object_unref(t);
+  }
+  json_builder_end_array(b);
+
+  JsonGenerator *gen = json_generator_new();
+  JsonNode *root = json_builder_get_root(b); /* transfer-full */
+  json_generator_set_root(gen, root);        /* transfer-none (copies) */
+  char *js = json_generator_to_data(gen, NULL);
+  int ok = DZQueueSet(js ? js : (char *)"[]");
+  /* only follow the engine cursor (tick resync) once the mirror actually took —
+   * on a parse failure the GUI keeps owning auto-advance via DZFinishedCount */
+  a->queue_synced = (n > 0) && (ok == 1);
+  g_free(js);
+  json_node_unref(root);
+  g_object_unref(gen);
+  g_object_unref(b);
+}
+
+/* Show the content-header Download button only for an album/playlist view the
+ * account may actually download (Premium, like the single-track menu). */
+static void update_list_dl_button(App *a) {
+  if (!a->list_dl_btn) return;
+  gboolean show = a->premium && (a->list_kind == LOAD_ALBUM || a->list_kind == LOAD_PLAYLIST);
+  gtk_widget_set_visible(a->list_dl_btn, show);
+  if (show)
+    gtk_widget_set_tooltip_text(a->list_dl_btn,
+        a->list_kind == LOAD_ALBUM ? _("Download album") : _("Download playlist"));
+}
+
 /* fills the column store from a {"tracks":[...]} (or search) JSON payload */
 static void populate_tracks(App *a, const char *json) {
   g_list_store_remove_all(a->track_store);
   a->current_index = -1;
-  if (!json) return;
+  a->queue_synced = FALSE;
+  if (!json) { sync_engine_queue(a); return; }
 
   JsonParser *p = json_parser_new();
   GError *e = NULL;
@@ -643,6 +777,7 @@ static void populate_tracks(App *a, const char *json) {
     toastf(a, _("Couldn't parse response: %s"), e->message);
     g_clear_error(&e);
     g_object_unref(p);
+    sync_engine_queue(a); /* empty queue -> clear the engine mirror too */
     return;
   }
   JsonNode *root = json_parser_get_root(p);
@@ -665,6 +800,8 @@ static void populate_tracks(App *a, const char *json) {
     }
   }
   g_object_unref(p);
+  /* mirror the freshly built queue to the engine so remote controllers track it */
+  sync_engine_queue(a);
 }
 
 static void load_done(GObject *src, GAsyncResult *res, gpointer data) {
@@ -677,14 +814,21 @@ static void load_done(GObject *src, GAsyncResult *res, gpointer data) {
   } else {
     populate_tracks(APP, json);
     show_tracks(APP);
-    if (c && c->kind == LOAD_FLOW &&
+    update_list_dl_button(APP); /* header Download shown for album/playlist views */
+    /* Flow and the seeded radios ({tracks:[...]}) auto-play the first row */
+    if (c && (c->kind == LOAD_FLOW || c->kind == LOAD_TRACK_MIX || c->kind == LOAD_ARTIST_MIX) &&
         g_list_model_get_n_items(G_LIST_MODEL(APP->track_store)) > 0)
-      play_index(APP, 0); /* Flow auto-plays */
+      play_index(APP, 0);
   }
   g_free(json);
 }
 
 static void load_async(App *a, LoadKind kind, const char *arg) {
+  /* remember the current album/playlist so the header Download button knows what
+   * to save; other kinds hide it (see update_list_dl_button) */
+  a->list_kind = kind;
+  g_free(a->list_id);
+  a->list_id = g_strdup(arg ? arg : "");
   LoadCtx *c = g_new0(LoadCtx, 1);
   c->kind = kind;
   c->arg = g_strdup(arg ? arg : "");
@@ -721,18 +865,24 @@ static void on_sidebar_selected(GtkListBox *box, GtkListBoxRow *row, gpointer da
   const char *id = g_object_get_data(G_OBJECT(row), "id");
   const char *title = g_object_get_data(G_OBJECT(row), "title");
   adw_navigation_page_set_title(a->content_page, title ? title : "");
-  if (kind == ROW_HOME)
+  if (kind == ROW_HOME) {
+    a->list_kind = -1; update_list_dl_button(a); /* not an album/playlist page */
     load_home_async(a);
-  else if (kind == ROW_PLAYLIST)
+  } else if (kind == ROW_PLAYLIST) {
     load_async(a, LOAD_PLAYLIST, id);
-  else if (kind == ROW_CHARTS)
+  } else if (kind == ROW_CHARTS) {
     load_async(a, LOAD_CHARTS, NULL);
-  else if (kind == ROW_FLOW)
+  } else if (kind == ROW_FLOW) {
     load_async(a, LOAD_FLOW, NULL);
-  else if (kind == ROW_PODCASTS)
+  } else if (kind == ROW_PODCASTS) {
     open_podcasts(a); /* podcasts live in their own dialog */
-  else
+  } else if (kind == ROW_HISTORY) {
+    a->list_kind = -1; update_list_dl_button(a);
+    show_history(a);
+    load_history_async(a);
+  } else {
     load_async(a, LOAD_FAVORITES, NULL);
+  }
 }
 
 static void playlists_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
@@ -951,6 +1101,7 @@ static void advance_pointer_gapless(App *a) {
   guint n = g_list_model_get_n_items(G_LIST_MODEL(a->track_store));
   if (next < 0 || (guint)next >= n) return; /* nothing was preloaded — let it stop */
   a->current_index = next;
+  if (a->queue_synced) DZQueueSetIndex(next); /* keep the engine cursor on the audible row */
   DzTrack *t = g_list_model_get_item(G_LIST_MODEL(a->track_store), next);
   if (!t) return;
   update_now_playing_ui(a, t, next);
@@ -964,6 +1115,7 @@ static void play_index(App *a, int idx) {
   if (idx < 0 || (guint)idx >= n) return;
   DzTrack *t = g_list_model_get_item(G_LIST_MODEL(a->track_store), idx); /* owns ref */
   a->current_index = idx;
+  if (a->queue_synced) DZQueueSetIndex(idx); /* align the engine cursor to the playing row */
 
   update_now_playing_ui(a, t, idx); /* immediate UI + MPRIS feedback */
 
@@ -1141,6 +1293,16 @@ static void on_gapless_toggled(GObject *row, GParamSpec *ps, gpointer data) {
   settings_save(a);
   if (a->gapless) maybe_preload_next(a); /* warm up the next track right away */
   toast(a, a->gapless ? _("Gapless playback enabled") : _("Gapless playback disabled"));
+}
+
+/* Media (raw-stream) cache budget in MB — engine-side (media.json, DZMediaCacheMB
+ * / DZSetMediaCacheMB); 0 = off. The cache is attached to the player once at
+ * startup, so the change takes effect at the next launch. */
+static void on_media_cache_changed(GObject *row, GParamSpec *ps, gpointer data) {
+  (void)ps; (void)data;
+  int mb = (int)adw_spin_row_get_value(ADW_SPIN_ROW(row));
+  if (mb < 0) mb = 0;
+  DZSetMediaCacheMB(mb);
 }
 
 /* crossfade combo options, in milliseconds */
@@ -1935,6 +2097,16 @@ static void on_settings(GSimpleAction *action, GVariant *param, gpointer data) {
   g_signal_connect(xfade, "notify::selected", G_CALLBACK(on_crossfade_selected), a);
   adw_preferences_group_add(audio, xfade);
 
+  /* stream cache (MB) — on-disk raw-stream cache; 0 = off; applies next launch */
+  GtkWidget *cache = adw_spin_row_new_with_range(0, 8192, 64);
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(cache), _("Stream cache (MB)"));
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(cache),
+                              _("Cache streams on disk to save data (0 = off). "
+                                "Takes effect at the next launch."));
+  adw_spin_row_set_value(ADW_SPIN_ROW(cache), DZMediaCacheMB()); /* seed before wiring the signal */
+  g_signal_connect(cache, "notify::value", G_CALLBACK(on_media_cache_changed), a);
+  adw_preferences_group_add(audio, cache);
+
   adw_preferences_page_add(page, audio);
 
   /* ---- Equalizer (10-band EQ + mono downmix, all state engine-side) ---- */
@@ -2377,6 +2549,75 @@ static void start_download(App *a, const char *id, const char *name) {
   g_object_unref(t);
 }
 
+/* ---- download a whole album / playlist (Premium only) ----
+ * DZDownloadAlbum / DZDownloadPlaylist block (each track: network + Blowfish
+ * decrypt), so they run on the same worker pattern as DZDownloadTrack. They
+ * return the batch summary {"saved":N,"failed":N,"dir":"...","error":""}, parsed
+ * here into counts + dir + a message, then reported as a toast on the main loop. */
+typedef struct { gboolean album; char *id; int saved, failed; char *dir, *err; } BatchDlCtx;
+static void batch_ctx_free(gpointer p) {
+  BatchDlCtx *c = p; g_free(c->id); g_free(c->dir); g_free(c->err); g_free(c);
+}
+static void batch_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)c;
+  BatchDlCtx *x = data;
+  char *st = x->album ? DZDownloadAlbum(x->id) : DZDownloadPlaylist(x->id);
+  if (st) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, st, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+        JsonObject *o = json_node_get_object(root);
+        x->saved  = (int)jint(o, "saved");
+        x->failed = (int)jint(o, "failed");
+        x->dir    = jstr(o, "dir");   /* jstr never returns NULL */
+        x->err    = jstr(o, "error");
+      }
+    }
+    g_object_unref(p);
+    DZFree(st);
+  }
+  g_task_return_boolean(task, TRUE);
+}
+static void batch_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)data;
+  BatchDlCtx *x = g_task_get_task_data(G_TASK(res));
+  (void)g_task_propagate_boolean(G_TASK(res), NULL);
+  const char *dir = (x->dir && *x->dir) ? x->dir : ".";
+  if (x->saved <= 0)
+    toastf(APP, _("Download failed: %s"),
+           (x->err && *x->err) ? x->err : _("no tracks were saved"));
+  else if (x->failed > 0)
+    toastf(APP, _("Saved %d tracks, %d failed"), x->saved, x->failed);
+  else
+    toastf(APP, ngettext("Saved %d track to %s", "Saved %d tracks to %s", x->saved),
+           x->saved, dir);
+}
+/* Kick off an album (album=TRUE) or playlist batch download. Premium-gated,
+ * exactly like the single-track menu action. */
+static void start_batch_download(App *a, gboolean album, const char *id) {
+  if (!id || !*id) return;
+  if (!a || !a->premium) { toast(a, _("Downloads require Deezer Premium")); return; }
+  toast(a, album ? _("Downloading album…") : _("Downloading playlist…"));
+  BatchDlCtx *x = g_new0(BatchDlCtx, 1);
+  x->album = album;
+  x->id = g_strdup(id);
+  GTask *t = g_task_new(NULL, NULL, batch_done, NULL);
+  g_task_set_task_data(t, x, batch_ctx_free);
+  g_task_run_in_thread(t, batch_worker);
+  g_object_unref(t);
+}
+
+/* content-header Download button (shown for album/playlist views) */
+static void on_list_download_clicked(GtkButton *b, gpointer data) {
+  (void)b;
+  App *a = data;
+  if (a->list_kind == LOAD_ALBUM)
+    start_batch_download(a, TRUE, a->list_id);
+  else if (a->list_kind == LOAD_PLAYLIST)
+    start_batch_download(a, FALSE, a->list_id);
+}
+
 static void update_like_button(App *a) {
   if (!a->like_btn) return;
   if (a->cur_liked) gtk_widget_add_css_class(GTK_WIDGET(a->like_btn), "dz-liked");
@@ -2431,6 +2672,17 @@ static void on_tm_download(GtkButton *b, gpointer mb) {
     start_download(APP, id, nm);
   }
 }
+/* Start a "song radio" seeded from this track: DZTrackMixJSON returns the same
+ * {tracks:[...]} shape as Flow, so the shared load path parses + auto-plays it. */
+static void on_tm_radio(GtkButton *b, gpointer mb) {
+  (void)b;
+  const char *id = g_object_get_data(G_OBJECT(mb), "tm_id");
+  tm_popdown(mb);
+  if (!id || !*id) return;
+  adw_navigation_page_set_title(APP->content_page, _("Radio"));
+  gtk_list_box_select_row(APP->sidebar, NULL); /* leave the sidebar so Home reloads later */
+  load_async(APP, LOAD_TRACK_MIX, id);
+}
 
 static GtkWidget *make_track_menu_button(void) {
   GtkMenuButton *mb = GTK_MENU_BUTTON(gtk_menu_button_new());
@@ -2445,6 +2697,7 @@ static GtkWidget *make_track_menu_button(void) {
    * re-applies this on every bind once the account tier is known. */
   struct { const char *label; GCallback cb; gboolean premium_only; } items[] = {
       {_("Add to Liked Songs"), G_CALLBACK(on_tm_like),     FALSE},
+      {_("Start radio"),        G_CALLBACK(on_tm_radio),    FALSE},
       {_("Download"),           G_CALLBACK(on_tm_download),  TRUE},
       {_("Add to Playlist…"),   G_CALLBACK(on_tm_add),       FALSE},
       {_("Go to Artist"),       G_CALLBACK(on_tm_artist),    FALSE},
@@ -3551,10 +3804,28 @@ static void on_artist_top_activated(GtkListBox *box, GtkListBoxRow *row, gpointe
   for (guint i = 0; i < a->artist_top->len; i++)
     g_list_store_append(a->track_store, g_ptr_array_index(a->artist_top, i));
   a->current_index = -1;
+  a->list_kind = -1;             /* ad-hoc queue — hide the album/playlist Download button */
+  update_list_dl_button(a);
+  sync_engine_queue(a);          /* mirror the new queue to the engine before play */
   if (a->artist_name && *a->artist_name)
     adw_navigation_page_set_title(a->content_page, a->artist_name);
   play_index(a, idx);
   if (a->artist_dialog) adw_dialog_close(a->artist_dialog);
+}
+
+/* "Start radio" on the artist page: play an artist-seeded mix (DZArtistMixJSON).
+ * Capture the id before closing the dialog — on_artist_closed frees artist_req_id. */
+static void on_artist_radio_clicked(GtkButton *b, gpointer data) {
+  (void)b;
+  App *a = data;
+  if (!a->artist_req_id || !*a->artist_req_id) return;
+  char *id = g_strdup(a->artist_req_id);
+  const char *nm = (a->artist_name && *a->artist_name) ? a->artist_name : NULL;
+  adw_navigation_page_set_title(a->content_page, nm ? nm : _("Radio"));
+  gtk_list_box_select_row(a->sidebar, NULL);
+  if (a->artist_dialog) adw_dialog_close(a->artist_dialog);
+  load_async(a, LOAD_ARTIST_MIX, id);
+  g_free(id);
 }
 
 /* Album row clicked: open it through the existing album-tracks browse path. */
@@ -3629,6 +3900,19 @@ static void artist_apply(App *a, const char *artist_id, const char *json) {
     gtk_box_append(GTK_BOX(htext), fw);
     g_free(fl);
   }
+  /* "Start radio": DZArtistMixJSON returns the Flow {tracks:[...]} shape, so the
+   * shared load path parses + auto-plays it (see on_artist_radio_clicked). */
+  GtkWidget *radio_btn = gtk_button_new();
+  GtkWidget *radio_inner = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_box_append(GTK_BOX(radio_inner), gtk_image_new_from_icon_name("media-playlist-shuffle-symbolic"));
+  gtk_box_append(GTK_BOX(radio_inner), gtk_label_new(_("Start radio")));
+  gtk_button_set_child(GTK_BUTTON(radio_btn), radio_inner);
+  gtk_widget_add_css_class(radio_btn, "pill");
+  gtk_widget_add_css_class(radio_btn, "suggested-action");
+  gtk_widget_set_halign(radio_btn, GTK_ALIGN_START);
+  gtk_widget_set_margin_top(radio_btn, 6);
+  g_signal_connect(radio_btn, "clicked", G_CALLBACK(on_artist_radio_clicked), a);
+  gtk_box_append(GTK_BOX(htext), radio_btn);
   gtk_box_append(GTK_BOX(hdr), htext);
   gtk_box_append(GTK_BOX(a->artist_content), hdr);
 
@@ -3926,6 +4210,9 @@ static void on_browse_track_activated(GtkListBox *box, GtkListBoxRow *row, gpoin
   for (guint i = 0; i < a->browse_tracks->len; i++)
     g_list_store_append(a->track_store, g_ptr_array_index(a->browse_tracks, i));
   a->current_index = -1;
+  a->list_kind = -1;             /* ad-hoc queue — hide the album/playlist Download button */
+  update_list_dl_button(a);
+  sync_engine_queue(a);          /* mirror the new queue to the engine before play */
   show_tracks(a);
   play_index(a, idx);
 }
@@ -4211,6 +4498,9 @@ static void on_home_track_clicked(GtkButton *b, gpointer data) {
   for (guint i = 0; i < a->home_tracks->len; i++)
     g_list_store_append(a->track_store, g_ptr_array_index(a->home_tracks, i));
   a->current_index = -1;
+  a->list_kind = -1;             /* ad-hoc queue — hide the album/playlist Download button */
+  update_list_dl_button(a);
+  sync_engine_queue(a);          /* mirror the new queue to the engine before play */
   play_index(a, idx);
   /* stay on the home view — the now-playing bar reflects the playing track */
 }
@@ -4438,6 +4728,244 @@ static GtkWidget *build_home_view(App *a) {
   gtk_widget_set_margin_start(a->home_box, 16);
   gtk_widget_set_margin_end(a->home_box, 16);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), a->home_box);
+  return scroll;
+}
+
+/* ---------------------------------------------------------------------------
+ * Recently played + listening stats (a "history" stack page).
+ *
+ * DZHistoryRecentJSON / DZHistoryStatsJSON read the machine-local listening
+ * history (both block on disk, so they run on a worker like every other DZ*
+ * call). "Recently played" rows play by id as a queue (mirrored into
+ * track_store, same handoff as the artist top-tracks list); the stats section's
+ * top-track rows play a single track by id. There are no artwork fetches here,
+ * so the page is built entirely on the main loop from the two JSON payloads.
+ * ------------------------------------------------------------------------- */
+
+static char *history_total_text(gint64 secs) {
+  if (secs < 0) secs = 0;
+  long long h = secs / 3600, m = (secs % 3600) / 60;
+  return g_strdup_printf(_("%lld h %lld min"), h, m);
+}
+
+/* A recently-played row was activated: load the recent list as the play queue
+ * and start the chosen entry (same handoff as the artist top-tracks list). */
+static void on_history_recent_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data) {
+  (void)box;
+  App *a = data;
+  if (!row || !a->history_tracks) return;
+  int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "idx"));
+  if (idx < 0 || (guint)idx >= a->history_tracks->len) return;
+  g_list_store_remove_all(a->track_store);
+  for (guint i = 0; i < a->history_tracks->len; i++)
+    g_list_store_append(a->track_store, g_ptr_array_index(a->history_tracks, i));
+  a->current_index = -1;
+  a->list_kind = -1;
+  update_list_dl_button(a);
+  sync_engine_queue(a);
+  show_tracks(a);
+  play_index(a, idx);
+}
+
+/* A stats top-track row was activated: play that single track by id. */
+static void on_history_track_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data) {
+  (void)box;
+  App *a = data;
+  if (!row) return;
+  DzTrack *t = g_object_get_data(G_OBJECT(row), "dztrack"); /* owned by the row */
+  if (!t) return;
+  g_list_store_remove_all(a->track_store);
+  g_list_store_append(a->track_store, t); /* takes its own ref */
+  a->current_index = -1;
+  a->list_kind = -1;
+  update_list_dl_button(a);
+  sync_engine_queue(a);
+  show_tracks(a);
+  play_index(a, 0);
+}
+
+/* Build the recently-played list + the stats section into a->history_box from
+ * the two payloads.  Always called on the main loop. */
+static void history_populate(App *a, const char *recent_json, const char *stats_json) {
+  if (!a->history_box) return;
+  box_clear(a->history_box);
+  if (a->history_tracks) g_ptr_array_set_size(a->history_tracks, 0);
+
+  /* ---- Recently played ---- */
+  gtk_box_append(GTK_BOX(a->history_box), section_title(_("Recently played")));
+  gboolean any_recent = FALSE;
+  if (recent_json) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, recent_json, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_ARRAY(root)) {
+        JsonArray *arr = json_node_get_array(root);
+        guint n = json_array_get_length(arr);
+        if (n > 0) {
+          GtkWidget *lb = artist_listbox(G_CALLBACK(on_history_recent_activated), a);
+          for (guint i = 0; i < n; i++) {
+            JsonObject *e = json_array_get_object_element(arr, i);
+            char *tid = jstr(e, "trackId"), *title = jstr(e, "title"),
+                 *art = jstr(e, "artist"), *alb = jstr(e, "album");
+            DzTrack *t = dz_track_new(tid, title, art, alb, "", 0, "", FALSE);
+            g_ptr_array_add(a->history_tracks, t); /* takes the owning ref */
+            GtkWidget *row = adw_action_row_new();
+            gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), TRUE);
+            adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
+            adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
+            char *sub = (*alb) ? g_strdup_printf("%s · %s", art, alb) : g_strdup(art);
+            adw_action_row_set_subtitle(ADW_ACTION_ROW(row), sub);
+            g_free(sub);
+            adw_action_row_add_prefix(ADW_ACTION_ROW(row),
+                                      gtk_image_new_from_icon_name("audio-x-generic-symbolic"));
+            g_object_set_data(G_OBJECT(row), "idx", GINT_TO_POINTER((int)i));
+            gtk_list_box_append(GTK_LIST_BOX(lb), row);
+            g_free(tid); g_free(title); g_free(art); g_free(alb);
+          }
+          gtk_box_append(GTK_BOX(a->history_box), lb);
+          any_recent = TRUE;
+        }
+      }
+    }
+    g_object_unref(p);
+  }
+  if (!any_recent) {
+    GtkWidget *l = gtk_label_new(_("No listening history yet"));
+    gtk_widget_add_css_class(l, "dim-label");
+    gtk_label_set_xalign(GTK_LABEL(l), 0.0);
+    gtk_box_append(GTK_BOX(a->history_box), l);
+  }
+
+  /* ---- Listening stats (last 30 days) ---- */
+  if (!stats_json) return;
+  JsonParser *sp = json_parser_new();
+  if (!json_parser_load_from_data(sp, stats_json, -1, NULL)) { g_object_unref(sp); return; }
+  JsonNode *sroot = json_parser_get_root(sp);
+  JsonObject *so = (sroot && JSON_NODE_HOLDS_OBJECT(sroot)) ? json_node_get_object(sroot) : NULL;
+  if (!so) { g_object_unref(sp); return; }
+
+  gtk_box_append(GTK_BOX(a->history_box), section_title(_("Listening stats (last 30 days)")));
+
+  /* total time */
+  GtkWidget *tot_lb = gtk_list_box_new();
+  gtk_list_box_set_selection_mode(GTK_LIST_BOX(tot_lb), GTK_SELECTION_NONE);
+  gtk_widget_add_css_class(tot_lb, "boxed-list");
+  GtkWidget *tot_row = adw_action_row_new();
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(tot_row), _("Total listening time"));
+  char *tot = history_total_text(jint(so, "totalSeconds"));
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(tot_row), tot);
+  g_free(tot);
+  adw_action_row_add_prefix(ADW_ACTION_ROW(tot_row),
+                            gtk_image_new_from_icon_name("document-open-recent-symbolic"));
+  gtk_list_box_append(GTK_LIST_BOX(tot_lb), tot_row);
+  gtk_box_append(GTK_BOX(a->history_box), tot_lb);
+
+  /* top tracks (playable by id) */
+  JsonArray *tt = json_object_has_member(so, "topTracks")
+                      ? json_object_get_array_member(so, "topTracks") : NULL;
+  guint ttn = tt ? json_array_get_length(tt) : 0;
+  if (ttn > 0) {
+    gtk_box_append(GTK_BOX(a->history_box), section_title(_("Top Tracks")));
+    GtkWidget *lb = artist_listbox(G_CALLBACK(on_history_track_activated), a);
+    for (guint i = 0; i < ttn; i++) {
+      JsonObject *e = json_array_get_object_element(tt, i);
+      char *tid = jstr(e, "trackId"), *title = jstr(e, "title"), *art = jstr(e, "artist");
+      gint64 plays = jint(e, "plays");
+      DzTrack *t = dz_track_new(tid, title, art, "", "", 0, "", FALSE);
+      GtkWidget *row = adw_action_row_new();
+      gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), TRUE);
+      adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
+      adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
+      char *plays_s = g_strdup_printf(ngettext("%lld play", "%lld plays", (gulong)plays), (long long)plays);
+      char *sub = g_strdup_printf("%s · %s", art, plays_s);
+      adw_action_row_set_subtitle(ADW_ACTION_ROW(row), sub);
+      g_free(sub); g_free(plays_s);
+      g_object_set_data_full(G_OBJECT(row), "dztrack", t, g_object_unref); /* owns the ref */
+      gtk_list_box_append(GTK_LIST_BOX(lb), row);
+      g_free(tid); g_free(title); g_free(art);
+    }
+    gtk_box_append(GTK_BOX(a->history_box), lb);
+  }
+
+  /* top artists */
+  JsonArray *ta = json_object_has_member(so, "topArtists")
+                      ? json_object_get_array_member(so, "topArtists") : NULL;
+  guint tan = ta ? json_array_get_length(ta) : 0;
+  if (tan > 0) {
+    gtk_box_append(GTK_BOX(a->history_box), section_title(_("Top Artists")));
+    GtkWidget *lb = gtk_list_box_new();
+    gtk_list_box_set_selection_mode(GTK_LIST_BOX(lb), GTK_SELECTION_NONE);
+    gtk_widget_add_css_class(lb, "boxed-list");
+    for (guint i = 0; i < tan; i++) {
+      JsonObject *e = json_array_get_object_element(ta, i);
+      char *art = jstr(e, "artist");
+      gint64 plays = jint(e, "plays");
+      GtkWidget *row = adw_action_row_new();
+      adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
+      adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), art);
+      char *plays_s = g_strdup_printf(ngettext("%lld play", "%lld plays", (gulong)plays), (long long)plays);
+      adw_action_row_set_subtitle(ADW_ACTION_ROW(row), plays_s);
+      g_free(plays_s);
+      adw_action_row_add_prefix(ADW_ACTION_ROW(row),
+                                gtk_image_new_from_icon_name("avatar-default-symbolic"));
+      gtk_list_box_append(GTK_LIST_BOX(lb), row);
+      g_free(art);
+    }
+    gtk_box_append(GTK_BOX(a->history_box), lb);
+  }
+
+  g_object_unref(sp);
+}
+
+/* worker: fetch both payloads off the main loop (each blocks on disk) */
+typedef struct { char *recent; char *stats; } HistoryRes;
+static void history_res_free(gpointer p) {
+  HistoryRes *r = p; g_free(r->recent); g_free(r->stats); g_free(r);
+}
+static void history_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)c;
+  HistoryRes *r = data;
+  char *rc = DZHistoryRecentJSON(100);      /* newest 100 entries */
+  r->recent = g_strdup(rc ? rc : "[]");
+  if (rc) DZFree(rc);
+  char *st = DZHistoryStatsJSON(30);        /* stats over the last 30 days */
+  r->stats = g_strdup(st ? st : "{}");
+  if (st) DZFree(st);
+  g_task_return_boolean(task, TRUE);
+}
+static void history_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)data;
+  HistoryRes *r = g_task_get_task_data(G_TASK(res)); /* freed with the task */
+  (void)g_task_propagate_boolean(G_TASK(res), NULL);
+  history_populate(APP, r->recent, r->stats);
+}
+static void load_history_async(App *a) {
+  (void)a;
+  HistoryRes *r = g_new0(HistoryRes, 1);
+  GTask *t = g_task_new(NULL, NULL, history_done, NULL);
+  g_task_set_task_data(t, r, history_res_free);
+  g_task_run_in_thread(t, history_worker);
+  g_object_unref(t);
+}
+
+static void show_history(App *a) {
+  if (a->content_stack) gtk_stack_set_visible_child_name(a->content_stack, "history");
+}
+
+/* build_history_view: create the scrolled window + inner box (called once in
+ * on_activate; content is rebuilt by history_populate on every navigation). */
+static GtkWidget *build_history_view(App *a) {
+  a->history_tracks = g_ptr_array_new_with_free_func(g_object_unref);
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_vexpand(scroll, TRUE);
+  a->history_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_top(a->history_box, 16);
+  gtk_widget_set_margin_bottom(a->history_box, 24);
+  gtk_widget_set_margin_start(a->history_box, 16);
+  gtk_widget_set_margin_end(a->history_box, 16);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), a->history_box);
   return scroll;
 }
 
@@ -4822,6 +5350,26 @@ static gboolean tick(gpointer data) {
     mpris_notify_status(a, st);
   }
 
+  /* Engine-owned auto-advance: once the queue is mirrored (DZQueueSet) and the
+   * cursor aligned (DZQueueSetIndex), the engine advances the synced queue on a
+   * natural finish, a gapless promote, or a remote /next|/prev — and stops
+   * bumping DZFinishedCount for those. Follow the engine cursor so our pointer,
+   * selection and now-playing bar track the audible row without a redundant
+   * DZPlay (the engine already started it). Manual plays keep both cursors in
+   * lockstep, so this no-ops for them; it's inert when routed to a remote. */
+  if (a->queue_synced && !a->playing_episode) {
+    int qi = DZQueueIndex();
+    guint qn = g_list_model_get_n_items(G_LIST_MODEL(a->track_store));
+    if (qi >= 0 && (guint)qi < qn && qi != a->current_index) {
+      a->current_index = qi;
+      DzTrack *qt = g_list_model_get_item(G_LIST_MODEL(a->track_store), qi);
+      if (qt) { update_now_playing_ui(a, qt, qi); g_object_unref(qt); }
+      a->preloaded_index = -1;
+      maybe_preload_next(a);              /* keep gapless warm for the next hop */
+      a->last_finished = DZFinishedCount(); /* engine owned this finish — don't re-advance below */
+    }
+  }
+
   int fin = DZFinishedCount(); /* monotonic, +1 when a track ends naturally */
   if (fin != a->last_finished) {
     a->last_finished = fin;
@@ -5167,6 +5715,7 @@ static void load_account(App *a) {
     if ((a->quality >= 2 && !a->can_hifi) || (a->quality >= 1 && !a->can_hq))
       toast(a, _("Selected quality is above your plan"));
   }
+  update_list_dl_button(a); /* premium is now known — reveal Download on an album/playlist page */
 }
 
 /* DZInit blocks on the network, so it runs on a worker. `persist` is set for the
@@ -5273,7 +5822,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
   adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(about), "OpenDeezer");
   adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(about), "org.opendeezer.OpenDeezer");
   adw_about_dialog_set_developer_name(ADW_ABOUT_DIALOG(about), "Cycl0o0");
-  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "2.2.0");
+  adw_about_dialog_set_version(ADW_ABOUT_DIALOG(about), "2.2.1");
   adw_about_dialog_set_comments(ADW_ABOUT_DIALOG(about), comments);
   adw_about_dialog_set_license_type(ADW_ABOUT_DIALOG(about), GTK_LICENSE_AGPL_3_0);
   adw_about_dialog_set_copyright(ADW_ABOUT_DIALOG(about), "© Cycl0o0");
@@ -5284,7 +5833,7 @@ static void on_about(GSimpleAction *action, GVariant *param, gpointer data) {
       "application-name", "OpenDeezer",
       "application-icon", "org.opendeezer.OpenDeezer",
       "developer-name", "Cycl0o0",
-      "version", "2.2.0",
+      "version", "2.2.1",
       "comments", comments,
       "license-type", GTK_LICENSE_AGPL_3_0,
       "copyright", "© Cycl0o0",
@@ -5789,6 +6338,10 @@ static GtkWidget *build_sidebar(App *a) {
       make_side_row(_("Charts"), "", "view-sort-descending-symbolic", ROW_CHARTS, ""));
   gtk_list_box_append(a->sidebar,
       make_side_row(_("Podcasts"), "", "audio-x-generic-symbolic", ROW_PODCASTS, ""));
+  /* appended AFTER Podcasts so the home quick-pick sidebar indices (Home=0 …
+   * Podcasts=4) stay valid; Recently played is index 5 */
+  gtk_list_box_append(a->sidebar,
+      make_side_row(_("Recently played"), "", "document-open-recent-symbolic", ROW_HISTORY, ""));
 
   GtkWidget *scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), GTK_WIDGET(a->sidebar));
@@ -5938,6 +6491,14 @@ static void on_activate(GApplication *app, gpointer data) {
   GtkText *search_text = GTK_TEXT(gtk_editable_get_delegate(GTK_EDITABLE(search)));
   g_signal_connect(search_text, "activate", G_CALLBACK(on_search_activate), a);
   adw_header_bar_set_title_widget(ADW_HEADER_BAR(content_hb), search);
+  /* Download-this-list button — hidden except on an album/playlist page for a
+   * Premium account (update_list_dl_button); saves the whole album/playlist. */
+  a->list_dl_btn = gtk_button_new_from_icon_name("folder-download-symbolic");
+  gtk_widget_set_tooltip_text(a->list_dl_btn, _("Download album"));
+  gtk_widget_set_visible(a->list_dl_btn, FALSE);
+  a->list_kind = -1;
+  g_signal_connect(a->list_dl_btn, "clicked", G_CALLBACK(on_list_download_clicked), a);
+  adw_header_bar_pack_end(ADW_HEADER_BAR(content_hb), a->list_dl_btn);
   adw_toolbar_view_add_top_bar(content_tv, content_hb);
   /* update-available banner: hidden until check_update_async (below) finds a
    * newer release; sits under the header, above the content stack */
@@ -5949,9 +6510,10 @@ static void on_activate(GApplication *app, gpointer data) {
   /* content stack: home discovery page, track table (queue), or sectioned browse view */
   GtkWidget *stack = gtk_stack_new();
   a->content_stack = GTK_STACK(stack);
-  gtk_stack_add_named(GTK_STACK(stack), build_home_view(a),   "home");
-  gtk_stack_add_named(GTK_STACK(stack), build_track_view(a),  "tracks");
-  gtk_stack_add_named(GTK_STACK(stack), build_browse_view(a), "browse");
+  gtk_stack_add_named(GTK_STACK(stack), build_home_view(a),    "home");
+  gtk_stack_add_named(GTK_STACK(stack), build_track_view(a),   "tracks");
+  gtk_stack_add_named(GTK_STACK(stack), build_browse_view(a),  "browse");
+  gtk_stack_add_named(GTK_STACK(stack), build_history_view(a), "history");
   adw_toolbar_view_set_content(content_tv, stack);
   adw_toolbar_view_add_bottom_bar(content_tv, build_now_playing(a));
 

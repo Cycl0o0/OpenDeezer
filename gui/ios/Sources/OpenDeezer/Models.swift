@@ -317,3 +317,52 @@ struct EQState: Decodable {
 enum PlayerState: Int {
     case stopped = 0, loading, playing, paused, errored
 }
+
+// MARK: - Listening history (machine-local)
+
+// One listened-to track from the local history log (OdmobileHistoryRecentJSON —
+// tagged lowerCamelCase, same shape the control API's /history/recent serves).
+struct HistoryEntry: Decodable, Hashable, Identifiable {
+    let trackId: String
+    let title: String
+    let artist: String
+    let album: String?
+    let startedAt: Int64        // unix seconds
+    let durationPlayedSec: Int64 // seconds actually listened
+
+    // Distinct rows even when the same track appears multiple times.
+    var id: String { "\(trackId)-\(startedAt)" }
+
+    /// Adapt a history row to a Track so it can flow through the normal player
+    /// queue (duration is unknown here — the engine resolves the real one).
+    var asTrack: Track {
+        Track(id: trackId, name: title, durationMs: 0, artistLine: artist, albumName: album ?? "")
+    }
+}
+
+// Aggregated listening stats (OdmobileHistoryStatsJSON — tagged lowerCamelCase).
+struct HistoryTrackStat: Decodable, Hashable, Identifiable {
+    let trackId: String
+    let title: String
+    let artist: String
+    let plays: Int
+    let totalSec: Int64
+    var id: String { trackId }
+
+    var asTrack: Track {
+        Track(id: trackId, name: title, durationMs: 0, artistLine: artist)
+    }
+}
+
+struct HistoryArtistStat: Decodable, Hashable, Identifiable {
+    let artist: String
+    let plays: Int
+    let totalSec: Int64
+    var id: String { artist }
+}
+
+struct HistoryStats: Decodable {
+    let topTracks: [HistoryTrackStat]
+    let topArtists: [HistoryArtistStat]
+    let totalSeconds: Int64
+}

@@ -198,6 +198,9 @@ public sealed partial class MainWindow : Window
         _playlistsItem = NavItem(Loc.S("Nav_Playlists"), Symbol.List, "playlists");
         _chartsItem = NavItem(Loc.S("Nav_Charts"), Symbol.World, "charts");
         _podcastsItem = NavItem(Loc.S("Nav_Podcasts"), Symbol.Microphone, "podcasts");
+        // Recently played + listening stats (machine-local history). Symbol has no
+        // "history" member, so use the Segoe MDL2 History glyph directly.
+        _recentItem = new NavigationViewItem { Content = Loc.S("Nav_Recent"), Icon = new FontIcon { Glyph = "" }, Tag = "recent" };
         _searchItem = NavItem(Loc.S("Nav_Search"), Symbol.Find, "search");
         _nav.MenuItems.Add(_homeItem);
         _nav.MenuItems.Add(_likedItem);
@@ -205,6 +208,7 @@ public sealed partial class MainWindow : Window
         _nav.MenuItems.Add(_playlistsItem);
         _nav.MenuItems.Add(_chartsItem);
         _nav.MenuItems.Add(_podcastsItem);
+        _nav.MenuItems.Add(_recentItem);
         _nav.MenuItems.Add(_searchItem);
 
         // Account: re-open the login chooser to re-auth / switch accounts; handled
@@ -223,10 +227,28 @@ public sealed partial class MainWindow : Window
 
     private void BuildPages()
     {
-        // Liked / playlist-detail track list (reused for both)
+        // Liked / playlist-detail track list (reused for liked/flow/album/playlist/
+        // podcast/radio). Wrapped in a grid with an optional context action bar that
+        // reveals "Download album/playlist" only on an album or playlist view.
         _trackList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
         _trackList.ItemClick += OnTrackClick;
-        _tracksPage = _trackList;
+        {
+            var tg = new Grid { RowSpacing = 8, Padding = new Thickness(4) };
+            tg.RowDefinitions.Add(RowAuto());
+            tg.RowDefinitions.Add(RowStar());
+            _tracksActionBar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Visibility = Visibility.Collapsed };
+            _tracksDownloadBtn = new Button();
+            var dc = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            dc.Children.Add(new FontIcon { Glyph = "", FontSize = 14 }); // Download
+            _tracksDownloadLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+            dc.Children.Add(_tracksDownloadLabel);
+            _tracksDownloadBtn.Content = dc;
+            _tracksDownloadBtn.Click += OnDownloadCollection;
+            _tracksActionBar.Children.Add(_tracksDownloadBtn);
+            Grid.SetRow(_tracksActionBar, 0); tg.Children.Add(_tracksActionBar);
+            Grid.SetRow(_trackList, 1); tg.Children.Add(_trackList);
+            _tracksPage = tg;
+        }
 
         // Playlists page: a "New Playlist" toolbar over the grid. Rename / delete
         // live on each tile's right-click context menu (built in FillPlaylistGrid).
@@ -291,6 +313,47 @@ public sealed partial class MainWindow : Window
         BuildLyricsPage();
         BuildChartsPage();
         BuildPodcastPage();
+        BuildRecentPage();
+    }
+
+    // Recently played + listening stats: a scrolling column of the machine-local
+    // history (recent plays + top tracks/artists over 30 days + total time). Inner
+    // lists don't scroll; the outer ScrollViewer does (like Charts).
+    private void BuildRecentPage()
+    {
+        _recentScroll = new ScrollViewer
+        {
+            Padding = new Thickness(16, 12, 16, 16),
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        var col = new StackPanel { Spacing = 8 };
+
+        _recentTotalText = new TextBlock { FontSize = 14, Opacity = 0.8, TextWrapping = TextWrapping.Wrap };
+        col.Children.Add(_recentTotalText);
+
+        col.Children.Add(Section(Loc.S("Section_RecentlyPlayed")));
+        _recentList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
+        _recentList.ItemClick += OnRecentTrackClick;
+        NoInnerScroll(_recentList);
+        col.Children.Add(_recentList);
+
+        col.Children.Add(Section(Loc.S("Section_TopTracks")));
+        _recentTopTracksList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
+        _recentTopTracksList.ItemClick += OnRecentTopTrackClick;
+        NoInnerScroll(_recentTopTracksList);
+        col.Children.Add(_recentTopTracksList);
+
+        col.Children.Add(Section(Loc.S("Section_TopArtists")));
+        _recentTopArtistsList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = false };
+        NoInnerScroll(_recentTopArtistsList);
+        col.Children.Add(_recentTopArtistsList);
+
+        _recentEmpty = new TextBlock { Text = Loc.S("Recent_Empty"), Opacity = 0.7, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        col.Children.Add(_recentEmpty);
+
+        _recentScroll.Content = col;
+        _recentPage = _recentScroll;
     }
 
     private static TextBlock Section(string text) =>
@@ -475,6 +538,15 @@ public sealed partial class MainWindow : Window
         col.Children.Add(_artistHeader);
         _artistFans = new TextBlock { Opacity = 0.6 };
         col.Children.Add(_artistFans);
+
+        // Start radio: an "artist radio" mix seeded from this artist.
+        _artistRadioBtn = new Button { Margin = new Thickness(0, 4, 0, 0) };
+        var arc = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        arc.Children.Add(new FontIcon { Glyph = "", FontSize = 14 }); // Play
+        arc.Children.Add(new TextBlock { Text = Loc.S("Menu_StartRadio"), VerticalAlignment = VerticalAlignment.Center });
+        _artistRadioBtn.Content = arc;
+        _artistRadioBtn.Click += (_, _) => StartArtistRadio(_artistId);
+        col.Children.Add(_artistRadioBtn);
 
         col.Children.Add(Section(Loc.S("Section_TopTracks")));
         _artistTopList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
@@ -700,7 +772,11 @@ public sealed partial class MainWindow : Window
             like.Click += OnRowLike;
             var add = new MenuFlyoutItem { Text = Loc.S("Menu_AddToPlaylist"), Tag = t.Id };
             add.Click += OnRowAddToPlaylist;
-            mf.Items.Add(like); mf.Items.Add(add);
+            // Start radio: a "song radio" mix seeded from this track (loads + plays
+            // through the same path as Flow).
+            var radio = new MenuFlyoutItem { Text = Loc.S("Menu_StartRadio"), Tag = t.Id };
+            radio.Click += OnRowStartRadio;
+            mf.Items.Add(like); mf.Items.Add(add); mf.Items.Add(radio);
             // Download (premium-only offline export). Disabled with an explanatory
             // tooltip for Free accounts, which the engine refuses anyway.
             var dl = new MenuFlyoutItem { Text = Loc.S("Menu_Download"), Tag = t.Id };
@@ -1100,6 +1176,7 @@ public sealed partial class MainWindow : Window
             case "charts": nav.Header = Loc.S("Nav_Charts"); nav.Content = _chartsPage; LoadCharts(); break;
             case "playlists": nav.Header = Loc.S("Nav_Playlists"); nav.Content = _playlistsPage; LoadPlaylists(); break;
             case "podcasts": nav.Header = Loc.S("Nav_Podcasts"); nav.Content = _podcastPage; _podcastBox.Focus(FocusState.Programmatic); break;
+            case "recent": nav.Header = Loc.S("Nav_Recent"); nav.Content = _recentPage; LoadRecent(); break;
             case "search": nav.Header = Loc.S("Nav_Search"); nav.Content = _searchPage; _searchBox.Focus(FocusState.Programmatic); break;
         }
     }
@@ -1108,6 +1185,7 @@ public sealed partial class MainWindow : Window
     private async void LoadFavorites()
     {
         if (!_loggedIn) return;
+        SetCollectionContext(CollectionKind.None, "");
         int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.Favorites());
         if (gen != _browseGen) return; // a newer navigation superseded this one
@@ -1140,6 +1218,7 @@ public sealed partial class MainWindow : Window
     private async void LoadFlow()
     {
         if (!_loggedIn) return;
+        SetCollectionContext(CollectionKind.None, "");
         int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.Flow());
         if (gen != _browseGen) return; // a newer navigation superseded this one
@@ -1195,6 +1274,7 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false;
         _nav.Header = p.Name;
         _nav.Content = _tracksPage;
+        SetCollectionContext(CollectionKind.Playlist, p.Id);
         int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.PlaylistTracks(p.Id));
         if (gen != _browseGen) return; // a newer navigation superseded this one
@@ -1208,6 +1288,7 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false;
         _nav.Header = a.Name;
         _nav.Content = _tracksPage;
+        SetCollectionContext(CollectionKind.Album, a.Id);
         int gen = ++_browseGen;
         var tracks = await Task.Run(() => DeezerCore.AlbumTracks(a.Id));
         if (gen != _browseGen) return; // a newer navigation superseded this one
@@ -1251,6 +1332,7 @@ public sealed partial class MainWindow : Window
         _lyricsShown = false;
         _nav.Header = pod.Name;
         _nav.Content = _tracksPage;
+        SetCollectionContext(CollectionKind.None, ""); // episodes aren't a downloadable collection
         int gen = ++_browseGen;
         var eps = await Task.Run(() => Wire.ParseEpisodes(DeezerCore.TakeJson(DeezerCore.DZPodcastEpisodesJSON(pod.Id))));
         if (gen != _browseGen) return; // a newer navigation superseded this one
@@ -1277,6 +1359,7 @@ public sealed partial class MainWindow : Window
     private async void OpenArtist(string artistId)
     {
         if (!_loggedIn || string.IsNullOrEmpty(artistId)) return;
+        _artistId = artistId; // seed for the artist-radio button
         _lyricsShown = false;
         _nav.Header = Loc.S("Nav_Artist");
         _nav.Content = _artistPage;
@@ -1594,6 +1677,152 @@ public sealed partial class MainWindow : Window
         else
             _ = ShowMessage(Loc.S("Dialog_DownloadFailTitle"), string.IsNullOrEmpty(err) ? Loc.S("Dialog_DownloadFailBody") : err);
     }
+
+    // ---- radio (song / artist mixes -> the shared Flow path) -----------------
+    private void OnRowStartRadio(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is string id && !string.IsNullOrEmpty(id)) StartTrackRadio(id);
+    }
+    private async void StartTrackRadio(string id)
+    {
+        if (!_loggedIn || string.IsNullOrEmpty(id)) return;
+        int gen = ++_browseGen;
+        var tracks = await Task.Run(() => DeezerCore.TrackMix(id));
+        if (gen != _browseGen) return; // superseded by a newer navigation
+        LoadRadioResult(Loc.S("Radio_SongHeader"), tracks);
+    }
+    private async void StartArtistRadio(string artistId)
+    {
+        if (!_loggedIn || string.IsNullOrEmpty(artistId)) return;
+        int gen = ++_browseGen;
+        var tracks = await Task.Run(() => DeezerCore.ArtistMix(artistId));
+        if (gen != _browseGen) return;
+        LoadRadioResult(Loc.S("Radio_ArtistHeader"), tracks);
+    }
+    // Shared: show the mix in the track list and auto-play its head, like Flow.
+    private void LoadRadioResult(string header, List<Track> tracks)
+    {
+        if (tracks.Count == 0) { _ = ShowMessage(Loc.S("Dialog_RadioFailTitle"), Loc.S("Dialog_RadioFailBody")); return; }
+        _lyricsShown = false;
+        _nav.Header = header;
+        _nav.Content = _tracksPage;
+        SetCollectionContext(CollectionKind.None, ""); // a mix isn't a downloadable collection
+        _tracks = tracks;
+        _artGen++;
+        FillTrackList(_trackList, _tracks);
+        PlayFrom(_tracks, 0);
+    }
+
+    // ---- recently played + listening stats (machine-local history) -----------
+    private async void LoadRecent()
+    {
+        if (!_loggedIn) return;
+        int gen = ++_browseGen;
+        var (recent, stats) = await Task.Run(() => (DeezerCore.HistoryRecent(100), DeezerCore.HistoryStats(30)));
+        if (gen != _browseGen) return; // superseded by a newer navigation
+        _recentTracks = recent;
+        _recentTopTracks = stats.TopTracks;
+        _artGen++; // recent/stat rows carry no artwork, but keep the token monotonic
+
+        // Total listening time over the last 30 days (hours + minutes).
+        long sec = stats.TotalSeconds < 0 ? 0 : stats.TotalSeconds;
+        _recentTotalText.Text = Loc.Format("Recent_ListenTimeFormat", sec / 3600, (sec % 3600) / 60);
+
+        FillTrackList(_recentList, _recentTracks);
+
+        // Top tracks: reuse the track-row factory (id-playable). The play count is
+        // folded into the artist line since the row has no dedicated stat column.
+        _recentTopTracksList.Items.Clear();
+        for (int i = 0; i < _recentTopTracks.Count; i++)
+        {
+            var ts = _recentTopTracks[i];
+            string playsText = Loc.Plural("Plays", ts.Plays);
+            _recentTopTracksList.Items.Add(MakeTrackRow(new Track
+            {
+                Id = ts.TrackId,
+                Name = ts.Title,
+                ArtistLine = string.IsNullOrEmpty(ts.Artist) ? playsText : ts.Artist + "  ·  " + playsText,
+            }, i));
+        }
+
+        // Top artists: a simple non-playable label row (artist + play count).
+        _recentTopArtistsList.Items.Clear();
+        foreach (var a in stats.TopArtists)
+        {
+            var g = new Grid { Padding = new Thickness(6, 4, 6, 4), ColumnSpacing = 12 };
+            g.ColumnDefinitions.Add(ColStar());
+            g.ColumnDefinitions.Add(ColAuto());
+            var name = new TextBlock { Text = a.Artist, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
+            Grid.SetColumn(name, 0); g.Children.Add(name);
+            var plays = new TextBlock { Text = Loc.Plural("Plays", a.Plays), Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(plays, 1); g.Children.Add(plays);
+            _recentTopArtistsList.Items.Add(g);
+        }
+
+        _recentEmpty.Visibility = (_recentTracks.Count == 0 && _recentTopTracks.Count == 0 && stats.TopArtists.Count == 0)
+            ? Visibility.Visible : Visibility.Collapsed;
+        try { _recentScroll.ChangeView(null, 0.0, null); } catch { }
+    }
+    private void OnRecentTrackClick(object s, ItemClickEventArgs e) { int i = TagIndex(e.ClickedItem); if (i >= 0 && i < _recentTracks.Count) PlayFrom(_recentTracks, i); }
+    private void OnRecentTopTrackClick(object s, ItemClickEventArgs e)
+    {
+        int i = TagIndex(e.ClickedItem);
+        if (i < 0 || i >= _recentTopTracks.Count) return;
+        var ts = _recentTopTracks[i];
+        PlayFrom(new List<Track> { new Track { Id = ts.TrackId, Name = ts.Title, ArtistLine = ts.Artist } }, 0);
+    }
+
+    // ---- download an album / playlist (PREMIUM-only batch export) ------------
+    // The action bar over the shared track list carries the current collection
+    // context so "Download album/playlist" knows what to fetch.
+    private enum CollectionKind { None, Album, Playlist }
+    private void SetCollectionContext(CollectionKind kind, string id)
+    {
+        _collectionKind = kind;
+        _collectionId = id;
+        if (_tracksActionBar == null) return;
+        if (kind == CollectionKind.None || string.IsNullOrEmpty(id))
+        {
+            _tracksActionBar.Visibility = Visibility.Collapsed;
+            return;
+        }
+        _tracksActionBar.Visibility = Visibility.Visible;
+        _tracksDownloadLabel.Text = kind == CollectionKind.Album ? Loc.S("Btn_DownloadAlbum") : Loc.S("Btn_DownloadPlaylist");
+        // Premium-gate exactly like the single-track download.
+        _tracksDownloadBtn.IsEnabled = _account.Premium;
+        ToolTipService.SetToolTip(_tracksDownloadBtn, _account.Premium ? null : Loc.S("Menu_DownloadRequiresPremium"));
+    }
+    private async void OnDownloadCollection(object sender, RoutedEventArgs e)
+    {
+        var kind = _collectionKind;
+        string id = _collectionId;
+        if (kind == CollectionKind.None || string.IsNullOrEmpty(id)) return;
+        if (!_account.Premium) { _ = ShowMessage(Loc.S("Dialog_DownloadFailTitle"), Loc.S("Menu_DownloadRequiresPremium")); return; }
+        // Busy state: the batch download blocks (per-track network + decrypt).
+        _tracksDownloadBtn.IsEnabled = false;
+        string prevText = _tracksDownloadLabel.Text;
+        _tracksDownloadLabel.Text = Loc.S("Status_Downloading");
+        string json = await Task.Run(() => DeezerCore.TakeJson(
+            kind == CollectionKind.Album ? DeezerCore.DZDownloadAlbum(id) : DeezerCore.DZDownloadPlaylist(id)));
+        _tracksDownloadLabel.Text = prevText;
+        _tracksDownloadBtn.IsEnabled = _account.Premium;
+        long saved = 0, failed = 0; string dir = "", err = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrEmpty(json) ? "{}" : json);
+            var o = doc.RootElement;
+            saved = o.Num("saved");
+            failed = o.Num("failed");
+            dir = o.Str("dir");
+            err = o.Str("error");
+        }
+        catch { }
+        if (saved > 0)
+            _ = ShowMessage(Loc.S("Dialog_DownloadDoneTitle"), Loc.Format("Dialog_DownloadBatchDoneFormat", saved, failed, dir));
+        else
+            _ = ShowMessage(Loc.S("Dialog_DownloadFailTitle"), string.IsNullOrEmpty(err) ? Loc.S("Dialog_DownloadFailBody") : err);
+    }
+
     private void OnAddCurrentToPlaylist(object s, RoutedEventArgs e)
     {
         string id = CurrentTrackId();
@@ -1711,6 +1940,7 @@ public sealed partial class MainWindow : Window
     {
         _queue = new List<Track>(list);
         _queueIndex = index;
+        SyncEngineQueueSet(); // mirror the new queue + cursor into the engine
         PlayCurrent();
     }
     private void PlayCurrent()
@@ -1758,6 +1988,82 @@ public sealed partial class MainWindow : Window
             DeezerCore.DZPreload(id, dur);
         }, TaskScheduler.Default);
     }
+
+    // ---- engine queue sync (GUI queue -> engine) -----------------------------
+    // Mirror the GUI queue into the engine so remote controllers see it on /status
+    // and the engine can own natural-finish auto-advance (its AdvanceAuto honors
+    // DZSetRepeat / DZSetShuffle, which the transport already pushes). Once the
+    // cursor is aligned the engine drives finishes itself and DZFinishedCount stops
+    // bumping for them -- OnTick polls DZQueueIndex to keep _queueIndex aligned.
+    // Podcast-episode queues are NOT mirrored: the engine's advance resolves
+    // through the music-stream path, not DZPlayEpisode, so an episode queue clears
+    // the engine queue and keeps the GUI's own DZFinishedCount-driven advance.
+    private static bool IsEpisodeQueue(List<Track> q)
+    {
+        foreach (var t in q) if (t.IsEpisode) return true;
+        return false;
+    }
+    private static string BuildQueueJson(List<Track> q)
+    {
+        var arr = new JsonArray();
+        foreach (var t in q)
+        {
+            var artists = new JsonArray();
+            if (!string.IsNullOrEmpty(t.ArtistId) || !string.IsNullOrEmpty(t.ArtistLine))
+                artists.Add(new JsonObject { ["id"] = t.ArtistId, ["name"] = t.ArtistLine });
+            arr.Add(new JsonObject
+            {
+                ["id"] = t.Id,
+                ["name"] = t.Name,
+                ["durationMs"] = t.DurationMs,
+                ["artistLine"] = t.ArtistLine,
+                ["artistId"] = t.ArtistId,
+                ["artists"] = artists,
+                ["albumName"] = t.AlbumName,
+                ["artworkUrl"] = t.ArtworkUrl,
+                ["explicit"] = t.IsExplicit,
+            });
+        }
+        return arr.ToJsonString();
+    }
+    // (Re)build: replace the engine queue + align the cursor. The index push is
+    // gen-guarded so a later cursor move wins even if the tasks finish out of order.
+    private async void SyncEngineQueueSet()
+    {
+        bool episode = IsEpisodeQueue(_queue);
+        _queueSynced = !episode && _queue.Count > 0;
+        string json = episode ? "[]" : BuildQueueJson(_queue);
+        int idx = _queueIndex;
+        int gen = ++_queueSyncIndexGen;
+        _queueSyncPending++;
+        try
+        {
+            await Task.Run(() =>
+            {
+                DeezerCore.DZQueueSet(json); // always: replace the engine queue content
+                if (!episode && idx >= 0 && gen == Volatile.Read(ref _queueSyncIndexGen))
+                    DeezerCore.DZQueueSetIndex(idx);
+            });
+        }
+        finally { _queueSyncPending--; }
+    }
+    // Cursor-only: align the engine cursor to the GUI's playing row (music only).
+    private async void SyncEngineQueueIndex()
+    {
+        if (!_queueSynced || _queueIndex < 0) return;
+        int idx = _queueIndex;
+        int gen = ++_queueSyncIndexGen;
+        _queueSyncPending++;
+        try
+        {
+            await Task.Run(() =>
+            {
+                if (gen != Volatile.Read(ref _queueSyncIndexGen)) return; // superseded by a newer move
+                DeezerCore.DZQueueSetIndex(idx);
+            });
+        }
+        finally { _queueSyncPending--; }
+    }
     // The next queue index when advance is deterministic (mirrors Next()'s ordering).
     private bool HasDeterministicNext(out int outIndex)
     {
@@ -1787,6 +2093,7 @@ public sealed partial class MainWindow : Window
         _durText.Text = Wire.TimeText(t.DurationMs);
         if (_settings.Gapless && !t.IsEpisode && HasDeterministicNext(out int n2))
             DispatchPreload(_queue[n2].Id, _queue[n2].DurationMs);
+        SyncEngineQueueIndex(); // keep the engine cursor on the promoted row
     }
     private void SetNowPlaying(Track t)
     {
@@ -1820,12 +2127,14 @@ public sealed partial class MainWindow : Window
         else if (_repeat == 1) { _queueIndex = 0; }
         else { return; }
         PlayCurrent();
+        SyncEngineQueueIndex(); // realign the engine cursor to the new row
     }
     private void Prev()
     {
         if (_queue.Count == 0) return;
         if (_queueIndex > 0) --_queueIndex;
         PlayCurrent();
+        SyncEngineQueueIndex();
     }
     // Off-thread like every other blocking DZ* call: when routed over Connect these
     // forward over HTTP (15 s timeout), so they must never run on the dispatcher.
@@ -1983,19 +2292,21 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        // Keep the now-playing bar in sync with the engine's actual track (local
-        // control-API plays AND, when routed over Connect, the remote device's
-        // track). Adopt only on a genuine engine-side transition to a real track
-        // not already shown.
+        // Keep the now-playing bar + queue cursor in sync with the engine's actual
+        // track. (a) local control-API plays and, over Connect, the remote device's
+        // track refresh the bar; (b) when the GUI synced its queue, the engine owns
+        // natural-finish advance (DZFinishedCount does NOT bump for those) -> follow
+        // its cursor so manual Next/Prev + gapless preload arming stay aligned.
         {
             string json = DeezerCore.NowPlaying();
+            string npid = "";
             try
             {
                 using var doc = JsonDocument.Parse(string.IsNullOrEmpty(json) ? "{}" : json);
                 var obj = doc.RootElement;
                 if (obj.ValueKind == JsonValueKind.Object)
                 {
-                    string npid = obj.Str("id");
+                    npid = obj.Str("id");
                     if (!string.IsNullOrEmpty(npid))
                     {
                         bool changed = npid != _engineNowId;
@@ -2006,6 +2317,22 @@ public sealed partial class MainWindow : Window
                 }
             }
             catch { }
+
+            // Engine-owned queue advance: adopt the engine cursor when it moved on
+            // its own (a natural finish, or a remote controller's next/prev). Skipped
+            // while a local queue push is in flight (its not-yet-applied cursor would
+            // misfire), and only when the engine's current track matches that queue
+            // row (so a remote content edit can't point the pointer at a stale slot).
+            if (_queueSynced && _queueSyncPending == 0 && !string.IsNullOrEmpty(npid))
+            {
+                int eidx = DeezerCore.DZQueueIndex();
+                if (eidx >= 0 && eidx < _queue.Count && eidx != _queueIndex && _queue[eidx].Id == npid)
+                {
+                    _queueIndex = eidx;
+                    if (_settings.Gapless && HasDeterministicNext(out int gn))
+                        DispatchPreload(_queue[gn].Id, _queue[gn].DurationMs);
+                }
+            }
         }
     }
 
@@ -2251,14 +2578,14 @@ public sealed partial class MainWindow : Window
     private async void ShowSettings()
     {
         // Output devices + current engine audio state read off the UI thread.
-        var (devJson, curDev, curGapless, curCrossfade, ctrlJson, slpActive, slpEot, slpRemMs, ddir) = await Task.Run(() =>
+        var (devJson, curDev, curGapless, curCrossfade, ctrlJson, slpActive, slpEot, slpRemMs, ddir, curCacheMB) = await Task.Run(() =>
         {
             string dj = DeezerCore.TakeJson(DeezerCore.DZAudioDevicesJSON());
             string cd = DeezerCore.CurrentAudioDevice();
             string cj = DeezerCore.ControlConfig();
             return (dj, cd, DeezerCore.DZGapless() != 0, DeezerCore.DZCrossfadeMS(), cj,
                     DeezerCore.DZSleepTimerActive() != 0, DeezerCore.DZSleepTimerEndOfTrack() != 0, DeezerCore.DZSleepTimerRemainingMS(),
-                    DeezerCore.DownloadDir());
+                    DeezerCore.DownloadDir(), DeezerCore.MediaCacheMB());
         });
         var devices = Wire.ParseDevices(devJson);
 
@@ -2431,6 +2758,24 @@ public sealed partial class MainWindow : Window
         dlsec.Children.Add(new TextBlock { Text = Loc.S("Settings_DownloadFolder"), FontWeight = FontWeights.SemiBold });
         dlsec.Children.Add(dlGrid);
 
+        // Stream cache: on-disk raw-stream cache budget in MB (0 = off). Engine state
+        // (media.json); the cache attaches to the player at startup, so a change only
+        // takes effect on the NEXT launch. Applied on Save.
+        var cacheBox = new NumberBox
+        {
+            Minimum = 0,
+            Maximum = 100000,
+            SmallChange = 50,
+            LargeChange = 500,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            Value = curCacheMB < 0 ? 0 : curCacheMB,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        var mcsec = new StackPanel { Spacing = 4 };
+        mcsec.Children.Add(new TextBlock { Text = Loc.S("Settings_StreamCache"), FontWeight = FontWeights.SemiBold });
+        mcsec.Children.Add(new TextBlock { Text = Loc.S("Settings_StreamCacheDesc"), Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+        mcsec.Children.Add(cacheBox);
+
         // Disable ads: Deezer Free ONLY (Premium has no ads). Engine-persisted state,
         // applied on Save. The disclaimer beneath spells out that this suppresses the
         // play reporting that credits artists and breaches Deezer's terms of use.
@@ -2567,6 +2912,7 @@ public sealed partial class MainWindow : Window
         sp.Children.Add(rsec);
         sp.Children.Add(tsec);
         sp.Children.Add(dlsec);
+        sp.Children.Add(mcsec);
         if (adsec != null) sp.Children.Add(adsec); // Free accounts only
         sp.Children.Add(rcsec);
         sp.Children.Add(lsec);
@@ -2616,6 +2962,13 @@ public sealed partial class MainWindow : Window
             // Skip when Browse already applied the same path.
             string dd = (dlBox.Text ?? "").Trim();
             if (dd != curDownloadDir) DeezerCore.SetDownloadDir(dd);
+
+            // Stream cache (MB): engine-side state (media.json). NaN -> 0. Applies on
+            // the next launch (the cache attaches to the player at startup).
+            double cacheVal = cacheBox.Value;
+            int cacheMB = double.IsNaN(cacheVal) ? 0 : (int)Math.Round(cacheVal);
+            if (cacheMB < 0) cacheMB = 0;
+            if (cacheMB != curCacheMB) DeezerCore.SetMediaCacheMB(cacheMB);
 
             // Disable-ads opt-out (Free accounts only; engine-persisted).
             if (adsCheck != null) DeezerCore.SetAdsDisabled(adsCheck.IsChecked == true);
@@ -2974,7 +3327,7 @@ public sealed partial class MainWindow : Window
     private async void ShowAbout()
     {
         var sp = new StackPanel { Spacing = 8 };
-        sp.Children.Add(new TextBlock { Text = "OpenDeezer 2.2.0", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
+        sp.Children.Add(new TextBlock { Text = "OpenDeezer 2.2.1", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = _accent }); // brand + version: not localized
         sp.Children.Add(new TextBlock { Text = Loc.S("About_Tagline"), TextWrapping = TextWrapping.Wrap });
         sp.Children.Add(new TextBlock
         {
@@ -3006,7 +3359,7 @@ public sealed partial class MainWindow : Window
 
     private NavigationView _nav = null!;
     private NavigationViewItem _homeItem = null!, _likedItem = null!, _flowItem = null!, _playlistsItem = null!, _chartsItem = null!,
-                               _podcastsItem = null!, _searchItem = null!, _accountItem = null!, _settingsItem = null!,
+                               _podcastsItem = null!, _recentItem = null!, _searchItem = null!, _accountItem = null!, _settingsItem = null!,
                                _phoneRemoteItem = null!, _aboutItem = null!;
     private NavigationViewItem? _lastContentItem; // null until the first content page is opened
 
@@ -3014,6 +3367,21 @@ public sealed partial class MainWindow : Window
     private ListView _trackList = null!, _searchTrackList = null!;
     private GridView _playlistGrid = null!, _searchGrid = null!;
     private TextBox _searchBox = null!;
+
+    // tracks-page context action bar (Download album/playlist over the shared list)
+    private StackPanel _tracksActionBar = null!;
+    private Button _tracksDownloadBtn = null!;
+    private TextBlock _tracksDownloadLabel = null!;
+    private CollectionKind _collectionKind = CollectionKind.None;
+    private string _collectionId = "";
+
+    // recent / listening-stats page
+    private UIElement _recentPage = null!;
+    private ScrollViewer _recentScroll = null!;
+    private TextBlock _recentTotalText = null!, _recentEmpty = null!;
+    private ListView _recentList = null!, _recentTopTracksList = null!, _recentTopArtistsList = null!;
+    private List<Track> _recentTracks = new();
+    private List<TrackStat> _recentTopTracks = new();
 
     // charts page
     private UIElement _chartsPage = null!;
@@ -3080,6 +3448,8 @@ public sealed partial class MainWindow : Window
     private UIElement _artistPage = null!;
     private ScrollViewer _artistScroll = null!;
     private TextBlock _artistHeader = null!, _artistFans = null!;
+    private Button _artistRadioBtn = null!;
+    private string _artistId = ""; // current artist (seeds the artist-radio button)
     private ListView _artistTopList = null!;
     private GridView _artistAlbumsGrid = null!, _artistRelatedGrid = null!;
     private List<Track> _artistTop = new();
@@ -3099,6 +3469,14 @@ public sealed partial class MainWindow : Window
     // play dispatch serialization (DispatchPlay/DispatchPreload)
     private Task _playChain = Task.CompletedTask;
     private int _playDispatchGen;
+
+    // engine queue sync (SyncEngineQueueSet/Index + the OnTick DZQueueIndex adopt).
+    // _queueSynced: the engine queue currently mirrors a non-episode _queue.
+    // _queueSyncPending: >0 while a set/index push is in flight (suppresses adopt).
+    // _queueSyncIndexGen: newest-cursor-wins guard for out-of-order index pushes.
+    private bool _queueSynced;
+    private int _queueSyncPending;
+    private int _queueSyncIndexGen;
 
     // seek/volume coalescing pumps (all flags touched on the UI thread only)
     private long _pendingSeekMs;

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -102,6 +103,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name), color = DeezerPurple) },
                 actions = {
+                    IconButton(onClick = { onNavigate(Routes.HISTORY) }) {
+                        Icon(Icons.Filled.History, contentDescription = stringResource(R.string.history_title))
+                    }
                     IconButton(onClick = onCast) {
                         Icon(
                             if (connected) Icons.Filled.CastConnected else Icons.Filled.Cast,

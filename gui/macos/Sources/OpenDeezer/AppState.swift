@@ -4,10 +4,15 @@ import AppKit
 
 // Section is the sidebar selection.
 enum Section: Hashable {
-    case home, liked, playlists, search, charts, flow, podcasts
+    case home, liked, playlists, search, charts, flow, podcasts, history
 }
 
 enum RepeatMode: Int { case off, all, one }
+
+// ListKind marks the shared track-list screen as a downloadable album or
+// playlist so the hero can offer a "Download album/playlist" action. nil for
+// Liked / Flow / Charts / radio (which aren't a single downloadable entity).
+enum ListKind: Equatable { case album, playlist }
 
 @MainActor
 final class AppState: ObservableObject {
@@ -58,6 +63,11 @@ final class AppState: ObservableObject {
     @Published var listIsLiked = true            // hero style: gradient vs artwork
     @Published var listHeroSymbol = "heart.fill" // glyph drawn on the gradient hero
     @Published var listSubtitle = ""
+    // When the track-list screen shows a downloadable album/playlist these carry
+    // its kind + id so the hero's "Download album/playlist" action targets it.
+    // Cleared (nil) for Liked / Flow / Charts / radio.
+    @Published var listDownloadKind: ListKind?
+    @Published var listDownloadID = ""
     @Published var playlists: [Playlist] = []
     @Published var searchTracks: [Track] = []
     @Published var searchAlbums: [Album] = []
@@ -86,6 +96,11 @@ final class AppState: ObservableObject {
     @Published var showCreatePlaylist = false
     @Published var renameTarget: Playlist?
     @Published var deleteTarget: Playlist?
+
+    // Recently played + listening stats (DZHistoryRecentJSON / DZHistoryStatsJSON).
+    @Published var historyEntries: [HistoryEntry] = []
+    @Published var historyStats: HistoryStats?
+    @Published var historyLoading = false
 
     // Podcasts browse.
     @Published var podcastQuery = ""
@@ -137,6 +152,12 @@ final class AppState: ObservableObject {
     // (the browsed list), so navigating the library never stops the music.
     private var queue: [Track] = []
     private var queueIndex = 0
+    // True once the queue has been mirrored into the engine (DZQueueSet). While
+    // set, the engine owns auto-advance for natural finishes (DZFinishedCount
+    // stops bumping for those) and tick() follows the engine's now-playing track
+    // back into queueIndex. Stays false until the first play(_:in:), so an app
+    // that never plays keeps the original app-owned advance behavior.
+    private var queueSynced = false
     private var lastFinished = 0
     private var lastState: PlayerState = .stopped
     private var timer: Timer?
@@ -372,6 +393,7 @@ final class AppState: ObservableObject {
         listArtwork = ""
         listIsLiked = true
         listHeroSymbol = "heart.fill"
+        listDownloadKind = nil          // Liked isn't a single downloadable entity
         busy = true
         Task.detached {
             let ts = Core.favorites()
@@ -396,6 +418,8 @@ final class AppState: ObservableObject {
         listArtwork = p.artworkUrl
         listIsLiked = false
         listSubtitle = p.owner.isEmpty ? L("Playlist") : Lf("Playlist · %@", p.owner)
+        listDownloadKind = .playlist    // enables the hero's "Download playlist"
+        listDownloadID = p.id
         runList { Core.playlistTracks(p.id) }
     }
     // Global charts: tracks drive the shared hero/track-list; albums, artists and
@@ -405,6 +429,7 @@ final class AppState: ObservableObject {
         listTitle = L("Charts")
         listIsLiked = false
         listSubtitle = L("Top worldwide")
+        listDownloadKind = nil
         busy = true
         Task.detached {
             let c = Core.charts()
@@ -427,6 +452,7 @@ final class AppState: ObservableObject {
         listIsLiked = true            // gradient hero
         listHeroSymbol = "infinity"
         listSubtitle = ""
+        listDownloadKind = nil        // Flow is an endless stream, not downloadable
         busy = true
         Task.detached {
             let ts = Core.flow()
@@ -448,7 +474,90 @@ final class AppState: ObservableObject {
         listArtwork = a.artworkUrl
         listIsLiked = false
         listSubtitle = a.artistLine.isEmpty ? L("Album") : Lf("Album · %@", a.artistLine)
+        listDownloadKind = .album       // enables the hero's "Download album"
+        listDownloadID = a.id
         runList { Core.albumTracks(a.id) }
+    }
+
+    // MARK: radio (v2.2)
+
+    // Start radio: fetch a track/artist "mix" (same {tracks:[…]} wire shape as
+    // Flow) then load + play it through the EXACT Flow code path (surface the
+    // mix in the shared track-list screen and play the first track).
+    func startTrackRadio(_ track: Track) {
+        beginRadio(title: Lf("%@ Radio", track.name), symbol: "dot.radiowaves.left.and.right",
+                   fetch: { [id = track.id] in Core.trackMix(id) })
+    }
+    func startArtistRadio(id: String, name: String) {
+        guard !id.isEmpty else { return }
+        beginRadio(title: Lf("%@ Radio", name), symbol: "dot.radiowaves.left.and.right",
+                   fetch: { Core.artistMix(id) })
+    }
+
+    // Shared radio launcher — mirrors loadFlow(): gradient-hero track-list screen
+    // that starts playing immediately once the mix loads.
+    private func beginRadio(title: String, symbol: String,
+                            fetch: @escaping @Sendable () -> [Track]) {
+        showArtist = false            // dismiss the artist sheet if it launched this
+        section = .flow               // routes to the shared TrackListScreen
+        listTitle = title
+        listArtwork = ""
+        listIsLiked = true            // gradient hero
+        listHeroSymbol = symbol
+        listSubtitle = ""
+        listDownloadKind = nil
+        busy = true
+        Task.detached {
+            let ts = fetch()
+            await MainActor.run {
+                self.tracks = ts
+                self.busy = false
+                if let first = ts.first {
+                    self.shuffle = false
+                    self.play(first, in: ts)
+                }
+            }
+        }
+    }
+
+    // MARK: recently played + stats (v2.2)
+
+    // Load the machine-local listening history (newest first) plus the 30-day
+    // stats summary off the main thread; both back the Recently-played screen.
+    func loadHistory() {
+        section = .history
+        listDownloadKind = nil
+        historyLoading = true
+        Task.detached {
+            let recent = Core.historyRecent(100)
+            let stats = Core.historyStats(sinceDays: 30)
+            await MainActor.run {
+                self.historyEntries = recent
+                self.historyStats = stats
+                self.historyLoading = false
+            }
+        }
+    }
+
+    // Play a recently-played row by track id. The history list is turned into a
+    // lightweight queue so next/prev walk it; the engine reports the real
+    // duration/format via tick() once playback starts.
+    func playHistory(_ entry: HistoryEntry) {
+        let list = historyEntries.map { h in
+            Track(id: h.trackId, name: h.title, durationMs: 0, artists: [],
+                  artistLine: h.artist, albumName: h.album ?? "",
+                  artworkUrl: "", explicit: false)
+        }
+        guard let t = list.first(where: { $0.id == entry.trackId }) else { return }
+        play(t, in: list)
+    }
+
+    // Play a top-track stat row by track id (single-track queue).
+    func playTrackStat(_ stat: TrackStat) {
+        guard !stat.trackId.isEmpty else { return }
+        let t = Track(id: stat.trackId, name: stat.title, durationMs: 0, artists: [],
+                      artistLine: stat.artist, albumName: "", artworkUrl: "", explicit: false)
+        play(t, in: [t])
     }
 
     // Play-all / shuffle-all from a hero header.
@@ -605,6 +714,34 @@ final class AppState: ObservableObject {
                     self.setDownloadStatus(Lf("Saved “%@”", name))
                 } else {
                     self.setDownloadStatus(res?.error ?? L("Download failed."))
+                }
+            }
+        }
+    }
+
+    // Download every track of the album/playlist currently shown in the
+    // track-list screen (listDownloadKind/listDownloadID). Blocking + premium-
+    // only like the single-track download, so it runs on a background queue and
+    // surfaces the batch {saved,failed,error} summary as a toast.
+    func downloadCurrentList() {
+        guard let kind = listDownloadKind, !listDownloadID.isEmpty else { return }
+        guard isPremium else {
+            setDownloadStatus(L("Requires a paid Deezer plan"))
+            return
+        }
+        let id = listDownloadID
+        setDownloadStatus(Lf("Downloading “%@”…", listTitle), autoDismiss: false)
+        Task.detached {
+            let js = kind == .album ? Core.downloadAlbum(id) : Core.downloadPlaylist(id)
+            let res = try? JSONDecoder().decode(BatchDownloadResult.self, from: Data(js.utf8))
+            await MainActor.run {
+                guard let res else { self.setDownloadStatus(L("Download failed.")); return }
+                if res.saved == 0, let err = res.error, !err.isEmpty {
+                    self.setDownloadStatus(err)
+                } else if res.failed > 0 {
+                    self.setDownloadStatus(Lf("Saved %1$d, %2$d failed", res.saved, res.failed))
+                } else {
+                    self.setDownloadStatus(Lp("Saved %d tracks", res.saved))
                 }
             }
         }
@@ -836,7 +973,33 @@ final class AppState: ObservableObject {
     func play(_ track: Track, in list: [Track]) {
         queue = list
         queueIndex = list.firstIndex(of: track) ?? 0
+        syncQueueToEngine()   // queue (re)built — mirror the whole queue + cursor
         playCurrent()
+    }
+
+    // MARK: engine queue sync (v2.2)
+
+    // Mirror the local play queue + cursor into the engine so remote /status
+    // shows the real queue, /next + /prev walk it, and the engine's gapless
+    // promote path tracks it. Additive: encoding failures / not-ready simply
+    // leave the engine queue untouched. Runs off the main thread (DZQueueSet is
+    // a blocking call when routed to a remote device).
+    private func syncQueueToEngine() {
+        let q = queue
+        let i = queueIndex
+        queueSynced = true
+        Task.detached {
+            Core.queueSet(q)
+            Core.queueSetIndex(i)
+        }
+    }
+
+    // Move only the engine cursor after an app-driven index change (next / prev /
+    // seamless advance). No-op until the queue has been mirrored at least once.
+    private func syncQueueIndexToEngine() {
+        guard queueSynced else { return }
+        let i = queueIndex
+        Task.detached { Core.queueSetIndex(i) }
     }
 
     private func playCurrent() {
@@ -913,12 +1076,14 @@ final class AppState: ObservableObject {
         } else if repeatMode == .all {
             queueIndex = 0
         } else { return }
+        syncQueueIndexToEngine()
         playCurrent()
     }
 
     func prev() {
         guard !queue.isEmpty else { return }
         if queueIndex > 0 { queueIndex -= 1 }
+        syncQueueIndexToEngine()
         playCurrent()
     }
 
@@ -1039,6 +1204,18 @@ final class AppState: ObservableObject {
             durationMs = np.durationMs
             lastState = s
             nowPlaying.update(track: np, state: s, positionMs: positionMs, durationMs: np.durationMs)
+            // Queue-sync follow: once the queue is mirrored, the engine owns
+            // auto-advance for natural finishes (DZFinishedCount won't bump for
+            // them). When it advances — a natural finish, gapless promote, or a
+            // remote next/prev — realign our cursor to the engine's now-playing
+            // track so Next/Prev + preload stay correct without the app also
+            // advancing. Keyed off the now-playing id (not the raw cursor) so it
+            // never fights an app-driven advance already reflected in `current`.
+            if queueSynced, !playingEpisode,
+               let idx = queue.firstIndex(where: { $0.id == npID }) {
+                queueIndex = idx
+                reconcilePreload()
+            }
         }
         lastEngineTruthID = npID
         let f = Core.finishedCount
@@ -1065,6 +1242,7 @@ final class AppState: ObservableObject {
         // new next. Otherwise fall back to an explicit play of the next track.
         if seamless, let n = deterministicNextIndex(), Core.state == .playing {
             queueIndex = n
+            syncQueueIndexToEngine()
             let t = queue[queueIndex]
             current = t
             durationMs = t.durationMs

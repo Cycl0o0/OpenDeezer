@@ -98,6 +98,14 @@ enum Engine {
     static func flow() async throws -> [Track] {
         try decode(await run { OdmobileFlow() }, as: TracksResponse.self).tracks
     }
+    /// "Song radio" seeded from a track — `{tracks:[...]}` like Flow, seed first.
+    static func trackMix(_ id: String) async throws -> [Track] {
+        try decode(await run { OdmobileTrackMixJSON(id) }, as: TracksResponse.self).tracks
+    }
+    /// "Artist radio" seeded from an artist — `{tracks:[...]}` like Flow.
+    static func artistMix(_ id: String) async throws -> [Track] {
+        try decode(await run { OdmobileArtistMixJSON(id) }, as: TracksResponse.self).tracks
+    }
     static func charts() async throws -> ChartsResponse {
         try decode(await run { OdmobileCharts() }, as: ChartsResponse.self)
     }
@@ -118,6 +126,20 @@ enum Engine {
     }
     static func podcastEpisodes(_ id: String) async throws -> [Episode] {
         try decode(await run { OdmobilePodcastEpisodes(id) }, as: EpisodesResponse.self).episodes
+    }
+
+    // MARK: - Listening history (machine-local)
+
+    /// The newest `n` history entries (newest first; `n <= 0` = all). Reads a
+    /// local log off the main thread. Empty/unavailable history decodes to [].
+    static func historyRecent(_ n: Int) async -> [HistoryEntry] {
+        (try? decode(await run { OdmobileHistoryRecentJSON(n) }, as: [HistoryEntry].self)) ?? []
+    }
+    /// Aggregated listening stats over the last `sinceDays` (`<= 0` = all).
+    /// Always returns the full shape (empty arrays + 0) when unavailable.
+    static func historyStats(sinceDays: Int) async -> HistoryStats {
+        (try? decode(await run { OdmobileHistoryStatsJSON(sinceDays) }, as: HistoryStats.self))
+            ?? HistoryStats(topTracks: [], topArtists: [], totalSeconds: 0)
     }
 
     // MARK: - Playback
@@ -195,6 +217,13 @@ enum Engine {
     static func setCrossfadeMS(_ ms: Int) { OdmobileSetCrossfadeMS(ms) }
     static func crossfadeMS() -> Int { OdmobileCrossfadeMS() }
 
+    /// On-disk raw-stream cache budget in MB (0 = disabled). Both read and write
+    /// touch `media.json`, so they run off the main thread. The cache attaches to
+    /// the player once at startup, so a change takes effect only at next launch.
+    static func mediaCacheMB() async -> Int { await run { OdmobileMediaCacheMB() } }
+    @discardableResult
+    static func setMediaCacheMB(_ mb: Int) async -> Bool { await run { OdmobileSetMediaCacheMB(mb) } }
+
     // MARK: - Equalizer
 
     /// Full EQ + mono-downmix state. The DSP, persistence and the
@@ -246,6 +275,43 @@ enum Engine {
     static func setRepeat(_ mode: Int) async { await run { OdmobileSetRepeat(mode) } }
     static func setShuffle(_ on: Bool) async { await run { OdmobileSetShuffle(on ? 1 : 0) } }
 
+    // MARK: - Engine queue sync (app queue -> engine)
+
+    /// Mirrors the app's playback queue into the engine so web/Connect remotes
+    /// see it on `/status` and `/next`+`/prev` walk it. The cursor resets to 0 —
+    /// follow with `setQueueIndex`. Pass "[]" to clear. Best-effort; runs on the
+    /// IO queue (JSON parse + a control-state notify engine-side).
+    static func setQueueJSON(_ json: String) async {
+        await run {
+            var err: NSError?
+            _ = OdmobileSetQueueJSON(json, &err)
+        }
+    }
+    /// Aligns the engine queue's cursor to `i` (clamped; no-op when empty).
+    static func setQueueIndex(_ i: Int) async { await run { OdmobileSetQueueIndex(i) } }
+
+    /// Serializes tracks into the wire shape `setQueueJSON` expects
+    /// (`[{id,name,durationMs,artistLine,artistId,artists:[{id,name}],albumName,
+    /// artworkUrl,explicit}]`). "[]" for an empty queue.
+    static func queueJSON(_ tracks: [Track]) -> String {
+        let arr: [[String: Any]] = tracks.map { t in
+            [
+                "id": t.id,
+                "name": t.name,
+                "durationMs": t.durationMs,
+                "artistLine": t.artistLine,
+                "artistId": t.artistId ?? "",
+                "artists": t.artists.map { ["id": $0.id, "name": $0.name] },
+                "albumName": t.albumName,
+                "artworkUrl": t.artworkUrl,
+                "explicit": t.explicit,
+            ]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: arr),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
     // MARK: - Web remote
 
     static func webRemoteSetEnabled(_ on: Bool) { OdmobileWebRemoteSetEnabled(on ? 1 : 0) }
@@ -281,6 +347,30 @@ enum Engine {
         return (try? decoder.decode(DownloadResult.self, from: Data(json.utf8)))
             ?? DownloadResult(path: nil, error: nil)
     }
+    /// Batch-download result for `downloadAlbum`/`downloadPlaylist`:
+    /// `{"saved":N,"failed":N,"dir":"…","error":"…"}`. On a Free account it comes
+    /// back saved:0/failed:0 with the premium message in `error`.
+    struct BatchDownloadResult: Decodable {
+        let saved: Int
+        let failed: Int
+        let dir: String
+        let error: String
+    }
+
+    /// Downloads every track of an album (`downloadPlaylist`: a playlist) into the
+    /// shared folder and returns the batch summary. Blocking engine-side (fetch +
+    /// Blowfish decrypt per track), so it runs on the IO queue; premium-only.
+    static func downloadAlbum(id: String) async -> BatchDownloadResult {
+        decodeBatch(await run { OdmobileDownloadAlbum(id) })
+    }
+    static func downloadPlaylist(id: String) async -> BatchDownloadResult {
+        decodeBatch(await run { OdmobileDownloadPlaylist(id) })
+    }
+    private static func decodeBatch(_ json: String) -> BatchDownloadResult {
+        (try? decoder.decode(BatchDownloadResult.self, from: Data(json.utf8)))
+            ?? BatchDownloadResult(saved: 0, failed: 0, dir: "", error: "")
+    }
+
     /// The current download folder (env / config / default).
     static func downloadDir() async -> String { await run { OdmobileDownloadDir() } }
     /// Persists the download folder ("" resets to the default); true on success.

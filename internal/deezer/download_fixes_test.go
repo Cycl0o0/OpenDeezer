@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -182,11 +183,11 @@ func TestAlbumTracks_PaginatesBeyond100(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch idx {
 		case "0", "":
-			w.Write(restAlbumPage(0, 100, ts.URL+"/album/42/tracks?index=100"))
+			_, _ = w.Write(restAlbumPage(0, 100, ts.URL+"/album/42/tracks?index=100"))
 		case "100":
-			w.Write(restAlbumPage(100, 30, ""))
+			_, _ = w.Write(restAlbumPage(100, 30, ""))
 		default:
-			w.Write([]byte(`{"data":[]}`))
+			_, _ = w.Write([]byte(`{"data":[]}`))
 		}
 	}))
 	defer ts.Close()
@@ -214,7 +215,7 @@ func TestAlbumTracks_SinglePageStops(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(restAlbumPage(0, 12, ""))
+		_, _ = w.Write(restAlbumPage(0, 12, ""))
 	}))
 	defer ts.Close()
 
@@ -321,7 +322,7 @@ func TestSaveAlbum_PreCancelledContextSkipsListing(t *testing.T) {
 	listings := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		listings++
-		w.Write([]byte(`{"data":[]}`))
+		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer ts.Close()
 
@@ -445,6 +446,9 @@ func TestTagFLAC_ErrorLeavesOriginalBytesIntact(t *testing.T) {
 	})
 
 	t.Run("write failure preserves audio", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("read-only dir does not block file creation on Windows")
+		}
 		if os.Geteuid() == 0 {
 			t.Skip("directory permissions do not bind root")
 		}

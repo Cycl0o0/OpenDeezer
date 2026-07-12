@@ -1,5 +1,6 @@
 package fr.cyclooo.opendeezer.tv
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,8 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -46,6 +49,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,10 +62,14 @@ import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Album
 import fr.cyclooo.opendeezer.engine.ArtistInfo
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.engine.HistoryEntry
+import fr.cyclooo.opendeezer.engine.HistoryStats
 import fr.cyclooo.opendeezer.engine.HomeData
 import fr.cyclooo.opendeezer.engine.Playlist
 import fr.cyclooo.opendeezer.engine.SearchResults
 import fr.cyclooo.opendeezer.engine.Track
+import fr.cyclooo.opendeezer.engine.TrackStat
+import fr.cyclooo.opendeezer.player.DownloadEvent
 import fr.cyclooo.opendeezer.ui.components.Artwork
 import kotlinx.coroutines.launch
 
@@ -71,6 +79,11 @@ private data class TvDetailData(
     val subtitle: String,
     val artworkUrl: String,
     val tracks: List<Track>,
+    // Source ids for the detail actions: batch-download (album/playlist) and
+    // artist radio. Null when not applicable to this detail's origin.
+    val albumId: String? = null,
+    val playlistId: String? = null,
+    val radioArtistId: String? = null,
 )
 
 @Composable
@@ -89,17 +102,41 @@ fun TvRootScreen(vm: AppViewModel) {
 
     fun openAlbum(a: Album) = scope.launch {
         val tracks = Engine.albumTracks(a.id)
-        if (tracks.isNotEmpty()) detail = TvDetailData(a.name, a.artistLine, a.artworkUrl, tracks)
+        if (tracks.isNotEmpty()) detail = TvDetailData(a.name, a.artistLine, a.artworkUrl, tracks, albumId = a.id)
     }
     fun openArtist(a: ArtistInfo) = scope.launch {
         val tracks = Engine.artistTop(a.id)
-        if (tracks.isNotEmpty()) detail = TvDetailData(a.name, "", a.artworkUrl, tracks)
+        if (tracks.isNotEmpty()) detail = TvDetailData(a.name, "", a.artworkUrl, tracks, radioArtistId = a.id)
     }
     fun openPlaylist(p: Playlist) = scope.launch {
         val tracks = Engine.playlistTracks(p.id)
-        if (tracks.isNotEmpty()) detail = TvDetailData(p.name, p.owner, p.artworkUrl, tracks)
+        if (tracks.isNotEmpty()) detail = TvDetailData(p.name, p.owner, p.artworkUrl, tracks, playlistId = p.id)
     }
     val playTracks = { list: List<Track>, i: Int -> player.playQueue(list, i) }
+
+    // Album/playlist downloads report via the shared download-events flow; on TV
+    // (no snackbar) surface the outcome as a Toast.
+    val context = LocalContext.current
+    LaunchedEffect(player) {
+        player.downloadEvents.collect { event ->
+            val msg = when (event) {
+                is DownloadEvent.Started -> context.getString(R.string.download_started, event.trackName)
+                is DownloadEvent.Saved ->
+                    if (event.path.isBlank()) context.getString(R.string.download_saved_generic, event.trackName)
+                    else context.getString(R.string.download_saved, event.path)
+                is DownloadEvent.Failed ->
+                    if (event.error.isBlank()) context.getString(R.string.download_failed_generic)
+                    else context.getString(R.string.download_failed, event.error)
+                is DownloadEvent.BatchDone -> when {
+                    event.saved == 0 && event.error.isNotBlank() -> context.getString(R.string.download_failed, event.error)
+                    event.saved == 0 -> context.getString(R.string.download_failed_generic)
+                    event.failed > 0 -> context.getString(R.string.download_batch_partial, event.saved, event.failed)
+                    else -> context.getString(R.string.download_batch_saved, event.saved)
+                }
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(TvPalette.screen)) {
         Row(Modifier.fillMaxSize().padding(bottom = if (playerState.current != null) 108.dp else 0.dp)) {
@@ -128,6 +165,7 @@ fun TvRootScreen(vm: AppViewModel) {
                             onPlayTracks = playTracks,
                             onOpenPlaylist = { openPlaylist(it) },
                         )
+                        TvNav.History -> TvHistory(onPlay = { track -> player.playQueue(listOf(track), 0) })
                         TvNav.Settings -> TvSettingsScreen(account = vm.account, onLogout = { vm.logout() })
                     }
                 }
@@ -139,9 +177,16 @@ fun TvRootScreen(vm: AppViewModel) {
                             subtitle = d.subtitle,
                             artworkUrl = d.artworkUrl,
                             tracks = d.tracks,
+                            premium = player.premium,
                             onBack = { detail = null },
                             onPlayAll = { player.playQueue(d.tracks, 0) },
                             onPlay = { i -> player.playQueue(d.tracks, i) },
+                            // Radio: seed from the artist when known, else the first track.
+                            onRadio = d.radioArtistId?.let { id -> ({ player.startArtistRadio(id) }) }
+                                ?: d.tracks.firstOrNull()?.let { t -> ({ player.startTrackRadio(t) }) },
+                            // Batch download only for album/playlist detail origins.
+                            onDownload = d.albumId?.let { id -> ({ player.downloadAlbum(id, d.title) }) }
+                                ?: d.playlistId?.let { id -> ({ player.downloadPlaylist(id, d.title) }) },
                         )
                     }
                 }
@@ -451,14 +496,100 @@ private fun TvLibrary(
 }
 
 @Composable
+private fun TvHistory(onPlay: (Track) -> Unit) {
+    var recent by remember { mutableStateOf<List<HistoryEntry>?>(null) }
+    var stats by remember { mutableStateOf(HistoryStats.EMPTY) }
+
+    LaunchedEffect(Unit) {
+        stats = Engine.historyStats(30)
+        recent = Engine.historyRecent(50)
+    }
+
+    val recentList = recent
+    if (recentList == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = TvPalette.Purple)
+        }
+        return
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 40.dp, end = 40.dp, top = 40.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(30.dp),
+    ) {
+        item {
+            Text(
+                stringResource(R.string.history_title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Black,
+                color = Color.White,
+            )
+        }
+        if (stats.totalSeconds > 0) {
+            item {
+                val minutes = stats.totalSeconds / 60
+                val h = minutes / 60
+                val m = minutes % 60
+                val dur = if (h > 0) stringResource(R.string.dur_hm, h, m) else stringResource(R.string.dur_m, m)
+                Text(
+                    stringResource(R.string.history_stats_section) + " · " + stringResource(R.string.history_total, dur),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TvPalette.TextDim,
+                )
+            }
+        }
+        if (stats.topTracks.isNotEmpty()) {
+            item {
+                TvRow(stringResource(R.string.section_top_tracks), stats.topTracks) { _, t ->
+                    val track = t.asHistoryTrack()
+                    TvCard(track.name, track.artistLine, track.artworkUrl, onClick = { onPlay(track) })
+                }
+            }
+        }
+        if (stats.topArtists.isNotEmpty()) {
+            item {
+                TvRow(stringResource(R.string.history_top_artists), stats.topArtists) { _, a ->
+                    TvCard(a.artist, "", "", onClick = {})
+                }
+            }
+        }
+        item {
+            TvRow(stringResource(R.string.history_title), recentList) { _, e ->
+                val track = e.asHistoryTrack()
+                TvCard(track.name, track.artistLine, track.artworkUrl, onClick = { onPlay(track) })
+            }
+        }
+        if (recentList.isEmpty() && stats.topTracks.isEmpty()) {
+            item { Text(stringResource(R.string.history_empty), color = TvPalette.TextDim, style = MaterialTheme.typography.titleMedium) }
+        }
+    }
+}
+
+// History carries only id/title/artist; synthesise a minimal Track and let the
+// engine resolve the full stream on play (durationMs unknown = 0).
+private fun HistoryEntry.asHistoryTrack(): Track = Track(
+    id = trackId, name = title, durationMs = 0L, artists = emptyList(),
+    artistLine = artist, albumName = album, artworkUrl = "", explicit = false,
+)
+
+private fun TrackStat.asHistoryTrack(): Track = Track(
+    id = trackId, name = title, durationMs = 0L, artists = emptyList(),
+    artistLine = artist, albumName = "", artworkUrl = "", explicit = false,
+)
+
+@Composable
 private fun TvDetail(
     title: String,
     subtitle: String,
     artworkUrl: String,
     tracks: List<Track>,
+    premium: Boolean,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onPlay: (Int) -> Unit,
+    onRadio: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
 ) {
     val playFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { playFocus.requestFocus() } }
@@ -479,6 +610,13 @@ private fun TvDetail(
                 Text(pluralStringResource(R.plurals.n_tracks, tracks.size, tracks.size), style = MaterialTheme.typography.bodyMedium, color = TvPalette.TextDim)
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     TvPill(stringResource(R.string.action_play_all), onClick = onPlayAll, focusRequester = playFocus, leadingIcon = Icons.Filled.PlayArrow)
+                    if (onRadio != null) {
+                        TvPill(stringResource(R.string.action_start_radio), onClick = onRadio, leadingIcon = Icons.Filled.Radio)
+                    }
+                    // Downloads are premium-only, so only show the pill for premium.
+                    if (onDownload != null && premium) {
+                        TvPill(stringResource(R.string.action_download), onClick = onDownload, leadingIcon = Icons.Filled.Download)
+                    }
                     TvPill(stringResource(R.string.action_back), onClick = onBack)
                 }
             }

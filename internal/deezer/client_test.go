@@ -52,13 +52,13 @@ func TestClientSearch(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
 			case "/search":
-				w.Write([]byte(`{"data": [{"id": "111", "title": "Track 1", "duration": "180", "explicit_lyrics": false, "artist": {"id": "222", "name": "Artist 1"}, "album": {"title": "Album 1", "cover_medium": "cover_url"}}]}`))
+				_, _ = w.Write([]byte(`{"data": [{"id": "111", "title": "Track 1", "duration": "180", "explicit_lyrics": false, "artist": {"id": "222", "name": "Artist 1"}, "album": {"title": "Album 1", "cover_medium": "cover_url"}}]}`))
 			case "/search/album":
-				w.Write([]byte(`{"data": [{"id": "333", "title": "Album 1", "artist": {"id": "222", "name": "Artist 1"}, "cover_medium": "cover_url"}]}`))
+				_, _ = w.Write([]byte(`{"data": [{"id": "333", "title": "Album 1", "artist": {"id": "222", "name": "Artist 1"}, "cover_medium": "cover_url"}]}`))
 			case "/search/artist":
-				w.Write([]byte(`{"data": [{"id": "222", "name": "Artist 1", "picture_medium": "pic_url", "nb_fan": 1000}]}`))
+				_, _ = w.Write([]byte(`{"data": [{"id": "222", "name": "Artist 1", "picture_medium": "pic_url", "nb_fan": 1000}]}`))
 			case "/search/playlist":
-				w.Write([]byte(`{"data": [{"id": "444", "title": "Playlist 1", "user": {"name": "Owner 1"}, "nb_tracks": 10, "picture_medium": "pic_url"}]}`))
+				_, _ = w.Write([]byte(`{"data": [{"id": "444", "title": "Playlist 1", "user": {"name": "Owner 1"}, "nb_tracks": 10, "picture_medium": "pic_url"}]}`))
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}
@@ -98,14 +98,14 @@ func TestClientSearch(t *testing.T) {
 			case "/search":
 				// Fail tracks with 500
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(`internal server error`))
+				_, _ = w.Write([]byte(`internal server error`))
 			case "/search/album":
-				w.Write([]byte(`{"data": [{"id": "333", "title": "Album 1", "artist": {"id": "222", "name": "Artist 1"}, "cover_medium": "cover_url"}]}`))
+				_, _ = w.Write([]byte(`{"data": [{"id": "333", "title": "Album 1", "artist": {"id": "222", "name": "Artist 1"}, "cover_medium": "cover_url"}]}`))
 			case "/search/artist":
 				// Garbage JSON
-				w.Write([]byte(`{invalid-json`))
+				_, _ = w.Write([]byte(`{invalid-json`))
 			case "/search/playlist":
-				w.Write([]byte(`{"data": [{"id": "444", "title": "Playlist 1", "user": {"name": "Owner 1"}, "nb_tracks": 10, "picture_medium": "pic_url"}]}`))
+				_, _ = w.Write([]byte(`{"data": [{"id": "444", "title": "Playlist 1", "user": {"name": "Owner 1"}, "nb_tracks": 10, "picture_medium": "pic_url"}]}`))
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}
@@ -143,7 +143,7 @@ func TestClientSearch(t *testing.T) {
 	t.Run("all fail", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`internal server error`))
+			_, _ = w.Write([]byte(`internal server error`))
 		}))
 		defer ts.Close()
 

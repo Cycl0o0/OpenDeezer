@@ -17,6 +17,16 @@ type Track struct {
 	AlbumName  string
 	ArtworkURL string
 	Explicit   bool // explicit lyrics/content (show an "E" badge)
+
+	// TrackNumber is the 1-based position of the track within its album, when
+	// known (from the album-tracks listing's track_position). Zero means
+	// unknown/not applicable (single-track lookups, playlist context) and the
+	// download tagger skips the ID3 TRCK / FLAC TRACKNUMBER field.
+	TrackNumber int
+	// Year is the release year as a 4-digit string ("2021"), parsed from the
+	// track/album release_date when present. Empty means unknown and the
+	// tagger skips the ID3 TYER / FLAC DATE field.
+	Year string
 }
 
 // ArtistLine joins artist names: "Artist A, Artist B".

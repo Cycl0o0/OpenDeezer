@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class PlayerState(
@@ -41,6 +42,14 @@ sealed interface DownloadEvent {
     data class Started(override val trackName: String) : DownloadEvent
     data class Saved(override val trackName: String, val path: String) : DownloadEvent
     data class Failed(override val trackName: String, val error: String) : DownloadEvent
+
+    // Batch (album/playlist) outcome: [trackName] carries the collection name.
+    data class BatchDone(
+        override val trackName: String,
+        val saved: Int,
+        val failed: Int,
+        val error: String,
+    ) : DownloadEvent
 }
 
 /**
@@ -78,6 +87,12 @@ class PlayerController(private val scope: CoroutineScope) {
     // next entry at a track boundary, poll() advances the queue pointer without
     // re-issuing a full network resolve (the engine already swapped into it).
     private var preloadedId: String? = null
+
+    // Engine-queue mirror state: the last queue reference + index pushed to the
+    // engine, so syncEngineQueue() can cheaply diff on every push() and only send
+    // SetQueueJSON when the content changes / SetQueueIndex when the cursor moves.
+    private var syncedQueueRef: List<Track>? = null
+    private var syncedIndex: Int = Int.MIN_VALUE
 
     fun start() {
         if (pollJob?.isActive == true) return
@@ -141,6 +156,44 @@ class PlayerController(private val scope: CoroutineScope) {
             if (err.isNotBlank()) DownloadEvent.Failed(trackName, err)
             else DownloadEvent.Saved(trackName, o.optString("path"))
         }.getOrDefault(DownloadEvent.Failed(trackName, ""))
+
+    /** Downloads a whole album to the shared folder; reports a batch summary. */
+    fun downloadAlbum(id: String, name: String) = downloadBatch(name) { Engine.downloadAlbum(id) }
+
+    /** Downloads a whole playlist to the shared folder; reports a batch summary. */
+    fun downloadPlaylist(id: String, name: String) = downloadBatch(name) { Engine.downloadPlaylist(id) }
+
+    private fun downloadBatch(name: String, call: suspend () -> String) {
+        scope.launch {
+            _downloadEvents.emit(DownloadEvent.Started(name))
+            _downloadEvents.emit(parseBatch(call(), name))
+        }
+    }
+
+    private fun parseBatch(json: String, name: String): DownloadEvent =
+        runCatching {
+            val o = JSONObject(json)
+            DownloadEvent.BatchDone(name, o.optInt("saved"), o.optInt("failed"), o.optString("error"))
+        }.getOrDefault(DownloadEvent.Failed(name, ""))
+
+    // ---- radio ("song radio" / "artist radio") ----
+    // Seed a mix and play it through the normal queue path (mirrors Flow).
+
+    /** Starts a "song radio" seeded from [track] (the seed stays first) and plays it. */
+    fun startTrackRadio(track: Track) {
+        scope.launch {
+            val tracks = Engine.trackMix(track.id)
+            if (tracks.isNotEmpty()) playQueue(tracks, 0)
+        }
+    }
+
+    /** Starts an "artist radio" seeded from [artistId] and plays it. */
+    fun startArtistRadio(artistId: String) {
+        scope.launch {
+            val tracks = Engine.artistMix(artistId)
+            if (tracks.isNotEmpty()) playQueue(tracks, 0)
+        }
+    }
 
     fun next() {
         if (index < queue.lastIndex) {
@@ -358,6 +411,56 @@ class PlayerController(private val scope: CoroutineScope) {
             repeatMode = repeatMode,
             shuffle = shuffleEnabled,
         )
+        syncEngineQueue()
+    }
+
+    // ---- engine queue sync ----
+    // Mirror the app-owned queue into the engine on every push(): when the queue
+    // CONTENT changes (new reference) push the full list + cursor; when only the
+    // playing row moves push just the cursor. Lets remote /status show the real
+    // queue and lets the engine own gapless-promote over the synced queue. Cheap
+    // when nothing changed (reference + int compare), so it's safe on the poll.
+    private fun syncEngineQueue() {
+        val q = queue
+        val i = index
+        when {
+            q !== syncedQueueRef -> {
+                syncedQueueRef = q
+                syncedIndex = i
+                val json = queueJson(q)
+                scope.launch {
+                    Engine.setQueueJson(json)
+                    Engine.setQueueIndex(i)
+                }
+            }
+            i != syncedIndex -> {
+                syncedIndex = i
+                scope.launch { Engine.setQueueIndex(i) }
+            }
+        }
+    }
+
+    // Serialises the queue into the engine's list wire shape (only id is strictly
+    // required, but durationMs feeds remote end-of-track detection).
+    private fun queueJson(tracks: List<Track>): String {
+        val arr = JSONArray()
+        for (t in tracks) {
+            val artists = JSONArray()
+            for (a in t.artists) artists.put(JSONObject().put("id", a.id).put("name", a.name))
+            arr.put(
+                JSONObject()
+                    .put("id", t.id)
+                    .put("name", t.name)
+                    .put("durationMs", t.durationMs)
+                    .put("artistLine", t.artistLine)
+                    .put("artistId", t.artists.firstOrNull()?.id ?: "")
+                    .put("artists", artists)
+                    .put("albumName", t.albumName)
+                    .put("artworkUrl", t.artworkUrl)
+                    .put("explicit", t.explicit),
+            )
+        }
+        return arr.toString()
     }
 
     // Reflect a user action immediately without waiting for the next poll tick.

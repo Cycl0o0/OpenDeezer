@@ -236,4 +236,29 @@
     <string name="settings_ads">Publicités</string>
     <string name="setting_disable_ads_title">Désactiver les publicités</string>
     <string name="setting_disable_ads_disclaimer">Deezer Free est financé par la publicité. Signaler vos écoutes — comme l\'application officielle — rémunère les artistes et alimente les publicités. Désactiver cette option supprime les publicités mais arrête le signalement de vos écoutes, ce qui prive les artistes de leur nombre d\'écoutes et enfreint les conditions d\'utilisation de Deezer. À utiliser à vos propres risques.</string>
+
+    <!-- v2.2 : radio, téléchargement par lot, historique, cache de streaming -->
+    <string name="action_start_radio">Lancer la radio</string>
+    <string name="action_download_album">Télécharger l\'album</string>
+    <string name="action_download_playlist">Télécharger la playlist</string>
+    <string name="cd_more">Plus d\'options</string>
+    <string name="cd_decrease">Diminuer</string>
+    <string name="cd_increase">Augmenter</string>
+    <string name="download_batch_saved">%1$d titres téléchargés</string>
+    <string name="download_batch_partial">%1$d titres téléchargés, %2$d échoués</string>
+    <string name="history_title">Écoutés récemment</string>
+    <string name="history_empty">Aucun historique d\'écoute pour l\'instant.</string>
+    <string name="history_stats_section">30 derniers jours</string>
+    <string name="history_top_artists">Artistes les plus écoutés</string>
+    <string name="history_total">%1$s d\'écoute</string>
+    <string name="dur_hm">%1$d h %2$d min</string>
+    <string name="dur_m">%1$d min</string>
+    <string name="settings_stream_cache">Cache de streaming</string>
+    <string name="stream_cache_mb">%1$d Mo</string>
+    <string name="stream_cache_hint">Pris en compte au prochain lancement. 0 = désactivé.</string>
+    <plurals name="n_plays">
+        <item quantity="one">%1$d écoute</item>
+        <item quantity="many">%1$d d\'écoutes</item>
+        <item quantity="other">%1$d écoutes</item>
+    </plurals>
 </resources>

@@ -4,6 +4,38 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1]
+
+### Added
+- **Every native client now exposes the v2.2.0 features.** The macOS, Windows,
+  GNOME, KDE, Android (phone + TV) and iOS apps gained, natively: **Start radio**
+  from any track or artist, a **Recently played + listening stats** view,
+  **download a whole album or playlist**, a **stream-cache size** setting, and
+  **queue sync** so a remote controller and the engine's gapless hand-off see the
+  app's real play queue. Previously these shipped only in the engine, the terminal
+  client and the control API; now they're wired through the C-ABI / gomobile
+  bindings into each GUI.
+- New binding entry points backing the above: `DZTrackMixJSON`/`DZArtistMixJSON`,
+  `DZHistoryRecentJSON`/`DZHistoryStatsJSON`, `DZDownloadAlbum`/`DZDownloadPlaylist`
+  (and the gomobile equivalents), so third-party embedders can reach them too.
+
+### Fixed
+- **Windows stream cache.** The optional on-disk cache no longer fails when a
+  track is replaced or evicted while it is being read (Windows refuses to rename
+  over or delete an open file). Entries now use unique per-write filenames, so a
+  replacement never touches the file a reader holds open; the superseded file is
+  removed best-effort and any leftover reclaimed on the next start. Fixes crashes
+  and cache-size drift on Windows.
+- **Cross-platform CI is green again.** The test suite now passes on the
+  Windows runner (the cache tests above, plus a tag-writing test that assumed
+  Unix read-only-directory semantics), and the linter passes on the new code.
+- **Downloaded files carry track number and year.** Album downloads now write the
+  ID3 track number / year and FLAC `TRACKNUMBER`/`DATE` tags (populated from the
+  album track listing), not just title/artist/album/cover.
+- **Playlist export writes are flushed safely.** A failure while closing the
+  `-export-playlist` output file is now reported instead of being silently
+  dropped.
+
 ## [2.2.0]
 
 ### Added

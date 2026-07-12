@@ -62,6 +62,12 @@ internal sealed class HomeData { public List<Track> TopTracks = new(); public Li
 // DZCheckUpdateJSON -> {"current","latest","hasUpdate","url","notes"}.
 internal sealed class UpdateInfo { public string Current = "", Latest = "", Url = "", Notes = ""; public bool HasUpdate; }
 
+// Listening-history stats (DZHistoryStatsJSON). TrackStat/ArtistStat aggregate a
+// track/artist over the window; TotalSeconds is total time listened in it.
+internal sealed class TrackStat { public string TrackId = "", Title = "", Artist = ""; public int Plays; public long TotalSec; }
+internal sealed class ArtistStat { public string Artist = ""; public int Plays; public long TotalSec; }
+internal sealed class HistoryStats { public List<TrackStat> TopTracks = new(); public List<ArtistStat> TopArtists = new(); public long TotalSeconds; }
+
 // DZEQJSON -> {enabled,mono,preampDb,gainsDb:[10],preset,bands:[10],presets:[...]}.
 // Live engine state (persisted engine-side in eq.json, NEVER in settings.json);
 // Preset is "custom" whenever any band was edited by hand. Mono is independent
@@ -397,6 +403,56 @@ internal static class Wire
                     Version = v.Str("version"),
                 });
         return outl;
+    }
+
+    // DZHistoryRecentJSON returns a BARE array [{trackId,title,artist,album,...}].
+    // Each entry becomes an id-playable Track (duration unknown -> the engine
+    // fills it on play; no artwork url is stored in history).
+    public static List<Track> ParseHistoryRecent(string json)
+    {
+        var outl = new List<Track>();
+        using var doc = TryParse(json);
+        if (doc == null) return outl;
+        var root = doc.RootElement;
+        if (root.ValueKind == JsonValueKind.Array)
+            foreach (var v in root.EnumerateArray())
+            {
+                string id = v.Str("trackId");
+                if (string.IsNullOrEmpty(id)) continue;
+                outl.Add(new Track { Id = id, Name = v.Str("title"), ArtistLine = v.Str("artist"), AlbumName = v.Str("album") });
+            }
+        return outl;
+    }
+
+    // DZHistoryStatsJSON: {topTracks:[...], topArtists:[...], totalSeconds:N}.
+    public static HistoryStats ParseHistoryStats(string json)
+    {
+        var s = new HistoryStats();
+        using var doc = TryParse(json);
+        if (doc == null) return s;
+        var o = doc.RootElement;
+        s.TotalSeconds = o.Num("totalSeconds");
+        var tt = o.Arr("topTracks");
+        if (tt.ValueKind == JsonValueKind.Array)
+            foreach (var v in tt.EnumerateArray())
+                s.TopTracks.Add(new TrackStat
+                {
+                    TrackId = v.Str("trackId"),
+                    Title = v.Str("title"),
+                    Artist = v.Str("artist"),
+                    Plays = (int)v.Num("plays"),
+                    TotalSec = v.Num("totalSec"),
+                });
+        var ta = o.Arr("topArtists");
+        if (ta.ValueKind == JsonValueKind.Array)
+            foreach (var v in ta.EnumerateArray())
+                s.TopArtists.Add(new ArtistStat
+                {
+                    Artist = v.Str("artist"),
+                    Plays = (int)v.Num("plays"),
+                    TotalSec = v.Num("totalSec"),
+                });
+        return s;
     }
 
     public static UpdateInfo ParseUpdateInfo(string json)

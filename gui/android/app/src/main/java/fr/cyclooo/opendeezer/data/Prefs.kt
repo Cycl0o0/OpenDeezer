@@ -66,6 +66,15 @@ class Prefs(context: Context) {
         set(value) { sp.edit().putInt(KEY_CROSSFADE, value).apply() }
 
     /**
+     * Raw-stream on-disk cache budget in MB (0 = off); -1 = unset. The engine
+     * attaches the cache once at startup, so this is re-applied on login and only
+     * takes effect at the next launch.
+     */
+    var mediaCacheMb: Int
+        get() = sp.getInt(KEY_MEDIA_CACHE, -1)
+        set(value) { sp.edit().putInt(KEY_MEDIA_CACHE, value).apply() }
+
+    /**
      * User-chosen download folder (a SAF tree Uri string, or a plain path). Blank
      * when unset — the engine then uses its own shared default. Persisted so the
      * choice (and the taken SAF permission) survive relaunches.
@@ -90,6 +99,7 @@ class Prefs(context: Context) {
         private const val KEY_REPLAYGAIN = "audio_replaygain"
         private const val KEY_GAPLESS = "audio_gapless"
         private const val KEY_CROSSFADE = "audio_crossfade_ms"
+        private const val KEY_MEDIA_CACHE = "media_cache_mb"
         private const val KEY_DOWNLOAD_FOLDER = "download_folder"
     }
 }

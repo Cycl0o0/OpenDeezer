@@ -99,6 +99,23 @@ object Engine {
 
     private fun raw(s: String?): String? = if (Json.hasError(s)) null else s
 
+    // ---- radio mixes ----
+    // "Song radio" / "artist radio": both return {tracks:[...]} in the same wire
+    // shape as Flow, so they parse and play through the exact Flow path.
+
+    suspend fun trackMix(id: String): List<Track> = io { Json.tracks(Odmobile.trackMixJSON(id)) }
+    suspend fun artistMix(id: String): List<Track> = io { Json.tracks(Odmobile.artistMixJSON(id)) }
+
+    // ---- listening history (machine-local) ----
+    // HistoryRecentJSON returns a bare JSON array (newest first); HistoryStatsJSON
+    // returns {topTracks,topArtists,totalSeconds}. gomobile maps Go int -> Java
+    // long, hence the toLong() on the argument.
+
+    suspend fun historyRecent(n: Int): List<HistoryEntry> =
+        io { Json.historyRecent(runCatching { Odmobile.historyRecentJSON(n.toLong()) }.getOrNull()) }
+    suspend fun historyStats(sinceDays: Int): HistoryStats =
+        io { Json.historyStats(runCatching { Odmobile.historyStatsJSON(sinceDays.toLong()) }.getOrNull()) }
+
     // ---- playback ----
 
     suspend fun play(trackId: String, durationMs: Long): Boolean =
@@ -120,11 +137,30 @@ object Engine {
     // stops being deterministic (shuffle/repeat toggles, queue edits, stop).
     suspend fun clearPreload() = io { runCatching { Odmobile.clearPreload() }.let {} }
 
+    // ---- engine queue sync (app queue -> engine) ----
+    // Mirror the app-owned queue into the engine so remote controllers see the
+    // real queue on /status and /next|/prev walk it, and so the engine can own
+    // gapless-promote over the synced queue. [json] is a JSON array in the shared
+    // list wire shape ({id,name,durationMs,artistLine,artistId,artists,albumName,
+    // artworkUrl,explicit}; see PlayerController.queueJson). setQueueJson resets
+    // the engine cursor to 0, so always follow it with [setQueueIndex].
+    suspend fun setQueueJson(json: String): Boolean =
+        io { runCatching { Odmobile.setQueueJSON(json); true }.getOrDefault(false) }
+    suspend fun setQueueIndex(i: Int) = io { runCatching { Odmobile.setQueueIndex(i.toLong()) }.let {} }
+
     // ---- downloads (premium-only; the engine rejects the request otherwise) ----
     // Returns the engine's raw JSON: {"path":"..."} on success or {"error":"..."}.
     // Pass "" for [dir] to save into the shared default download folder.
     suspend fun download(id: String, dir: String): String =
         io { runCatching { Odmobile.downloadTrack(id, dir) }.getOrDefault("""{"error":"failed"}""") }
+
+    // Album/playlist batch download to the shared folder; returns the engine's
+    // batch summary {"saved":N,"failed":N,"dir":"...","error":""}. Premium-only,
+    // blocking — kept on Dispatchers.IO like [download].
+    suspend fun downloadAlbum(id: String): String =
+        io { runCatching { Odmobile.downloadAlbum(id) }.getOrDefault("""{"error":"failed"}""") }
+    suspend fun downloadPlaylist(id: String): String =
+        io { runCatching { Odmobile.downloadPlaylist(id) }.getOrDefault("""{"error":"failed"}""") }
 
     // The shared default download folder (empty when the engine has none yet).
     suspend fun downloadDir(): String = io { runCatching { Odmobile.downloadDir() }.getOrDefault("") }
@@ -172,6 +208,13 @@ object Engine {
     fun gapless(): Boolean = runCatching { Odmobile.gapless() }.getOrDefault(true)
     fun setCrossfadeMs(ms: Int) = runCatching { Odmobile.setCrossfadeMS(ms.toLong()) }.let {}
     fun crossfadeMs(): Int = runCatching { Odmobile.crossfadeMS().toInt() }.getOrDefault(0)
+
+    // Raw-stream on-disk cache budget in MB (0 = off, the default). The cache is
+    // attached to the player once at startup, so a change only takes effect at the
+    // next launch — persist it in Prefs and re-apply on login like gapless/crossfade.
+    fun mediaCacheMB(): Int = runCatching { Odmobile.mediaCacheMB().toInt() }.getOrDefault(0)
+    fun setMediaCacheMB(mb: Int): Boolean =
+        runCatching { Odmobile.setMediaCacheMB(mb.toLong()) }.getOrDefault(false)
 
     // ---- equalizer + mono downmix ----
     // The engine owns all EQ state and persistence (manual band edits flip the

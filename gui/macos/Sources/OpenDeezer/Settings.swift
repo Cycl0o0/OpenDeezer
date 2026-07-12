@@ -82,6 +82,12 @@ struct SettingsView: View {
     // Deezer Free account (premium plans have no ads). Loaded on appear.
     @State private var adsDisabled = false
 
+    // On-disk raw-stream cache budget in MB (engine-owned, media.json; 0 = off).
+    // Loaded on appear; a change applies at the next launch (the cache is
+    // attached to the player once at startup).
+    @State private var mediaCacheMB = 0
+    private let mediaCachePresets = [128, 256, 512, 1024, 2048]
+
     // Sleep timer remaining, refreshed once a second while the sheet is open.
     // The armed mode itself lives in AppState (app.sleepMode); the engine owns
     // the countdown, so we only mirror the "12:34" display here.
@@ -343,6 +349,36 @@ struct SettingsView: View {
                 }
             }
 
+            // Stream cache — engine-owned on-disk cache for streamed audio
+            // (media.json; 0 = off). Changing it takes effect at the next launch
+            // (the cache is attached to the player once, before playback).
+            settingsCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(L("Stream cache"), systemImage: "internaldrive")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(DZ.textPri)
+                    Picker("", selection: Binding(
+                        get: { mediaCacheMB },
+                        set: { v in
+                            mediaCacheMB = v
+                            Task.detached { _ = Core.setMediaCacheMB(v) }
+                        })) {
+                        Text(L("Off")).tag(0)
+                        // Surface a custom value loaded from the engine (set via
+                        // TUI/config) that isn't one of the presets.
+                        if mediaCacheMB != 0 && !mediaCachePresets.contains(mediaCacheMB) {
+                            Text(Lf("%d MB", mediaCacheMB)).tag(mediaCacheMB)
+                        }
+                        ForEach(mediaCachePresets, id: \.self) { mb in
+                            Text(Lf("%d MB", mb)).tag(mb)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    Text(L("On-disk cache for streamed audio (0 = off). Applies at next launch."))
+                        .font(.caption).foregroundStyle(DZ.textSec)
+                }
+            }
+
             // Disable ads — Deezer Free only (premium plans carry no ads). The
             // opt-out is engine-owned; loading on appear and applied immediately.
             if !app.isPremium {
@@ -498,6 +534,7 @@ struct SettingsView: View {
             loadEQState()
             loadDownloadFolder()
             loadAdsDisabled()
+            loadMediaCache()
             updateSleepRemaining()
         }
         .onReceive(sleepTick) { _ in updateSleepRemaining() }
@@ -640,6 +677,15 @@ struct SettingsView: View {
         Task.detached {
             let dir = Core.downloadDir()
             await MainActor.run { downloadFolder = dir }
+        }
+    }
+
+    // Read the engine's on-disk stream-cache budget (media.json) off the main
+    // thread so the picker shows the persisted value.
+    private func loadMediaCache() {
+        Task.detached {
+            let mb = Core.mediaCacheMB()
+            await MainActor.run { mediaCacheMB = mb }
         }
     }
 

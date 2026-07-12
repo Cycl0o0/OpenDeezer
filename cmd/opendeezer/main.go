@@ -174,13 +174,14 @@ func runExportPlaylist(id, format, outPath string) error {
 		}
 	}
 
+	// Default to stdout, which we must never close; only a -o file is closed.
 	var w io.Writer = os.Stdout
+	var f *os.File
 	if outPath != "" {
-		f, err := os.Create(outPath)
+		f, err = os.Create(outPath)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
 		w = f
 	}
 	switch format {
@@ -191,7 +192,15 @@ func runExportPlaylist(id, format, outPath string) error {
 	case "json":
 		err = impex.ExportJSON(w, name, tracks)
 	default:
-		return fmt.Errorf("unknown -format %q (want csv, m3u or json)", format)
+		err = fmt.Errorf("unknown -format %q (want csv, m3u or json)", format)
+	}
+	// Closing a file opened for writing can surface a deferred write/flush error
+	// (data flushed but not persisted). If the export itself succeeded, promote
+	// the Close error so we don't claim success on a possibly-truncated file.
+	if f != nil {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
 	}
 	if err != nil {
 		return err
@@ -211,7 +220,7 @@ func runImportPlaylist(path, title string) error {
 		return err
 	}
 	rows, err := impex.ParseCSV(f)
-	f.Close()
+	_ = f.Close() // read-only file; a Close error here is not actionable
 	if err != nil {
 		return err
 	}

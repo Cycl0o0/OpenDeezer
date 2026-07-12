@@ -73,6 +73,7 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
     var quality by remember { mutableStateOf(Engine.quality()) }
     var replayGain by remember { mutableStateOf(Engine.replayGain()) }
     var gapless by remember { mutableStateOf(Engine.gapless()) }
+    var mediaCacheMb by remember { mutableStateOf(Engine.mediaCacheMB()) }
     var sleepSel by remember {
         mutableStateOf(
             when {
@@ -173,6 +174,28 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         item {
             TvToggleRow(stringResource(R.string.setting_gapless_title), stringResource(R.string.setting_gapless_sub), gapless) {
                 gapless = it; Engine.setGapless(it); prefs.gapless = if (it) 1 else 0
+            }
+        }
+        item {
+            // Raw-stream disk cache budget (MB); applied at the next launch.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.settings_stream_cache), color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TvChoicePill("−128", selected = false, enabled = mediaCacheMb > 0) {
+                        val v = (mediaCacheMb - 128).coerceAtLeast(0)
+                        mediaCacheMb = v; Engine.setMediaCacheMB(v); prefs.mediaCacheMb = v
+                    }
+                    Text(
+                        if (mediaCacheMb <= 0) stringResource(R.string.common_off) else stringResource(R.string.stream_cache_mb, mediaCacheMb),
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    TvChoicePill("+128", selected = false, enabled = mediaCacheMb < 4096) {
+                        val v = (mediaCacheMb + 128).coerceAtMost(4096)
+                        mediaCacheMb = v; Engine.setMediaCacheMB(v); prefs.mediaCacheMb = v
+                    }
+                }
+                Text(stringResource(R.string.stream_cache_hint), color = TvPalette.TextDim, style = MaterialTheme.typography.bodySmall)
             }
         }
         item {

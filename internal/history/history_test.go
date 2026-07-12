@@ -66,7 +66,7 @@ func TestCorruptLineSkipped(t *testing.T) {
 	if _, err := f.WriteString(`{"trackId":"2","tit`); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 	s2 := New(s.Path())
 	got, err := s2.Recent(0)
 	if err != nil {

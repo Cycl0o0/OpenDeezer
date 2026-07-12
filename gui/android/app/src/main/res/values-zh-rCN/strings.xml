@@ -228,4 +228,28 @@
     <string name="settings_ads">广告</string>
     <string name="setting_disable_ads_title">关闭广告</string>
     <string name="setting_disable_ads_disclaimer">Deezer Free 靠广告支持。像官方应用一样上报你的播放记录，可以为艺人计入收益并支撑广告投放。关闭此项会移除广告，但会停止上报你的播放记录，使艺人无法获得播放计数，并违反 Deezer 的使用条款。请自行承担风险。</string>
+
+    <!-- v2.2 features (English placeholders) -->
+    <string name="action_start_radio">Start radio</string>
+    <string name="action_download_album">Download album</string>
+    <string name="action_download_playlist">Download playlist</string>
+    <string name="cd_more">More options</string>
+    <string name="cd_decrease">Decrease</string>
+    <string name="cd_increase">Increase</string>
+    <string name="download_batch_saved">Downloaded %1$d tracks</string>
+    <string name="download_batch_partial">Downloaded %1$d tracks, %2$d failed</string>
+    <string name="history_title">Recently played</string>
+    <string name="history_empty">No listening history yet.</string>
+    <string name="history_stats_section">Last 30 days</string>
+    <string name="history_top_artists">Top Artists</string>
+    <string name="history_total">%1$s listened</string>
+    <string name="dur_hm">%1$dh %2$dm</string>
+    <string name="dur_m">%1$dm</string>
+    <string name="settings_stream_cache">Stream cache</string>
+    <string name="stream_cache_mb">%1$d MB</string>
+    <string name="stream_cache_hint">Applies at next launch. 0 = off.</string>
+    <plurals name="n_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
 </resources>

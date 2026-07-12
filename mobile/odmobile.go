@@ -459,6 +459,24 @@ func Flow() string {
 		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
 }
+
+// TrackMixJSON returns a "song radio" mix seeded from a track (the seed kept as
+// the first entry): {tracks:[...]} in the shared wire shape, mirroring Flow.
+func TrackMixJSON(id string) string {
+	return withClient(func(c *deezer.Client) (any, error) {
+		ts, err := c.TrackMix(id)
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
+	})
+}
+
+// ArtistMixJSON returns an "artist radio" mix seeded from an artist:
+// {tracks:[...]} in the shared wire shape, mirroring Flow.
+func ArtistMixJSON(id string) string {
+	return withClient(func(c *deezer.Client) (any, error) {
+		ts, err := c.ArtistMix(id)
+		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
+	})
+}
 func ArtistTop(id string) string {
 	return withClient(func(c *deezer.Client) (any, error) {
 		ts, err := c.ArtistTop(id)
@@ -665,6 +683,58 @@ func DownloadTrack(trackID, destDir string) string {
 		return jstr(nil, err)
 	}
 	return jstr(map[string]string{"path": path}, nil)
+}
+
+// batchSummary is the shared JSON summary for the batch downloaders:
+// {"saved":N,"failed":N,"dir":"...","error":""}. error is "" on full success
+// and carries the batch error message otherwise.
+func batchSummary(saved []string, failed int, dir string, err error) map[string]any {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	return map[string]any{"saved": len(saved), "failed": failed, "dir": dir, "error": msg}
+}
+
+// DownloadAlbum downloads every track of albumID to the shared download folder
+// (DownloadDir) and returns the batch summary
+// {"saved":N,"failed":N,"dir":"...","error":""}. Blocking and premium-only, the
+// same gate + folder DownloadTrack uses — call it off the UI thread. On a
+// partial download "failed" counts the per-track failures and "error" carries
+// the batch message; a free account yields saved:0,failed:0 with the premium
+// error.
+func DownloadAlbum(id string) string {
+	c := curClient()
+	if c == nil {
+		return jstr(nil, fmt.Errorf("not logged in"))
+	}
+	dir := config.LoadDownloadDir()
+	var failed int
+	opts := deezer.DownloadOptions{Progress: func(p deezer.DownloadProgress) {
+		if p.Err != nil {
+			failed++
+		}
+	}}
+	saved, err := c.SaveAlbum(context.Background(), id, dir, opts)
+	return jstr(batchSummary(saved, failed, dir, err), nil)
+}
+
+// DownloadPlaylist downloads every track of playlistID to the shared download
+// folder and returns the same batch summary as DownloadAlbum.
+func DownloadPlaylist(id string) string {
+	c := curClient()
+	if c == nil {
+		return jstr(nil, fmt.Errorf("not logged in"))
+	}
+	dir := config.LoadDownloadDir()
+	var failed int
+	opts := deezer.DownloadOptions{Progress: func(p deezer.DownloadProgress) {
+		if p.Err != nil {
+			failed++
+		}
+	}}
+	saved, err := c.SavePlaylist(context.Background(), id, dir, opts)
+	return jstr(batchSummary(saved, failed, dir, err), nil)
 }
 
 // DownloadDir returns the current download folder (env/config/default).
@@ -1607,6 +1677,80 @@ func setHistoryStore(s *history.Store) {
 	histMu.Lock()
 	histStore, histInited = s, true
 	histMu.Unlock()
+}
+
+// HistoryRecentJSON returns the newest n entries of the machine-local listening
+// history as a JSON array (newest first, the same stable shape the control API's
+// /history/recent serves); n <= 0 returns all. Empty/unavailable history yields
+// "[]".
+func HistoryRecentJSON(n int) string {
+	st := historyStore()
+	if st == nil {
+		return "[]"
+	}
+	entries, err := st.Recent(n)
+	if err != nil {
+		return "[]"
+	}
+	return jstr(entries, nil)
+}
+
+// HistoryStatsJSON returns local listening stats over the last sinceDays
+// (sinceDays <= 0 = all history) as
+// {topTracks:[{trackId,title,artist,plays,totalSec}],
+//
+//	topArtists:[{artist,plays,totalSec}], totalSeconds:N}. Empty/unavailable
+//
+// history yields the same shape with empty arrays and totalSeconds:0.
+func HistoryStatsJSON(sinceDays int) string {
+	return jstr(historyStats(sinceDays), nil)
+}
+
+// jTrackStat / jArtistStat are the stable wire shapes for HistoryStatsJSON
+// (history.TrackStat/ArtistStat carry no JSON tags, so we don't marshal them
+// directly).
+type jTrackStat struct {
+	TrackID  string `json:"trackId"`
+	Title    string `json:"title"`
+	Artist   string `json:"artist"`
+	Plays    int    `json:"plays"`
+	TotalSec int64  `json:"totalSec"`
+}
+
+type jArtistStat struct {
+	Artist   string `json:"artist"`
+	Plays    int    `json:"plays"`
+	TotalSec int64  `json:"totalSec"`
+}
+
+// historyStats computes the listening-stats summary backing HistoryStatsJSON:
+// {topTracks:[...], topArtists:[...], totalSeconds:N} over the last sinceDays
+// (sinceDays <= 0 = all history). Always returns the full shape (empty arrays +
+// 0) when the store is unavailable or empty.
+func historyStats(sinceDays int) map[string]any {
+	topTracks := []jTrackStat{}
+	topArtists := []jArtistStat{}
+	var total int64
+	if st := historyStore(); st != nil {
+		var since time.Time // zero = all history
+		if sinceDays > 0 {
+			since = time.Now().AddDate(0, 0, -sinceDays)
+		}
+		if tt, err := st.TopTracks(since, 50); err == nil {
+			topTracks = make([]jTrackStat, len(tt))
+			for i, t := range tt {
+				topTracks[i] = jTrackStat{TrackID: t.TrackID, Title: t.Title, Artist: t.Artist, Plays: t.Plays, TotalSec: t.TotalSec}
+			}
+		}
+		if ta, err := st.TopArtists(since, 50); err == nil {
+			topArtists = make([]jArtistStat, len(ta))
+			for i, a := range ta {
+				topArtists[i] = jArtistStat{Artist: a.Artist, Plays: a.Plays, TotalSec: a.TotalSec}
+			}
+		}
+		total, _ = st.TotalListenedSec(since)
+	}
+	return map[string]any{"topTracks": topTracks, "topArtists": topArtists, "totalSeconds": total}
 }
 
 // listenEntry converts an outgoing track + listened milliseconds into a

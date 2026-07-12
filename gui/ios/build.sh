@@ -26,6 +26,22 @@ if [[ "$SKIP_BIND" -eq 0 ]]; then
   command -v gomobile >/dev/null || go install golang.org/x/mobile/cmd/gomobile@latest
   command -v gobind >/dev/null || go install golang.org/x/mobile/cmd/gobind@latest
   gomobile init
+  # Some engine doc comments contain "/*" (e.g. control-API route globs like
+  # "/play/mix/*"). gomobile embeds Go doc comments verbatim into the generated
+  # ObjC header's block comments, so a nested "/*" trips clang's -Wcomment; and
+  # gomobile's objc cgo template compiles the gobind package with -Werror (it
+  # also *overwrites* CGO_CFLAGS, so an env override can't reach that build).
+  # Demote just that one warning in the template so the c-archive build passes.
+  # The module-cache dir is read-only, so patch the file in place with cp
+  # (needs only the *file* writable, not the dir) rather than sed -i (renames).
+  for f in "$(go env GOMODCACHE)"/golang.org/x/mobile@*/bind/objc/seq_darwin.go.support; do
+    [[ -f "$f" ]] || continue
+    if grep -q -- '-Werror' "$f" && ! grep -q -- '-Wno-error=comment' "$f"; then
+      chmod u+w "$f"
+      sed 's/-fblocks -Werror/-fblocks -Werror -Wno-error=comment/' "$f" > "$f.patched"
+      cp "$f.patched" "$f" && rm -f "$f.patched"
+    fi
+  done
   rm -rf "$IOS_DIR/Odmobile.xcframework"
   gomobile bind -target=ios -o "$IOS_DIR/Odmobile.xcframework" ./mobile
 fi

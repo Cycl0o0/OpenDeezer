@@ -33,6 +33,7 @@ class QCloseEvent;
 class QSystemTrayIcon;
 class QFrame;
 class QVBoxLayout;
+class QPushButton;
 QT_END_NAMESPACE
 
 class MprisController;
@@ -105,6 +106,7 @@ private:
     QWidget      *buildChartsPage();
     QWidget      *buildPodcastsPage();
     QWidget      *buildPodcastEpisodesPage();
+    QWidget      *buildHistoryPage();          // recently played + listening stats
     QWidget      *buildTransport();
     QTableWidget *makeTrackTable();
     // Right-click track menu: "Go to Artist" / "Show Lyrics" / "Add to Liked
@@ -122,6 +124,14 @@ private:
     void showAddToPlaylistPicker(const Track &t, const QVector<Playlist> &ps);
     void removeFromCurrentPlaylist(const Track &t, int row);
     void download(const QString &id);                     // DZDownloadTrack (premium-only)
+    // Batch downloads (premium-only): a whole album / playlist to the shared
+    // folder via DZDownloadAlbum / DZDownloadPlaylist, on the same worker shape
+    // as download(); downloadBatch is the shared body.
+    void downloadAlbum(const QString &id, const QString &name);
+    void downloadPlaylist(const QString &id, const QString &name);
+    void downloadBatch(const QString &id, const QString &name, bool album);
+    void downloadCurrentList();                           // tracks-page header button
+    void updateListDownloadButton();                      // show/label that button
     void createPlaylist();                                // DZCreatePlaylist
     void renamePlaylist(const Playlist &p);               // DZRenamePlaylist
     void deletePlaylist(const Playlist &p);               // DZDeletePlaylist (confirm)
@@ -150,6 +160,12 @@ private:
     void loadHome();
     void loadFavorites();
     void loadFlow();
+    // Start radio ("mix"): DZTrackMixJSON / DZArtistMixJSON both return Flow's
+    // {tracks:[...]} shape, so playMix reuses the Flow load+auto-play path.
+    void startTrackRadio(const QString &trackId);
+    void startArtistRadio(const QString &artistId);
+    void playMix(const QVector<Track> &tracks);
+    void loadHistory();   // recently played + listening stats (history page)
     void loadCharts();
     void loadPlaylists();
     void openPlaylist(const Playlist &p);
@@ -164,6 +180,14 @@ private:
     // ---- track table filling + async cover art ----
     void fillTrackTable(QTableWidget *table, const QVector<Track> &tracks, int gen);
     void fetchImage(const QString &url, int gen, std::function<void(const QImage &)> apply);
+
+    // ---- engine queue sync (so remote controllers see + walk this queue) ----
+    // syncQueueToEngine pushes the whole GUI queue (DZQueueSet) and aligns the
+    // cursor (DZQueueSetIndex) on every (re)build; syncQueueIndex realigns just
+    // the cursor on an index-only change. Once the cursor is aligned the ENGINE
+    // owns natural-finish auto-advance (see tick()'s DZQueueIndex follow).
+    void syncQueueToEngine();
+    void syncQueueIndex();
 
     // ---- playback ----
     void playFrom(const QVector<Track> &list, int index);
@@ -260,6 +284,16 @@ private:
     QLabel        *m_podcastTitle      = nullptr;   // episodes page header
     QListWidget   *m_episodeList       = nullptr;   // episodes of the open show
 
+    // history page (recently played + listening stats)
+    QTableWidget  *m_historyTable    = nullptr;     // recently played (play by id)
+    QLabel        *m_statsTotal      = nullptr;     // total listening time (30d)
+    QListWidget   *m_statsTopTracks  = nullptr;     // top tracks (play by id)
+    QListWidget   *m_statsTopArtists = nullptr;     // top artists (informational)
+
+    // "Download album"/"Download playlist" button in the tracks-page header,
+    // shown only while an album or playlist is displayed (premium-gated).
+    QPushButton   *m_downloadListBtn = nullptr;
+
     QToolButton *m_prevBtn = nullptr, *m_playBtn = nullptr, *m_nextBtn = nullptr;
     QToolButton *m_likeBtn = nullptr;
     QToolButton *m_connectBtn = nullptr;        // OpenDeezer Connect device picker
@@ -293,11 +327,18 @@ private:
     QVector<Episode> m_episodes;
     QString          m_currentPodcastName;   // shown as the now-playing "artist"
 
+    // history page data (both play by id through playFrom)
+    QVector<Track>   m_historyTracks;        // rows of m_historyTable
+    QVector<Track>   m_statsTrackList;       // backs m_statsTopTracks
+
     // Liked-songs ids known to the UI. There is no is-liked query, so this is a
     // best-effort local mirror: seeded from the Liked Songs view and updated on
     // every like/unlike so the heart reflects state for known tracks.
     QSet<QString> m_likedIds;
     QString       m_currentPlaylistId;       // set while the shared table shows a playlist
+    QString       m_currentPlaylistName;     // its display name (batch-download message)
+    QString       m_currentAlbumId;          // set while the shared table shows an album
+    QString       m_currentAlbumName;        // its display name (batch-download message)
 
     // lyrics state
     QHash<QString, LyricsData> m_lyricsCache;       // parsed lyrics, keyed by track id
@@ -310,6 +351,7 @@ private:
     int     m_lyricsGen       = 0;           // guards async lyrics results
 
     // artist state
+    QString             m_currentArtistId;   // artist on the artist page ("Start radio")
     QVector<Track>      m_artistTopTracks;
     QVector<Album>      m_artistAlbums;
     QVector<ArtistInfo> m_artistRelated;

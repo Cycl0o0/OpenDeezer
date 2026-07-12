@@ -628,4 +628,58 @@
   <data name="Settings_DisableAdsDisclaimer" xml:space="preserve">
     <value>Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह अपने प्ले की रिपोर्ट करने से कलाकारों को श्रेय मिलता है और विज्ञापन चलते हैं। इसे बंद करने से विज्ञापन हट जाते हैं लेकिन आपके प्ले की रिपोर्ट होना भी रुक जाता है, जिससे कलाकार अपनी प्ले-गिनती से वंचित रह जाते हैं और Deezer की उपयोग शर्तों का उल्लंघन होता है। अपने जोखिम पर उपयोग करें।</value>
   </data>
+  <data name="Nav_Recent" xml:space="preserve">
+    <value>Recent</value>
+  </data>
+  <data name="Menu_StartRadio" xml:space="preserve">
+    <value>Start radio</value>
+  </data>
+  <data name="Radio_SongHeader" xml:space="preserve">
+    <value>Song Radio</value>
+  </data>
+  <data name="Radio_ArtistHeader" xml:space="preserve">
+    <value>Artist Radio</value>
+  </data>
+  <data name="Dialog_RadioFailTitle" xml:space="preserve">
+    <value>Couldn't start radio</value>
+  </data>
+  <data name="Dialog_RadioFailBody" xml:space="preserve">
+    <value>No radio could be started from this.</value>
+  </data>
+  <data name="Section_RecentlyPlayed" xml:space="preserve">
+    <value>Recently played</value>
+  </data>
+  <data name="Section_TopArtists" xml:space="preserve">
+    <value>Top Artists</value>
+  </data>
+  <data name="Recent_ListenTimeFormat" xml:space="preserve">
+    <value>Listening time (last 30 days): {0}h {1}m</value>
+  </data>
+  <data name="Recent_Empty" xml:space="preserve">
+    <value>Nothing here yet. Play something to build your history.</value>
+  </data>
+  <data name="Plays_One" xml:space="preserve">
+    <value>{0} play</value>
+  </data>
+  <data name="Plays_Other" xml:space="preserve">
+    <value>{0} plays</value>
+  </data>
+  <data name="Btn_DownloadAlbum" xml:space="preserve">
+    <value>Download album</value>
+  </data>
+  <data name="Btn_DownloadPlaylist" xml:space="preserve">
+    <value>Download playlist</value>
+  </data>
+  <data name="Status_Downloading" xml:space="preserve">
+    <value>Downloading…</value>
+  </data>
+  <data name="Dialog_DownloadBatchDoneFormat" xml:space="preserve">
+    <value>Saved {0}, failed {1}. Folder: {2}</value>
+  </data>
+  <data name="Settings_StreamCache" xml:space="preserve">
+    <value>Stream cache</value>
+  </data>
+  <data name="Settings_StreamCacheDesc" xml:space="preserve">
+    <value>On-disk cache for streamed audio (MB, 0 = off). Applies next launch.</value>
+  </data>
 </root>

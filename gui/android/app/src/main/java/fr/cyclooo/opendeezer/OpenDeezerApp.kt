@@ -35,6 +35,7 @@ import fr.cyclooo.opendeezer.ui.screens.ChartsScreen
 import fr.cyclooo.opendeezer.ui.screens.ConnectDialog
 import fr.cyclooo.opendeezer.ui.screens.EpisodesScreen
 import fr.cyclooo.opendeezer.ui.screens.EqualizerScreen
+import fr.cyclooo.opendeezer.ui.screens.HistoryScreen
 import fr.cyclooo.opendeezer.ui.screens.HomeScreen
 import fr.cyclooo.opendeezer.ui.screens.LoginScreen
 import fr.cyclooo.opendeezer.ui.screens.LyricsScreen
@@ -105,6 +106,12 @@ private fun MainScaffold(vm: AppViewModel) {
                 is DownloadEvent.Failed ->
                     if (event.error.isBlank()) context.getString(R.string.download_failed_generic)
                     else context.getString(R.string.download_failed, event.error)
+                is DownloadEvent.BatchDone -> when {
+                    event.saved == 0 && event.error.isNotBlank() -> context.getString(R.string.download_failed, event.error)
+                    event.saved == 0 -> context.getString(R.string.download_failed_generic)
+                    event.failed > 0 -> context.getString(R.string.download_batch_partial, event.saved, event.failed)
+                    else -> context.getString(R.string.download_batch_saved, event.saved)
+                }
             }
             // Replace any in-flight snackbar so the result supersedes "Downloading…"
             // without the collector blocking on the previous one's timeout.
@@ -172,12 +179,24 @@ private fun MainScaffold(vm: AppViewModel) {
             composable(Routes.PLAYLIST) { entry ->
                 val id = entry.arguments?.getString("id").orEmpty()
                 val name = entry.arguments?.getString("name").orEmpty()
-                TrackListScreen(name, player, back) { Engine.playlistTracks(id) }
+                TrackListScreen(
+                    title = name,
+                    player = player,
+                    onBack = back,
+                    onBulkDownload = { player.downloadPlaylist(id, name) },
+                    bulkDownloadLabel = stringResource(R.string.action_download_playlist),
+                ) { Engine.playlistTracks(id) }
             }
             composable(Routes.ALBUM) { entry ->
                 val id = entry.arguments?.getString("id").orEmpty()
                 val name = entry.arguments?.getString("name").orEmpty()
-                TrackListScreen(name, player, back) { Engine.albumTracks(id) }
+                TrackListScreen(
+                    title = name,
+                    player = player,
+                    onBack = back,
+                    onBulkDownload = { player.downloadAlbum(id, name) },
+                    bulkDownloadLabel = stringResource(R.string.action_download_album),
+                ) { Engine.albumTracks(id) }
             }
             composable(Routes.ARTIST) { entry ->
                 val id = entry.arguments?.getString("id").orEmpty()
@@ -243,6 +262,9 @@ private fun MainScaffold(vm: AppViewModel) {
             }
             composable(Routes.EQUALIZER) {
                 EqualizerScreen(onBack = back)
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(player = player, onBack = back)
             }
         }
     }

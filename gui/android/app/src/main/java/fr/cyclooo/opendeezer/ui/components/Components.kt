@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explicit
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -88,10 +89,11 @@ fun Artwork(
 }
 
 /**
- * A track list row. Tapping runs [onClick]; when [onDownload] is supplied the row
- * also responds to a long-press with a context menu holding a Download item. That
- * item is enabled only when [downloadEnabled] (premium), otherwise it's shown
- * disabled with a hint — downloads are premium-only.
+ * A track list row. Tapping runs [onClick]; when [onDownload] and/or [onStartRadio]
+ * is supplied the row also responds to a long-press with a context menu. The
+ * Download item is enabled only when [downloadEnabled] (premium), otherwise it's
+ * shown disabled with a hint — downloads are premium-only. [onStartRadio] seeds a
+ * "song radio" from this track.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -102,10 +104,12 @@ fun TrackRow(
     trailing: @Composable (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     downloadEnabled: Boolean = true,
+    onStartRadio: (() -> Unit)? = null,
 ) {
+    val hasMenu = onDownload != null || onStartRadio != null
     var menuOpen by remember { mutableStateOf(false) }
     val clickModifier =
-        if (onDownload != null) {
+        if (hasMenu) {
             Modifier.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
         } else {
             Modifier.clickable(onClick = onClick)
@@ -162,30 +166,42 @@ fun TrackRow(
                 )
             }
         }
-        if (onDownload != null) {
+        if (hasMenu) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = {
-                        if (downloadEnabled) {
-                            Text(stringResource(R.string.action_download))
-                        } else {
-                            Column {
+                if (onStartRadio != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_start_radio)) },
+                        leadingIcon = { Icon(Icons.Filled.Radio, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onStartRadio()
+                        },
+                    )
+                }
+                if (onDownload != null) {
+                    DropdownMenuItem(
+                        text = {
+                            if (downloadEnabled) {
                                 Text(stringResource(R.string.action_download))
-                                Text(
-                                    stringResource(R.string.download_requires_premium),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            } else {
+                                Column {
+                                    Text(stringResource(R.string.action_download))
+                                    Text(
+                                        stringResource(R.string.download_requires_premium),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                        }
-                    },
-                    leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
-                    enabled = downloadEnabled,
-                    onClick = {
-                        menuOpen = false
-                        onDownload()
-                    },
-                )
+                        },
+                        leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
+                        enabled = downloadEnabled,
+                        onClick = {
+                            menuOpen = false
+                            onDownload()
+                        },
+                    )
+                }
             }
         }
     }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -50,6 +51,7 @@ enum class TvNav(@StringRes val labelRes: Int, val icon: ImageVector) {
     Home(R.string.nav_home, Icons.Filled.Home),
     Search(R.string.search_title, Icons.Filled.Search),
     Library(R.string.nav_library, Icons.Filled.LibraryMusic),
+    History(R.string.history_title, Icons.Filled.History),
     Settings(R.string.settings_title, Icons.Filled.Settings),
 }
 

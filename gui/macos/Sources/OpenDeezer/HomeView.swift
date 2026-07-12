@@ -209,6 +209,9 @@ private struct HomeTrackCard: View {
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
         .contextMenu {
             Button { onPlay() } label: { Label(L("Play"), systemImage: "play.fill") }
+            Button { app.startTrackRadio(track) } label: {
+                Label(L("Start radio"), systemImage: "dot.radiowaves.left.and.right")
+            }
             Button { app.toggleLike(track) } label: {
                 Label(app.isLiked(track) ? L("Unlike") : L("Like"),
                       systemImage: app.isLiked(track) ? "heart.fill" : "heart")

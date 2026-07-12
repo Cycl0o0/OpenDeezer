@@ -152,6 +152,42 @@ internal static class DeezerCore
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZAdsDisabled();
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSetAdsDisabled(int disabled);
 
+    // ---- v2.2 additions ------------------------------------------------------
+    // Radio mixes: {tracks:[...]} exactly like DZFlowJSON, so the GUI reuses its
+    // Flow parsing (Wire.ParseTracks). DZTrackMixJSON keeps the seed track first.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZTrackMixJSON([MarshalAs(UnmanagedType.LPUTF8Str)] string id);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZArtistMixJSON([MarshalAs(UnmanagedType.LPUTF8Str)] string id);
+    // Machine-local listening history. DZHistoryRecentJSON returns a BARE JSON
+    // array [{trackId,title,artist,album,startedAt,durationPlayedSec}] (newest
+    // first; n<=0 = all). DZHistoryStatsJSON returns
+    // {topTracks:[{trackId,title,artist,plays,totalSec}],
+    //  topArtists:[{artist,plays,totalSec}], totalSeconds:N} over the last
+    // sinceDays (<=0 = all). Both free with DZFree.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZHistoryRecentJSON(int n);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZHistoryStatsJSON(int sinceDays);
+    // Batch offline export (PREMIUM-ONLY, blocking -- call off the UI thread like
+    // the single-track download). Returns {saved,failed,dir,error} JSON to the
+    // shared download folder. Release with DZFree.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZDownloadAlbum([MarshalAs(UnmanagedType.LPUTF8Str)] string id);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZDownloadPlaylist([MarshalAs(UnmanagedType.LPUTF8Str)] string id);
+    // On-disk raw-stream cache budget in MB (media.json; 0 = off). The cache is
+    // attached to the player once at startup, so a change applies NEXT launch.
+    // DZSetMediaCacheMB returns 1 on success.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZMediaCacheMB();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSetMediaCacheMB(int mb);
+    // Engine queue sync (GUI queue -> engine, so remote controllers see it on
+    // /status and the engine can own auto-advance). DZQueueSet takes a JSON array
+    // of tracks ({id,name,durationMs,artistLine,artistId,artists,albumName,
+    // artworkUrl,explicit}); only id is required. "[]" clears it. The cursor
+    // resets to 0 -> follow with DZQueueSetIndex to point it at the playing row.
+    // Once aligned the ENGINE owns natural-finish advance (DZFinishedCount no
+    // longer bumps for queue-owned finishes) -- poll DZQueueIndex to keep the GUI
+    // cursor aligned. DZQueueSet returns 1 on success, 0 on a parse error;
+    // DZQueueIndex returns the engine cursor (-1 when empty/unsynced).
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZQueueSet([MarshalAs(UnmanagedType.LPUTF8Str)] string js);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZQueueSetIndex(int i);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZQueueIndex();
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -220,4 +256,16 @@ internal static class DeezerCore
 
     // {current,latest,hasUpdate,url,notes}; network failure -> HasUpdate=false.
     internal static UpdateInfo CheckUpdate() => Wire.ParseUpdateInfo(TakeJson(DZCheckUpdateJSON()));
+
+    // ---- v2.2 typed wrappers -------------------------------------------------
+    // Radio mixes parse exactly like Flow ({tracks:[...]}).
+    internal static System.Collections.Generic.List<Track> TrackMix(string id) => Wire.ParseTracks(TakeJson(DZTrackMixJSON(id)));
+    internal static System.Collections.Generic.List<Track> ArtistMix(string id) => Wire.ParseTracks(TakeJson(DZArtistMixJSON(id)));
+    // Listening history: recent plays (as id-playable Tracks) + aggregate stats.
+    internal static System.Collections.Generic.List<Track> HistoryRecent(int n) => Wire.ParseHistoryRecent(TakeJson(DZHistoryRecentJSON(n)));
+    internal static HistoryStats HistoryStats(int sinceDays) => Wire.ParseHistoryStats(TakeJson(DZHistoryStatsJSON(sinceDays)));
+
+    // Media (raw-stream) cache budget in MB; SetMediaCacheMB applies next launch.
+    internal static int MediaCacheMB() => DZMediaCacheMB();
+    internal static bool SetMediaCacheMB(int mb) => DZSetMediaCacheMB(mb) == 1;
 }

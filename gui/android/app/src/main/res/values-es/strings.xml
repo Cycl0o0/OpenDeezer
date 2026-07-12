@@ -236,4 +236,28 @@
     <string name="settings_ads">Anuncios</string>
     <string name="setting_disable_ads_title">Desactivar anuncios</string>
     <string name="setting_disable_ads_disclaimer">Deezer Free se financia con anuncios. Informar de tus reproducciones —como la aplicación oficial— remunera a los artistas e impulsa los anuncios. Desactivar esta opción elimina los anuncios pero deja de informar de tus reproducciones, lo que priva a los artistas de sus recuentos de reproducciones e infringe las condiciones de uso de Deezer. Úsalo bajo tu propia responsabilidad.</string>
+
+    <!-- v2.2 features (English placeholders) -->
+    <string name="action_start_radio">Start radio</string>
+    <string name="action_download_album">Download album</string>
+    <string name="action_download_playlist">Download playlist</string>
+    <string name="cd_more">More options</string>
+    <string name="cd_decrease">Decrease</string>
+    <string name="cd_increase">Increase</string>
+    <string name="download_batch_saved">Downloaded %1$d tracks</string>
+    <string name="download_batch_partial">Downloaded %1$d tracks, %2$d failed</string>
+    <string name="history_title">Recently played</string>
+    <string name="history_empty">No listening history yet.</string>
+    <string name="history_stats_section">Last 30 days</string>
+    <string name="history_top_artists">Top Artists</string>
+    <string name="history_total">%1$s listened</string>
+    <string name="dur_hm">%1$dh %2$dm</string>
+    <string name="dur_m">%1$dm</string>
+    <string name="settings_stream_cache">Stream cache</string>
+    <string name="stream_cache_mb">%1$d MB</string>
+    <string name="stream_cache_hint">Applies at next launch. 0 = off.</string>
+    <plurals name="n_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
 </resources>

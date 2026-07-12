@@ -244,6 +244,77 @@ enum Core {
         decode(TracksResponse.self, takeJSON(DZFlowJSON()))?.tracks ?? []
     }
 
+    // MARK: radio / mixes (v2.2)
+
+    // DZTrackMixJSON / DZArtistMixJSON return {tracks:[...]} in the exact same
+    // wire shape as DZFlowJSON, so they decode through TracksResponse and feed
+    // the identical load+play code path Flow uses.
+
+    /// "Song radio" seeded from a track (the seed track is kept first).
+    static func trackMix(_ id: String) -> [Track] {
+        decode(TracksResponse.self, takeJSON(withC(id) { DZTrackMixJSON($0) }))?.tracks ?? []
+    }
+    /// "Artist radio" seeded from an artist.
+    static func artistMix(_ id: String) -> [Track] {
+        decode(TracksResponse.self, takeJSON(withC(id) { DZArtistMixJSON($0) }))?.tracks ?? []
+    }
+
+    // MARK: listening history + stats (v2.2)
+
+    /// Newest `n` entries of the machine-local listening history (newest first);
+    /// n <= 0 returns all. Empty/unavailable history yields [].
+    static func historyRecent(_ n: Int) -> [HistoryEntry] {
+        decode([HistoryEntry].self, takeJSON(DZHistoryRecentJSON(Int32(n)))) ?? []
+    }
+    /// Local listening stats over the last `sinceDays` (<= 0 = all history).
+    static func historyStats(sinceDays: Int) -> HistoryStats? {
+        decode(HistoryStats.self, takeJSON(DZHistoryStatsJSON(Int32(sinceDays))))
+    }
+
+    // MARK: batch downloads (v2.2)
+
+    // Album / playlist downloads reuse the single-track idioms: blocking + JSON
+    // out ({"saved":N,"failed":N,"dir":"...","error":""}), premium-gated the same
+    // way, so callers must invoke them off the main thread like download(_:to:).
+
+    /// Downloads every track of `albumID` to the shared download folder; returns
+    /// the engine's batch-summary JSON.
+    static func downloadAlbum(_ albumID: String) -> String {
+        takeString(withC(albumID) { DZDownloadAlbum($0) })
+    }
+    /// Downloads every track of `playlistID` to the shared download folder.
+    static func downloadPlaylist(_ playlistID: String) -> String {
+        takeString(withC(playlistID) { DZDownloadPlaylist($0) })
+    }
+
+    // MARK: media cache (v2.2)
+
+    /// On-disk raw-stream cache budget in MB (0 = off, the default).
+    static func mediaCacheMB() -> Int { Int(DZMediaCacheMB()) }
+    /// Persists the raw-stream cache budget (0/negative disables it). The cache
+    /// is attached to the player once at startup, so a change takes effect at the
+    /// next launch. True on success.
+    @discardableResult
+    static func setMediaCacheMB(_ mb: Int) -> Bool { DZSetMediaCacheMB(Int32(mb)) == 1 }
+
+    // MARK: queue sync (v2.2)
+
+    // Mirror the GUI's play queue into the engine so remote /status and the
+    // engine's gapless-promote path see — and can drive — the real queue. The
+    // JSON is an array of the same track objects the DZ*JSON endpoints return
+    // ({id,name,durationMs,artistLine,artists,albumName,artworkUrl,explicit});
+    // encoding [Track] produces exactly that (artistId is optional server-side).
+
+    /// Replaces the engine-side queue with `tracks`. Pass [] to clear. True on ok.
+    @discardableResult
+    static func queueSet(_ tracks: [Track]) -> Bool {
+        guard let data = try? JSONEncoder().encode(tracks),
+              let js = String(data: data, encoding: .utf8) else { return false }
+        return withC(js) { DZQueueSet($0) } == 1
+    }
+    /// Moves the engine queue's cursor to `i` (clamped engine-side).
+    static func queueSetIndex(_ i: Int) { DZQueueSetIndex(Int32(i)) }
+
     // MARK: podcasts (v0.4)
 
     static func searchPodcasts(_ q: String) -> [Podcast] {

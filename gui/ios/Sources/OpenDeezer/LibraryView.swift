@@ -58,6 +58,17 @@ struct LibraryView: View {
                         }
                     }
                 }
+                NavigationLink { HistoryView() } label: {
+                    Label {
+                        Text("Recently Played")
+                    } icon: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6).fill(Color.indigo.gradient)
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "clock.arrow.circlepath").foregroundStyle(.white).font(.system(size: 14))
+                        }
+                    }
+                }
             }
 
             Section("Playlists") {
@@ -258,6 +269,11 @@ struct TrackRow: View {
                 player.play(track, in: tracks)
             } label: {
                 Label("Play", systemImage: "play.fill")
+            }
+            Button {
+                player.startRadio(seededBy: track)
+            } label: {
+                Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
             }
             Button {
                 library.toggleFavorite(track)

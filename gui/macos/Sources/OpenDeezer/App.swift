@@ -284,6 +284,7 @@ struct Sidebar: View {
                     case .playlists: app.loadPlaylists()
                     case .charts: app.loadCharts()
                     case .flow: app.loadFlow()
+                    case .history: app.loadHistory()
                     case .search, .podcasts: break
                     }
                 })) {
@@ -295,6 +296,7 @@ struct Sidebar: View {
                     SidebarLabel(L("Liked Songs"), "heart.fill", .liked)
                     SidebarLabel(L("Playlists"), "music.note.list", .playlists)
                     SidebarLabel(L("Charts"), "chart.bar.fill", .charts)
+                    SidebarLabel(L("Recently played"), "clock.arrow.circlepath", .history)
                     SidebarLabel(L("Podcasts"), "mic.fill", .podcasts)
                 } header: {
                     Text(L("Library"))
@@ -467,6 +469,8 @@ struct DetailView: View {
                 SearchView()
             case .podcasts:
                 PodcastsView()
+            case .history:
+                RecentlyPlayedView()
             }
         }
         .background(DZ.windowBG)
@@ -541,6 +545,19 @@ struct HeroHeader: View {
                             Label(L("Shuffle"), systemImage: "shuffle")
                         }
                         .buttonStyle(.glass)
+                        // Download the whole album / playlist (premium-only, gated
+                        // like the single-track download). Shown only on a
+                        // downloadable list (album / playlist), not Liked / Flow.
+                        if let kind = app.listDownloadKind {
+                            Button { app.downloadCurrentList() } label: {
+                                Label(kind == .album ? L("Download album") : L("Download playlist"),
+                                      systemImage: "arrow.down.circle")
+                            }
+                            .buttonStyle(.glass)
+                            .disabled(!app.isPremium)
+                            .help(app.isPremium ? L("Download")
+                                                : L("Requires a paid Deezer plan"))
+                        }
                     }
                     .controlSize(.large)
                     .padding(.top, 4)
@@ -641,6 +658,11 @@ struct TrackRowView: View {
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .contextMenu {
             Button { onPlay() } label: { Label(L("Play"), systemImage: "play.fill") }
+            // Start a "song radio" mix seeded from this track (loads + plays it
+            // through the same code path Flow uses).
+            Button { app.startTrackRadio(track) } label: {
+                Label(L("Start radio"), systemImage: "dot.radiowaves.left.and.right")
+            }
             Button { app.toggleLike(track) } label: {
                 Label(app.isLiked(track) ? L("Unlike") : L("Like"),
                       systemImage: app.isLiked(track) ? "heart.fill" : "heart")

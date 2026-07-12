@@ -166,6 +166,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (prefs.replayGain >= 0) Engine.setReplayGain(prefs.replayGain == 1)
         if (prefs.gapless >= 0) Engine.setGapless(prefs.gapless == 1)
         if (prefs.crossfadeMs >= 0) Engine.setCrossfadeMs(prefs.crossfadeMs)
+        // Re-apply the stream-cache budget so the engine attaches the cache at
+        // startup (it can only be set before playback begins).
+        if (prefs.mediaCacheMb >= 0) Engine.setMediaCacheMB(prefs.mediaCacheMb)
     }
 
     fun logout() {

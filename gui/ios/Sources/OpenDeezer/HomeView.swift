@@ -74,6 +74,9 @@ struct HomeView: View {
                 NavigationLink { PodcastsView() } label: {
                     QuickPickCard(title: "Podcasts", systemImage: "mic.fill", tint: .teal)
                 }
+                NavigationLink { HistoryView() } label: {
+                    QuickPickCard(title: "Recently Played", systemImage: "clock.arrow.circlepath", tint: .indigo)
+                }
             }
             .padding(.horizontal, 20)
         }

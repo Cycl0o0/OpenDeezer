@@ -38,6 +38,41 @@ final class DownloadStore: ObservableObject {
         }
     }
 
+    /// Download every track of `album` into the shared folder. Premium-only, the
+    /// same gate as single-track downloads; the batch summary replaces the
+    /// in-flight note when it finishes.
+    func downloadAlbum(id: String, name: String, isPremium: Bool) {
+        downloadBatch(name: name, isPremium: isPremium) { await Engine.downloadAlbum(id: id) }
+    }
+
+    /// Download every track of `playlist` into the shared folder (premium-only).
+    func downloadPlaylist(id: String, name: String, isPremium: Bool) {
+        downloadBatch(name: name, isPremium: isPremium) { await Engine.downloadPlaylist(id: id) }
+    }
+
+    private func downloadBatch(name: String, isPremium: Bool,
+                               _ run: @escaping () async -> Engine.BatchDownloadResult) {
+        guard isPremium else {
+            setStatus(String(localized: "Requires a paid Deezer plan"))
+            return
+        }
+        setStatus(String(localized: "Downloading “\(name)”…"), autoDismiss: false)
+        Task {
+            let result = await run()
+            setStatus(Self.batchSummary(result))
+        }
+    }
+
+    /// Human summary of a batch download: the engine error when nothing saved
+    /// (e.g. the premium gate on a Free account), else a saved/failed tally.
+    private static func batchSummary(_ r: Engine.BatchDownloadResult) -> String {
+        if r.saved == 0 && r.failed == 0 && !r.error.isEmpty { return r.error }
+        if r.failed > 0 {
+            return String(localized: "Saved \(r.saved), \(r.failed) failed")
+        }
+        return String(localized: "Saved \(r.saved) tracks")
+    }
+
     /// Show a status note. `autoDismiss` (default) clears it after a few seconds;
     /// the in-flight "Downloading…" note passes `false` so it stays until the
     /// result replaces it. A token guards against a stale timer clearing a newer

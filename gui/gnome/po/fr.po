@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: opendeezer-gnome 2.2.0\n"
+"Project-Id-Version: opendeezer-gnome 2.2.1\n"
 "Report-Msgid-Bugs-To: https://github.com/Cycl0o0/OpenDeezer/issues\n"
 "POT-Creation-Date: 2026-07-03 09:29+0200\n"
 "PO-Revision-Date: 2026-07-02 22:00+0000\n"
@@ -994,3 +994,84 @@ msgstr "Une réimplémentation open source de Deezer"
 #: data/org.opendeezer.OpenDeezer.desktop.in:11
 msgid "music;deezer;streaming;player;"
 msgstr "musique;deezer;streaming;lecteur;music;"
+
+#: src/main.c
+msgid "Start radio"
+msgstr "Lancer la radio"
+
+#: src/main.c
+msgid "Radio"
+msgstr "Radio"
+
+#: src/main.c
+msgid "Download album"
+msgstr "Télécharger l'album"
+
+#: src/main.c
+msgid "Download playlist"
+msgstr "Télécharger la playlist"
+
+#: src/main.c
+msgid "Downloading album…"
+msgstr "Téléchargement de l'album…"
+
+#: src/main.c
+msgid "Downloading playlist…"
+msgstr "Téléchargement de la playlist…"
+
+#: src/main.c
+msgid "no tracks were saved"
+msgstr "aucun titre enregistré"
+
+#: src/main.c
+msgid "Stream cache (MB)"
+msgstr "Cache de flux (Mo)"
+
+#: src/main.c
+msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgstr "Met en cache les flux sur le disque pour économiser des données (0 = désactivé). Prend effet au prochain lancement."
+
+#: src/main.c
+msgid "Recently played"
+msgstr "Écoutés récemment"
+
+#: src/main.c
+msgid "No listening history yet"
+msgstr "Aucun historique d'écoute"
+
+#: src/main.c
+msgid "Listening stats (last 30 days)"
+msgstr "Statistiques d'écoute (30 derniers jours)"
+
+#: src/main.c
+msgid "Total listening time"
+msgstr "Temps d'écoute total"
+
+#: src/main.c
+msgid "Top Artists"
+msgstr "Meilleurs artistes"
+
+#: src/main.c
+#, c-format
+msgid "Saved %d tracks, %d failed"
+msgstr "%d titres enregistrés, %d échoués"
+
+#: src/main.c
+#, c-format
+msgid "%lld h %lld min"
+msgstr "%lld h %lld min"
+
+#: src/main.c
+#, c-format
+msgid "Saved %d track to %s"
+msgid_plural "Saved %d tracks to %s"
+msgstr[0] "%d titre enregistré dans %s"
+msgstr[1] "%d titres enregistrés dans %s"
+
+#: src/main.c
+#, c-format
+msgid "%lld play"
+msgid_plural "%lld plays"
+msgstr[0] "%lld écoute"
+msgstr[1] "%lld écoutes"
+

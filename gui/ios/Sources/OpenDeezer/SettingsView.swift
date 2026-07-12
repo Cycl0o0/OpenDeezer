@@ -32,6 +32,8 @@ struct SettingsView: View {
     @State private var replayGain = AudioPrefs.replayGain
     @State private var crossfadeMs = Double(AudioPrefs.crossfadeMs)
     @State private var sleepOption: SleepOption = .off
+    // Engine-owned (media.json); loaded on appear, applied at the next launch.
+    @State private var mediaCacheMB = 0
 
     @State private var remoteInfo: WebRemoteInfo?
     @State private var qrImage: UIImage?
@@ -128,6 +130,21 @@ struct SettingsView: View {
                             .onChange(of: crossfadeMs) { _, value in AudioPrefs.crossfadeMs = Int(value); Engine.setCrossfadeMS(Int(value)) }
                     }
                     NavigationLink("Equalizer") { EqualizerView() }
+                }
+
+                Section {
+                    Picker("Stream cache", selection: $mediaCacheMB) {
+                        ForEach(cacheOptions, id: \.self) { mb in
+                            Text(mb == 0 ? String(localized: "Off") : String(localized: "\(mb) MB")).tag(mb)
+                        }
+                    }
+                    .onChange(of: mediaCacheMB) { _, value in
+                        Task { await Engine.setMediaCacheMB(value) }
+                    }
+                } header: {
+                    Text("Streaming")
+                } footer: {
+                    Text("Cache raw stream data on disk to cut re-buffering and data use when replaying tracks. 0 turns it off. Takes effect at the next launch.")
                 }
 
                 // Downloads — premium-only, so shown only for a paid plan. The
@@ -270,6 +287,7 @@ struct SettingsView: View {
             }
             .task {
                 syncSleep()
+                mediaCacheMB = await Engine.mediaCacheMB()
                 if isPremium {
                     downloadFolder = await Engine.downloadDir()
                 } else {
@@ -313,6 +331,17 @@ struct SettingsView: View {
 
     private func refreshConnect() async {
         connectInfo = await Engine.connectHostInfo()
+    }
+
+    /// Stream-cache presets, plus the persisted value if it isn't one of them
+    /// (e.g. set from another OpenDeezer client) so the Picker can show it.
+    private var cacheOptions: [Int] {
+        var opts = [0, 128, 256, 512, 1024, 2048]
+        if !opts.contains(mediaCacheMB) {
+            opts.append(mediaCacheMB)
+            opts.sort()
+        }
+        return opts
     }
 
     private func canUseQuality(_ level: Int) -> Bool {

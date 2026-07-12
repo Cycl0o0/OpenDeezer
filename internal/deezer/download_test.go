@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +99,7 @@ func TestTagFile_WritesID3v24AndCover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen for read: %v", err)
 	}
-	defer tag.Close()
+	defer func() { _ = tag.Close() }()
 
 	if got := tag.Title(); got != "Test Song" {
 		t.Errorf("TIT2 title = %q", got)
@@ -194,6 +196,81 @@ func TestTagFile_WritesFLACVorbisAndPicture(t *testing.T) {
 	}
 	if !hasPic {
 		t.Error("METADATA_BLOCK_PICTURE missing")
+	}
+}
+
+func TestYearFromDate(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"2021-06-15", "2021"},
+		{"1999", "1999"},
+		{"", ""},
+		{"20", ""},        // too short
+		{"n/a-01-01", ""}, // not 4 leading digits
+		{"20x1-06-15", ""},
+	}
+	for _, c := range cases {
+		if got := yearFromDate(c.in); got != c.want {
+			t.Errorf("yearFromDate(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestSaveTrack_EmitsAlbumTrackNumberAndYear proves the album track number and
+// release year flow all the way through the *production* download path: the
+// Track is built by the real restTrackDTO decode (AlbumTracks), and saveTrack
+// tags the file with t.TrackNumber / t.Year — not the literal 0/"" that only
+// the unit tests used to pass. A single httptest server plays both the REST
+// album-tracks listing and the CDN audio source.
+func TestSaveTrack_EmitsAlbumTrackNumberAndYear(t *testing.T) {
+	tmp := t.TempDir()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/album/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":901,"title":"Track One","duration":123,"track_position":7,"release_date":"2021-06-15","artist":{"id":1,"name":"A"},"album":{"title":"Alb"}}]}`))
+			return
+		}
+		// A realistic-length MP3-ish body: id3v2.Open reads a 10-byte header, so
+		// the audio must be at least that long for tagging to run at all.
+		body := append([]byte("\xff\xfb\x90\x00"), bytes.Repeat([]byte{0}, 200)...)
+		_, _ = w.Write(body)
+	}))
+	defer ts.Close()
+
+	c := New("dummy")
+	c.restURLOverride = ts.URL
+
+	tracks, err := c.AlbumTracks("55")
+	if err != nil {
+		t.Fatalf("AlbumTracks: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("want 1 track, got %d", len(tracks))
+	}
+	tr := tracks[0]
+	// The DTO decode must have populated the new album metadata.
+	if tr.TrackNumber != 7 || tr.Year != "2021" {
+		t.Fatalf("DTO did not populate album metadata: TrackNumber=%d Year=%q", tr.TrackNumber, tr.Year)
+	}
+
+	// Production download path: saveTrack tags with t.TrackNumber / t.Year.
+	plan := &StreamPlan{CDNURL: ts.URL + "/cdn/audio", Format: "MP3_320", Encrypted: false}
+	path, err := c.saveTrack(context.Background(), tr, tmp, plan, nil)
+	if err != nil {
+		t.Fatalf("saveTrack: %v", err)
+	}
+
+	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
+	if err != nil {
+		t.Fatalf("reopen tagged mp3: %v", err)
+	}
+	defer func() { _ = tag.Close() }()
+
+	if got := tag.GetTextFrame(tag.CommonID("Track number/Position in set")).Text; got != "7" {
+		t.Errorf("TRCK = %q, want 7 (album track number lost on the production path)", got)
+	}
+	if got := tag.Year(); got != "2021" {
+		t.Errorf("year = %q, want 2021 (release year lost on the production path)", got)
 	}
 }
 

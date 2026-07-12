@@ -606,6 +606,63 @@ func DZDownloadTrack(trackID, destDir *C.char) *C.char {
 	return jsonStr(map[string]string{"path": path}, nil)
 }
 
+// batchSummary is the shared JSON summary for the batch downloaders:
+// {"saved":N,"failed":N,"dir":"...","error":""}. error is "" on full success
+// and carries the batch error message (ErrPartialDownload's counts, a premium
+// gate, a cancellation, ...) otherwise.
+func batchSummary(saved []string, failed int, dir string, err error) map[string]any {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	return map[string]any{"saved": len(saved), "failed": failed, "dir": dir, "error": msg}
+}
+
+// DZDownloadAlbum downloads every track of albumID to the shared download folder
+// (DZDownloadDir) and returns the batch summary
+// {"saved":N,"failed":N,"dir":"...","error":""}. Blocking and premium-only, the
+// same gate + folder DZDownloadTrack uses (GUIs already call the single-track
+// download off the UI thread). On a partial download the per-track failures are
+// counted in "failed" and "error" carries the batch message; a free account
+// yields saved:0,failed:0 with the premium error. Release with DZFree.
+//
+//export DZDownloadAlbum
+func DZDownloadAlbum(id *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	dir := config.LoadDownloadDir()
+	var failed int
+	opts := deezer.DownloadOptions{Progress: func(p deezer.DownloadProgress) {
+		if p.Err != nil {
+			failed++
+		}
+	}}
+	saved, err := c.SaveAlbum(context.Background(), C.GoString(id), dir, opts)
+	return jsonStr(batchSummary(saved, failed, dir, err), nil)
+}
+
+// DZDownloadPlaylist downloads every track of playlistID to the shared download
+// folder and returns the same batch summary as DZDownloadAlbum.
+//
+//export DZDownloadPlaylist
+func DZDownloadPlaylist(id *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	dir := config.LoadDownloadDir()
+	var failed int
+	opts := deezer.DownloadOptions{Progress: func(p deezer.DownloadProgress) {
+		if p.Err != nil {
+			failed++
+		}
+	}}
+	saved, err := c.SavePlaylist(context.Background(), C.GoString(id), dir, opts)
+	return jsonStr(batchSummary(saved, failed, dir, err), nil)
+}
+
 // DZDownloadDir returns the current download folder (env/config/default). The
 // result must be released with DZFree.
 //
@@ -933,6 +990,67 @@ func DZFlowJSON() *C.char {
 	}
 	ts, err := c.Flow()
 	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
+}
+
+// DZTrackMixJSON returns a "song radio" mix seeded from a track (the seed track
+// is kept as the first entry): {tracks:[...]} in the shared wire shape, exactly
+// like DZFlowJSON so a GUI reuses its Flow parsing. Browse-style (like
+// DZFlowJSON, it fetches from the local client regardless of any routed remote —
+// only the /play/mix/* engine path forwards to a device). Release with DZFree.
+//
+//export DZTrackMixJSON
+func DZTrackMixJSON(id *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ts, err := c.TrackMix(C.GoString(id))
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
+}
+
+// DZArtistMixJSON returns an "artist radio" mix seeded from an artist:
+// {tracks:[...]} in the shared wire shape, mirroring DZFlowJSON.
+//
+//export DZArtistMixJSON
+func DZArtistMixJSON(id *C.char) *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ts, err := c.ArtistMix(C.GoString(id))
+	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
+}
+
+// DZHistoryRecentJSON returns the newest n entries of the machine-local
+// listening history as a JSON array (newest first, same stable shape the
+// control API's /history/recent serves); n <= 0 returns all. Empty/unavailable
+// history yields "[]". Release with DZFree.
+//
+//export DZHistoryRecentJSON
+func DZHistoryRecentJSON(n C.int) *C.char {
+	st := historyStore()
+	if st == nil {
+		return C.CString("[]")
+	}
+	entries, err := st.Recent(int(n))
+	if err != nil {
+		return C.CString("[]")
+	}
+	return jsonStr(entries, nil)
+}
+
+// DZHistoryStatsJSON returns local listening stats over the last sinceDays
+// (sinceDays <= 0 = all history) as
+// {topTracks:[{trackId,title,artist,plays,totalSec}],
+//
+//	topArtists:[{artist,plays,totalSec}], totalSeconds:N}. Empty/unavailable
+//
+// history yields the same shape with empty arrays and totalSeconds:0. Release
+// with DZFree.
+//
+//export DZHistoryStatsJSON
+func DZHistoryStatsJSON(sinceDays C.int) *C.char {
+	return jsonStr(historyStats(int(sinceDays)), nil)
 }
 
 // ---- podcasts (v0.4) ----

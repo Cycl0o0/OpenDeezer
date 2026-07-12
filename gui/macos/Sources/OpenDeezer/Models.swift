@@ -182,6 +182,58 @@ enum PlayerState: Int {
     case stopped = 0, loading, playing, paused, errored
 }
 
+// Listening-history entry (DZHistoryRecentJSON) — one played track, newest
+// first. `album` is omitted server-side for entries without one. `id` combines
+// the track id and the play timestamp so ForEach stays stable even when the
+// same track appears more than once in the history.
+struct HistoryEntry: Codable, Hashable, Identifiable {
+    let trackId: String
+    let title: String
+    let artist: String
+    let album: String?
+    let startedAt: Int64          // unix seconds
+    let durationPlayedSec: Int64  // seconds actually listened
+
+    var id: String { "\(trackId)#\(startedAt)" }
+}
+
+// One aggregated top-track row (DZHistoryStatsJSON.topTracks[]).
+struct TrackStat: Codable, Hashable, Identifiable {
+    let trackId: String
+    let title: String
+    let artist: String
+    let plays: Int
+    let totalSec: Int64
+
+    var id: String { trackId.isEmpty ? "\(artist)\u{0}\(title)" : trackId }
+}
+
+// One aggregated top-artist row (DZHistoryStatsJSON.topArtists[]).
+struct ArtistStat: Codable, Hashable, Identifiable {
+    let artist: String
+    let plays: Int
+    let totalSec: Int64
+
+    var id: String { artist }
+}
+
+// Local listening stats over a window (DZHistoryStatsJSON).
+struct HistoryStats: Codable {
+    let topTracks: [TrackStat]
+    let topArtists: [ArtistStat]
+    let totalSeconds: Int64
+}
+
+// Result of DZDownloadAlbum / DZDownloadPlaylist — a batch summary. `error` is
+// empty on full success; on a partial download `failed` counts the per-track
+// failures and `error` carries the batch message.
+struct BatchDownloadResult: Codable {
+    let saved: Int
+    let failed: Int
+    let dir: String?
+    let error: String?
+}
+
 // Update-check result (DZCheckUpdateJSON) — GitHub's latest OpenDeezer release
 // vs. the running version. hasUpdate is only true when latest is strictly
 // newer; a network failure comes back with hasUpdate == false.

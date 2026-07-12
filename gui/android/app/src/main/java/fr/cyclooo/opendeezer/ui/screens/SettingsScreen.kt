@@ -22,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +69,10 @@ import fr.cyclooo.opendeezer.engine.WebRemoteInfo
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
+// Stream-cache stepper bounds (MB): step in 128 MB increments up to 4 GB.
+private const val MEDIA_CACHE_STEP = 128
+private const val MEDIA_CACHE_MAX = 4096
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Unit, onLogout: () -> Unit) {
@@ -74,6 +80,7 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
     var replayGain by remember { mutableStateOf(Engine.replayGain()) }
     var gapless by remember { mutableStateOf(Engine.gapless()) }
     var crossfadeSec by remember { mutableFloatStateOf((Engine.crossfadeMs() / 1000f)) }
+    var mediaCacheMb by remember { mutableIntStateOf(Engine.mediaCacheMB()) }
     var sleepSelection by remember {
         mutableIntStateOf(
             when {
@@ -228,6 +235,45 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                     },
                     valueRange = 0f..12f,
                     steps = 11,
+                )
+            }
+
+            HorizontalDivider()
+
+            // Raw-stream disk cache budget. Applied at the next launch (the engine
+            // attaches the cache once at startup), so persist + note that.
+            Column {
+                Text(stringResource(R.string.settings_stream_cache), style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (mediaCacheMb <= 0) stringResource(R.string.common_off)
+                        else stringResource(R.string.stream_cache_mb, mediaCacheMb),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        enabled = mediaCacheMb > 0,
+                        onClick = {
+                            val v = (mediaCacheMb - MEDIA_CACHE_STEP).coerceAtLeast(0)
+                            mediaCacheMb = v
+                            Engine.setMediaCacheMB(v)
+                            prefs.mediaCacheMb = v
+                        },
+                    ) { Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.cd_decrease)) }
+                    IconButton(
+                        enabled = mediaCacheMb < MEDIA_CACHE_MAX,
+                        onClick = {
+                            val v = (mediaCacheMb + MEDIA_CACHE_STEP).coerceAtMost(MEDIA_CACHE_MAX)
+                            mediaCacheMb = v
+                            Engine.setMediaCacheMB(v)
+                            prefs.mediaCacheMb = v
+                        },
+                    ) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.cd_increase)) }
+                }
+                Text(
+                    stringResource(R.string.stream_cache_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 

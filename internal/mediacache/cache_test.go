@@ -2,6 +2,7 @@ package mediacache
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -59,7 +60,7 @@ func TestAtomicVisibility(t *testing.T) {
 	c, _ := New(dir, 10<<20)
 
 	wc, _ := c.Put("partial.MP3_128")
-	wc.Write([]byte("incomplete data so far"))
+	_, _ = wc.Write([]byte("incomplete data so far"))
 	// do NOT close
 
 	if _, _, hit := c.Get("partial.MP3_128"); hit {
@@ -67,7 +68,7 @@ func TestAtomicVisibility(t *testing.T) {
 	}
 
 	// now finish
-	wc.Write([]byte(" more"))
+	_, _ = wc.Write([]byte(" more"))
 	if err := wc.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +92,8 @@ func TestLRUEviction(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), 30)
 	for _, k := range []string{"A", "B", "C"} {
 		wc, _ := c.Put(k + ".MP3")
-		wc.Write(payload)
-		wc.Close()
+		_, _ = wc.Write(payload)
+		_ = wc.Close()
 	}
 
 	// touch A (bump recency)
@@ -102,55 +103,89 @@ func TestLRUEviction(t *testing.T) {
 
 	// add D (30) -> temp total 120 >90 , evict oldest (B)
 	wc, _ := c.Put("D.MP3")
-	wc.Write(payload)
-	wc.Close()
+	_, _ = wc.Write(payload)
+	_ = wc.Close()
 
 	n, _ := c.Stats()
 	if n > 3 {
 		t.Fatalf("too many entries: %d", n)
 	}
-	if _, _, hit := c.Get("B.MP3"); hit {
+	if rc, _, hit := c.Get("B.MP3"); hit {
+		rc.Close()
 		t.Error("B should have been evicted (oldest)")
 	}
-	// A (touched), C, D should remain
+	// A (touched), C, D should remain. Close every reader so t.TempDir cleanup
+	// does not trip over an open handle on Windows.
 	for _, k := range []string{"A.MP3", "C.MP3", "D.MP3"} {
-		if _, _, hit := c.Get(k); !hit {
+		rc, _, hit := c.Get(k)
+		if !hit {
 			t.Errorf("%s should still be present", k)
+			continue
 		}
+		rc.Close()
 	}
 }
 
 func TestRecoverDropsPartialAndCorrupt(t *testing.T) {
 	dir := t.TempDir()
-	c, _ := New(dir, 10<<20)
 
-	// write a good one
-	wc, _ := c.Put("good.FLAC")
-	wc.Write([]byte("gooddata"))
-	wc.Close()
+	// good: a valid file with a matching index entry (unique-filename scheme).
+	goodFile := encodeKey("good.FLAC") + "-1"
+	if err := os.WriteFile(filepath.Join(dir, goodFile), []byte("gooddata"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// bad: a file whose recorded index size does not match its on-disk size.
+	badFile := encodeKey("bad.MP3") + "-2"
+	if err := os.WriteFile(filepath.Join(dir, badFile), []byte("short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// zero: a zero-length data file that no index entry references (orphan).
+	zeroFile := encodeKey("zero.MP3") + "-3"
+	if err := os.WriteFile(filepath.Join(dir, zeroFile), []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	// manually create a zero-length file (simulates partial)
-	os.WriteFile(filepath.Join(dir, "zero.MP3"), []byte{}, 0o644)
+	idx := indexData{
+		Entries: map[string]indexEntry{
+			"good.FLAC": {File: goodFile, Size: 8, AccessSeq: 2},
+			"bad.MP3":   {File: badFile, Size: 999, AccessSeq: 1}, // size mismatch
+		},
+		NextSeq: 3,
+		FileSeq: 3,
+	}
+	b, _ := json.Marshal(idx)
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	// manually create a size-mismatched entry via fake index + file
-	bad := filepath.Join(dir, "bad.MP3")
-	os.WriteFile(bad, []byte("short"), 0o644)
-
-	// create a corrupt index that references a wrong size for "bad"
-	idx := `{"entries":{"bad.MP3":{"size":999,"accessSeq":1},"good.FLAC":{"size":8,"accessSeq":2}},"nextSeq":3}`
-	os.WriteFile(filepath.Join(dir, "index.json"), []byte(idx), 0o644)
-
-	// reopen -> should drop zero and bad (size mismatch)
+	// reopen -> should drop zero and bad (size mismatch), keep good.
 	c2, _ := New(dir, 10<<20)
 	n, _ := c2.Stats()
 	if n != 1 {
 		t.Fatalf("after recovery got %d entries, want 1 (only good)", n)
 	}
-	if _, _, hit := c2.Get("bad.MP3"); hit {
-		t.Error("bad should have been dropped")
+	if rc, _, hit := c2.Get("bad.MP3"); hit {
+		rc.Close()
+		t.Error("bad should have been dropped (size mismatch)")
 	}
-	if _, _, hit := c2.Get("zero.MP3"); hit {
+	if rc, _, hit := c2.Get("zero.MP3"); hit {
+		rc.Close()
 		t.Error("zero should have been dropped")
+	}
+	rc, _, hit := c2.Get("good.FLAC")
+	if !hit {
+		t.Fatal("good should survive recovery")
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	if !bytes.Equal(got, []byte("gooddata")) {
+		t.Fatalf("good bytes wrong after recovery: %q", got)
+	}
+	// The unreferenced/mismatched files must be reclaimed as orphans.
+	for _, f := range []string{badFile, zeroFile} {
+		if _, err := os.Stat(filepath.Join(dir, f)); !os.IsNotExist(err) {
+			t.Errorf("orphan %s should have been reclaimed on recovery", f)
+		}
 	}
 }
 
@@ -174,9 +209,9 @@ func TestConcurrentReadersAndWriter(t *testing.T) {
 			return
 		}
 		for i := 0; i < 100; i++ {
-			wc.Write([]byte(payload))
+			_, _ = wc.Write([]byte(payload))
 		}
-		wc.Close()
+		_ = wc.Close()
 	}()
 
 	// many readers that also hammer Get
@@ -187,7 +222,7 @@ func TestConcurrentReadersAndWriter(t *testing.T) {
 			<-start
 			for j := 0; j < 50; j++ {
 				if rc, _, hit := c.Get(key); hit {
-					io.Copy(io.Discard, rc)
+					_, _ = io.Copy(io.Discard, rc)
 					rc.Close()
 				}
 				// also stats
@@ -215,18 +250,21 @@ func TestTeeReaderCommitAndDiscard(t *testing.T) {
 
 	srcGood := bytes.NewReader([]byte("good tee data here"))
 	r := c.TeeReader("tee-good.MP3", srcGood)
-	io.Copy(io.Discard, r)
+	_, _ = io.Copy(io.Discard, r)
 
-	if _, _, hit := c.Get("tee-good.MP3"); !hit {
+	if rc, _, hit := c.Get("tee-good.MP3"); !hit {
 		t.Error("tee good should have committed")
+	} else {
+		rc.Close()
 	}
 
 	// error path: src that errors
 	srcBad := io.MultiReader(bytes.NewReader([]byte("partial")), &errReader{err: io.ErrUnexpectedEOF})
 	r2 := c.TeeReader("tee-bad.MP3", srcBad)
-	io.Copy(io.Discard, r2)
+	_, _ = io.Copy(io.Discard, r2)
 
-	if _, _, hit := c.Get("tee-bad.MP3"); hit {
+	if rc, _, hit := c.Get("tee-bad.MP3"); hit {
+		rc.Close()
 		t.Error("tee error path should not have committed")
 	}
 }
@@ -240,10 +278,10 @@ func TestClear(t *testing.T) {
 	c, _ := New(dir, 10<<20)
 
 	wc, _ := c.Put("x.MP3")
-	wc.Write([]byte("abc"))
-	wc.Close()
+	_, _ = wc.Write([]byte("abc"))
+	_ = wc.Close()
 
-	c.Clear()
+	_ = c.Clear()
 	n, b := c.Stats()
 	if n != 0 || b != 0 {
 		t.Errorf("clear stats %d %d", n, b)
@@ -255,35 +293,38 @@ func TestNoEvictActiveWrite(t *testing.T) {
 	dir := t.TempDir()
 	c, _ := New(dir, 50) // very small
 
-	// start a long write for "active"
+	// start a long write for "active" (not yet committed)
 	wc, _ := c.Put("active.MP3")
-	wc.Write(bytes.Repeat([]byte("A"), 30))
+	_, _ = wc.Write(bytes.Repeat([]byte("A"), 30))
 
-	// add others that would normally evict
+	// add others that would normally trigger eviction
 	for i := 0; i < 5; i++ {
 		w, _ := c.Put(string(rune('a'+i)) + ".MP3")
-		w.Write(bytes.Repeat([]byte("B"), 20))
-		w.Close()
+		_, _ = w.Write(bytes.Repeat([]byte("B"), 20))
+		_ = w.Close()
 	}
 
-	// active write still in progress, should not have been evicted
-	if _, busy := func() (struct{}, bool) {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		_, b := c.writing["active.MP3"]
-		return struct{}{}, b
-	}(); !busy {
-		// ok
+	// The active (in-progress) key must still be marked writing so eviction
+	// never touches it while its Put is open.
+	c.mu.Lock()
+	_, busy := c.writing["active.MP3"]
+	c.mu.Unlock()
+	if !busy {
+		t.Fatal("active write should still be protected (marked in-progress)")
 	}
 
 	// finish it
-	wc.Close()
-
-	// now it should be present (or may have been kept)
-	if _, _, hit := c.Get("active.MP3"); !hit {
-		// depending on timing it may have survived because we skipped it
-		// this is best-effort in the test
+	if err := wc.Close(); err != nil {
+		t.Fatal(err)
 	}
+
+	// It committed successfully despite the eviction pressure; as the most
+	// recent entry it survives its own commit's eviction pass.
+	rc, _, hit := c.Get("active.MP3")
+	if !hit {
+		t.Fatal("active entry should be present after commit")
+	}
+	rc.Close()
 }
 
 // A duplicate Put for an already-cached key that is later abandoned (e.g. a
@@ -299,7 +340,7 @@ func TestAbandonedRewriteKeepsExistingEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wc.Write(orig)
+	_, _ = wc.Write(orig)
 	if err := wc.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +350,7 @@ func TestAbandonedRewriteKeepsExistingEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Put: %v", err)
 	}
-	wc2.Write([]byte("replacement that never completes"))
+	_, _ = wc2.Write([]byte("replacement that never completes"))
 	wc2.(*putWriter).abort = true
 	if err := wc2.Close(); err != nil {
 		t.Fatal(err)
@@ -333,15 +374,18 @@ func TestAbandonedRewriteKeepsExistingEntry(t *testing.T) {
 
 	// Third Put, closed without any writes (empty abandon) — same guarantee.
 	wc3, _ := c.Put(key)
-	wc3.Close()
-	if _, _, hit := c.Get(key); !hit {
+	_ = wc3.Close()
+	if rc, _, hit := c.Get(key); !hit {
 		t.Fatal("zero-write rewrite destroyed the existing entry")
+	} else {
+		rc.Close()
 	}
 
-	// A committed replacement swaps bytes and accounting atomically.
+	// A committed replacement swaps bytes and accounting atomically, onto a
+	// brand-new on-disk file (never renaming over the previous one).
 	repl := []byte("replacement payload, a bit longer than the original one")
 	wc4, _ := c.Put(key)
-	wc4.Write(repl)
+	_, _ = wc4.Write(repl)
 	if err := wc4.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -371,14 +415,17 @@ func TestEvictionKeepsEntryWhenRemoveFails(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), 30)
 	for _, k := range []string{"A", "B"} {
 		wc, _ := c.Put(k + ".MP3")
-		wc.Write(payload)
+		_, _ = wc.Write(payload)
 		if err := wc.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	// Simulate the LRU victim (A) being busy: its removal fails.
-	busy := filepath.Join(dir, "A.MP3")
+	// Simulate the LRU victim (A) being busy: its removal fails. Each entry now
+	// has a unique on-disk name, so resolve A's actual path from the index.
+	c.mu.Lock()
+	busy := c.entries["A.MP3"].path
+	c.mu.Unlock()
 	orig := removeFile
 	removeFile = func(p string) error {
 		if p == busy {
@@ -393,7 +440,7 @@ func TestEvictionKeepsEntryWhenRemoveFails(t *testing.T) {
 	// code ran, this would desync (total 60 with 90 bytes on disk) — or hang
 	// forever if the failed victim were retried in a loop.
 	wc, _ := c.Put("C.MP3")
-	wc.Write(payload)
+	_, _ = wc.Write(payload)
 	if err := wc.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +463,7 @@ func TestEvictionKeepsEntryWhenRemoveFails(t *testing.T) {
 	// (The Get above bumped A's recency, so B and C are now the LRU victims.)
 	removeFile = os.Remove
 	wc, _ = c.Put("D.MP3")
-	wc.Write(payload)
+	_, _ = wc.Write(payload)
 	if err := wc.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +471,8 @@ func TestEvictionKeepsEntryWhenRemoveFails(t *testing.T) {
 		t.Fatalf("eviction did not resume after the victim became removable: %d entries, %d bytes", n, b)
 	}
 	for _, k := range []string{"B.MP3", "C.MP3"} {
-		if _, _, hit := c.Get(k); hit {
+		if rc, _, hit := c.Get(k); hit {
+			rc.Close()
 			t.Errorf("%s (LRU) should have been evicted once eviction resumed", k)
 		}
 	}
@@ -449,10 +497,12 @@ func TestMtimeBumpOnGet(t *testing.T) {
 	dir := t.TempDir()
 	c, _ := New(dir, 10<<20)
 	wc, _ := c.Put("mtime.MP3")
-	wc.Write([]byte("data"))
-	wc.Close()
+	_, _ = wc.Write([]byte("data"))
+	_ = wc.Close()
 
-	p := filepath.Join(dir, "mtime.MP3")
+	c.mu.Lock()
+	p := c.entries["mtime.MP3"].path
+	c.mu.Unlock()
 	fi1, _ := os.Stat(p)
 	time.Sleep(10 * time.Millisecond)
 	rc, _, _ := c.Get("mtime.MP3")
@@ -461,5 +511,80 @@ func TestMtimeBumpOnGet(t *testing.T) {
 	if !fi2.ModTime().After(fi1.ModTime()) && runtime.GOOS != "windows" {
 		// on some FS mtime may have low resolution; don't fail hard
 		t.Log("mtime did not visibly advance (FS resolution)")
+	}
+}
+
+// TestReplaceWhileReaderOpen is the exact Windows scenario the unique-filename
+// scheme exists to survive: committing a replacement for a key while a reader
+// still holds the previous file open. The old, same-name scheme did
+// os.Rename(temp, key) here — on Windows that fails with "Access is denied"
+// because the target file is open. With unique names the replacement renames
+// onto a brand-new path and never touches the open file, so the commit
+// succeeds on every OS, the open reader keeps reading the ORIGINAL bytes, and a
+// fresh Get sees the replacement. (On Windows the best-effort delete of the old
+// file fails while the reader is open and the file is left as a reclaimable
+// orphan; the commit still returns nil. On Unix the delete succeeds but the
+// open fd stays valid.)
+func TestReplaceWhileReaderOpen(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir, 10<<20)
+
+	const key = "replace.MP3_320"
+	orig := []byte("original bytes held open by a reader across a replace")
+
+	wc, err := c.Put(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wc.Write(orig); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Open a reader on the original entry and deliberately keep it open across
+	// the replacement (mimics Windows holding the file).
+	rc, _, hit := c.Get(key)
+	if !hit {
+		t.Fatal("expected hit for the original entry")
+	}
+	defer rc.Close()
+
+	// Commit a replacement for the same key while rc is still open. This must
+	// NOT error (the whole point of the unique-filename scheme).
+	repl := []byte("replacement bytes committed while a reader is open")
+	wc2, err := c.Put(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wc2.Write(repl); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc2.Close(); err != nil {
+		t.Fatalf("replace while a reader holds the old file open must succeed: %v", err)
+	}
+
+	// The still-open reader must observe the ORIGINAL bytes in full.
+	got, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, orig) {
+		t.Fatalf("open reader saw %q, want original %q", got, orig)
+	}
+
+	// A fresh Get returns the replacement.
+	rc2, sz, hit := c.Get(key)
+	if !hit {
+		t.Fatal("expected hit after replacement")
+	}
+	got2, _ := io.ReadAll(rc2)
+	rc2.Close()
+	if !bytes.Equal(got2, repl) || sz != int64(len(repl)) {
+		t.Fatalf("fresh reader saw %q (size %d), want %q", got2, sz, repl)
+	}
+	if n, b := c.Stats(); n != 1 || b != int64(len(repl)) {
+		t.Fatalf("stats after replace = %d entries, %d bytes; want 1, %d", n, b, len(repl))
 	}
 }
