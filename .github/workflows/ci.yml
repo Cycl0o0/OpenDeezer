@@ -11,8 +11,12 @@ permissions:
 
 jobs:
   test:
-    name: build · vet · test (race)
-    runs-on: ubuntu-24.04
+    name: build · vet · test (race) (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -20,21 +24,47 @@ jobs:
           go-version: "1.25.12"
           cache: true
       - name: Install ALSA (cgo audio)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Build
-        run: go build ./...
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export CC=x86_64-w64-mingw32-gcc
+          fi
+          go build ./...
       - name: Vet
         # -stdmethods=false: the MPRIS player exports a D-Bus method named Seek
         # (org.mpris.MediaPlayer2.Player.Seek) whose signature is fixed by the
         # spec and godbus reflection, so it can't match io.Seeker. All other vet
         # analyzers stay on.
+        if: runner.os == 'Linux'
         run: go vet -stdmethods=false ./...
       - name: Test (race + coverage)
-        run: go test -race -coverprofile=coverage.out ./...
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -1
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export CC=x86_64-w64-mingw32-gcc
+          fi
+          go test -race -coverprofile=coverage.out ./...
+      - name: Coverage summary (ratchet)
+        if: runner.os == 'Linux'
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          TOTAL=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          FLOOR=20
+          if [ -z "$TOTAL" ]; then TOTAL=0; fi
+          if awk "BEGIN { exit !($TOTAL < $FLOOR) }"; then
+            echo "ERROR: Coverage ${TOTAL}% dropped below floor ${FLOOR}% (baseline ~20.2%)."
+            echo "Actionable: write tests for uncovered code paths, or if coverage legitimately dropped after a refactor update the FLOOR in .github/workflows/ci.yml (only after a net increase)."
+            exit 1
+          fi
+          echo "Coverage ${TOTAL}% is >= floor ${FLOOR}% — OK"
       - name: Build c-archive (corelib)
-        run: CGO_ENABLED=1 go build -buildmode=c-archive -o /tmp/libdeezercore.a ./corelib
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          CGO_ENABLED=1 go build -buildmode=c-archive -o /tmp/libdeezercore.a ./corelib
 
   lint:
     name: golangci-lint

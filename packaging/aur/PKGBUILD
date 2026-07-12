@@ -1,7 +1,7 @@
 # Maintainer: Cycl0o0 <cyclolysis0@gmail.com>
 # OpenDeezer terminal client (builds from the tagged source).
 pkgname=opendeezer
-pkgver=2.1.2
+pkgver=2.2.0
 pkgrel=1
 pkgdesc="Terminal Deezer client — browse, stream (Free or HiFi) and download with your ARL"
 arch=('x86_64' 'aarch64')
@@ -18,7 +18,7 @@ build() {
   export CGO_ENABLED=1
   export GOFLAGS="-trimpath -mod=readonly -modcacherw"
   export GOPATH="$srcdir/gopath"
-  go build -ldflags "-s -w -X main.version=$pkgver" -o opendeezer ./cmd/opendeezer
+  go build -trimpath -ldflags "-s -w -X main.version=$pkgver" -o opendeezer ./cmd/opendeezer
 }
 
 package() {

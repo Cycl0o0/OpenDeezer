@@ -6,7 +6,7 @@ package queue
 import (
 	"math/rand"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
 )
 
 // Repeat is the loop mode.
@@ -42,6 +42,12 @@ type Queue struct {
 	repeat  Repeat
 	shuffle bool
 	history []int
+
+	// version increments on every mutation of the track-list contents
+	// (Set/Append/Remove/Move/InsertAfterCurrent), so callers can cache derived
+	// snapshots of the list and rebuild them only when it changed. Cursor moves
+	// (Next/Prev/SetIndex) don't bump it: the list itself is unchanged.
+	version uint64
 
 	// order is a shuffled permutation of track indices (a full no-replacement
 	// traversal) and pos is the current track's position within it, so shuffle
@@ -128,6 +134,7 @@ func (q *Queue) syncPos() {
 // History is cleared.
 func (q *Queue) Set(tracks []deezer.Track, start int) {
 	q.tracks = tracks
+	q.version++
 	q.history = nil
 	q.order = nil
 	if len(tracks) == 0 {
@@ -145,8 +152,149 @@ func (q *Queue) Set(tracks []deezer.Track, start int) {
 	}
 }
 
-// Append adds tracks to the end without moving the cursor.
-func (q *Queue) Append(tracks ...deezer.Track) { q.tracks = append(q.tracks, tracks...) }
+// Append adds tracks to the end without moving the cursor. Under shuffle the
+// stale permutation is rebuilt lazily (see ensureOrder).
+func (q *Queue) Append(tracks ...deezer.Track) {
+	if len(tracks) == 0 {
+		return
+	}
+	q.tracks = append(q.tracks, tracks...)
+	q.version++
+}
+
+// InsertAfterCurrent inserts tracks immediately after the current one (at the
+// head when the queue is empty or has no current track), without moving the
+// cursor, and returns the insertion position. Under shuffle the new tracks are
+// spliced directly after the current position in the cycle, so "play next"
+// holds there too.
+func (q *Queue) InsertAfterCurrent(tracks ...deezer.Track) int {
+	if len(tracks) == 0 {
+		return -1
+	}
+	at := q.index + 1 // index == -1 (empty/no current) → insert at 0
+	k := len(tracks)
+	n := len(q.tracks)
+	q.tracks = append(q.tracks, tracks...) // grow, then shift the tail right
+	copy(q.tracks[at+k:], q.tracks[at:n])
+	copy(q.tracks[at:at+k], tracks)
+	q.version++
+	// History entries at/after the insertion point now name shifted tracks.
+	for hi, h := range q.history {
+		if h >= at {
+			q.history[hi] = h + k
+		}
+	}
+	if q.shuffle {
+		if len(q.order) == n && q.index >= 0 {
+			// Renumber the existing permutation, then splice the new indices in
+			// right after the current position so they play next.
+			for oi, idx := range q.order {
+				if idx >= at {
+					q.order[oi] = idx + k
+				}
+			}
+			ins := make([]int, k)
+			for i := range ins {
+				ins[i] = at + i
+			}
+			q.order = append(q.order[:q.pos+1], append(ins, q.order[q.pos+1:]...)...)
+		} else {
+			q.order = nil // drifted; rebuilt lazily by ensureOrder
+		}
+	}
+	return at
+}
+
+// Remove deletes the track at i and reports whether it did. The cursor keeps
+// following the track it was on; removing the current track leaves the cursor
+// in place (the next track slides in), clamped to the new end. History entries
+// are remapped and references to the removed track dropped. Under shuffle the
+// removed index is deleted from the cycle, which otherwise continues unchanged.
+func (q *Queue) Remove(i int) bool {
+	if i < 0 || i >= len(q.tracks) {
+		return false
+	}
+	q.tracks = append(q.tracks[:i], q.tracks[i+1:]...)
+	q.version++
+	hist := q.history[:0]
+	for _, h := range q.history {
+		if h == i {
+			continue
+		}
+		if h > i {
+			h--
+		}
+		hist = append(hist, h)
+	}
+	q.history = hist
+	if len(q.tracks) == 0 {
+		q.index = -1
+		q.order = nil
+		q.pos = 0
+		return true
+	}
+	if q.index > i {
+		q.index--
+	} else if q.index >= len(q.tracks) {
+		q.index = len(q.tracks) - 1
+	}
+	if q.shuffle {
+		order := q.order[:0]
+		for _, idx := range q.order {
+			if idx == i {
+				continue
+			}
+			if idx > i {
+				idx--
+			}
+			order = append(order, idx)
+		}
+		q.order = order
+		q.syncPos() // restore the order[pos] == index invariant
+	}
+	return true
+}
+
+// Move relocates the track at i to position j, reporting whether it did. The
+// cursor, history and shuffle cycle all follow the tracks they referenced, so
+// reordering never changes what's playing or what Prev retraces to.
+func (q *Queue) Move(i, j int) bool {
+	n := len(q.tracks)
+	if i < 0 || i >= n || j < 0 || j >= n || i == j {
+		return false
+	}
+	t := q.tracks[i]
+	q.tracks = append(q.tracks[:i], q.tracks[i+1:]...)
+	q.tracks = append(q.tracks, deezer.Track{})
+	copy(q.tracks[j+1:], q.tracks[j:])
+	q.tracks[j] = t
+	q.version++
+	// Remap an index through the remove-at-i + insert-at-j shuffle of positions.
+	remap := func(x int) int {
+		if x == i {
+			return j
+		}
+		if x > i {
+			x--
+		}
+		if x >= j {
+			x++
+		}
+		return x
+	}
+	q.index = remap(q.index)
+	for hi, h := range q.history {
+		q.history[hi] = remap(h)
+	}
+	for oi, idx := range q.order {
+		q.order[oi] = remap(idx) // order[pos]==index is preserved by the remap
+	}
+	return true
+}
+
+// Version returns the mutation counter for the track-list contents. See the
+// field doc: bumped by Set/Append/Remove/Move/InsertAfterCurrent only.
+func (q *Queue) Version() uint64 { return q.version }
 
 // Tracks returns the underlying slice (read-only; do not mutate).
 func (q *Queue) Tracks() []deezer.Track { return q.tracks }
@@ -167,13 +315,29 @@ func (q *Queue) Current() (deezer.Track, bool) {
 
 // SetIndex moves the cursor (clamped); use when the user picks a row directly.
 // The previous position is recorded so Prev retraces to the track that was
-// actually playing before the pick.
+// actually playing before the pick. For a remote/GUI client that only needs to
+// align the engine cursor to a row that is ALREADY playing (no user pick),
+// use AlignIndex instead so no synthetic history entry is created.
 func (q *Queue) SetIndex(i int) {
 	if i < 0 || i >= len(q.tracks) || i == q.index {
 		return
 	}
 	if q.index >= 0 {
 		q.pushHistory(q.index)
+	}
+	q.index = i
+	q.syncPos()
+}
+
+// AlignIndex moves the cursor (clamped) WITHOUT recording navigation history.
+// It exists for remote/GUI cursor synchronisation: a client that owns its own
+// queue calls Set(tracks, 0) then AlignIndex(N) to point the engine cursor at
+// the row it is already playing. Because the row was not "picked", pushing it
+// onto history would make a later Prev jump to a never-played track. Genuine
+// jumps (a queue-view pick, a remote QueueJump command) use SetIndex instead.
+func (q *Queue) AlignIndex(i int) {
+	if i < 0 || i >= len(q.tracks) || i == q.index {
+		return
 	}
 	q.index = i
 	q.syncPos()

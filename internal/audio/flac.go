@@ -14,7 +14,8 @@ import (
 // oto context).
 type flacStream struct {
 	s     *flac.Stream
-	buf   []byte // leftover interleaved PCM not yet returned
+	pcm   []byte // one frame's rendered interleaved PCM, reused across frames
+	off   int    // read offset into pcm (bytes already returned)
 	shift int    // bitsPerSample - 16
 }
 
@@ -40,12 +41,20 @@ func (f *flacStream) conv(s int32) int16 {
 	return int16(s)
 }
 
-// framePCM renders one FLAC frame to interleaved s16 stereo bytes (mono is
-// duplicated; >2 channels keep the first two). frame.Correlate has already
-// undone any inter-channel decorrelation by the time ParseNext returns.
-func (f *flacStream) framePCM(fr *frame.Frame) []byte {
+// framePCM renders one FLAC frame into f.pcm as interleaved s16 stereo bytes
+// (mono is duplicated; >2 channels keep the first two) and resets the read
+// offset. frame.Correlate has already undone any inter-channel decorrelation by
+// the time ParseNext returns. The scratch buffer is reused across frames: since
+// FLAC block size is fixed within a stream, only the first frame allocates —
+// eliminating a per-frame allocation on the decode hot path.
+func (f *flacStream) framePCM(fr *frame.Frame) {
 	n := int(fr.BlockSize)
-	out := make([]byte, n*4) // n * 2ch * 2 bytes
+	need := n * 4 // n * 2ch * 2 bytes
+	if cap(f.pcm) < need {
+		f.pcm = make([]byte, need)
+	} else {
+		f.pcm = f.pcm[:need]
+	}
 	left := fr.Subframes[0].Samples
 	right := left
 	if len(fr.Subframes) > 1 {
@@ -55,24 +64,24 @@ func (f *flacStream) framePCM(fr *frame.Frame) []byte {
 		l := f.conv(left[i])
 		r := f.conv(right[i])
 		o := i * 4
-		out[o] = byte(l)
-		out[o+1] = byte(l >> 8)
-		out[o+2] = byte(r)
-		out[o+3] = byte(r >> 8)
+		f.pcm[o] = byte(l)
+		f.pcm[o+1] = byte(l >> 8)
+		f.pcm[o+2] = byte(r)
+		f.pcm[o+3] = byte(r >> 8)
 	}
-	return out
+	f.off = 0
 }
 
 func (f *flacStream) Read(p []byte) (int, error) {
-	for len(f.buf) == 0 {
+	for f.off >= len(f.pcm) {
 		fr, err := f.s.ParseNext()
 		if err != nil {
 			return 0, err // includes io.EOF
 		}
-		f.buf = f.framePCM(fr)
+		f.framePCM(fr)
 	}
-	n := copy(p, f.buf)
-	f.buf = f.buf[n:]
+	n := copy(p, f.pcm[f.off:])
+	f.off += n
 	return n, nil
 }
 
@@ -87,6 +96,9 @@ func (f *flacStream) Seek(off int64, whence int) (int64, error) {
 	if _, err := f.s.Seek(sample); err != nil {
 		return 0, err
 	}
-	f.buf = nil
+	// Mark the scratch buffer empty (off >= len) so the next Read parses a fresh
+	// frame; keep its capacity to avoid a reallocation.
+	f.pcm = f.pcm[:0]
+	f.off = 0
 	return off, nil
 }

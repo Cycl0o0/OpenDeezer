@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
 )
 
 // languageOrder is the cycle the Language menu row steps through. "" is Auto

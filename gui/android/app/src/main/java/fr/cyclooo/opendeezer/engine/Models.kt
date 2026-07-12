@@ -42,6 +42,15 @@ data class ArtistInfo(
     val nbFans: Int,
 )
 
+// Full artist profile page (mirrors the engine's ArtistPage: profile info plus
+// top tracks, discography and related artists, fetched in one call).
+data class ArtistPage(
+    val artist: ArtistInfo,
+    val top: List<Track>,
+    val albums: List<Album>,
+    val related: List<ArtistInfo>,
+)
+
 data class Podcast(
     val id: String,
     val name: String,
@@ -284,6 +293,62 @@ object Json {
                 )
             }
         }
+    }
+
+    // ---- artist profile ----
+    // Unlike the browse endpoints above (purpose-built DTOs with lowerCamelCase
+    // json tags), ArtistProfile marshals the engine's raw Go structs, so Go's
+    // default encoding emits the exported field names verbatim: Artist/Top/
+    // Albums/Related, and ID/Name/DurationMS/ArtworkURL/... inside them.
+
+    private fun JSONObject.rawArtists(key: String): List<Artist> {
+        val arr = optJSONArray(key) ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { Artist(it.optString("ID"), it.optString("Name")) }
+        }
+    }
+
+    private fun JSONObject.toRawTrack(): Track {
+        val arts = rawArtists("Artists")
+        return Track(
+            id = optString("ID"),
+            name = optString("Name"),
+            durationMs = optLong("DurationMS"),
+            artists = arts,
+            artistLine = arts.joinToString(", ") { it.name },
+            albumName = optString("AlbumName"),
+            artworkUrl = optString("ArtworkURL"),
+            explicit = optBoolean("Explicit"),
+        )
+    }
+
+    private fun JSONObject.toRawAlbum() = Album(
+        id = optString("ID"),
+        name = optString("Name"),
+        artistLine = rawArtists("Artists").joinToString(", ") { it.name },
+        artworkUrl = optString("ArtworkURL"),
+    )
+
+    private fun JSONObject.toRawArtistInfo() = ArtistInfo(
+        id = optString("ID"),
+        name = optString("Name"),
+        artworkUrl = optString("ArtworkURL"),
+        nbFans = optInt("NbFans"),
+    )
+
+    fun artistPage(s: String?): ArtistPage? {
+        val o = obj(s) ?: return null
+        if (o.has("error")) return null
+        val info = o.optJSONObject("Artist") ?: return null
+        val top = o.optJSONArray("Top")
+        val albums = o.optJSONArray("Albums")
+        val related = o.optJSONArray("Related")
+        return ArtistPage(
+            artist = info.toRawArtistInfo(),
+            top = if (top == null) emptyList() else (0 until top.length()).mapNotNull { top.optJSONObject(it)?.toRawTrack() },
+            albums = if (albums == null) emptyList() else (0 until albums.length()).mapNotNull { albums.optJSONObject(it)?.toRawAlbum() },
+            related = if (related == null) emptyList() else (0 until related.length()).mapNotNull { related.optJSONObject(it)?.toRawArtistInfo() },
+        )
     }
 
     fun account(s: String?): Account? {

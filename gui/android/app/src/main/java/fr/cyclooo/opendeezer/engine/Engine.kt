@@ -69,6 +69,11 @@ object Engine {
     suspend fun albumTracks(id: String): List<Track> = io { Json.tracks(Odmobile.albumTracks(id)) }
     suspend fun flow(): List<Track> = io { Json.tracks(Odmobile.flow()) }
     suspend fun artistTop(id: String): List<Track> = io { Json.tracks(Odmobile.artistTop(id)) }
+
+    // Full artist profile (top tracks + albums + related artists) in one call.
+    // Null when the engine returned an error payload so the screen can offer a retry.
+    suspend fun artistProfile(id: String): ArtistPage? =
+        io { Json.artistPage(runCatching { Odmobile.artistProfile(id) }.getOrNull()) }
     suspend fun search(q: String): SearchResults = io { Json.search(Odmobile.search(q)) }
     suspend fun charts(): SearchResults = io { Json.search(Odmobile.charts()) }
     suspend fun home(): HomeData = io { Json.home(runCatching { Odmobile.home() }.getOrNull()) }
@@ -101,6 +106,19 @@ object Engine {
 
     suspend fun playEpisode(id: String, durationMs: Long = 0L): Boolean =
         io { runCatching { Odmobile.playEpisodeMS(id, durationMs) }.getOrDefault(false) }
+
+    // ---- gapless preload ----
+    // Resolves and buffers the NEXT queue track so the engine swaps into it
+    // seamlessly at the track boundary instead of the UI doing a full network
+    // re-resolve (mirrors the desktop GUIs' DZPreload). The bound Go func
+    // returns an error, which gomobile surfaces as a thrown exception — mapped
+    // to false here so callers can fall back to the plain-resolve advance.
+    suspend fun preload(id: String): Boolean =
+        io { runCatching { Odmobile.preload(id); true }.getOrDefault(false) }
+
+    // Discards a previously armed preload. Call whenever the upcoming track
+    // stops being deterministic (shuffle/repeat toggles, queue edits, stop).
+    suspend fun clearPreload() = io { runCatching { Odmobile.clearPreload() }.let {} }
 
     // ---- downloads (premium-only; the engine rejects the request otherwise) ----
     // Returns the engine's raw JSON: {"path":"..."} on success or {"error":"..."}.

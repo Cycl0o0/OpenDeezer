@@ -1,7 +1,7 @@
 package deezer
 
 import (
-	internaldeezer "github.com/Cycl0o0/OpenDeezer/internal/deezer"
+	internaldeezer "github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
 )
 
 // ---- type aliases ----

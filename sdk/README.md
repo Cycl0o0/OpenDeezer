@@ -6,19 +6,19 @@ and streaming, LAN device discovery (OpenDeezer Connect), and the remote
 control API.
 
 ```
-go get github.com/Cycl0o0/OpenDeezer
+go get github.com/Cycl0o0/OpenDeezer/v2
 ```
 
 Import paths:
 
 | Package | Purpose |
 |---|---|
-| `github.com/Cycl0o0/OpenDeezer/sdk/deezer` | Deezer API client + decode |
-| `github.com/Cycl0o0/OpenDeezer/sdk/connect` | OpenDeezer Connect (LAN discovery + remote) |
-| `github.com/Cycl0o0/OpenDeezer/sdk/control` | Control server + client (HTTP/JSON API) |
-| `github.com/Cycl0o0/OpenDeezer/sdk/player` | In-process audio playback (cgo) |
+| `github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer` | Deezer API client + decode |
+| `github.com/Cycl0o0/OpenDeezer/v2/sdk/connect` | OpenDeezer Connect (LAN discovery + remote) |
+| `github.com/Cycl0o0/OpenDeezer/v2/sdk/control` | Control server + client (HTTP/JSON API) |
+| `github.com/Cycl0o0/OpenDeezer/v2/sdk/player` | In-process audio playback (cgo) |
 
-Go docs: https://pkg.go.dev/github.com/Cycl0o0/OpenDeezer/sdk
+Go docs: https://pkg.go.dev/github.com/Cycl0o0/OpenDeezer/v2/sdk
 
 ### Control works both ways (in + out)
 
@@ -30,8 +30,28 @@ drive another device (out) and be driven by one (in):
 | Remote control API | `control.Client` | `control.Server` |
 | OpenDeezer Connect | `connect.Discover` + `connect.RemoteClient` | `connect.Host` (+ `connect.Advertise`) |
 
-Both sides cover the same transport command set: play/pause, next, prev, stop,
-restart, seek, volume, repeat, shuffle, play-track, play-playlist.
+Both sides cover the full control-API command set. `control.Client` and
+`connect.RemoteClient` expose identical methods; the "in" column is the
+`control.Commands` hook (or server wiring) that receives each command:
+
+| Command | Out (`Client` / `RemoteClient` method) | In (server side) |
+|---|---|---|
+| Status snapshot | `Status` | `status` callback (`NewServer`/`NewHost`) |
+| Identity / auth mode | `Whoami` | `account` callback + `SetVersion`/`SetClientInfo` |
+| Play/pause, next, prev, stop, restart | `PlayPause`, `Next`, `Prev`, `Stop`, `Restart` | `Commands.PlayPause` … `Commands.Restart` |
+| Seek, volume | `SeekMS`, `SetVolume` | `Commands.Seek`, `Commands.SetVolume` |
+| Repeat (set / cycle) | `SetRepeat`, `CycleRepeat` | `Commands.SetRepeat`, `Commands.CycleRepeat` |
+| Shuffle (set / toggle) | `SetShuffle`, `ToggleShuffle` | `Commands.SetShuffle`, `Commands.ToggleShuffle` |
+| Play track / playlist | `PlayTrack`, `PlayPlaylist` | `Commands.PlayTrack`, `Commands.PlayPlaylist` |
+| Play album | `PlayAlbum` | `Commands.PlayAlbum` |
+| Play mix (track / artist seed) | `PlayMixTrack`, `PlayMixArtist` | `Commands.PlayMixTrack`, `Commands.PlayMixArtist` |
+| Queue (add / jump / remove / move) | `QueueAdd`, `QueueJump`, `QueueRemove`, `QueueMove` | `Commands.QueueAdd`, `Commands.QueueJump`, `Commands.QueueRemove`, `Commands.QueueMove` |
+| Listening history | `HistoryRecent` | `Commands.HistoryRecent` |
+| State events (SSE) | `Events` | built into `Server`/`Host` (`GET /events`) |
+| Sleep timer (arm / cancel) | `SetSleepTimer`, `CancelSleepTimer` | `Commands.SetSleepTimer`, `Commands.CancelSleepTimer` |
+| Equalizer (read / write) | `EQ`, `SetEQ` | `Server.SetEQ` bridge (build with `control.PlayerEQ`) |
+| Browse (search / playlists) | `Search`, `Playlists` | the Deezer client passed to `NewServer`/`NewHost` |
+| Web-remote pairing | — (phone SPA) | `EnablePairing`, `DisablePairing`, `RevokeSession` |
 
 ---
 
@@ -45,7 +65,7 @@ The ARL never leaves your machine beyond the HTTPS requests made to deezer.com
 and media.deezer.com.
 
 ```go
-import dz "github.com/Cycl0o0/OpenDeezer/sdk/deezer"
+import dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
 
 client := dz.New(os.Getenv("DEEZER_ARL"))
 if err := client.Login(); err != nil {
@@ -98,7 +118,7 @@ fetches, decrypts (BF_CBC_STRIPE), and writes the audio bytes to any
 ```go
 import (
     "os"
-    dz "github.com/Cycl0o0/OpenDeezer/sdk/deezer"
+    dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
 )
 
 client.SetQuality(dz.QualityHigh) // prefer MP3 320; falls back if not entitled
@@ -147,7 +167,7 @@ OpenDeezer Connect is **symmetric** — the SDK exposes both directions:
 ### Out — discover and drive a device
 
 ```go
-import "github.com/Cycl0o0/OpenDeezer/sdk/connect"
+import "github.com/Cycl0o0/OpenDeezer/v2/sdk/connect"
 
 // Find devices (2-second probe window).
 devices, _ := connect.Discover(2*time.Second, 0)
@@ -223,7 +243,7 @@ Host a controllable endpoint that phones, AI agents, or other OpenDeezer
 clients can drive.
 
 ```go
-import "github.com/Cycl0o0/OpenDeezer/sdk/control"
+import "github.com/Cycl0o0/OpenDeezer/v2/sdk/control"
 
 srv := control.NewServer(
     control.Config{
@@ -249,6 +269,16 @@ srv.Start()
 defer srv.Close()
 ```
 
+To also serve the equalizer endpoints (`GET`/`POST /eq`), wire the EQ bridge
+**before** `Start` — `control.PlayerEQ` builds one from an `sdk/player.Player`:
+
+```go
+srv.SetEQ(control.PlayerEQ(
+    func() control.EQController { return p }, // *player.Player satisfies EQController
+    player.EQPresetNames(),
+))
+```
+
 ### Phone web remote
 
 Enable pairing to let a phone control playback via a browser:
@@ -272,6 +302,49 @@ fmt.Println(st.State, st.Track.Title)
 c.SetVolume(0.8)
 c.SeekMS(30000)
 c.PlayTrack("3135556")
+c.PlayAlbum("302127")     // whole album from the top
+c.PlayMixTrack("3135556") // Deezer mix seeded by a track (PlayMixArtist for an artist seed)
+c.SetRepeat("all")
+c.SetShuffle(true)
+c.SetSleepTimer(30, false) // pause after 30 minutes (fade-out)
+c.SetEQ(url.Values{"preset": {"rock"}, "on": {"1"}})
+results, _ := c.Search("daft punk") // raw JSON from the server's account
+history, _ := c.HistoryRecent(20)   // raw JSON, most recent first
+```
+
+The queue endpoints (`POST /queue/add`, `/queue/jump`, `/queue/remove`,
+`/queue/move`) are covered by the matching client methods — indexes are
+0-based positions in `State.Queue`:
+
+```go
+c.QueueAdd("3135556", true) // insert right after the current track (false = append)
+c.QueueJump(2)              // play queue entry 2 now
+c.QueueMove(4, 0)           // reorder: entry 4 to the front
+c.QueueRemove(3)            // drop entry 3
+```
+
+### Events (SSE)
+
+Instead of polling `Status`, subscribe to the server's `GET /events` stream
+(Server-Sent Events) with `Events`. The first `State` snapshot arrives
+immediately, then one on every wire-visible change. The returned channel is
+**closed when the context is cancelled or the connection drops** (no automatic
+reconnect — call `Events` again). Snapshots are coalesced for slow consumers:
+you may skip intermediate states but always see the newest one. It works over
+LAN like every other method, and `connect.RemoteClient` exposes the identical
+`Events` for driving discovered devices:
+
+```go
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+states, err := c.Events(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+for st := range states { // channel closes on cancel / disconnect
+    fmt.Printf("%s %s (%d ms)\n", st.State, st.Track.Title, st.PositionMS)
+}
 ```
 
 ---
@@ -284,8 +357,8 @@ API access, search, or download/decrypt.
 
 ```go
 import (
-    "github.com/Cycl0o0/OpenDeezer/sdk/player"
-    dz "github.com/Cycl0o0/OpenDeezer/sdk/deezer"
+    "github.com/Cycl0o0/OpenDeezer/v2/sdk/player"
+    dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
 )
 
 p, _ := player.NewPlayer()
@@ -316,6 +389,7 @@ Runnable examples are in [`examples/`](../examples/):
 |---|---|---|
 | `examples/search` | — | Login + search + print results |
 | `examples/download` | — | Login → PrepareStream → DownloadTrack → file |
+| `examples/player` | — | Login → PrepareStream → gapless in-process playback of a queue (cgo) |
 | `examples/connect` | out | Discover LAN devices + send PlayPause |
 | `examples/host` | in | Be a discoverable, controllable Connect device |
 | `examples/remote-server` | in | Host a control server + poll it via the client |
@@ -325,7 +399,19 @@ Run any example with:
 ```sh
 DEEZER_ARL=<your_arl> go run ./examples/search "Daft Punk"
 DEEZER_ARL=<your_arl> go run ./examples/download 3135556
+DEEZER_ARL=<your_arl> go run ./examples/player 3135556 3135554
 DEEZER_ARL=<your_arl> go run ./examples/connect
 DEEZER_ARL=<your_arl> go run ./examples/host
 DEEZER_ARL=<your_arl> go run ./examples/remote-server
 ```
+
+---
+
+## Stability
+
+The SDK follows an **additive-only** policy across minor versions: within a
+major version, exported identifiers in `sdk/...` are never removed or given
+incompatible signatures by a minor or patch release — changes are limited to
+adding new functions, methods, fields and packages. Behavior-preserving fixes
+are allowed anywhere. Anything under `internal/` carries no compatibility
+promise; depend only on the `sdk/...` import paths.

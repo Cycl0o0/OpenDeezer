@@ -43,6 +43,8 @@ final class PlayerController: ObservableObject {
         didSet {
             let on = isShuffle
             Task { await Engine.setShuffle(on) }
+            // Shuffle changes what "next" means: re-arm (or discard) the preload.
+            armPreload()
         }
     }
     @Published private(set) var repeatMode: RepeatMode = .off
@@ -63,6 +65,11 @@ final class PlayerController: ObservableObject {
 
     private var timer: Timer?
     private var lastFinished = 0
+    // Gapless: id of the queue track armed engine-side via Engine.preload, or
+    // nil when nothing is armed. When the armed track matches the deterministic
+    // next entry at a track boundary, tick() advances the UI pointer without
+    // re-issuing a play (the engine already swapped into the preloaded stream).
+    private var preloadedId: String?
     private var artworkToken = 0
     private var playbackToken = 0
     private var playbackRequestPending = false
@@ -113,7 +120,19 @@ final class PlayerController: ObservableObject {
             lastFinished = finished
         } else if finished != lastFinished {
             lastFinished = finished
-            advance(auto: true)
+            // Gapless: if the deterministic next track was preloaded and the
+            // engine kept playing across the boundary, it already swapped into
+            // it — advance the UI pointer without re-issuing a play (which
+            // would cut the audio for a full network re-resolve). Any other
+            // outcome (preload failed/cleared, engine stopped, mode changed)
+            // falls back to the plain advance.
+            if let n = deterministicNextIndex(), let armed = preloadedId,
+               queue.indices.contains(n), queue[n].id == armed,
+               PlayerState(rawValue: Engine.state()) == .playing {
+                seamlessAdvance(to: n)
+            } else {
+                advance(auto: true)
+            }
         }
         updateOutputSuspension()
         updateNowPlayingInfo()
@@ -139,6 +158,9 @@ final class PlayerController: ObservableObject {
     func playEpisode(_ episode: Episode) {
         queue = []
         currentIndex = nil
+        // Episodes empty the queue, so any armed next-track preload is stale.
+        preloadedId = nil
+        Task { await Engine.clearPreload() }
         current = Track(episode: episode)
         seekToken += 1
         seeking = false
@@ -176,6 +198,9 @@ final class PlayerController: ObservableObject {
         state = .loading
         formatLabel = ""
         isPreview = false
+        // A full play discards any armed preload engine-side; forget ours too
+        // so armPreload() re-arms (or clears) from scratch once the start lands.
+        preloadedId = nil
         // Re-baseline so a finish from the previous track landing in the same
         // poll window doesn't trigger a spurious advance past this one.
         lastFinished = Engine.finishedCount()
@@ -189,7 +214,73 @@ final class PlayerController: ObservableObject {
             lastFinished = Engine.finishedCount()
             playbackRequestPending = false
             state = started ? (PlayerState(rawValue: Engine.state()) ?? .loading) : .errored
+            // Gapless: arm the deterministic next track once this one is live.
+            if started { armPreload() }
         }
+    }
+
+    // MARK: - Gapless preload
+
+    /// True when the engine performs a seamless boundary swap (gapless or
+    /// crossfade) — the only modes where preloading the next track pays off.
+    private var seamless: Bool { Engine.gapless() || Engine.crossfadeMS() > 0 }
+
+    /// The queue position tick() will advance to when the current track ends
+    /// naturally, or nil when it isn't knowable up front (shuffle, repeat-one,
+    /// end of queue without repeat-all).
+    private func deterministicNextIndex() -> Int? {
+        guard let idx = currentIndex, !queue.isEmpty, !isShuffle, repeatMode != .one else { return nil }
+        if idx + 1 < queue.count { return idx + 1 }
+        if repeatMode == .all { return 0 }
+        return nil
+    }
+
+    /// The track worth preloading, or nil. Never preload while routed to a
+    /// Connect remote: the remote streams its own audio, so a local preload
+    /// would download a duplicate stream for nothing.
+    private func nextTrackForPreload() -> Track? {
+        guard seamless, connectedDeviceAddr.isEmpty, let n = deterministicNextIndex() else { return nil }
+        return queue[n]
+    }
+
+    /// Arms the deterministic next track engine-side (or discards a stale
+    /// preload when the upcoming track is no longer knowable). A failed
+    /// preload just leaves `preloadedId` nil, so tick() falls back to the
+    /// plain full-resolve advance at the boundary.
+    private func armPreload() {
+        let next = nextTrackForPreload()
+        if let next {
+            guard next.id != preloadedId else { return }
+            preloadedId = next.id
+            Task {
+                let ok = await Engine.preload(id: next.id)
+                if !ok, preloadedId == next.id { preloadedId = nil }
+            }
+        } else if preloadedId != nil {
+            preloadedId = nil
+            Task { await Engine.clearPreload() }
+        }
+    }
+
+    /// Advances the UI to `queue[n]` after the engine performed a seamless
+    /// swap — the preloaded track is already audible, so no `Engine.play`
+    /// re-resolve, no `.loading` flash, then the new next is armed.
+    private func seamlessAdvance(to n: Int) {
+        currentIndex = n
+        let track = queue[n]
+        current = track
+        seekToken += 1
+        seeking = false
+        positionMs = 0
+        let engineDuration = Engine.durationMS()
+        durationMs = engineDuration > 0 ? engineDuration : track.durationMs
+        state = .playing
+        formatLabel = Engine.format()
+        isPreview = Engine.isPreview()
+        loadArtwork(url: track.artworkUrl)
+        preloadedId = nil
+        armPreload()
+        updateNowPlayingInfo()
     }
 
     func togglePlayPause() {
@@ -263,7 +354,11 @@ final class PlayerController: ObservableObject {
         playbackRequestPending = false
         seekToken += 1
         seeking = false
-        Task { await Engine.stop() }
+        preloadedId = nil
+        Task {
+            await Engine.stop()
+            await Engine.clearPreload()
+        }
         current = nil
         currentIndex = nil
         queue = []
@@ -278,6 +373,8 @@ final class PlayerController: ObservableObject {
         repeatMode = RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off
         let mode = repeatMode.rawValue
         Task { await Engine.setRepeat(mode) }
+        // Repeat changes what "next" means: re-arm (or discard) the preload.
+        armPreload()
     }
 
     func setVolume(_ v: Double) {
@@ -388,12 +485,18 @@ final class PlayerController: ObservableObject {
 
     func connect(to device: Device) async -> Bool {
         let ok = await Engine.connectDevice(device.addr)
-        if ok { connectedDeviceAddr = device.addr }
+        if ok {
+            connectedDeviceAddr = device.addr
+            // Remote playback streams on the remote: discard the local preload.
+            armPreload()
+        }
         return ok
     }
     func disconnect() async {
         await Engine.disconnectDevice()
         connectedDeviceAddr = ""
+        // Back to local playback: re-arm the next queue entry if one is knowable.
+        armPreload()
     }
 
     // MARK: - Artwork

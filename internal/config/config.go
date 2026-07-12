@@ -180,6 +180,19 @@ func LoadPeers() []string {
 	return out
 }
 
+// PeerHostPorts returns the configured Connect peers (LoadPeers) normalized to
+// host:port form, for passing to discovery.Discover as unicast probe targets so
+// static peers answer even on multicast-filtered networks.
+func PeerHostPorts() []string {
+	var out []string
+	for _, p := range LoadPeers() {
+		if _, hp := NormalizePeer(p); hp != "" {
+			out = append(out, hp)
+		}
+	}
+	return out
+}
+
 // NormalizePeer turns user input ("host", "host:port", "http://host:port") into
 // a base URL + host:port, defaulting the port to 7654. Returns ("","") if empty.
 func NormalizePeer(addr string) (base, hostport string) {
@@ -233,6 +246,45 @@ func SaveEQ(eq EQ) error {
 		return err
 	}
 	return writeFile("eq.json", string(b))
+}
+
+// Media is the persisted media/streaming configuration (media.json in the
+// config dir), shared across every client like EQ. Its zero value is the
+// default behavior: no on-disk stream cache.
+type Media struct {
+	// MediaCacheMB is the on-disk raw-stream cache budget in megabytes
+	// (see internal/mediacache). 0 — the default — disables the cache
+	// entirely; negative values are clamped to 0.
+	MediaCacheMB int `json:"mediaCacheMB"`
+}
+
+// LoadMedia reads media.json from the config dir. A missing or unparseable
+// file yields the zero value (cache disabled). Negative cache sizes are
+// clamped to 0.
+func LoadMedia() Media {
+	var m Media
+	if s := readFile("media.json"); s != "" {
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			m = Media{}
+		}
+	}
+	if m.MediaCacheMB < 0 {
+		m.MediaCacheMB = 0
+	}
+	return m
+}
+
+// SaveMedia persists the media settings to media.json in the config dir,
+// clamping a negative cache size to 0 (disabled) first.
+func SaveMedia(m Media) error {
+	if m.MediaCacheMB < 0 {
+		m.MediaCacheMB = 0
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return writeFile("media.json", string(b))
 }
 
 // LoadDiscordAppID returns the Discord application id for Rich Presence, from

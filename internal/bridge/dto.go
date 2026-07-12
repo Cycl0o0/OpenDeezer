@@ -3,7 +3,7 @@
 // this exact shape.
 package bridge
 
-import "github.com/Cycl0o0/OpenDeezer/internal/deezer"
+import "github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
 
 // Artist is a track or album credit on the native JSON wire.
 type Artist struct {

@@ -36,6 +36,10 @@ jobs:
   tui:
     name: tui ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -71,7 +75,7 @@ jobs:
             export CC=x86_64-w64-mingw32-gcc
             LDFLAGS="$LDFLAGS -extldflags=-static"
           fi
-          go build -ldflags "$LDFLAGS" -o "$OUT" ./cmd/opendeezer
+          go build -trimpath -ldflags "$LDFLAGS" -o "$OUT" ./cmd/opendeezer
           echo "ARTIFACT=$OUT" >> "$GITHUB_ENV"
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
@@ -79,6 +83,11 @@ jobs:
         with:
           files: ${{ env.ARTIFACT }}
           fail_on_unmatched_files: true
+      - name: Attest build provenance (tui binary)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: '${{ env.ARTIFACT }}'
 
   # ---- macOS GUI (SwiftUI / Liquid Glass) ----
   # Liquid Glass needs the macOS 26 / Xcode 26 SDK (.glassEffect etc. live in
@@ -483,13 +492,31 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/checkout@v6
       - name: Download release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist && cd dist
           gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" || true
+      - name: Extract release notes section from CHANGELOG.md
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          # Capture the section starting at ## [TAG] until the next ## [ or EOF.
+          # This becomes the GitHub Release body.
+          awk -v tag="## \\[${TAG}\\]" '
+            $0 ~ tag { insec=1; print; next }
+            insec && /^## \[/ { insec=0; exit }
+            insec { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md || true
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "No dedicated section found for tag v${TAG} in CHANGELOG.md." > RELEASE_NOTES.md
+          fi
+          echo "=== RELEASE NOTES ==="
+          cat RELEASE_NOTES.md
       - name: Generate SHA256SUMS
         run: |
           # On re-runs the download above includes the previously published
@@ -501,3 +528,81 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: SHA256SUMS.txt
+          body_path: RELEASE_NOTES.md
+      - name: Attest build provenance (checksums)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'SHA256SUMS.txt'
+
+  # ---- Packaging manifest automation: update shas + versions, open PR ----
+  # (Follow-up external pushes to homebrew-tap / AUR / winget-pkgs documented in
+  # packaging/README.md; no secrets for them are present here.)
+  publish-manifests:
+    needs: checksums
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download SHA256SUMS.txt from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --pattern SHA256SUMS.txt --output SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Extract checksums
+        id: sums
+        run: |
+          # Parse the sums for the TUI artifacts (and others as needed)
+          get_sha() { grep " $1$" SHA256SUMS.txt | awk '{print $1}'; }
+          echo "darwin_arm64=$(get_sha opendeezer-tui-darwin-arm64)" >> $GITHUB_OUTPUT
+          echo "darwin_amd64=$(get_sha opendeezer-tui-darwin-amd64)" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(get_sha opendeezer-tui-linux-arm64)" >> $GITHUB_OUTPUT
+          echo "linux_amd64=$(get_sha opendeezer-tui-linux-amd64)" >> $GITHUB_OUTPUT
+          echo "windows_amd64=$(get_sha opendeezer-tui-windows-amd64.exe)" >> $GITHUB_OUTPUT
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+      - name: Update Homebrew formula
+        run: |
+          TAG="${{ steps.sums.outputs.version }}"
+          sed -i "s/version \"[^\"]*\"/version \"${TAG}\"/" packaging/homebrew/opendeezer.rb
+          sed -i "s/REPLACE_WITH_DARWIN_ARM64_SHA256/${{ steps.sums.outputs.darwin_arm64 }}/" packaging/homebrew/opendeezer.rb
+          sed -i "s/REPLACE_WITH_DARWIN_AMD64_SHA256/${{ steps.sums.outputs.darwin_amd64 }}/" packaging/homebrew/opendeezer.rb
+          sed -i "s/REPLACE_WITH_LINUX_ARM64_SHA256/${{ steps.sums.outputs.linux_arm64 }}/" packaging/homebrew/opendeezer.rb
+          sed -i "s/REPLACE_WITH_LINUX_AMD64_SHA256/${{ steps.sums.outputs.linux_amd64 }}/" packaging/homebrew/opendeezer.rb
+      - name: Update winget manifests (version + sha)
+        run: |
+          TAG="${{ steps.sums.outputs.version }}"
+          for f in packaging/winget/Cycl0o0.OpenDeezer*.yaml; do
+            sed -i "s/PackageVersion: [0-9.]\+/PackageVersion: ${TAG}/" "$f" || true
+          done
+          sed -i "s/InstallerSha256: REPLACE_WITH_SHA256_AFTER_RELEASE/InstallerSha256: ${{ steps.sums.outputs.windows_amd64 }}/" packaging/winget/Cycl0o0.OpenDeezer.installer.yaml
+      - name: Update AUR PKGBUILD (pkgver + sha256sums)
+        run: |
+          TAG="${{ steps.sums.outputs.version }}"
+          sed -i "s/^pkgver=.*/pkgver=${TAG}/" packaging/aur/PKGBUILD
+          # sha256sums is a bash array; replace the SKIP or previous with the source tarball sha (the release tarball)
+          TARBALL_SHA=$(grep "OpenDeezer-${TAG}.tar.gz" SHA256SUMS.txt | awk '{print $1}' || true)
+          if [ -n "$TARBALL_SHA" ]; then
+            sed -i "s/sha256sums=('[^']*')/sha256sums=('${TARBALL_SHA}')/" packaging/aur/PKGBUILD || \
+            sed -i "s/sha256sums=('SKIP')/sha256sums=('${TARBALL_SHA}')/" packaging/aur/PKGBUILD
+          fi
+      - name: Open PR with updated manifests
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ github.token }}
+          commit-message: "chore(release): update packaging manifests for ${{ github.ref_name }}"
+          branch: release/manifests-${{ github.ref_name }}
+          title: "chore(release): update manifests for ${{ github.ref_name }}"
+          body: |
+            Automated update from release ${{ github.ref_name }}.
+
+            - Bumped versions
+            - Injected real checksums from SHA256SUMS.txt into homebrew, winget, aur
+            - (External follow-ups to taps/AUR/winget-pkgs are manual or use separate secrets; see packaging/README.md)
+          labels: |
+            release
+            automated

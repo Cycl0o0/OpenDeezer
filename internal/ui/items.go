@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
 )
 
 // rowKind identifies what a list row represents.
@@ -17,7 +17,10 @@ const (
 	rowPodcast
 	rowEpisode
 	rowDevice
-	rowPeer // a discovered OpenDeezer Connect device
+	rowPeer    // a discovered OpenDeezer Connect device
+	rowSection // non-activatable section header (artist page)
+	rowHistory // a history entry on the stats screen (playable by track id)
+	rowInfo    // non-activatable info line (stats totals, top artists)
 )
 
 // menuAction is the action a rowMenu triggers.
@@ -35,6 +38,8 @@ const (
 	actRemoteManual // enter a device address by hand
 	actWebRemote    // phone web remote (QR + pairing code)
 	actLanguage     // cycle the UI language
+	actNewPlaylist  // "New playlist…" entry in the add-to-playlist picker
+	actStats        // local listening stats (history + top tracks/artists)
 )
 
 // row is a single list entry. It implements bubbles/list.Item.
@@ -51,11 +56,29 @@ type row struct {
 	episode  deezer.Episode    // for rowEpisode
 	deviceID string            // for rowDevice ("" = system default)
 	peerAddr string            // for rowPeer (host:port)
+	histID   string            // for rowHistory (Deezer track id; may be "")
 }
 
 func (r row) Title() string       { return r.title }
 func (r row) Description() string { return r.desc }
-func (r row) FilterValue() string { return r.title }
+
+// FilterValue matches the local list filter (ctrl+f) against the title AND the
+// description, so tracks are findable by artist/album too. Section headers
+// never match — filtering an artist page should surface entries, not dividers.
+func (r row) FilterValue() string {
+	if r.kind == rowSection {
+		return ""
+	}
+	if r.desc == "" {
+		return r.title
+	}
+	return r.title + " " + r.desc
+}
+
+// sectionRow renders a non-activatable header separating artist-page sections.
+func sectionRow(title string) row {
+	return row{kind: rowSection, title: "── " + title + " ──"}
+}
 
 func trackRow(t deezer.Track) row {
 	title := t.Name

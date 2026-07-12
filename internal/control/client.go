@@ -1,14 +1,19 @@
 package control
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
+
+const maxControlResponseBytes = 8 << 20
 
 // Client talks to a control Server over HTTP. It is the shared driver for the
 // MCP server and the TUI's remote-play feature: both point it at another
@@ -55,7 +60,7 @@ func (c *Client) raw(method, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	// Cap the response so a malicious/compromised peer can't exhaust memory.
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, maxControlResponseBytes))
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("control %s %s: %s: %s", method, path, resp.Status, string(b))
 	}
@@ -87,6 +92,156 @@ func (c *Client) Whoami() (Whoami, error) {
 
 // Status returns the current playback snapshot.
 func (c *Client) Status() (State, error) { return c.state(http.MethodGet, "/status") }
+
+// Events subscribes to playback state changes from the peer. The returned
+// channel is closed when ctx is cancelled or the event stream disconnects.
+// State snapshots are buffered; if a caller falls behind, stale snapshots may
+// be discarded in favour of the newest one.
+func (c *Client) Events(ctx context.Context) (<-chan State, error) {
+	req, err := c.req(http.MethodGet, "/events")
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	req.Header.Set("Accept", "text/event-stream")
+
+	// NewClient's regular HTTP client has a whole-request timeout. Streaming
+	// responses must instead live until ctx is cancelled, while retaining the
+	// configured transport, redirects and cookie jar.
+	streamClient := &http.Client{
+		Transport:     c.http.Transport,
+		CheckRedirect: c.http.CheckRedirect,
+		Jar:           c.http.Jar,
+	}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode/100 != 2 {
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxControlResponseBytes))
+		return nil, fmt.Errorf("control %s %s: %s: %s", http.MethodGet, "/events", resp.Status, string(b))
+	}
+
+	states := make(chan State, 16)
+	go readStateEvents(ctx, resp.Body, states)
+	return states, nil
+}
+
+func readStateEvents(ctx context.Context, body io.ReadCloser, states chan State) {
+	defer close(states)
+	defer body.Close()
+
+	// Closing the body unblocks Scanner even for a stream that has gone quiet.
+	finished := make(chan struct{})
+	defer close(finished)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = body.Close()
+		case <-finished:
+		}
+	}()
+
+	scanner := bufio.NewScanner(body)
+	// State includes the queue, so permit the same maximum event size as raw's
+	// bounded response reader rather than Scanner's small default token limit.
+	scanner.Buffer(make([]byte, 64<<10), maxControlResponseBytes)
+
+	event := ""
+	var data strings.Builder
+	hasData := false
+	discardEvent := false
+	dispatch := func() bool {
+		defer func() {
+			event = ""
+			data.Reset()
+			hasData = false
+			discardEvent = false
+		}()
+		if discardEvent || event != "state" || !hasData {
+			return true
+		}
+
+		var state State
+		if err := json.Unmarshal([]byte(data.String()), &state); err != nil {
+			return true
+		}
+		return offerLatestState(ctx, states, state)
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if !dispatch() {
+				return
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		if discardEvent {
+			continue
+		}
+
+		field, value, ok := strings.Cut(line, ":")
+		if !ok {
+			value = ""
+		} else {
+			value = strings.TrimPrefix(value, " ")
+		}
+		switch field {
+		case "event":
+			event = value
+		case "data":
+			additional := len(value)
+			if hasData {
+				additional++ // newline inserted between consecutive data fields
+			}
+			if additional > maxControlResponseBytes-data.Len() {
+				discardEvent = true
+				continue
+			}
+			if hasData {
+				data.WriteByte('\n')
+			}
+			data.WriteString(value)
+			hasData = true
+		}
+	}
+
+	// Be liberal toward peers that close immediately after the final event
+	// without writing its terminating blank line.
+	if hasData {
+		_ = dispatch()
+	}
+}
+
+func offerLatestState(ctx context.Context, states chan State, state State) bool {
+	select {
+	case states <- state:
+		return true
+	case <-ctx.Done():
+		return false
+	default:
+	}
+
+	// The channel is full. State events are complete snapshots, so replace the
+	// oldest queued snapshot rather than allowing a slow reader to wedge stream
+	// teardown indefinitely.
+	select {
+	case <-states:
+	default:
+	}
+	select {
+	case states <- state:
+	case <-ctx.Done():
+		return false
+	default:
+	}
+	return true
+}
 
 // The transport / mutation commands below each return the post-command status
 // snapshot (which may lag the command by one tick on the server — see act docs).
@@ -128,6 +283,37 @@ func (c *Client) PlayTrack(id string) (State, error) {
 }
 func (c *Client) PlayPlaylist(id string) (State, error) {
 	return c.state(http.MethodPost, "/play/playlist?id="+url.QueryEscape(id))
+}
+func (c *Client) PlayAlbum(id string) (State, error) {
+	return c.state(http.MethodPost, "/play/album?id="+url.QueryEscape(id))
+}
+func (c *Client) PlayMixTrack(id string) (State, error) {
+	return c.state(http.MethodPost, "/play/mix/track?id="+url.QueryEscape(id))
+}
+func (c *Client) PlayMixArtist(id string) (State, error) {
+	return c.state(http.MethodPost, "/play/mix/artist?id="+url.QueryEscape(id))
+}
+
+// QueueAdd appends a track to the peer's queue, or inserts it immediately
+// after the current track when next is true.
+func (c *Client) QueueAdd(id string, next bool) (State, error) {
+	n := "0"
+	if next {
+		n = "1"
+	}
+	return c.state(http.MethodPost, "/queue/add?id="+url.QueryEscape(id)+"&next="+n)
+}
+
+func (c *Client) QueueJump(index int) (State, error) {
+	return c.state(http.MethodPost, "/queue/jump?i="+strconv.Itoa(index))
+}
+
+func (c *Client) QueueRemove(index int) (State, error) {
+	return c.state(http.MethodPost, "/queue/remove?i="+strconv.Itoa(index))
+}
+
+func (c *Client) QueueMove(from, to int) (State, error) {
+	return c.state(http.MethodPost, "/queue/move?from="+strconv.Itoa(from)+"&to="+strconv.Itoa(to))
 }
 
 // SetSleepTimer arms the peer's sleep timer: pause after `minutes` (with a
@@ -178,4 +364,9 @@ func (c *Client) Search(q string) (json.RawMessage, error) {
 // Playlists returns the raw playlists JSON from the server.
 func (c *Client) Playlists() (json.RawMessage, error) {
 	return c.raw(http.MethodGet, "/playlists")
+}
+
+// HistoryRecent returns the peer's recent-listening history as raw JSON.
+func (c *Client) HistoryRecent(n int) (json.RawMessage, error) {
+	return c.raw(http.MethodGet, "/history/recent?n="+strconv.Itoa(n))
 }

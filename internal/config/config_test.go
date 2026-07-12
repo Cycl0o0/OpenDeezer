@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestIsLoopbackAddr(t *testing.T) {
 	cases := []struct {
@@ -70,6 +74,48 @@ func TestNormalizePeer(t *testing.T) {
 	}
 	if base, hp := NormalizePeer("  "); base != "" || hp != "" {
 		t.Errorf("NormalizePeer(empty) = %q,%q want empty", base, hp)
+	}
+}
+
+// TestMediaConfigRoundTrip verifies the media.json defaults, round-trip and the
+// negative-size clamp on both save and load.
+func TestMediaConfigRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	// Redirect the config dir on every platform (darwin/linux/windows).
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
+	t.Setenv("AppData", filepath.Join(tmp, "AppData"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
+
+	if m := LoadMedia(); m.MediaCacheMB != 0 {
+		t.Fatalf("default MediaCacheMB = %d, want 0 (cache disabled)", m.MediaCacheMB)
+	}
+	if err := SaveMedia(Media{MediaCacheMB: 512}); err != nil {
+		t.Fatal(err)
+	}
+	if m := LoadMedia(); m.MediaCacheMB != 512 {
+		t.Fatalf("MediaCacheMB after save = %d, want 512", m.MediaCacheMB)
+	}
+	if err := SaveMedia(Media{MediaCacheMB: -3}); err != nil {
+		t.Fatal(err)
+	}
+	if m := LoadMedia(); m.MediaCacheMB != 0 {
+		t.Fatalf("negative MediaCacheMB not clamped on save: %d", m.MediaCacheMB)
+	}
+
+	// A hand-edited negative value is clamped on load too.
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "media.json"), []byte(`{"mediaCacheMB":-42}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if m := LoadMedia(); m.MediaCacheMB != 0 {
+		t.Fatalf("negative MediaCacheMB not clamped on load: %d", m.MediaCacheMB)
 	}
 }
 

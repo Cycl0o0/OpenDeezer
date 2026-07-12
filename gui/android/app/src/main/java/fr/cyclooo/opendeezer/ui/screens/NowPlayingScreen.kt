@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -323,6 +324,15 @@ private fun PlayerControls(
                 tint = if (state.repeatMode != 0) MaterialTheme.colorScheme.primary
                        else MaterialTheme.colorScheme.onSurface,
             )
+        }
+        // Download the current track to the configured folder. Premium-only
+        // (the engine rejects the request otherwise) and never for episodes;
+        // the outcome lands as a snackbar via PlayerController.downloadEvents.
+        IconButton(
+            onClick = { player.download(track) },
+            enabled = player.premium && !track.isEpisode,
+        ) {
+            Icon(Icons.Filled.Download, contentDescription = stringResource(R.string.action_download))
         }
     }
 

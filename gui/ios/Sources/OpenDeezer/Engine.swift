@@ -128,6 +128,20 @@ enum Engine {
     static func playEpisode(id: String, durationMs: Int64) async -> Bool {
         await run { OdmobilePlayEpisodeMS(id, durationMs) }
     }
+    /// Resolves and buffers the next queue track so the engine swaps into it
+    /// seamlessly at the track boundary (mirrors the desktop GUIs' DZPreload).
+    /// False on failure — the caller then falls back to a plain re-resolve at
+    /// the boundary. `OdmobilePreload` is the gomobile binding of
+    /// `Preload(id string) error` (BOOL + NSError out-param).
+    static func preload(id: String) async -> Bool {
+        await run {
+            var err: NSError?
+            return OdmobilePreload(id, &err) && err == nil
+        }
+    }
+    /// Discards a previously armed preload. Call whenever the upcoming track
+    /// stops being deterministic (shuffle/repeat toggles, queue edits, stop).
+    static func clearPreload() async { await run { OdmobileClearPreload() } }
     static func pause() async { await run { OdmobilePause() } }
     static func resume() async { await run { OdmobileResume() } }
     static func togglePause() async { await run { OdmobileTogglePause() } }

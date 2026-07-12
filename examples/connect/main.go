@@ -13,8 +13,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/sdk/connect"
-	dz "github.com/Cycl0o0/OpenDeezer/sdk/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/sdk/connect"
+	dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
 )
 
 func main() {

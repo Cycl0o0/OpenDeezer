@@ -73,6 +73,11 @@ class PlayerController(private val scope: CoroutineScope) {
     // auto-advance on a finish of the *previous* track (it would double-advance).
     private var startGen: Int = 0
     private var startInFlight: Boolean = false
+    // Gapless: id of the queue track armed engine-side via Engine.preload, or
+    // null when nothing is armed. When the armed track matches the deterministic
+    // next entry at a track boundary, poll() advances the queue pointer without
+    // re-issuing a full network resolve (the engine already swapped into it).
+    private var preloadedId: String? = null
 
     fun start() {
         if (pollJob?.isActive == true) return
@@ -174,7 +179,9 @@ class PlayerController(private val scope: CoroutineScope) {
     fun stopPlayback() {
         queue = emptyList()
         index = -1
+        preloadedId = null
         control { Engine.stop() }
+        scope.launch { Engine.clearPreload() }
         pushImmediate()
     }
 
@@ -183,12 +190,14 @@ class PlayerController(private val scope: CoroutineScope) {
     fun setRepeat(mode: Int) {
         repeatMode = mode.coerceIn(0, 2)
         control { Engine.setRepeat(repeatMode) }
+        reconcilePreload()
     }
 
     // B4: toggle shuffle locally and forward to any connected remote.
     fun setShuffle(on: Boolean) {
         shuffleEnabled = on
         control { Engine.setShuffle(if (on) 1 else 0) }
+        reconcilePreload()
     }
 
     // When routed to a Connect device these engine calls do synchronous HTTP
@@ -204,6 +213,9 @@ class PlayerController(private val scope: CoroutineScope) {
         val t = queue.getOrNull(index) ?: return
         val gen = ++startGen
         startInFlight = true
+        // A full play discards any armed preload engine-side; forget ours too so
+        // armPreload() re-arms (or clears) from scratch after the start lands.
+        preloadedId = null
         scope.launch {
             if (t.isEpisode) Engine.playEpisode(t.id, t.durationMs) else Engine.play(t.id, t.durationMs)
             if (gen == startGen) {
@@ -211,10 +223,64 @@ class PlayerController(private val scope: CoroutineScope) {
                 // natural finish during the async start can't trigger an advance.
                 lastFinished = Engine.finishedCount()
                 startInFlight = false
+                // Gapless: arm the deterministic next track once this one is live.
+                armPreload()
             }
             pushImmediate()
         }
         pushImmediate()
+    }
+
+    // ---- gapless preload ----
+    // Mirrors the desktop GUIs: after a track starts (or the queue's shape
+    // changes), resolve the NEXT deterministic queue entry engine-side so the
+    // boundary swap is seamless; discard the armed track when the upcoming one
+    // stops being knowable. Preload failures just leave the armed id null, so
+    // poll() falls back to the plain full-resolve advance.
+
+    // The queue position poll() will advance to when the current track ends
+    // naturally, or null when it isn't knowable up front (shuffle, repeat-one,
+    // end of queue without repeat-all).
+    private fun deterministicNextIndex(): Int? = when {
+        queue.isEmpty() || shuffleEnabled || repeatMode == 2 -> null
+        index < queue.lastIndex -> index + 1
+        repeatMode == 1 -> 0
+        else -> null
+    }
+
+    // The track worth preloading, or null. Only when the engine performs a
+    // seamless boundary swap (gapless or crossfade — it drops the preload
+    // otherwise), and never around episodes (they resolve through a different
+    // engine path) or while routed to a Connect remote (the remote streams its
+    // own audio; a local preload would download a duplicate stream for nothing).
+    private fun nextTrackForPreload(): Track? {
+        if (!Engine.gapless() && Engine.crossfadeMs() == 0) return null
+        if (queue.getOrNull(index)?.isEpisode == true) return null
+        if (Engine.connectedDevice().isNotBlank()) return null
+        val next = queue.getOrNull(deterministicNextIndex() ?: return null) ?: return null
+        return if (next.isEpisode) null else next
+    }
+
+    private suspend fun armPreload() {
+        val next = nextTrackForPreload()
+        if (next != null) {
+            if (next.id == preloadedId) return
+            preloadedId = next.id
+            // Engine.preload suspends on Dispatchers.IO; a concurrent skip/queue change
+            // may re-arm a different id meanwhile. Only clear if we're still the armed one.
+            if (!Engine.preload(next.id) && preloadedId == next.id) preloadedId = null
+        } else if (preloadedId != null) {
+            preloadedId = null
+            Engine.clearPreload()
+        }
+    }
+
+    // A shuffle/repeat change can invalidate an armed linear-next preload:
+    // re-arm with the new deterministic next when there is one, otherwise
+    // discard the stale preload so the boundary can never swap into a track
+    // the queue won't actually play.
+    private fun reconcilePreload() {
+        scope.launch { armPreload() }
     }
 
     private fun poll() {
@@ -225,6 +291,22 @@ class PlayerController(private val scope: CoroutineScope) {
         val finished = Engine.finishedCount()
         if (finished > lastFinished) {
             lastFinished = finished
+            // Gapless: if the deterministic next entry was preloaded and the
+            // engine is still playing past the boundary, it already swapped
+            // into that track seamlessly — advance the queue pointer WITHOUT
+            // re-issuing a play (which would cut the audio for a re-resolve),
+            // then arm the new next. Any other outcome (preload failed, engine
+            // stopped, mode changed) falls through to the full-resolve advance.
+            val n = deterministicNextIndex()
+            if (n != null && preloadedId != null && preloadedId == queue.getOrNull(n)?.id &&
+                Engine.state() == Engine.PLAYING
+            ) {
+                index = n
+                preloadedId = null
+                scope.launch { armPreload() }
+                push()
+                return
+            }
             if (repeatMode == 2) {
                 // Repeat-one: re-start the same track.
                 startCurrent()

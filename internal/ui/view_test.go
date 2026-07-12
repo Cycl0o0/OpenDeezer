@@ -46,9 +46,9 @@ func TestPadToFitsExactHeight(t *testing.T) {
 }
 
 func TestFooterHelpCompactsForNarrowTerminals(t *testing.T) {
-	wide := (&Model{width: 120}).footerHelp("on", "all", 80)
-	if !strings.Contains(wide, "shuf:on") {
-		t.Fatalf("wide footer should include playback state: %q", wide)
+	wide := (&Model{width: 130}).footerHelp("on", "all", 80)
+	if !strings.Contains(wide, "shuf:on") || !strings.Contains(wide, "^f") {
+		t.Fatalf("wide footer should include playback state and the filter key: %q", wide)
 	}
 
 	narrow := (&Model{width: 30}).footerHelp("on", "all", 80)

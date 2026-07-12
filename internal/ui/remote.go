@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
-	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -60,7 +60,7 @@ func (m *Model) discoverDevicesCmd() tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		devs, _ := discovery.Discover(700*time.Millisecond, selfPort)
+		devs, _ := discovery.Discover(700*time.Millisecond, selfPort, config.PeerHostPorts()...)
 		devs = mergeConfiguredPeers(devs, account)
 		peers := make([]peerDevice, 0, len(devs))
 		for _, d := range devs {

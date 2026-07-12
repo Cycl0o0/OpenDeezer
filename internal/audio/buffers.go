@@ -18,6 +18,11 @@ type streamBuffer struct {
 	done   bool
 	err    error
 	closed bool
+	// total is the full stream length in bytes when known (from the HTTP
+	// Content-Length / Content-Range), else 0. It lets SeekEnd resolve without
+	// waiting for the whole download and lets preallocate size the backing array
+	// up front (avoiding the append-doubling reallocation ladder on big FLACs).
+	total int64
 }
 
 func newStreamBuffer() *streamBuffer {
@@ -30,6 +35,63 @@ func (b *streamBuffer) append(p []byte) {
 	b.mu.Lock()
 	b.buf = append(b.buf, p...)
 	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+// preallocate grows the backing array to hold n bytes up front so a large
+// download (a 30-40MB FLAC) doesn't repeatedly reallocate and copy through the
+// append growth ladder. It never shrinks or discards buffered data.
+func (b *streamBuffer) preallocate(n int) {
+	b.mu.Lock()
+	b.preallocLocked(n)
+	b.mu.Unlock()
+}
+
+func (b *streamBuffer) preallocLocked(n int) {
+	if n > cap(b.buf) {
+		nb := make([]byte, len(b.buf), n)
+		copy(nb, b.buf)
+		b.buf = nb
+	}
+}
+
+// maxPrealloc caps the speculative up-front allocation driven by the
+// server-controlled Content-Length / Content-Range total. Without a cap a
+// malicious or broken host advertising a huge length would turn straight into
+// make([]byte, 0, n) — a makeslice panic or an OOM. 256MB comfortably covers
+// the largest real streams (a long FLAC is 30-40MB); anything genuinely bigger
+// still works, it just grows via the append ladder past the cap.
+const maxPrealloc = 256 << 20
+
+// setContentLength records the full stream length (once known from HTTP headers)
+// and preallocates the backing array to fit it. The recorded total is kept in
+// full — Seek clamps the resolved offset to the buffered length, so a lying
+// total stays harmless — but the speculative preallocation is capped at
+// maxPrealloc so an attacker-controlled header can't force a giant allocation.
+func (b *streamBuffer) setContentLength(n int64) {
+	if n <= 0 {
+		return
+	}
+	b.mu.Lock()
+	b.total = n
+	pre := n
+	if pre > maxPrealloc {
+		pre = maxPrealloc
+	}
+	b.preallocLocked(int(pre))
+	b.mu.Unlock()
+}
+
+// waitWatermark blocks until at least n bytes have been buffered, or the stream
+// has finished/closed (whichever comes first). It lets the decoder start on a
+// safe margin of encoded audio instead of the entire file — cutting time to
+// first audio — while streamBuffer's blocking Read then paces the decoder as the
+// rest arrives.
+func (b *streamBuffer) waitWatermark(n int) {
+	b.mu.Lock()
+	for len(b.buf) < n && !b.done && !b.closed {
+		b.cond.Wait()
+	}
 	b.mu.Unlock()
 }
 
@@ -50,10 +112,11 @@ func (b *streamBuffer) close() {
 }
 
 // waitDone blocks until the producer has finished downloading the whole stream
-// (or the buffer is closed). Decoding only after the track is fully buffered
-// keeps playback smooth: streaming-while-decoding made MP3 choppy because the
-// decoder outran the network — FLAC was unaffected only because flac.NewSeek
-// seeks to the end, which already forced a full download.
+// (or the buffer is closed). The initial decode no longer waits for this — it
+// starts on a watermark (see waitWatermark) for fast time-to-first-audio — but
+// the MP3 seek path still uses it, because building go-mp3's seekable frame
+// index requires the complete stream (so seeking gracefully blocks until the
+// download finishes).
 func (b *streamBuffer) waitDone() {
 	b.mu.Lock()
 	for !b.done && !b.closed {
@@ -92,11 +155,17 @@ func (b *streamBuffer) Seek(off int64, whence int) (int64, error) {
 	case io.SeekCurrent:
 		abs = int64(b.pos) + off
 	case io.SeekEnd:
-		// Relative to the end: wait for the full download so the length is known.
-		for !b.done && !b.closed {
-			b.cond.Wait()
+		// Relative to the end. If the total length is known from the HTTP headers
+		// we can resolve it without waiting for the whole download; otherwise fall
+		// back to waiting for completion so len(buf) is the true end.
+		if b.total > 0 {
+			abs = b.total + off
+		} else {
+			for !b.done && !b.closed {
+				b.cond.Wait()
+			}
+			abs = int64(len(b.buf)) + off
 		}
-		abs = int64(len(b.buf)) + off
 	}
 	if abs < 0 {
 		abs = 0

@@ -6,8 +6,11 @@
 // or $OPENDEEZER_CONTROL_ACCOUNT.
 //
 // Tools: get_status, play_pause, next, prev, stop, restart, cycle_repeat,
-// toggle_shuffle, set_volume, seek, search, list_playlists, play_track,
-// play_playlist, get_eq, set_eq.
+// toggle_shuffle, set_repeat, set_shuffle, set_volume, seek, search,
+// list_playlists, play_track, play_playlist, play_album, play_mix_track,
+// play_mix_artist, queue_add, queue_jump, queue_remove, queue_move,
+// history_recent, get_eq, set_eq, set_sleep_timer, cancel_sleep_timer, whoami,
+// list_devices, select_device.
 package main
 
 import (
@@ -18,18 +21,41 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/control"
-	version_ "github.com/Cycl0o0/OpenDeezer/internal/version"
+	version_ "github.com/Cycl0o0/OpenDeezer/v2/internal/version"
 )
 
 var version = version_.Number
 
+// protocolVersion is the MCP revision this server was written against. Later
+// revisions we have verified compatibility with (for the feature subset used
+// here: stdio transport, tools/list + tools/call, text content) are listed in
+// compatibleProtocolVersions and echoed back when a client requests them.
 const protocolVersion = "2024-11-05"
 
+// compatibleProtocolVersions are the MCP protocol revisions this server can
+// honestly claim. 2025-03-26 and 2025-06-18 only ADD features on top of what
+// we use (tool annotations, structured content, elicitation, …), so echoing
+// the client's requested version — as the spec's version-negotiation rules
+// prefer — is safe. Unknown/future versions fall back to our pinned baseline
+// and the client decides whether to proceed. Keep this list conservative:
+// only append a revision after checking its changelog against this server.
+var compatibleProtocolVersions = map[string]bool{
+	"2024-11-05": true,
+	"2025-03-26": true,
+	"2025-06-18": true,
+}
+
+// annotationsMinVersion is the first MCP revision with tool annotations
+// (readOnlyHint et al.). Revisions are dates, so a plain string compare works.
+const annotationsMinVersion = "2025-03-26"
+
 func main() {
-	base := env("OPENDEEZER_CONTROL_URL", "http://127.0.0.1:7654")
-	client := control.NewClient(base, os.Getenv("OPENDEEZER_CONTROL_TOKEN"), os.Getenv("OPENDEEZER_CONTROL_ACCOUNT"))
-	s := &server{client: client, tools: buildTools(client)}
+	tgt := newTarget(
+		env("OPENDEEZER_CONTROL_URL", "http://127.0.0.1:7654"),
+		os.Getenv("OPENDEEZER_CONTROL_TOKEN"),
+		os.Getenv("OPENDEEZER_CONTROL_ACCOUNT"),
+	)
+	s := &server{target: tgt, tools: buildTools(tgt), proto: protocolVersion}
 	s.serve(os.Stdin, os.Stdout)
 }
 
@@ -62,8 +88,9 @@ type rpcError struct {
 }
 
 type server struct {
-	client *control.Client
+	target *target
 	tools  []tool
+	proto  string // negotiated protocol version (set by initialize)
 	out    *bufio.Writer
 }
 
@@ -93,13 +120,32 @@ func (s *server) serve(in io.Reader, out io.Writer) {
 func (s *server) dispatch(req rpcReq) {
 	switch req.Method {
 	case "initialize":
+		// Version negotiation: echo the client's requested version when it is
+		// one we are known-compatible with; otherwise answer with our pinned
+		// baseline (per spec, the server then offers its latest supported
+		// version and the client decides). serve() is single-goroutine, so
+		// storing the result on s needs no locking.
+		var p struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if len(req.Params) > 0 {
+			_ = json.Unmarshal(req.Params, &p)
+		}
+		s.proto = protocolVersion
+		if compatibleProtocolVersions[p.ProtocolVersion] {
+			s.proto = p.ProtocolVersion
+		}
 		s.reply(req.ID, map[string]any{
-			"protocolVersion": protocolVersion,
+			"protocolVersion": s.proto,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "opendeezer-mcp", "version": version},
 		})
 	case "tools/list":
-		s.reply(req.ID, map[string]any{"tools": toolSpecs(s.tools)})
+		// Tool annotations (readOnlyHint) exist only from 2025-03-26 on; emit
+		// them solely when the negotiated revision knows the field, so clients
+		// validating against the older schema never see an unknown key.
+		withAnnotations := s.proto >= annotationsMinVersion
+		s.reply(req.ID, map[string]any{"tools": toolSpecs(s.tools, withAnnotations)})
 	case "tools/call":
 		s.handleCall(req)
 	case "ping":

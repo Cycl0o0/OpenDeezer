@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -64,7 +65,12 @@ type reply struct {
 
 // Responder advertises this instance until Close.
 type Responder struct {
-	conn *net.UDPConn
+	mu          sync.Mutex
+	conn        *net.UDPConn
+	closed      bool
+	info        func() Info
+	controlPort int
+	done        chan struct{}
 }
 
 // Advertise starts the discovery responder on UDP :Port (reuse-port so multiple
@@ -72,43 +78,94 @@ type Responder struct {
 // interface. info supplies the current identity; controlPort is the control API
 // TCP port controllers should connect to.
 func Advertise(info func() Info, controlPort int) (*Responder, error) {
+	r := &Responder{
+		info:        info,
+		controlPort: controlPort,
+		done:        make(chan struct{}),
+	}
+	if err := r.rebind(); err != nil {
+		return nil, err
+	}
+	go r.supervisor()
+	return r, nil
+}
+
+func (r *Responder) rebind() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
+	}
+
+	if r.conn != nil {
+		_ = r.conn.Close()
+	}
+
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error { return setReusePort(c) }}
 	pc, err := lc.ListenPacket(context.Background(), "udp4", ":"+strconv.Itoa(Port))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	conn := pc.(*net.UDPConn)
 	p := ipv4.NewPacketConn(conn)
 	for _, ifi := range multicastInterfaces() {
 		_ = p.JoinGroup(&ifi, &net.UDPAddr{IP: groupIP})
 	}
-	r := &Responder{conn: conn}
-	go r.serve(info, controlPort)
-	return r, nil
+	r.conn = conn
+
+	go r.serve(conn)
+	return nil
 }
 
-func (r *Responder) serve(info func() Info, controlPort int) {
+func (r *Responder) serve(conn *net.UDPConn) {
 	buf := make([]byte, maxPacket)
 	for {
-		n, src, err := r.conn.ReadFromUDP(buf)
+		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			return // socket closed
 		}
-		// Only answer the exact probe, and only to LAN sources (no reflection).
 		if string(buf[:n]) != probeMagic || !isLAN(src.IP) {
 			continue
 		}
-		in := info()
+		in := r.info()
 		b, _ := json.Marshal(reply{
-			Magic: replyMagic, Name: in.Name, Port: controlPort,
+			Magic: replyMagic, Name: in.Name, Port: r.controlPort,
 			Client: in.Client, Version: in.Version,
 		})
-		_, _ = r.conn.WriteToUDP(b, src) // unicast reply to the prober
+		_, _ = conn.WriteToUDP(b, src)
+	}
+}
+
+func (r *Responder) supervisor() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	lastIPs := getLocalIPsList()
+	for {
+		select {
+		case <-ticker.C:
+			currentIPs := getLocalIPsList()
+			if ipsChanged(lastIPs, currentIPs) {
+				_ = r.rebind()
+				lastIPs = currentIPs
+			}
+		case <-r.done:
+			return
+		}
 	}
 }
 
 // Close stops the responder.
 func (r *Responder) Close() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return
+	}
+	r.closed = true
+	close(r.done)
 	if r.conn != nil {
 		_ = r.conn.Close()
 	}
@@ -118,8 +175,9 @@ func (r *Responder) Close() {
 // for the given timeout. selfPort is this instance's own control port (0 if
 // none): replies from a local address with that port are our own responder and
 // are filtered out, so we never list ourselves. Other instances on the same host
-// use a different control port and are kept.
-func Discover(timeout time.Duration, selfPort int) ([]Device, error) {
+// use a different control port and are kept. Any optional staticPeers are probed
+// directly via unicast.
+func Discover(timeout time.Duration, selfPort int, staticPeers ...string) ([]Device, error) {
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error { return setBroadcast(c) }}
 	pc, err := lc.ListenPacket(context.Background(), "udp4", ":0") // ephemeral
 	if err != nil {
@@ -130,26 +188,25 @@ func Discover(timeout time.Duration, selfPort int) ([]Device, error) {
 
 	probe := []byte(probeMagic)
 	group := &net.UDPAddr{IP: groupIP, Port: Port}
-	p := ipv4.NewPacketConn(conn)
-	_ = p.SetMulticastTTL(4)
 
-	// Multicast the probe out of each capable interface.
-	ifaces := multicastInterfaces()
-	for i := range ifaces {
-		if p.SetMulticastInterface(&ifaces[i]) == nil {
-			_, _ = conn.WriteToUDP(probe, group)
+	// Send initial probes
+	sendProbes(conn, probe, group, staticPeers)
+
+	// Send periodically every 2 seconds in a background goroutine
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				sendProbes(conn, probe, group, staticPeers)
+			case <-done:
+				return
+			}
 		}
-	}
-	if len(ifaces) == 0 {
-		_, _ = conn.WriteToUDP(probe, group)
-	}
-	// Fallbacks for networks that filter multicast: per-interface directed
-	// broadcast (e.g. 192.168.1.255 — crosses WiFi/Ethernet within a subnet far
-	// more reliably than limited broadcast) plus limited broadcast.
-	for _, bc := range broadcastAddrs() {
-		_, _ = conn.WriteToUDP(probe, &net.UDPAddr{IP: bc, Port: Port})
-	}
-	_, _ = conn.WriteToUDP(probe, &net.UDPAddr{IP: net.IPv4bcast, Port: Port})
+	}()
 
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	locals := localIPs()
@@ -182,6 +239,71 @@ func Discover(timeout time.Duration, selfPort int) ([]Device, error) {
 		out = append(out, Device{Name: name, Addr: addr, Client: rep.Client, Version: rep.Version})
 	}
 	return out, nil
+}
+
+func sendProbes(conn *net.UDPConn, probe []byte, group *net.UDPAddr, staticPeers []string) {
+	p := ipv4.NewPacketConn(conn)
+	_ = p.SetMulticastTTL(4)
+
+	// Multicast the probe out of each capable interface.
+	ifaces := multicastInterfaces()
+	for i := range ifaces {
+		if p.SetMulticastInterface(&ifaces[i]) == nil {
+			_, _ = conn.WriteToUDP(probe, group)
+		}
+	}
+	if len(ifaces) == 0 {
+		_, _ = conn.WriteToUDP(probe, group)
+	}
+	// Fallbacks for networks that filter multicast: per-interface directed
+	// broadcast (e.g. 192.168.1.255 — crosses WiFi/Ethernet within a subnet far
+	// more reliably than limited broadcast) plus limited broadcast.
+	for _, bc := range broadcastAddrs() {
+		_, _ = conn.WriteToUDP(probe, &net.UDPAddr{IP: bc, Port: Port})
+	}
+	_, _ = conn.WriteToUDP(probe, &net.UDPAddr{IP: net.IPv4bcast, Port: Port})
+
+	// Unicast static peers in parallel
+	for _, peer := range staticPeers {
+		host, _, err := net.SplitHostPort(peer)
+		if err != nil {
+			host = peer
+		}
+		addrStr := net.JoinHostPort(host, strconv.Itoa(Port))
+		if udpAddr, err := net.ResolveUDPAddr("udp4", addrStr); err == nil {
+			_, _ = conn.WriteToUDP(probe, udpAddr)
+		}
+	}
+}
+
+func getLocalIPsList() []string {
+	var ips []string
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok {
+			ips = append(ips, ipnet.IP.String())
+		}
+	}
+	return ips
+}
+
+func ipsChanged(oldIPs, newIPs []string) bool {
+	if len(oldIPs) != len(newIPs) {
+		return true
+	}
+	m := make(map[string]bool)
+	for _, ip := range oldIPs {
+		m[ip] = true
+	}
+	for _, ip := range newIPs {
+		if !m[ip] {
+			return true
+		}
+	}
+	return false
 }
 
 // broadcastAddrs returns the IPv4 directed-broadcast address of each non-loopback

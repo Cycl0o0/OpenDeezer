@@ -16,12 +16,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
-	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
+	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
 )
 
 // selfControlPort is this instance's control API port (0 if disabled), used to
@@ -112,7 +112,7 @@ func DZDiscoverDevices(timeoutMS C.int) *C.char {
 	if ms <= 0 {
 		ms = 600
 	}
-	devs, err := discovery.Discover(time.Duration(ms)*time.Millisecond, selfControlPort())
+	devs, err := discovery.Discover(time.Duration(ms)*time.Millisecond, selfControlPort(), config.PeerHostPorts()...)
 	if err != nil {
 		// A discovery error is expected/partial (e.g. no multicast on a VPN); don't
 		// discard the configured unicast peers merged in below by returning an error

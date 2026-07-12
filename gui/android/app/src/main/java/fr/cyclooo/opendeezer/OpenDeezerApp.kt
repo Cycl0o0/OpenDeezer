@@ -30,6 +30,7 @@ import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.ui.LocalFoldState
 import fr.cyclooo.opendeezer.ui.components.PlayerBar
 import fr.cyclooo.opendeezer.ui.components.UpdateBanner
+import fr.cyclooo.opendeezer.ui.screens.ArtistProfileScreen
 import fr.cyclooo.opendeezer.ui.screens.ChartsScreen
 import fr.cyclooo.opendeezer.ui.screens.ConnectDialog
 import fr.cyclooo.opendeezer.ui.screens.EpisodesScreen
@@ -181,7 +182,14 @@ private fun MainScaffold(vm: AppViewModel) {
             composable(Routes.ARTIST) { entry ->
                 val id = entry.arguments?.getString("id").orEmpty()
                 val name = entry.arguments?.getString("name").orEmpty()
-                TrackListScreen(name, player, back) { Engine.artistTop(id) }
+                ArtistProfileScreen(
+                    artistId = id,
+                    artistName = name,
+                    player = player,
+                    onBack = back,
+                    onAlbum = { nav(Routes.album(it.id, it.name)) },
+                    onArtist = { nav(Routes.artist(it.id, it.name)) },
+                )
             }
             composable(Routes.CHARTS) {
                 ChartsScreen(

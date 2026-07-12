@@ -80,3 +80,76 @@ func TestResponderRepliesToProbeOnly(t *testing.T) {
 		t.Fatalf("malformed reply: %+v", rep)
 	}
 }
+
+func TestDiscoverDeduplicates(t *testing.T) {
+	r, err := Advertise(func() Info {
+		return Info{Name: "Dedup Device", Client: "tui", Version: "1.2.3"}
+	}, 7654)
+	if err != nil {
+		t.Skipf("cannot bind discovery port: %v", err)
+	}
+	defer r.Close()
+
+	devs, err := Discover(2200*time.Millisecond, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seenAddr := make(map[string]bool)
+	for _, d := range devs {
+		if d.Name == "Dedup Device" {
+			if seenAddr[d.Addr] {
+				t.Errorf("duplicate device address found for Dedup Device: %s", d.Addr)
+			}
+			seenAddr[d.Addr] = true
+		}
+	}
+}
+
+func TestDiscoverStaticPeer(t *testing.T) {
+	r, err := Advertise(func() Info {
+		return Info{Name: "Static Peer Device", Client: "tui", Version: "1.2.3"}
+	}, 7659)
+	if err != nil {
+		t.Skipf("cannot bind discovery port: %v", err)
+	}
+	defer r.Close()
+
+	devs, err := Discover(500*time.Millisecond, 0, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, d := range devs {
+		if d.Name == "Static Peer Device" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("failed to discover static peer via unicast probe")
+	}
+}
+
+func TestIPsChanged(t *testing.T) {
+	tests := []struct {
+		oldIPs []string
+		newIPs []string
+		want   bool
+	}{
+		{[]string{"127.0.0.1"}, []string{"127.0.0.1"}, false},
+		{[]string{"127.0.0.1"}, []string{"127.0.0.1", "192.168.1.5"}, true},
+		{[]string{"127.0.0.1", "192.168.1.5"}, []string{"127.0.0.1"}, true},
+		{[]string{"127.0.0.1", "192.168.1.5"}, []string{"192.168.1.5", "127.0.0.1"}, false},
+		{[]string{"127.0.0.1", "192.168.1.5"}, []string{"127.0.0.1", "192.168.1.6"}, true},
+		{[]string{}, []string{}, false},
+	}
+
+	for i, tc := range tests {
+		got := ipsChanged(tc.oldIPs, tc.newIPs)
+		if got != tc.want {
+			t.Errorf("test %d: ipsChanged(%v, %v) = %v, want %v", i, tc.oldIPs, tc.newIPs, got, tc.want)
+		}
+	}
+}

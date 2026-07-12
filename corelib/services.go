@@ -6,25 +6,30 @@ package main
 // the engine tracks the current one for now-playing + remote status.
 //
 // Engine-side control covers the player-level actions (play/pause, stop, seek,
-// volume, restart) plus play-by-id; next/prev/shuffle/repeat live in the GUI's
-// own queue and are not exposed here.
+// volume, restart) plus play-by-id. next/prev/shuffle/repeat walk the engine
+// queue (engineQ); a GUI can mirror its own queue into it via DZQueueSet /
+// DZQueueSetIndex so remote controllers see — and drive — the real queue.
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"runtime"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/internal/discord"
-	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
-	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
-	"github.com/Cycl0o0/OpenDeezer/internal/queue"
-	"github.com/Cycl0o0/OpenDeezer/internal/version"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/bridge"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/discord"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
+	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/version"
 )
 
 var (
@@ -45,6 +50,17 @@ var (
 	curMu    sync.Mutex
 	curTrack deezer.Track
 
+	// preloadedTrack remembers the identity (id + duration) of the stream last
+	// armed on the player via DZPreload. The player's pending next source is set
+	// ONLY by DZPreload, so on a gapless/crossfade promote this is exactly the
+	// just-promoted track — it lets engineAdvanceOnFinish move now-playing
+	// forward even when the GUI never synced its queue into engineQ. Cleared
+	// whenever the player's preload is dropped (DZClearPreload, queue edits,
+	// repeat/shuffle toggles, and a fresh Play — audio.Player.Play discards any
+	// pending preload). Guarded by preloadMu.
+	preloadMu      sync.Mutex
+	preloadedTrack deezer.Track
+
 	// engineQ is the engine-side playback queue. enginePlayPlaylist /
 	// enginePlayTrack load the full track list into it and play the current track;
 	// when a track ends naturally the player's onFinish callback advances this
@@ -58,6 +74,30 @@ func setCurrentTrack(t deezer.Track) {
 	curMu.Lock()
 	curTrack = t
 	curMu.Unlock()
+	// Every track change (play, auto-advance, gapless promote, async metadata
+	// enrichment, remote sync) is a state change controllers care about.
+	notifyControlState()
+}
+
+// notifyControlState nudges the control server's SSE event loop to publish a
+// fresh /events snapshot right away. The loop has its own 1s fallback ticker,
+// so this is purely a latency optimization — safe to skip (nil server) and
+// cheap to repeat (notifications are coalesced, the send never blocks).
+func notifyControlState() {
+	mu.Lock()
+	srv := ctrlSrv
+	mu.Unlock()
+	if srv != nil {
+		srv.NotifyStateChanged()
+	}
+}
+
+// withPlayerNotify runs a state-mutating player action, then pokes the SSE
+// loop. Use it instead of withPlayer for pause/stop/seek/volume-style
+// mutations (read-only accessors keep plain withPlayer).
+func withPlayerNotify(fn func(*audio.Player)) {
+	withPlayer(fn)
+	notifyControlState()
 }
 
 func currentTrack() deezer.Track {
@@ -71,6 +111,37 @@ func curPlayer() *audio.Player {
 	mu.Lock()
 	defer mu.Unlock()
 	return player
+}
+
+// setPreloadedTrack stashes the identity of the stream just armed on the
+// player via DZPreload (see the preloadedTrack doc).
+func setPreloadedTrack(t deezer.Track) {
+	preloadMu.Lock()
+	preloadedTrack = t
+	preloadMu.Unlock()
+}
+
+// takePreloadedTrack returns and clears the armed-preload identity. The player
+// consumes its preload on every promote, so the stash is single-use.
+func takePreloadedTrack() (t deezer.Track, armed bool) {
+	preloadMu.Lock()
+	defer preloadMu.Unlock()
+	t, armed = preloadedTrack, preloadedTrack.ID != ""
+	preloadedTrack = deezer.Track{}
+	return t, armed
+}
+
+// clearPreloadedTrack drops the armed-preload identity. Call wherever the
+// player's pending next source is discarded so the stash can't outlive it.
+func clearPreloadedTrack() { setPreloadedTrack(deezer.Track{}) }
+
+// clearEnginePreload discards the player's armed preload AND its stashed
+// identity together, so the two can never disagree. Use it on every path where
+// the upcoming track is no longer determined (queue edits, repeat/shuffle
+// toggles).
+func clearEnginePreload() {
+	withPlayer(func(p *audio.Player) { p.ClearPreload() })
+	clearPreloadedTrack()
 }
 
 // fetchTrackMeta fills in the full metadata for the current track (title/artist/
@@ -269,17 +340,30 @@ func publishDiscord(p *audio.Player) {
 }
 
 func engineState() control.State {
+	st := control.State{State: "stopped"}
+	// Queue + repeat + shuffle come from the engine queue, so /status reports the
+	// real values once a GUI has synced them (DZQueueSet / DZSetRepeat /
+	// DZSetShuffle). A GUI that never syncs keeps the old wire shape: no queue,
+	// repeat "off", shuffle false.
+	queueMu.Lock()
+	st.Repeat = engineQ.Repeat().String()
+	st.Shuffle = engineQ.Shuffle()
+	if ts := engineQ.Tracks(); len(ts) > 0 {
+		qt := make([]control.Track, len(ts))
+		for i, t := range ts {
+			qt[i] = toControlTrack(t)
+		}
+		st.Queue = qt
+	}
+	queueMu.Unlock()
 	p := curPlayer()
 	if p == nil {
-		return control.State{State: "stopped"}
+		return st
 	}
-	cur := currentTrack()
-	st := control.State{
-		PositionMS: p.PositionMS(), DurationMS: p.DurationMS(),
-		Volume: p.Volume(), Repeat: "off", Format: p.Format(),
-		SleepActive: p.SleepActive(), SleepEndOfTrack: p.SleepEndOfTrack(),
-		SleepRemainingMS: p.SleepRemainingMS(),
-	}
+	st.PositionMS, st.DurationMS = p.PositionMS(), p.DurationMS()
+	st.Volume, st.Format = p.Volume(), p.Format()
+	st.SleepActive, st.SleepEndOfTrack = p.SleepActive(), p.SleepEndOfTrack()
+	st.SleepRemainingMS = p.SleepRemainingMS()
 	switch p.State() {
 	case audio.Playing:
 		st.State = "playing"
@@ -292,18 +376,141 @@ func engineState() control.State {
 	default:
 		st.State = "stopped"
 	}
-	if cur.ID != "" {
-		ct := &control.Track{
-			ID: cur.ID, Title: cur.Name, Artist: cur.ArtistLine(),
-			Album: cur.AlbumName, Explicit: cur.Explicit, DurationMS: cur.DurationMS,
-			ArtworkURL: cur.ArtworkURL,
-		}
-		if len(cur.Artists) > 0 {
-			ct.ArtistID = cur.Artists[0].ID
-		}
-		st.Track = ct
+	if cur := currentTrack(); cur.ID != "" {
+		ct := toControlTrack(cur)
+		st.Track = &ct
 	}
 	return st
+}
+
+// toControlTrack converts a Deezer track to the control API wire shape.
+func toControlTrack(t deezer.Track) control.Track {
+	ct := control.Track{
+		ID: t.ID, Title: t.Name, Artist: t.ArtistLine(),
+		Album: t.AlbumName, Explicit: t.Explicit, DurationMS: t.DurationMS,
+		ArtworkURL: t.ArtworkURL,
+	}
+	if len(t.Artists) > 0 {
+		ct.ArtistID = t.Artists[0].ID
+	}
+	return ct
+}
+
+// ---- engine queue sync (GUI queue -> engineQ) ----
+
+// queueTracksFromJSON decodes a GUI queue payload: a JSON array of tracks in
+// the same wire shape every list/browse call returns (bridge.Track). Only "id"
+// is required; "durationMs" should be set so controllers' end-of-track
+// detection works without a metadata refetch. Entries without an id are
+// dropped. "" and "null" decode to an empty queue (clear).
+func queueTracksFromJSON(js string) ([]deezer.Track, error) {
+	if js == "" {
+		return nil, nil
+	}
+	var wire []bridge.Track
+	if err := json.Unmarshal([]byte(js), &wire); err != nil {
+		return nil, err
+	}
+	ts := make([]deezer.Track, 0, len(wire))
+	for _, w := range wire {
+		if w.ID == "" {
+			continue
+		}
+		ts = append(ts, trackFromWire(w))
+	}
+	return ts, nil
+}
+
+// trackFromWire converts a wire track (bridge.Track) back to a deezer.Track.
+// When the artists array is absent it falls back to artistLine/artistId so the
+// queue still shows an artist on /status.
+func trackFromWire(w bridge.Track) deezer.Track {
+	t := deezer.Track{
+		ID: w.ID, Name: w.Name, DurationMS: w.DurationMS,
+		AlbumName: w.AlbumName, ArtworkURL: w.ArtworkURL, Explicit: w.Explicit,
+	}
+	for _, a := range w.Artists {
+		t.Artists = append(t.Artists, deezer.Artist{ID: a.ID, Name: a.Name})
+	}
+	if len(t.Artists) == 0 && (w.ArtistID != "" || w.ArtistLine != "") {
+		t.Artists = []deezer.Artist{{ID: w.ArtistID, Name: w.ArtistLine}}
+	}
+	return t
+}
+
+// engineQueueSet replaces the engine-side queue with the GUI's tracks (cursor
+// at 0; follow with engineQueueSetIndex to align it with the playing row).
+func engineQueueSet(ts []deezer.Track) {
+	queueMu.Lock()
+	engineQ.Set(ts, 0)
+	queueMu.Unlock()
+	notifyControlState()
+}
+
+// engineQueueSetIndex aligns the engine queue cursor to the row the GUI is
+// already playing (clamped). It uses AlignIndex, not SetIndex, so this pure
+// synchronisation doesn't push a synthetic history entry that would make a
+// later remote Prev jump to a never-played track. Genuine remote jumps go
+// through engineQueueSelect (SetIndex), which does record history.
+func engineQueueSetIndex(i int) {
+	queueMu.Lock()
+	engineQ.AlignIndex(i)
+	queueMu.Unlock()
+	notifyControlState()
+}
+
+// engineQueueIndex returns the engine queue cursor (-1 when empty).
+func engineQueueIndex() int {
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return engineQ.Index()
+}
+
+// engineQueueVersion returns the queue's content-mutation counter (bumped by
+// set/add/remove/move, NOT by cursor moves), so a GUI can poll it cheaply and
+// pull DZQueueJSON only when a remote controller actually edited the queue.
+func engineQueueVersion() uint64 {
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return engineQ.Version()
+}
+
+// engineQueueSnapshot returns the engine queue's contents + cursor + version
+// under one lock (backs DZQueueJSON).
+func engineQueueSnapshot() (ts []deezer.Track, index int, version uint64) {
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return append([]deezer.Track(nil), engineQ.Tracks()...), engineQ.Index(), engineQ.Version()
+}
+
+// engineSetRepeat / engineSetShuffle persist the repeat/shuffle choice on the
+// engine queue so /status reports the real values (previously hard-coded to
+// off/false) and the engine queue honors them when it advances.
+func engineSetRepeat(mode string) {
+	r := queue.RepeatOff
+	switch mode {
+	case "all":
+		r = queue.RepeatAll
+	case "one":
+		r = queue.RepeatOne
+	}
+	queueMu.Lock()
+	engineQ.SetRepeat(r)
+	queueMu.Unlock()
+	// The upcoming track changed (repeat-one replays the CURRENT track): a
+	// preload armed for the old linear next must not gapless-promote.
+	clearEnginePreload()
+	notifyControlState()
+}
+
+func engineSetShuffle(on bool) {
+	queueMu.Lock()
+	engineQ.SetShuffle(on)
+	queueMu.Unlock()
+	// The upcoming track changed (re-shuffled order): a preload armed for the
+	// old linear next must not gapless-promote.
+	clearEnginePreload()
+	notifyControlState()
 }
 
 // clientID / deviceLabel identify this GUI on the network. A GUI may override
@@ -351,21 +558,25 @@ func engineAccount() control.Account {
 
 // engineCommands maps control commands to player-level actions. next/prev drive
 // the engine playback queue (engineQ) when playing locally, or forward to the
-// connected remote when a device is selected; shuffle/repeat are no-ops locally
-// but forward to the connected remote (if any) so a controller can drive the
+// connected remote when a device is selected; shuffle/repeat are recorded on
+// the engine queue (so /status reports them and the queue honors them) and also
+// forward to the connected remote (if any) so a controller can drive the
 // remote's queue.
 func engineCommands() control.Commands {
 	return control.Commands{
-		PlayPause:    func() { withPlayer(func(p *audio.Player) { p.TogglePause() }) },
-		Next:         engineNext,
-		Prev:         enginePrev,
-		Stop:         func() { withPlayer(func(p *audio.Player) { p.Stop() }) },
-		Restart:      func() { withPlayer(func(p *audio.Player) { p.SeekMS(0) }) },
-		Seek:         func(ms int64) { withPlayer(func(p *audio.Player) { p.SeekMS(ms) }) },
-		SetVolume:    func(v float64) { withPlayer(func(p *audio.Player) { p.SetVolume(v) }) },
+		PlayPause: func() { withPlayerNotify(func(p *audio.Player) { p.TogglePause() }) },
+		Next:      engineNext,
+		Prev:      enginePrev,
+		// Record the in-progress listen before halting: the next Play sees the
+		// player Stopped and skips recording, so this is the only chance.
+		Stop:         func() { withPlayerNotify(func(p *audio.Player) { noteTrackTransition(p); p.Stop() }) },
+		Restart:      func() { withPlayerNotify(func(p *audio.Player) { p.SeekMS(0) }) },
+		Seek:         func(ms int64) { withPlayerNotify(func(p *audio.Player) { p.SeekMS(ms) }) },
+		SetVolume:    func(v float64) { withPlayerNotify(func(p *audio.Player) { p.SetVolume(v) }) },
 		PlayTrack:    enginePlayTrack,
 		PlayPlaylist: enginePlayPlaylist,
 		SetRepeat: func(mode string) {
+			engineSetRepeat(mode)
 			if rc := routedRemote(); rc != nil {
 				if st, err := rc.SetRepeat(mode); err == nil {
 					setRemoteState(st)
@@ -373,18 +584,27 @@ func engineCommands() control.Commands {
 			}
 		},
 		SetShuffle: func(on bool) {
+			engineSetShuffle(on)
 			if rc := routedRemote(); rc != nil {
 				if st, err := rc.SetShuffle(on); err == nil {
 					setRemoteState(st)
 				}
 			}
 		},
+		QueueAdd:      engineQueueAdd,
+		QueueJump:     engineQueueJump,
+		QueueRemove:   engineQueueRemove,
+		QueueMove:     engineQueueMove,
+		PlayAlbum:     enginePlayAlbum,
+		PlayMixTrack:  enginePlayMixTrack,
+		PlayMixArtist: enginePlayMixArtist,
+		HistoryRecent: engineHistoryRecent,
 		SetSleepTimer: func(minutes int, eot bool) {
-			withPlayer(func(p *audio.Player) {
+			withPlayerNotify(func(p *audio.Player) {
 				p.SetSleepTimer(time.Duration(minutes)*time.Minute, eot)
 			})
 		},
-		CancelSleepTimer: func() { withPlayer(func(p *audio.Player) { p.CancelSleepTimer() }) },
+		CancelSleepTimer: func() { withPlayerNotify(func(p *audio.Player) { p.CancelSleepTimer() }) },
 	}
 }
 
@@ -413,9 +633,11 @@ func enginePlayResolved(c *deezer.Client, p *audio.Player, t deezer.Track) bool 
 	if err != nil {
 		return false
 	}
+	noteTrackTransition(p) // record the outgoing listen before the swap
 	if p.Play(plan, t.DurationMS) != nil {
 		return false
 	}
+	clearPreloadedTrack() // p.Play discarded any pending preload; drop its stash too
 	setCurrentTrack(t)
 	return true
 }
@@ -427,6 +649,7 @@ func engineLoadAndPlay(c *deezer.Client, p *audio.Player, ts []deezer.Track, sta
 	engineQ.Set(ts, start)
 	t, ok := engineQ.Current()
 	queueMu.Unlock()
+	notifyControlState() // queue replaced even if the play below fails
 	if !ok {
 		return false
 	}
@@ -489,6 +712,11 @@ func engineQueueAdvance(finishedID string) (deezer.Track, bool) {
 // uses that to decide whether to also bump the GUI finished-counter, so the
 // engine queue and a native GUI's own queue never both advance on one finish.
 func engineAdvanceOnFinish() bool {
+	// Gapless/crossfade promote: the player swapped the preloaded source in and
+	// kept playing (a real finish passes through Stopped before onFinish fires).
+	if p := curPlayer(); p != nil && p.State() == audio.Playing {
+		return engineSyncOnGaplessPromote()
+	}
 	next, ok := engineQueueAdvance(currentTrack().ID)
 	if !ok {
 		return false
@@ -500,6 +728,47 @@ func engineAdvanceOnFinish() bool {
 		}
 		enginePlayResolved(c, p, next)
 	}()
+	return true
+}
+
+// engineSyncOnGaplessPromote does the queue + now-playing bookkeeping after
+// the player gaplessly promoted its preloaded source (it is still Playing
+// then). Split from engineAdvanceOnFinish so tests can drive a promote without
+// a live audio device. Returns whether the engine queue owned the finished
+// track (the caller uses that to keep exactly one queue mechanism advancing).
+//
+// The preloaded track is always the deterministic linear next, so when the
+// engine queue owned the finished track just walk the cursor + now-playing
+// along with the audio — re-resolving + Play here would kill the promoted
+// stream and restart the track over the network.
+func engineSyncOnGaplessPromote() bool {
+	queueMu.Lock()
+	cur, ok := engineQ.Current()
+	owned := ok && cur.ID != "" && cur.ID == currentTrack().ID && engineQ.AdvanceLinear()
+	var next deezer.Track
+	if owned {
+		next, _ = engineQ.Current()
+	}
+	queueMu.Unlock()
+	// Either way the player just consumed its armed preload: take the stashed
+	// identity so a later finish can't reuse it.
+	promoted, armed := takePreloadedTrack()
+	if !owned {
+		// Engine queue empty or misaligned: the GUI preloaded without mirroring
+		// its queue via DZQueueSet (the shipped apps do exactly this). The
+		// promoted stream can only be the armed preload — p.next is set solely
+		// by DZPreload, which stashes it — so move now-playing onto it.
+		// Otherwise /status would stay on the finished track, whose NEXT finish
+		// would re-record it in history while the promoted track never gets
+		// recorded. The outgoing listen itself was already recorded by
+		// noteTrackFinished (it runs before this in the onFinish callback).
+		if armed {
+			setCurrentTrack(promoted)
+			go fetchTrackMeta(curClient(), promoted.ID) // enrich id+duration, like DZPlay
+		}
+		return false // still not the engine queue's finish; the GUI's own queue advances
+	}
+	setCurrentTrack(next)
 	return true
 }
 
@@ -542,4 +811,342 @@ func enginePrev() {
 	if c, p := curClient(), curPlayer(); c != nil && p != nil {
 		enginePlayResolved(c, p, t)
 	}
+}
+
+// ---- extended control commands: queue edits, album/mix play, history ----
+//
+// These back the control API's /queue/*, /play/album, /play/mix/* and
+// /history/recent endpoints. Like Next/Prev they forward to the routed Connect
+// device when one is selected (this instance is then a controller, so queue
+// edits belong to the remote's queue); HistoryRecent stays local — the
+// listening history never leaves the machine that did the listening.
+
+// engineQueueInsert is the pure queue mutation behind QueueAdd: insert t right
+// after the current track (next=true) or append it to the end. A preloaded
+// next stream is discarded — the upcoming track may have changed.
+func engineQueueInsert(t deezer.Track, next bool) {
+	queueMu.Lock()
+	if next {
+		engineQ.InsertAfterCurrent(t)
+	} else {
+		engineQ.Append(t)
+	}
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
+}
+
+// engineQueueAdd backs POST /queue/add: resolve full track metadata (so
+// /status shows title/artist/duration, and end-of-track detection works), then
+// insert or append it.
+func engineQueueAdd(id string, next bool) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.QueueAdd(id, next)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	c := curClient()
+	if c == nil {
+		return errNotReady
+	}
+	t, err := c.Track(id)
+	if err != nil {
+		return err
+	}
+	if t.ID == "" {
+		return fmt.Errorf("track %s not found", id)
+	}
+	engineQueueInsert(t, next)
+	return nil
+}
+
+// engineQueueSelect is the pure cursor move behind QueueJump: validate index,
+// move the cursor (recording history so Prev retraces) and return the now-
+// current track.
+func engineQueueSelect(index int) (deezer.Track, error) {
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	if index < 0 || index >= engineQ.Len() {
+		return deezer.Track{}, fmt.Errorf("index %d out of range (queue has %d tracks)", index, engineQ.Len())
+	}
+	engineQ.SetIndex(index)
+	t, _ := engineQ.Current()
+	return t, nil
+}
+
+// engineQueueJump backs POST /queue/jump: move the cursor to index and play
+// that row through the normal engine play path.
+func engineQueueJump(index int) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.QueueJump(index)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	c, p := curClient(), curPlayer()
+	if c == nil || p == nil {
+		return errNotReady
+	}
+	t, err := engineQueueSelect(index)
+	if err != nil {
+		return err
+	}
+	if !enginePlayResolved(c, p, t) {
+		return fmt.Errorf("could not start track %s", t.ID)
+	}
+	return nil
+}
+
+// engineQueueRemove backs POST /queue/remove. The playing row can't be removed
+// (same guard as the TUI): the audio would keep playing a track that no longer
+// exists in the queue, desyncing every controller.
+func engineQueueRemove(index int) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.QueueRemove(index)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	queueMu.Lock()
+	if index < 0 || index >= engineQ.Len() {
+		queueMu.Unlock()
+		return fmt.Errorf("index %d out of range (queue has %d tracks)", index, engineQ.Len())
+	}
+	if index == engineQ.Index() {
+		queueMu.Unlock()
+		return fmt.Errorf("cannot remove the playing track")
+	}
+	engineQ.Remove(index)
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
+	return nil
+}
+
+// engineQueueMove backs POST /queue/move; the cursor, history and shuffle
+// cycle all follow the moved tracks (queue.Move), so reordering never changes
+// what's audible. from == to is a no-op success.
+func engineQueueMove(from, to int) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.QueueMove(from, to)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	queueMu.Lock()
+	if n := engineQ.Len(); from < 0 || from >= n || to < 0 || to >= n {
+		queueMu.Unlock()
+		return fmt.Errorf("from/to out of range (queue has %d tracks)", n)
+	}
+	moved := from != to && engineQ.Move(from, to)
+	queueMu.Unlock()
+	if moved {
+		clearEnginePreload()
+		notifyControlState()
+	}
+	return nil
+}
+
+// enginePlayFetched loads a fetched track list into the engine queue and plays
+// the first track (shared tail of PlayAlbum / PlayMixTrack / PlayMixArtist).
+func enginePlayFetched(what string, ts []deezer.Track, err error) error {
+	if err != nil {
+		return err
+	}
+	if len(ts) == 0 {
+		return fmt.Errorf("%s has no playable tracks", what)
+	}
+	c, p := curClient(), curPlayer()
+	if c == nil || p == nil {
+		return errNotReady
+	}
+	if !engineLoadAndPlay(c, p, ts, 0) {
+		return fmt.Errorf("could not start %s playback", what)
+	}
+	return nil
+}
+
+// enginePlayAlbum backs POST /play/album: replace the engine queue with the
+// album's tracks and play the first (natural finishes auto-advance).
+func enginePlayAlbum(id string) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.PlayAlbum(id)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	c := curClient()
+	if c == nil {
+		return errNotReady
+	}
+	ts, err := c.AlbumTracks(id)
+	return enginePlayFetched("album", ts, err)
+}
+
+// enginePlayMixTrack backs POST /play/mix/track ("song radio", seed kept as
+// the first entry).
+func enginePlayMixTrack(id string) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.PlayMixTrack(id)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	c := curClient()
+	if c == nil {
+		return errNotReady
+	}
+	ts, err := c.TrackMix(id)
+	return enginePlayFetched("mix", ts, err)
+}
+
+// enginePlayMixArtist backs POST /play/mix/artist ("artist radio").
+func enginePlayMixArtist(id string) error {
+	if rc := routedRemote(); rc != nil {
+		st, err := rc.PlayMixArtist(id)
+		if err == nil {
+			setRemoteState(st)
+		}
+		return err
+	}
+	c := curClient()
+	if c == nil {
+		return errNotReady
+	}
+	ts, err := c.ArtistMix(id)
+	return enginePlayFetched("mix", ts, err)
+}
+
+// engineHistoryRecent backs GET /history/recent with the machine-local
+// listening log (newest first; history.Store.Recent never returns nil, so an
+// empty log marshals to []).
+func engineHistoryRecent(n int) (json.RawMessage, error) {
+	st := historyStore()
+	if st == nil {
+		return nil, fmt.Errorf("history unavailable")
+	}
+	entries, err := st.Recent(n)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(entries)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(b), nil
+}
+
+// ---- local listening history recording ----
+
+var (
+	histMu     sync.Mutex
+	histStore  *history.Store
+	histInited bool
+)
+
+// historyStore lazily opens the shared local listening history at
+// <config-dir>/history.jsonl (nil when no config dir is available). The store
+// serializes its own file access; this only guards the lazy init.
+func historyStore() *history.Store {
+	histMu.Lock()
+	defer histMu.Unlock()
+	if !histInited {
+		histInited = true
+		if s, err := history.Default(); err == nil {
+			histStore = s
+		}
+	}
+	return histStore
+}
+
+// setHistoryStore overrides the history store (tests only).
+func setHistoryStore(s *history.Store) {
+	histMu.Lock()
+	histStore, histInited = s, true
+	histMu.Unlock()
+}
+
+// listenEntry converts an outgoing track + listened milliseconds into a
+// history entry. ok=false when it isn't worth recording: no track id, or under
+// a second of listening (start-skips, double-taps).
+func listenEntry(prev deezer.Track, playedMS int64) (history.Entry, bool) {
+	if prev.ID == "" || playedMS < 1000 {
+		return history.Entry{}, false
+	}
+	if prev.DurationMS > 0 && playedMS > prev.DurationMS {
+		playedMS = prev.DurationMS
+	}
+	return history.Entry{
+		TrackID:           prev.ID,
+		Title:             prev.Name,
+		Artist:            prev.ArtistLine(),
+		Album:             prev.AlbumName,
+		StartedAt:         time.Now().Unix() - playedMS/1000,
+		DurationPlayedSec: playedMS / 1000,
+	}, true
+}
+
+// recordListen appends the outgoing track to the local listening history. The
+// file write (append + fsync) runs on its own goroutine so callers on the
+// player's manage/callback path never block on disk I/O.
+func recordListen(prev deezer.Track, playedMS int64) {
+	e, ok := listenEntry(prev, playedMS)
+	if !ok {
+		return
+	}
+	go func() {
+		if st := historyStore(); st != nil {
+			if err := st.Record(e); err != nil {
+				odlog.Debug("history: %v", err)
+			}
+		}
+	}()
+}
+
+// noteTrackTransition records the outgoing track when a new stream is about to
+// replace one the user was actually listening to (manual skip / pick / new
+// selection). Call BEFORE p.Play. A Stopped/Errored player means the previous
+// track either ended naturally — already recorded by noteTrackFinished — or
+// stopped long ago; neither may be re-recorded here, which also keeps
+// pause/resume free of duplicates (they never reach this path at all).
+func noteTrackTransition(p *audio.Player) {
+	if p == nil {
+		return
+	}
+	recordTransition(p.State(), p.PositionMS())
+}
+
+// recordTransition is noteTrackTransition's pure core, split out so tests can
+// drive the Playing/Paused duplicate guard without a live audio device (a real
+// player can't reach Playing in tests). A Stopped/Errored state records
+// nothing — that's what makes a second Stop (or a Play after a natural finish)
+// duplicate-free.
+func recordTransition(state audio.State, positionMS int64) {
+	switch state {
+	case audio.Playing, audio.Paused:
+		recordListen(currentTrack(), positionMS)
+	}
+}
+
+// noteTrackFinished records the track that just ended naturally. It runs from
+// the player's onFinish callback (the manage goroutine): for a real finish the
+// player retains the end position; for a gapless/crossfade promote the player
+// is already Playing the NEXT track, so the outgoing one played its full
+// duration.
+func noteTrackFinished() {
+	prev := currentTrack()
+	playedMS := prev.DurationMS
+	if p := curPlayer(); p != nil && p.State() != audio.Playing {
+		if pos := p.PositionMS(); pos > 0 {
+			playedMS = pos
+		}
+	}
+	recordListen(prev, playedMS)
 }

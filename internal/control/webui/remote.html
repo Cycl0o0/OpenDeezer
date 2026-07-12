@@ -97,6 +97,9 @@ body {
   gap: 1.1rem;
   width: 100%;
   max-width: 380px;
+  max-height: calc(100vh - 3rem - var(--safe-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Artwork */
@@ -271,6 +274,79 @@ body {
 .ctrl-btn.active {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* Queue */
+#queue-panel {
+  display: none;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+#queue-title {
+  padding: 0 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.queue-row {
+  display: flex;
+  min-height: 44px;
+  overflow: hidden;
+  background: var(--surface2);
+  border-radius: 9px;
+}
+.queue-jump, .queue-remove {
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.queue-jump {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  text-align: start;
+}
+.queue-jump-static { cursor: default; }
+.queue-track-title, .queue-track-artist {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-track-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.queue-track-artist {
+  margin-top: 0.1rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.queue-remove {
+  flex: 0 0 42px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+.queue-jump:active, .queue-remove:active { opacity: 0.5; }
+.queue-jump:focus-visible, .queue-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ---- Equalizer panel ---- */
@@ -452,6 +528,11 @@ body {
     <button id="eq-btn" class="ctrl-btn" title="Equalizer">&#9776; Equalizer</button>
   </div>
 
+  <div id="queue-panel">
+    <div id="queue-title">Queue</div>
+    <div id="queue-list"></div>
+  </div>
+
   <div id="eq-panel">
     <div class="eq-toggle-row">
       <button id="eq-enable-btn" class="ctrl-btn">EQ: off</button>
@@ -481,13 +562,13 @@ var SESSION_KEY = 'opendeezer_session_v1';
 // (falls back to English). Product names, units and format tokens ({n}) are kept
 // verbatim. Arabic switches the document to RTL below.
 var I18N = {
-  en: {pairIntro:"Enter the 6-digit code shown on your device to pair your phone as a remote.",pair:"Pair",pairing:"Pairing…",enterCode:"Enter the 6-digit code.",tooMany:"Too many attempts — wait a minute and try again.",invalidCode:"Invalid code. Check the display and try again.",errorRetry:"Error {n}. Try again.",networkErr:"Network error. Make sure you are on the same Wi-Fi.",sessionExpired:"Session expired — please pair again.",notPlaying:"Not playing",prev:"Previous",playPause:"Play / Pause",next:"Next",repeatOff:"Repeat: off",repeatOne:"Repeat: one",repeatAll:"Repeat: all",shuffle:"Shuffle",shuffleOn:"Shuffle: on",sleep:"Sleep",sleepEnd:"Sleep: end of track",sleepMin:"Sleep: {n} min",equalizer:"Equalizer",eqOn:"EQ: on",eqOff:"EQ: off",monoOn:"Mono: on",monoOff:"Mono: off",preset:"Preset",preamp:"Preamp",custom:"Custom",eqUnavailable:"Equalizer unavailable on this device.",st_playing:"playing",st_paused:"paused",st_stopped:"stopped",st_loading:"loading",st_error:"error"},
-  zh: {pairIntro:"输入设备上显示的 6 位配对码，将手机配对为遥控器。",pair:"配对",pairing:"正在配对…",enterCode:"请输入 6 位配对码。",tooMany:"尝试次数过多 — 请等待一分钟后重试。",invalidCode:"配对码无效。请查看设备显示后重试。",errorRetry:"错误 {n}。请重试。",networkErr:"网络错误。请确认与设备连接同一 Wi-Fi。",sessionExpired:"会话已过期 — 请重新配对。",notPlaying:"未在播放",prev:"上一首",playPause:"播放 / 暂停",next:"下一首",repeatOff:"循环：关",repeatOne:"循环：单曲",repeatAll:"循环：全部",shuffle:"随机播放",shuffleOn:"随机：开",sleep:"定时",sleepEnd:"定时：本曲结束",sleepMin:"定时：{n} 分钟",equalizer:"均衡器",eqOn:"EQ：开",eqOff:"EQ：关",monoOn:"单声道：开",monoOff:"单声道：关",preset:"预设",preamp:"前置放大",custom:"自定义",eqUnavailable:"此设备不支持均衡器。",st_playing:"正在播放",st_paused:"已暂停",st_stopped:"已停止",st_loading:"加载中",st_error:"错误"},
-  hi: {pairIntro:"अपने फ़ोन को रिमोट के रूप में पेयर करने के लिए डिवाइस पर दिखाया गया 6-अंकीय कोड दर्ज करें।",pair:"पेयर करें",pairing:"पेयर हो रहा है…",enterCode:"6-अंकीय कोड दर्ज करें।",tooMany:"बहुत अधिक प्रयास — एक मिनट रुककर पुनः प्रयास करें।",invalidCode:"अमान्य कोड। डिस्प्ले जाँचें और पुनः प्रयास करें।",errorRetry:"त्रुटि {n}। पुनः प्रयास करें।",networkErr:"नेटवर्क त्रुटि। सुनिश्चित करें कि आप उसी Wi-Fi पर हैं।",sessionExpired:"सत्र समाप्त — कृपया फिर से पेयर करें।",notPlaying:"कुछ नहीं चल रहा",prev:"पिछला",playPause:"चलाएँ / पॉज़ करें",next:"अगला",repeatOff:"दोहराएँ: बंद",repeatOne:"दोहराएँ: एक",repeatAll:"दोहराएँ: सभी",shuffle:"शफ़ल",shuffleOn:"शफ़ल: चालू",sleep:"स्लीप",sleepEnd:"स्लीप: ट्रैक का अंत",sleepMin:"स्लीप: {n} मिनट",equalizer:"इक्वलाइज़र",eqOn:"EQ: चालू",eqOff:"EQ: बंद",monoOn:"मोनो: चालू",monoOff:"मोनो: बंद",preset:"प्रीसेट",preamp:"प्रीएम्प",custom:"कस्टम",eqUnavailable:"इस डिवाइस पर इक्वलाइज़र उपलब्ध नहीं है।",st_playing:"चल रहा है",st_paused:"रुका हुआ",st_stopped:"रुका",st_loading:"लोड हो रहा है",st_error:"त्रुटि"},
-  es: {pairIntro:"Introduce el código de 6 dígitos que aparece en tu dispositivo para vincular tu teléfono como control remoto.",pair:"Vincular",pairing:"Vinculando…",enterCode:"Introduce el código de 6 dígitos.",tooMany:"Demasiados intentos — espera un minuto e inténtalo de nuevo.",invalidCode:"Código no válido. Comprueba la pantalla e inténtalo de nuevo.",errorRetry:"Error {n}. Inténtalo de nuevo.",networkErr:"Error de red. Asegúrate de estar en la misma Wi-Fi.",sessionExpired:"La sesión expiró — vincula de nuevo.",notPlaying:"Sin reproducción",prev:"Anterior",playPause:"Reproducir / Pausa",next:"Siguiente",repeatOff:"Repetir: no",repeatOne:"Repetir: uno",repeatAll:"Repetir: todo",shuffle:"Aleatorio",shuffleOn:"Aleatorio: sí",sleep:"Sueño",sleepEnd:"Sueño: fin de la canción",sleepMin:"Sueño: {n} min",equalizer:"Ecualizador",eqOn:"EQ: sí",eqOff:"EQ: no",monoOn:"Mono: sí",monoOff:"Mono: no",preset:"Preajuste",preamp:"Preamplificador",custom:"Personalizado",eqUnavailable:"Ecualizador no disponible en este dispositivo.",st_playing:"reproduciendo",st_paused:"en pausa",st_stopped:"detenido",st_loading:"cargando",st_error:"error"},
-  fr: {pairIntro:"Saisissez le code à 6 chiffres affiché sur votre appareil pour associer votre téléphone comme télécommande.",pair:"Associer",pairing:"Association…",enterCode:"Saisissez le code à 6 chiffres.",tooMany:"Trop de tentatives — attendez une minute et réessayez.",invalidCode:"Code invalide. Vérifiez l'écran et réessayez.",errorRetry:"Erreur {n}. Réessayez.",networkErr:"Erreur réseau. Vérifiez que vous êtes sur le même Wi-Fi.",sessionExpired:"Session expirée — associez à nouveau.",notPlaying:"Aucune lecture",prev:"Précédent",playPause:"Lecture / Pause",next:"Suivant",repeatOff:"Répéter : non",repeatOne:"Répéter : un",repeatAll:"Répéter : tout",shuffle:"Aléatoire",shuffleOn:"Aléatoire : oui",sleep:"Veille",sleepEnd:"Veille : fin du titre",sleepMin:"Veille : {n} min",equalizer:"Égaliseur",eqOn:"EQ : oui",eqOff:"EQ : non",monoOn:"Mono : oui",monoOff:"Mono : non",preset:"Préréglage",preamp:"Préampli",custom:"Personnalisé",eqUnavailable:"Égaliseur indisponible sur cet appareil.",st_playing:"en lecture",st_paused:"en pause",st_stopped:"arrêté",st_loading:"chargement",st_error:"erreur"},
-  ar: {pairIntro:"أدخل الرمز المكوّن من 6 أرقام الظاهر على جهازك لإقران هاتفك كجهاز تحكم عن بُعد.",pair:"إقران",pairing:"جارٍ الإقران…",enterCode:"أدخل الرمز المكوّن من 6 أرقام.",tooMany:"محاولات كثيرة جدًا — انتظر دقيقة ثم أعد المحاولة.",invalidCode:"رمز غير صالح. تحقق من الشاشة وأعد المحاولة.",errorRetry:"خطأ {n}. أعد المحاولة.",networkErr:"خطأ في الشبكة. تأكد من أنك على نفس شبكة Wi-Fi.",sessionExpired:"انتهت الجلسة — يرجى الإقران من جديد.",notPlaying:"لا يوجد تشغيل",prev:"السابق",playPause:"تشغيل / إيقاف مؤقت",next:"التالي",repeatOff:"تكرار: إيقاف",repeatOne:"تكرار: واحد",repeatAll:"تكرار: الكل",shuffle:"تشغيل عشوائي",shuffleOn:"عشوائي: تشغيل",sleep:"النوم",sleepEnd:"النوم: نهاية الأغنية",sleepMin:"النوم: {n} دقيقة",equalizer:"موازن الصوت",eqOn:"EQ: تشغيل",eqOff:"EQ: إيقاف",monoOn:"أحادي: تشغيل",monoOff:"أحادي: إيقاف",preset:"إعداد مسبق",preamp:"تضخيم مسبق",custom:"مخصص",eqUnavailable:"موازن الصوت غير متاح على هذا الجهاز.",st_playing:"قيد التشغيل",st_paused:"متوقف مؤقتًا",st_stopped:"متوقف",st_loading:"جارٍ التحميل",st_error:"خطأ"},
-  ru: {pairIntro:"Введите 6-значный код, показанный на устройстве, чтобы подключить телефон как пульт.",pair:"Подключить",pairing:"Подключение…",enterCode:"Введите 6-значный код.",tooMany:"Слишком много попыток — подождите минуту и повторите.",invalidCode:"Неверный код. Проверьте экран и повторите.",errorRetry:"Ошибка {n}. Повторите.",networkErr:"Ошибка сети. Убедитесь, что вы в той же сети Wi-Fi.",sessionExpired:"Сеанс истёк — подключитесь заново.",notPlaying:"Не воспроизводится",prev:"Предыдущий",playPause:"Воспроизвести / Пауза",next:"Следующий",repeatOff:"Повтор: выкл",repeatOne:"Повтор: один",repeatAll:"Повтор: все",shuffle:"Перемешать",shuffleOn:"Перемешать: вкл",sleep:"Сон",sleepEnd:"Сон: конец трека",sleepMin:"Сон: {n} мин",equalizer:"Эквалайзер",eqOn:"EQ: вкл",eqOff:"EQ: выкл",monoOn:"Моно: вкл",monoOff:"Моно: выкл",preset:"Пресет",preamp:"Предусиление",custom:"Свой",eqUnavailable:"Эквалайзер недоступен на этом устройстве.",st_playing:"воспроизведение",st_paused:"пауза",st_stopped:"остановлено",st_loading:"загрузка",st_error:"ошибка"}
+  en: {pairIntro:"Enter the 6-digit code shown on your device to pair your phone as a remote.",pair:"Pair",pairing:"Pairing…",enterCode:"Enter the 6-digit code.",tooMany:"Too many attempts — wait a minute and try again.",invalidCode:"Invalid code. Check the display and try again.",errorRetry:"Error {n}. Try again.",networkErr:"Network error. Make sure you are on the same Wi-Fi.",sessionExpired:"Session expired — please pair again.",notPlaying:"Not playing",prev:"Previous",playPause:"Play / Pause",next:"Next",repeatOff:"Repeat: off",repeatOne:"Repeat: one",repeatAll:"Repeat: all",shuffle:"Shuffle",shuffleOn:"Shuffle: on",sleep:"Sleep",sleepEnd:"Sleep: end of track",sleepMin:"Sleep: {n} min",equalizer:"Equalizer",eqOn:"EQ: on",eqOff:"EQ: off",monoOn:"Mono: on",monoOff:"Mono: off",preset:"Preset",preamp:"Preamp",custom:"Custom",eqUnavailable:"Equalizer unavailable on this device.",queue:"Queue",remove:"Remove",st_playing:"playing",st_paused:"paused",st_stopped:"stopped",st_loading:"loading",st_error:"error"},
+  zh: {pairIntro:"输入设备上显示的 6 位配对码，将手机配对为遥控器。",pair:"配对",pairing:"正在配对…",enterCode:"请输入 6 位配对码。",tooMany:"尝试次数过多 — 请等待一分钟后重试。",invalidCode:"配对码无效。请查看设备显示后重试。",errorRetry:"错误 {n}。请重试。",networkErr:"网络错误。请确认与设备连接同一 Wi-Fi。",sessionExpired:"会话已过期 — 请重新配对。",notPlaying:"未在播放",prev:"上一首",playPause:"播放 / 暂停",next:"下一首",repeatOff:"循环：关",repeatOne:"循环：单曲",repeatAll:"循环：全部",shuffle:"随机播放",shuffleOn:"随机：开",sleep:"定时",sleepEnd:"定时：本曲结束",sleepMin:"定时：{n} 分钟",equalizer:"均衡器",eqOn:"EQ：开",eqOff:"EQ：关",monoOn:"单声道：开",monoOff:"单声道：关",preset:"预设",preamp:"前置放大",custom:"自定义",eqUnavailable:"此设备不支持均衡器。",queue:"队列",remove:"移除",st_playing:"正在播放",st_paused:"已暂停",st_stopped:"已停止",st_loading:"加载中",st_error:"错误"},
+  hi: {pairIntro:"अपने फ़ोन को रिमोट के रूप में पेयर करने के लिए डिवाइस पर दिखाया गया 6-अंकीय कोड दर्ज करें।",pair:"पेयर करें",pairing:"पेयर हो रहा है…",enterCode:"6-अंकीय कोड दर्ज करें।",tooMany:"बहुत अधिक प्रयास — एक मिनट रुककर पुनः प्रयास करें।",invalidCode:"अमान्य कोड। डिस्प्ले जाँचें और पुनः प्रयास करें।",errorRetry:"त्रुटि {n}। पुनः प्रयास करें।",networkErr:"नेटवर्क त्रुटि। सुनिश्चित करें कि आप उसी Wi-Fi पर हैं।",sessionExpired:"सत्र समाप्त — कृपया फिर से पेयर करें।",notPlaying:"कुछ नहीं चल रहा",prev:"पिछला",playPause:"चलाएँ / पॉज़ करें",next:"अगला",repeatOff:"दोहराएँ: बंद",repeatOne:"दोहराएँ: एक",repeatAll:"दोहराएँ: सभी",shuffle:"शफ़ल",shuffleOn:"शफ़ल: चालू",sleep:"स्लीप",sleepEnd:"स्लीप: ट्रैक का अंत",sleepMin:"स्लीप: {n} मिनट",equalizer:"इक्वलाइज़र",eqOn:"EQ: चालू",eqOff:"EQ: बंद",monoOn:"मोनो: चालू",monoOff:"मोनो: बंद",preset:"प्रीसेट",preamp:"प्रीएम्प",custom:"कस्टम",eqUnavailable:"इस डिवाइस पर इक्वलाइज़र उपलब्ध नहीं है।",queue:"कतार",remove:"हटाएँ",st_playing:"चल रहा है",st_paused:"रुका हुआ",st_stopped:"रुका",st_loading:"लोड हो रहा है",st_error:"त्रुटि"},
+  es: {pairIntro:"Introduce el código de 6 dígitos que aparece en tu dispositivo para vincular tu teléfono como control remoto.",pair:"Vincular",pairing:"Vinculando…",enterCode:"Introduce el código de 6 dígitos.",tooMany:"Demasiados intentos — espera un minuto e inténtalo de nuevo.",invalidCode:"Código no válido. Comprueba la pantalla e inténtalo de nuevo.",errorRetry:"Error {n}. Inténtalo de nuevo.",networkErr:"Error de red. Asegúrate de estar en la misma Wi-Fi.",sessionExpired:"La sesión expiró — vincula de nuevo.",notPlaying:"Sin reproducción",prev:"Anterior",playPause:"Reproducir / Pausa",next:"Siguiente",repeatOff:"Repetir: no",repeatOne:"Repetir: uno",repeatAll:"Repetir: todo",shuffle:"Aleatorio",shuffleOn:"Aleatorio: sí",sleep:"Sueño",sleepEnd:"Sueño: fin de la canción",sleepMin:"Sueño: {n} min",equalizer:"Ecualizador",eqOn:"EQ: sí",eqOff:"EQ: no",monoOn:"Mono: sí",monoOff:"Mono: no",preset:"Preajuste",preamp:"Preamplificador",custom:"Personalizado",eqUnavailable:"Ecualizador no disponible en este dispositivo.",queue:"Cola",remove:"Eliminar",st_playing:"reproduciendo",st_paused:"en pausa",st_stopped:"detenido",st_loading:"cargando",st_error:"error"},
+  fr: {pairIntro:"Saisissez le code à 6 chiffres affiché sur votre appareil pour associer votre téléphone comme télécommande.",pair:"Associer",pairing:"Association…",enterCode:"Saisissez le code à 6 chiffres.",tooMany:"Trop de tentatives — attendez une minute et réessayez.",invalidCode:"Code invalide. Vérifiez l'écran et réessayez.",errorRetry:"Erreur {n}. Réessayez.",networkErr:"Erreur réseau. Vérifiez que vous êtes sur le même Wi-Fi.",sessionExpired:"Session expirée — associez à nouveau.",notPlaying:"Aucune lecture",prev:"Précédent",playPause:"Lecture / Pause",next:"Suivant",repeatOff:"Répéter : non",repeatOne:"Répéter : un",repeatAll:"Répéter : tout",shuffle:"Aléatoire",shuffleOn:"Aléatoire : oui",sleep:"Veille",sleepEnd:"Veille : fin du titre",sleepMin:"Veille : {n} min",equalizer:"Égaliseur",eqOn:"EQ : oui",eqOff:"EQ : non",monoOn:"Mono : oui",monoOff:"Mono : non",preset:"Préréglage",preamp:"Préampli",custom:"Personnalisé",eqUnavailable:"Égaliseur indisponible sur cet appareil.",queue:"File d’attente",remove:"Retirer",st_playing:"en lecture",st_paused:"en pause",st_stopped:"arrêté",st_loading:"chargement",st_error:"erreur"},
+  ar: {pairIntro:"أدخل الرمز المكوّن من 6 أرقام الظاهر على جهازك لإقران هاتفك كجهاز تحكم عن بُعد.",pair:"إقران",pairing:"جارٍ الإقران…",enterCode:"أدخل الرمز المكوّن من 6 أرقام.",tooMany:"محاولات كثيرة جدًا — انتظر دقيقة ثم أعد المحاولة.",invalidCode:"رمز غير صالح. تحقق من الشاشة وأعد المحاولة.",errorRetry:"خطأ {n}. أعد المحاولة.",networkErr:"خطأ في الشبكة. تأكد من أنك على نفس شبكة Wi-Fi.",sessionExpired:"انتهت الجلسة — يرجى الإقران من جديد.",notPlaying:"لا يوجد تشغيل",prev:"السابق",playPause:"تشغيل / إيقاف مؤقت",next:"التالي",repeatOff:"تكرار: إيقاف",repeatOne:"تكرار: واحد",repeatAll:"تكرار: الكل",shuffle:"تشغيل عشوائي",shuffleOn:"عشوائي: تشغيل",sleep:"النوم",sleepEnd:"النوم: نهاية الأغنية",sleepMin:"النوم: {n} دقيقة",equalizer:"موازن الصوت",eqOn:"EQ: تشغيل",eqOff:"EQ: إيقاف",monoOn:"أحادي: تشغيل",monoOff:"أحادي: إيقاف",preset:"إعداد مسبق",preamp:"تضخيم مسبق",custom:"مخصص",eqUnavailable:"موازن الصوت غير متاح على هذا الجهاز.",queue:"قائمة التشغيل",remove:"إزالة",st_playing:"قيد التشغيل",st_paused:"متوقف مؤقتًا",st_stopped:"متوقف",st_loading:"جارٍ التحميل",st_error:"خطأ"},
+  ru: {pairIntro:"Введите 6-значный код, показанный на устройстве, чтобы подключить телефон как пульт.",pair:"Подключить",pairing:"Подключение…",enterCode:"Введите 6-значный код.",tooMany:"Слишком много попыток — подождите минуту и повторите.",invalidCode:"Неверный код. Проверьте экран и повторите.",errorRetry:"Ошибка {n}. Повторите.",networkErr:"Ошибка сети. Убедитесь, что вы в той же сети Wi-Fi.",sessionExpired:"Сеанс истёк — подключитесь заново.",notPlaying:"Не воспроизводится",prev:"Предыдущий",playPause:"Воспроизвести / Пауза",next:"Следующий",repeatOff:"Повтор: выкл",repeatOne:"Повтор: один",repeatAll:"Повтор: все",shuffle:"Перемешать",shuffleOn:"Перемешать: вкл",sleep:"Сон",sleepEnd:"Сон: конец трека",sleepMin:"Сон: {n} мин",equalizer:"Эквалайзер",eqOn:"EQ: вкл",eqOff:"EQ: выкл",monoOn:"Моно: вкл",monoOff:"Моно: выкл",preset:"Пресет",preamp:"Предусиление",custom:"Свой",eqUnavailable:"Эквалайзер недоступен на этом устройстве.",queue:"Очередь",remove:"Удалить",st_playing:"воспроизведение",st_paused:"пауза",st_stopped:"остановлено",st_loading:"загрузка",st_error:"ошибка"}
 };
 var LANG = (navigator.language || navigator.userLanguage || 'en').slice(0, 2).toLowerCase();
 if (!I18N[LANG]) LANG = 'en';
@@ -504,7 +585,13 @@ function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 var token = localStorage.getItem(SESSION_KEY);
 var currentState = {};
 var pollTimer = null;
+var eventSource = null;
+var eventConnectTimer = null;
 var volumeActive = false; // don't update slider while user is dragging
+var queueCapabilities = {jump: null, remove: null};
+var queueProbeInFlight = false;
+var queueProbeRetryTimer = null;
+var queueRenderKey = '';
 
 // ---- Elements ----
 var pairView    = document.getElementById('pair-view');
@@ -537,18 +624,21 @@ var eqBands     = document.getElementById('eq-bands');
 var eqPreamp    = document.getElementById('eq-preamp');
 var eqPreampVal = document.getElementById('eq-preamp-val');
 var eqError     = document.getElementById('eq-error');
+var queuePanel  = document.getElementById('queue-panel');
+var queueTitle  = document.getElementById('queue-title');
+var queueList   = document.getElementById('queue-list');
 
 // ---- View switching ----
 function showPair() {
   pairView.style.display = 'flex';
   ctrlView.style.display = 'none';
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  stopStateUpdates();
 }
 
 function showControls() {
   pairView.style.display = 'none';
   ctrlView.style.display = 'flex';
-  startPolling();
+  startStateUpdates();
 }
 
 // ---- Pairing ----
@@ -594,6 +684,11 @@ function doPair() {
     if (!data) return;
     token = data.token;
     localStorage.setItem(SESSION_KEY, token);
+    queueCapabilities = {jump: null, remove: null};
+    queueProbeInFlight = false;
+    if (queueProbeRetryTimer) clearTimeout(queueProbeRetryTimer);
+    queueProbeRetryTimer = null;
+    queueRenderKey = '';
     pairBtn.disabled = false;
     pairBtn.textContent = t('pair');
     codeInput.value = '';
@@ -618,12 +713,82 @@ function api(method, path) {
       setPairError(t('sessionExpired'));
       return Promise.reject(new Error('unauthorized'));
     }
-    if (!r.ok) return Promise.reject(new Error('http ' + r.status));
+    if (!r.ok) {
+      var err = new Error('http ' + r.status);
+      err.status = r.status;
+      return Promise.reject(err);
+    }
     return r.json();
   });
 }
 
-// ---- Polling ----
+// ---- State updates ----
+// EventSource cannot set the session header used by the other API calls, so
+// /events accepts the paired session token in this endpoint-only query string.
+// Once SSE fails, close it before starting the legacy poller so the two paths
+// can never update the UI concurrently.
+function startStateUpdates() {
+  stopStateUpdates();
+
+  if (!token || !window.EventSource) {
+    startPolling();
+    return;
+  }
+
+  var source = new EventSource('/events?session=' + encodeURIComponent(token));
+  eventSource = source;
+
+  source.addEventListener('state', function(e) {
+    if (eventSource !== source) return;
+    try {
+      applyState(JSON.parse(e.data));
+    } catch (_) {
+      // Ignore a malformed event; the next server snapshot can recover.
+    }
+  });
+
+  source.onopen = function() {
+    if (eventSource !== source) return;
+    clearEventConnectTimer();
+  };
+
+  source.onerror = function() {
+    fallbackToPolling(source);
+  };
+
+  // A connection can remain stuck in CONNECTING without firing an error on
+  // some browsers/networks. Preserve the old remote behaviour in that case.
+  eventConnectTimer = setTimeout(function() {
+    fallbackToPolling(source);
+  }, 5000);
+}
+
+function fallbackToPolling(source) {
+  if (eventSource !== source) return;
+  source.close();
+  eventSource = null;
+  clearEventConnectTimer();
+  startPolling();
+}
+
+function clearEventConnectTimer() {
+  if (!eventConnectTimer) return;
+  clearTimeout(eventConnectTimer);
+  eventConnectTimer = null;
+}
+
+function stopStateUpdates() {
+  clearEventConnectTimer();
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
 function startPolling() {
   poll();
   if (pollTimer) clearInterval(pollTimer);
@@ -640,6 +805,141 @@ function fmtTime(ms) {
   var m = Math.floor(s / 60);
   s = s % 60;
   return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+// Capability probes use an impossible but well-formed queue index. A wired
+// callback reports 409 (or a harmless 200 if it treats the operation as a
+// no-op); an unavailable route reports 404/501. Controls stay hidden until both
+// independently optional callbacks have answered.
+var QUEUE_PROBE_INDEX = 2147483647;
+
+function probeQueueCapability(path) {
+  return api('POST', path).then(function(st) {
+    applyState(st);
+    return true;
+  }).catch(function(err) {
+    if (err && err.status === 409) return true;
+    if (err && (err.status === 404 || err.status === 501)) return false;
+    return null; // transient/unknown failure: retry without hiding support
+  });
+}
+
+function probeQueueCapabilities() {
+  if (!token || queueProbeInFlight || queueProbeRetryTimer ||
+      (queueCapabilities.jump !== null && queueCapabilities.remove !== null)) return;
+  queueProbeInFlight = true;
+  Promise.all([
+    queueCapabilities.jump === null
+      ? probeQueueCapability('/queue/jump?i=' + QUEUE_PROBE_INDEX)
+      : Promise.resolve(queueCapabilities.jump),
+    queueCapabilities.remove === null
+      ? probeQueueCapability('/queue/remove?i=' + QUEUE_PROBE_INDEX)
+      : Promise.resolve(queueCapabilities.remove)
+  ]).then(function(results) {
+    if (results[0] !== null) queueCapabilities.jump = results[0];
+    if (results[1] !== null) queueCapabilities.remove = results[1];
+    queueProbeInFlight = false;
+    queueRenderKey = '';
+    if (queueCapabilities.jump === null || queueCapabilities.remove === null) {
+      queueProbeRetryTimer = setTimeout(function() {
+        queueProbeRetryTimer = null;
+        probeQueueCapabilities();
+      }, 5000);
+      return;
+    }
+    renderQueue(currentState);
+  });
+}
+
+function renderQueue(st) {
+  var queue = Array.isArray(st.queue) ? st.queue : [];
+  if (queue.length === 0) {
+    queuePanel.style.display = 'none';
+    queueList.textContent = '';
+    queueRenderKey = '';
+    return;
+  }
+
+  if (queueCapabilities.jump === null || queueCapabilities.remove === null) {
+    queuePanel.style.display = 'none';
+    probeQueueCapabilities();
+    return;
+  }
+  if (!queueCapabilities.jump && !queueCapabilities.remove) {
+    queuePanel.style.display = 'none';
+    queueList.textContent = '';
+    queueRenderKey = '';
+    return;
+  }
+
+  var key = JSON.stringify(queue) + ':' + queueCapabilities.jump + ':' + queueCapabilities.remove;
+  queuePanel.style.display = 'flex';
+  if (key === queueRenderKey) return;
+
+  var oldScrollTop = queueList.scrollTop;
+  var frag = document.createDocumentFragment();
+  queue.forEach(function(track, index) {
+    track = track || {};
+    var row = document.createElement('div');
+    row.className = 'queue-row';
+
+    var jump = document.createElement(queueCapabilities.jump ? 'button' : 'div');
+    if (queueCapabilities.jump) jump.type = 'button';
+    jump.className = 'queue-jump' + (queueCapabilities.jump ? '' : ' queue-jump-static');
+    jump.title = track.title || t('queue');
+
+    var title = document.createElement('span');
+    title.className = 'queue-track-title';
+    title.textContent = track.title || track.id || '—';
+    jump.appendChild(title);
+
+    if (track.artist) {
+      var artist = document.createElement('span');
+      artist.className = 'queue-track-artist';
+      artist.textContent = track.artist;
+      jump.appendChild(artist);
+    }
+
+    if (queueCapabilities.jump) {
+      jump.addEventListener('click', function() {
+        runQueueAction('/queue/jump?i=' + index, 'jump');
+      });
+    }
+
+    row.appendChild(jump);
+    if (queueCapabilities.remove) {
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'queue-remove';
+      remove.textContent = '\u2715';
+      remove.title = t('remove');
+      remove.setAttribute('aria-label', t('remove') + ': ' + title.textContent);
+      remove.addEventListener('click', function(e) {
+        e.stopPropagation();
+        runQueueAction('/queue/remove?i=' + index, 'remove');
+      });
+      row.appendChild(remove);
+    }
+    frag.appendChild(row);
+  });
+
+  queueList.textContent = '';
+  queueList.appendChild(frag);
+  queueList.scrollTop = oldScrollTop;
+  queueRenderKey = key;
+}
+
+function runQueueAction(path, capability) {
+  api('POST', path).then(function(st) {
+    queueCapabilities[capability] = true;
+    applyState(st);
+  }).catch(function(err) {
+    if (err && (err.status === 404 || err.status === 501)) {
+      queueCapabilities[capability] = false;
+      queueRenderKey = '';
+      renderQueue(currentState);
+    }
+  });
 }
 
 function applyState(st) {
@@ -714,6 +1014,8 @@ function applyState(st) {
   } else {
     sleepBtn.innerHTML = '&#9790; ' + esc(t('sleep'));
   }
+
+  renderQueue(st);
 }
 
 // ---- Transport controls ----
@@ -937,6 +1239,7 @@ function applyStaticI18n() {
   eqEnableBtn.textContent = t('eqOff');
   eqMonoBtn.textContent = t('monoOff');
   eqPreset.title = t('preset');
+  queueTitle.textContent = t('queue');
   var preampLabel = document.querySelector('.eq-preamp-row label');
   if (preampLabel) preampLabel.textContent = t('preamp');
 }

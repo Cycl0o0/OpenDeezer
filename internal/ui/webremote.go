@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	qrcode "github.com/skip2/go-qrcode"
@@ -39,27 +39,14 @@ func (m *Model) webRemoteEnableCmd() tea.Cmd {
 	pl := m.player
 	ctrlCfg := LoadControl() // carry the configured token/same-account to the new server
 
+	hist := m.hist
 	buildCmds := func() control.Commands {
 		if send == nil {
 			return control.Commands{}
 		}
-		return control.Commands{
-			PlayPause:     func() { send(controlCmdMsg{kind: "playpause"}) },
-			Next:          func() { send(controlCmdMsg{kind: "next"}) },
-			Prev:          func() { send(controlCmdMsg{kind: "prev"}) },
-			Stop:          func() { send(controlCmdMsg{kind: "stop"}) },
-			Restart:       func() { send(controlCmdMsg{kind: "restart"}) },
-			CycleRepeat:   func() { send(controlCmdMsg{kind: "repeat"}) },
-			ToggleShuffle: func() { send(controlCmdMsg{kind: "shuffle"}) },
-			Seek:          func(ms int64) { send(controlCmdMsg{kind: "seek", ms: ms}) },
-			SetVolume:     func(v float64) { send(controlCmdMsg{kind: "volume", vol: v}) },
-			PlayTrack:     func(id string) { send(controlCmdMsg{kind: "playtrack", id: id}) },
-			PlayPlaylist:  func(id string) { send(controlCmdMsg{kind: "playplaylist", id: id}) },
-			SetSleepTimer: func(minutes int, eot bool) {
-				send(controlCmdMsg{kind: "sleep", ms: int64(minutes), eot: eot})
-			},
-			CancelSleepTimer: func() { send(controlCmdMsg{kind: "sleepcancel"}) },
-		}
+		// Same callback set as the main control server (thread-safety contract
+		// documented on buildControlCommands).
+		return buildControlCommands(send, client, hist)
 	}
 
 	statusSnap := func() control.State {

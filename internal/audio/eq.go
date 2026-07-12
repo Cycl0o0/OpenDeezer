@@ -14,7 +14,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
 )
 
 const (
@@ -130,9 +130,12 @@ func (p *Player) applyEQ(b []byte) {
 	if !cfg.enabled && !cfg.mono {
 		return
 	}
-	for i := 0; i+frameBytes <= len(b); i += frameBytes {
-		l := float64(int16(uint16(b[i]) | uint16(b[i+1])<<8))
-		r := float64(int16(uint16(b[i+2]) | uint16(b[i+3])<<8))
+	samples := pcm16(b)
+	numFrames := len(samples) / channels
+	for i := 0; i < numFrames; i++ {
+		off := i * channels
+		l := float64(samples[off])
+		r := float64(samples[off+1])
 		if cfg.mono {
 			m := (l + r) * 0.5
 			l, r = m, m
@@ -141,20 +144,20 @@ func (p *Player) applyEQ(b []byte) {
 			l = cfg.process(&p.eqZ[0], l)
 			r = cfg.process(&p.eqZ[1], r)
 		}
-		b[i], b[i+1] = s16Bytes(l)
-		b[i+2], b[i+3] = s16Bytes(r)
+		samples[off] = clampS16(l)
+		samples[off+1] = clampS16(r)
 	}
 }
 
-// s16Bytes clamps a float sample to int16 and returns its little-endian bytes.
-func s16Bytes(v float64) (lo, hi byte) {
+// clampS16 clamps a float sample to int16 range.
+func clampS16(v float64) int16 {
 	if v > 32767 {
-		v = 32767
-	} else if v < -32768 {
-		v = -32768
+		return 32767
 	}
-	s := int16(v)
-	return byte(s), byte(uint16(s) >> 8)
+	if v < -32768 {
+		return -32768
+	}
+	return int16(v)
 }
 
 // ---- public API ----

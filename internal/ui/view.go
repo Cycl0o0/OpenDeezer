@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
-	"github.com/Cycl0o0/OpenDeezer/internal/version"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/version"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -62,8 +62,10 @@ func (m *Model) View() string {
 		body = m.remoteCtlView(bodyRows)
 	case screenWebRemote:
 		body = m.webRemoteView(bodyRows)
+	case screenPlaylistPrompt:
+		body = m.playlistPromptView(bodyRows)
 	default:
-		body = m.list.View()
+		body = m.list.View() // incl. the device / add-to-playlist pickers
 	}
 	body = lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(bodyRows).Render(body)
 	return body + "\n" + footer
@@ -274,9 +276,9 @@ func (m *Model) footer() string {
 // wide screens and on the dedicated ? help screen.
 func (m *Model) footerHelp(shuffle, repeat string, volume int) string {
 	switch {
-	case m.width >= 112:
+	case m.width >= 124:
 		return i18n.Tf(
-			"space play · n/p · z shuf:%s · r rep:%s · +/- %d%% · / search · l lyrics · u queue · h qual · ? help · q quit",
+			"space play · n/p · z shuf:%s · r rep:%s · +/- %d%% · m radio · / search · ^f filter · l lyrics · u queue · h qual · ? help · q quit",
 			shuffle, repeat, volume)
 	case m.width >= 62:
 		return "space " + i18n.T("play / pause") + " · n/p · +/- · / " +
@@ -321,33 +323,68 @@ func fmtMS(ms int64) string {
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
 }
 
-// queueView lists the upcoming tracks with the current one highlighted.
+// queueWindow computes the queue view's scroll window: the first entry shown
+// and how many entry rows fit under the two header lines. Centered on the
+// cursor and clamped, so mouse clicks can map body rows back to entries.
+func (m *Model) queueWindow(bodyRows, n int) (start, visible int) {
+	visible = max(1, bodyRows-2)
+	sel := min(max(0, m.queueSel), n-1)
+	start = sel - visible/2
+	start = min(start, n-visible)
+	start = max(start, 0)
+	return start, visible
+}
+
+// queueView lists the queued tracks: ▶ marks the playing one, › the cursor.
+// Rows are edited in place (enter jump, x remove, J/K move — see handleKey).
 func (m *Model) queueView(bodyRows int) string {
 	ts := m.q.Tracks()
 	if len(ts) == 0 {
 		return padTo([]string{dim.Render(i18n.T("Queue is empty."))}, bodyRows)
 	}
+	m.queueSel = min(max(0, m.queueSel), len(ts)-1) // clamp after external edits
 	cur := m.q.Index()
-	rows := max(1, bodyRows-2)
-	lines := []string{accent.Render(i18n.Tn("Queue (%d track)", "Queue (%d tracks)", len(ts))), ""}
-	// Window around the current track so long queues stay readable.
-	start := 0
-	if cur > rows/2 {
-		start = cur - rows/2
+	start, visible := m.queueWindow(bodyRows, len(ts))
+	lines := []string{
+		accent.Render(i18n.Tn("Queue (%d track)", "Queue (%d tracks)", len(ts))),
+		dim.Render(i18n.T("enter play · x remove · J/K move · m radio · esc back")),
 	}
-	for i := start; i < len(ts) && len(lines) < rows; i++ {
+	for i := start; i < len(ts) && i < start+visible; i++ {
 		t := ts[i]
 		marker := "  "
 		line := fmt.Sprintf("%2d. %s — %s", i+1, t.Name, t.ArtistLine())
-		if i == cur {
+		switch {
+		case i == cur:
 			marker = accent.Render("▶ ")
 			line = accent.Render(line)
-		} else {
+		case i == m.queueSel:
+			marker = accent.Render("› ") // cursor row stays unstyled = brighter than dim
+		default:
 			line = dim.Render(line)
 		}
 		lines = append(lines, marker+line)
 	}
 	return padTo(lines, bodyRows)
+}
+
+// playlistPromptView is the playlist-title input (create / rename).
+func (m *Model) playlistPromptView(rows int) string {
+	title := i18n.T("New playlist")
+	if m.plPrompt == plRename {
+		title = i18n.T("Rename playlist")
+	}
+	lines := []string{
+		accent.Render("≡  " + title),
+		"",
+		i18n.T("Playlist title:"),
+		"  " + m.search.View(),
+		"",
+		dim.Render(i18n.T("enter save · esc cancel")),
+	}
+	if m.status != "" {
+		lines = append(lines, "", statusSty.Render(m.status))
+	}
+	return padTo(lines, rows)
 }
 
 // lyricsView shows lyrics; synced lyrics auto-scroll with playback position and
@@ -396,7 +433,11 @@ func (m *Model) lyricsView(bodyRows int) string {
 	if m.lyrics.Plain == "" {
 		return padTo([]string{header, "", dim.Render(i18n.T("(no lyrics available)"))}, bodyRows)
 	}
-	lines := append([]string{header, ""}, strings.Split(m.lyrics.Plain, "\n")...)
+	// Plain lyrics scroll manually (mouse wheel); synced lyrics above follow the
+	// playback position on their own, so the offset only applies here.
+	body := strings.Split(m.lyrics.Plain, "\n")
+	m.lyricsOffset = min(max(0, m.lyricsOffset), max(0, len(body)-1))
+	lines := append([]string{header, ""}, body[m.lyricsOffset:]...)
 	return padTo(lines, bodyRows)
 }
 
@@ -407,9 +448,14 @@ func (m *Model) helpView(rows int) string {
 		{"g / G", "jump to top / bottom"},
 		{"enter", "play track / open album·artist·playlist / menu action"},
 		{"/", "search (tracks, artists, albums, playlists)"},
+		{"ctrl+f", "filter the current list (esc clears)"},
 		{"space", "play / pause"},
 		{"n / p", "next / previous track"},
-		{"f", "like the current track"},
+		{"n / e", "browse lists: play selected next / add to queue"},
+		{"m", "start radio from the selected track / artist"},
+		{"f", "like / unlike the current or selected track"},
+		{"a", "add the selected track to a playlist"},
+		{"N / R / X", "playlists: new / rename / delete"},
 		{"D", "download the selected track (paid plans)"},
 		{"A", "toggle ads / play-reporting (free accounts)"},
 		{"← / →", "seek −10s / +10s"},
@@ -425,6 +471,8 @@ func (m *Model) helpView(rows int) string {
 		{"ctrl+g", "toggle gapless"},
 		{"l", "lyrics (synced when available)"},
 		{"u", "queue view"},
+		{"enter/x/J/K", "queue: jump / remove / move down / up"},
+		{"mouse", "click select · click again play · wheel scroll · click bar seek"},
 		{"c", "now playing / cover"},
 		{"t", "cycle theme"},
 		{"T", "sleep timer (off → 15/30/45/60m → end of track)"},

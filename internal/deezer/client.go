@@ -106,9 +106,10 @@ const (
 
 // Client holds an authenticated Deezer session.
 type Client struct {
-	arl     string // immutable after New
-	quality int32  // 0=MP3_128, 1=MP3_320, 2=FLAC (lossless) — set atomically
-	http    *http.Client
+	arl             string // immutable after New
+	quality         int32  // 0=MP3_128, 1=MP3_320, 2=FLAC (lossless) — set atomically
+	http            *http.Client
+	restURLOverride string // override for testing REST API base URL
 
 	// mu guards every session/identity field below: they are (re)written by
 	// Login, which can now run concurrently with reads from the control-API HTTP
@@ -422,11 +423,18 @@ func (c *Client) gw(method, jsonBody string) ([]byte, error) {
 	return body, nil
 }
 
+func (c *Client) getRestURL() string {
+	if c.restURLOverride != "" {
+		return c.restURLOverride
+	}
+	return restURL
+}
+
 // restGet calls the public REST API (no auth needed). REST reports failures as
 // an HTTP-200 body with an "error" envelope ({"error":{"type":...,"code":...}}),
 // so that is surfaced as a Go error rather than decoding to empty results.
 func (c *Client) restGet(path string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, restURL+path, nil)
+	req, err := http.NewRequest(http.MethodGet, c.getRestURL()+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -527,36 +535,60 @@ func (g gwTrackDTO) toTrack() Track {
 	}
 }
 
-// Search queries tracks, albums and playlists. A failing sub-search is
-// tolerated as long as at least one succeeds; if all four fail, the first
-// error is returned so callers can tell "no matches" from "request failed".
+// Search queries tracks, albums, artists, and playlists concurrently. A failing
+// sub-search (due to network or JSON parsing issues) is tolerated as long as at
+// least one category succeeds. If all four categories fail, the underlying errors
+// are joined and returned, so callers can tell "no matches" from "all requests failed".
 func (c *Client) Search(query string) (*SearchResults, error) {
 	enc := url.QueryEscape(query)
-	sr := &SearchResults{}
-	var firstErr error
-	failed := 0
-	fail := func(err error) {
-		failed++
-		if firstErr == nil {
-			firstErr = err
-		}
-	}
 
-	if b, err := c.restGet("/search?q=" + enc + "&limit=40"); err != nil {
-		fail(err)
-	} else {
+	var (
+		wg sync.WaitGroup
+
+		errTracks    error
+		tracksResult []Track
+
+		errAlbums    error
+		albumsResult []Album
+
+		errArtists    error
+		artistsResult []ArtistInfo
+
+		errPlaylists    error
+		playlistsResult []Playlist
+	)
+
+	wg.Add(4)
+
+	// 1. Tracks sub-search
+	go func() {
+		defer wg.Done()
+		b, err := c.restGet("/search?q=" + enc + "&limit=40")
+		if err != nil {
+			errTracks = err
+			return
+		}
 		var r struct {
 			Data []restTrackDTO `json:"data"`
 		}
-		if json.Unmarshal(b, &r) == nil {
-			for _, t := range r.Data {
-				sr.Tracks = append(sr.Tracks, t.toTrack())
-			}
+		if err = json.Unmarshal(b, &r); err != nil {
+			errTracks = fmt.Errorf("json unmarshal: %w", err)
+			return
 		}
-	}
-	if b, err := c.restGet("/search/album?q=" + enc + "&limit=20"); err != nil {
-		fail(err)
-	} else {
+		tracksResult = make([]Track, 0, len(r.Data))
+		for _, t := range r.Data {
+			tracksResult = append(tracksResult, t.toTrack())
+		}
+	}()
+
+	// 2. Albums sub-search
+	go func() {
+		defer wg.Done()
+		b, err := c.restGet("/search/album?q=" + enc + "&limit=20")
+		if err != nil {
+			errAlbums = err
+			return
+		}
 		var r struct {
 			Data []struct {
 				ID          json.Number `json:"id"`
@@ -565,20 +597,29 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 				CoverMedium string      `json:"cover_medium"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(b, &r) == nil {
-			for _, a := range r.Data {
-				sr.Albums = append(sr.Albums, Album{
-					ID:         a.ID.String(),
-					Name:       a.Title,
-					Artists:    []Artist{{ID: a.Artist.ID.String(), Name: a.Artist.Name}},
-					ArtworkURL: a.CoverMedium,
-				})
-			}
+		if err = json.Unmarshal(b, &r); err != nil {
+			errAlbums = fmt.Errorf("json unmarshal: %w", err)
+			return
 		}
-	}
-	if b, err := c.restGet("/search/artist?q=" + enc + "&limit=20"); err != nil {
-		fail(err)
-	} else {
+		albumsResult = make([]Album, 0, len(r.Data))
+		for _, a := range r.Data {
+			albumsResult = append(albumsResult, Album{
+				ID:         a.ID.String(),
+				Name:       a.Title,
+				Artists:    []Artist{{ID: a.Artist.ID.String(), Name: a.Artist.Name}},
+				ArtworkURL: a.CoverMedium,
+			})
+		}
+	}()
+
+	// 3. Artists sub-search
+	go func() {
+		defer wg.Done()
+		b, err := c.restGet("/search/artist?q=" + enc + "&limit=20")
+		if err != nil {
+			errArtists = err
+			return
+		}
 		var r struct {
 			Data []struct {
 				ID            json.Number `json:"id"`
@@ -587,20 +628,29 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 				NbFan         int         `json:"nb_fan"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(b, &r) == nil {
-			for _, a := range r.Data {
-				sr.Artists = append(sr.Artists, ArtistInfo{
-					ID:         a.ID.String(),
-					Name:       a.Name,
-					ArtworkURL: a.PictureMedium,
-					NbFans:     a.NbFan,
-				})
-			}
+		if err = json.Unmarshal(b, &r); err != nil {
+			errArtists = fmt.Errorf("json unmarshal: %w", err)
+			return
 		}
-	}
-	if b, err := c.restGet("/search/playlist?q=" + enc + "&limit=20"); err != nil {
-		fail(err)
-	} else {
+		artistsResult = make([]ArtistInfo, 0, len(r.Data))
+		for _, a := range r.Data {
+			artistsResult = append(artistsResult, ArtistInfo{
+				ID:         a.ID.String(),
+				Name:       a.Name,
+				ArtworkURL: a.PictureMedium,
+				NbFans:     a.NbFan,
+			})
+		}
+	}()
+
+	// 4. Playlists sub-search
+	go func() {
+		defer wg.Done()
+		b, err := c.restGet("/search/playlist?q=" + enc + "&limit=20")
+		if err != nil {
+			errPlaylists = err
+			return
+		}
 		var r struct {
 			Data []struct {
 				ID            json.Number           `json:"id"`
@@ -610,39 +660,81 @@ func (c *Client) Search(query string) (*SearchResults, error) {
 				PictureMedium string                `json:"picture_medium"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(b, &r) == nil {
-			for _, p := range r.Data {
-				sr.Playlists = append(sr.Playlists, Playlist{
-					ID:         p.ID.String(),
-					Name:       p.Title,
-					Owner:      p.User.Name,
-					TrackCount: p.NbTracks,
-					ArtworkURL: p.PictureMedium,
-				})
-			}
+		if err = json.Unmarshal(b, &r); err != nil {
+			errPlaylists = fmt.Errorf("json unmarshal: %w", err)
+			return
 		}
+		playlistsResult = make([]Playlist, 0, len(r.Data))
+		for _, p := range r.Data {
+			playlistsResult = append(playlistsResult, Playlist{
+				ID:         p.ID.String(),
+				Name:       p.Title,
+				Owner:      p.User.Name,
+				TrackCount: p.NbTracks,
+				ArtworkURL: p.PictureMedium,
+			})
+		}
+	}()
+
+	wg.Wait()
+
+	var errs []error
+	if errTracks != nil {
+		errs = append(errs, fmt.Errorf("tracks: %w", errTracks))
 	}
-	if failed == 4 {
-		return nil, firstErr
+	if errAlbums != nil {
+		errs = append(errs, fmt.Errorf("albums: %w", errAlbums))
+	}
+	if errArtists != nil {
+		errs = append(errs, fmt.Errorf("artists: %w", errArtists))
+	}
+	if errPlaylists != nil {
+		errs = append(errs, fmt.Errorf("playlists: %w", errPlaylists))
+	}
+
+	if len(errs) == 4 {
+		return nil, errors.Join(errs...)
+	}
+
+	sr := &SearchResults{
+		Tracks:    tracksResult,
+		Albums:    albumsResult,
+		Artists:   artistsResult,
+		Playlists: playlistsResult,
 	}
 	return sr, nil
 }
 
-// AlbumTracks lists an album's tracks via the public REST API.
+// albumPageSize is the per-request page for the REST album tracklist.
+const albumPageSize = 100
+
+// AlbumTracks lists an album's tracks via the public REST API, paging until
+// the album is exhausted. A single page caps at 100 tracks, and albums
+// (compilations, box sets) can exceed that; without pagination they would be
+// silently truncated. Any page error fails the whole listing (SaveAlbum
+// depends on a complete tracklist). Bounded by maxTracks like gwTrackAll.
 func (c *Client) AlbumTracks(id string) ([]Track, error) {
-	b, err := c.restGet("/album/" + id + "/tracks?limit=100")
-	if err != nil {
-		return nil, err
-	}
-	var r struct {
-		Data []restTrackDTO `json:"data"`
-	}
-	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, err
-	}
-	out := make([]Track, 0, len(r.Data))
-	for _, t := range r.Data {
-		out = append(out, t.toTrack())
+	var out []Track
+	for index := 0; index < maxTracks; index += albumPageSize {
+		b, err := c.restGet(fmt.Sprintf("/album/%s/tracks?limit=%d&index=%d", id, albumPageSize, index))
+		if err != nil {
+			return nil, err
+		}
+		var r struct {
+			Data []restTrackDTO `json:"data"`
+			Next string         `json:"next"`
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return nil, err
+		}
+		for _, t := range r.Data {
+			out = append(out, t.toTrack())
+		}
+		// A short/empty page or a response without a "next" link means we've
+		// reached the end.
+		if len(r.Data) < albumPageSize || r.Next == "" {
+			break
+		}
 	}
 	return out, nil
 }
@@ -696,8 +788,38 @@ func (c *Client) gwTrackAll(method, extra string) ([]Track, error) {
 }
 
 // PlaylistTracks lists a playlist's tracks (gw, works for private playlists).
+// A mid-fetch page error is tolerated (partial list, nil error) — acceptable
+// for browse/UI. Batch downloads must use playlistTracksStrict instead.
 func (c *Client) PlaylistTracks(id string) ([]Track, error) {
 	return c.gwTrackAll("playlist.getSongs", fmt.Sprintf(`"playlist_id":%s`, jsonEsc(id)))
+}
+
+// playlistTracksStrict is PlaylistTracks without gwTrackAll's mid-fetch
+// tolerance: any page error fails the whole listing. SavePlaylist uses it so
+// a truncated playlist is never downloaded and reported as success.
+func (c *Client) playlistTracksStrict(id string) ([]Track, error) {
+	extra := fmt.Sprintf(`"playlist_id":%s`, jsonEsc(id))
+	return collectTrackPagesStrict(func(start, nb int) ([]Track, error) {
+		return c.gwTrackPage("playlist.getSongs", extra, start, nb)
+	})
+}
+
+// collectTrackPagesStrict pages through a track list via fetch(start, nb),
+// returning nil and the error if ANY page fails (no partial tolerance).
+// Bounded by maxTracks like gwTrackAll.
+func collectTrackPagesStrict(fetch func(start, nb int) ([]Track, error)) ([]Track, error) {
+	var all []Track
+	for start := 0; start < maxTracks; start += pageSize {
+		page, err := fetch(start, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < pageSize {
+			break
+		}
+	}
+	return all, nil
 }
 
 // Track fetches a single track's metadata by id (gw song.getData). Used by the
@@ -791,6 +913,15 @@ type StreamPlan struct {
 	GainDB    float64 // track ReplayGain in dB (0 if unknown)
 	Encrypted bool    // false for plain CDN streams (e.g. podcast episodes)
 	Preview   bool    // true when this is Deezer's public 30-second preview
+
+	// Refresh re-resolves this plan's CDN URL when the current one expires
+	// mid-stream (the CDN answers 403/410 because the signed media URL's token
+	// rotated). Optional; populated by Client.PrepareStream so the audio engine
+	// can recover a long download without depending on a *deezer.Client. Returns
+	// a fresh plan for the same track. nil when re-resolution isn't wired up
+	// (podcasts, SDK callers that build a StreamPlan directly). Excluded from
+	// JSON since a func can't be serialized.
+	Refresh func() (*StreamPlan, error) `json:"-"`
 }
 
 // resolveMediaURL turns a track token into an encrypted CDN URL. get_url can
@@ -934,7 +1065,14 @@ func (c *Client) PrepareStream(trackID string) (*StreamPlan, error) {
 	if err == nil && tok != "" {
 		u, format, mErr := c.resolveMediaURL(tok)
 		if mErr == nil {
-			return &StreamPlan{CDNURL: u, TrackID: trackID, Format: format, GainDB: gain, Encrypted: true}, nil
+			// Refresh re-resolves a fresh signed URL for the same track when the
+			// CDN token expires mid-download; PrepareStream already retries the
+			// media call (re-login on rejection), so re-invoking it is the
+			// natural re-resolution path.
+			return &StreamPlan{
+				CDNURL: u, TrackID: trackID, Format: format, GainDB: gain, Encrypted: true,
+				Refresh: func() (*StreamPlan, error) { return c.PrepareStream(trackID) },
+			}, nil
 		}
 		err = mErr // remember for the fallback failure message
 	}

@@ -147,6 +147,9 @@
 
     <string name="tracklist_empty">Aún no hay nada aquí.</string>
 
+    <string name="section_related_artists">Related Artists</string>
+    <string name="artist_load_error">Couldn\'t load this artist — check your connection.</string>
+
     <string name="update_release_notes">Notas de la versión</string>
 
     <string name="connect_this_device">Este dispositivo</string>

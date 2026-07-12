@@ -4,6 +4,85 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0]
+
+### Added
+- **Downloads are now a real library.** Saved tracks are tagged after download —
+  ID3v2 for MP3, Vorbis comments for FLAC — including title, artist, album, track
+  number and embedded cover art, so files land in any other player already
+  labelled. New whole-album and whole-playlist batch downloads run sequentially
+  with per-track progress, skip-if-already-saved, and continue-on-error, and each
+  file is written atomically so an interrupted download never truncates a good one.
+- **Start a radio from any song or artist.** A track or artist seed opens an
+  endless personalized mix (alongside the existing Flow), reachable from the TUI
+  (`m`), the control API (`/play/mix/track`, `/play/mix/artist`) and the MCP server.
+- **Local listening history and a Stats screen.** Plays are recorded to a local
+  log (never leaves the machine) with a Recently-played rail plus top tracks, top
+  artists and total listening time over the last 30 days. Exposed over the control
+  API (`/history/recent`) and MCP.
+- **Playlist import & export.** Export any playlist to CSV, M3U or JSON; import a
+  CSV (Exportify/Spotify style) or a plain "Artist - Title" list, resolved
+  ISRC-first with a fuzzy fallback. Available as `-export-playlist` /
+  `-import-playlist` on the TUI binary.
+- **Optional on-disk stream cache.** When enabled (off by default, size-capped
+  LRU), recently streamed tracks replay instantly and survive brief network drops.
+  Content stays Blowfish-encrypted at rest. Configurable per client.
+- **Push state updates over the control API.** A new Server-Sent Events endpoint
+  (`GET /events`) streams player state to the bundled web remote and any control
+  client the instant it changes, replacing one-second polling (with automatic
+  fallback). `Client.Events(ctx)` is exposed in the SDK.
+- **Remote queue management.** The control API and web remote can now add / play
+  next, jump to, remove and reorder queue entries, and play an album directly
+  (`/queue/*`, `/play/album`). The web remote renders a tappable queue.
+- **Full artist pages and library actions in the TUI.** Artists open a sectioned
+  page (top tracks, discography, related artists); `f` toggles like, `a` adds to a
+  playlist, and playlists can be created, renamed and deleted. The queue view is
+  interactive (jump, remove, reorder, play-next), local list filtering works
+  (`ctrl+f`), and the terminal now supports the mouse (scroll, click-to-play,
+  click-to-seek).
+- **Gapless playback on Android and iOS.** The mobile apps now arm the next track
+  through the engine's preload path instead of re-resolving on every advance.
+  Android also gains a full artist-profile screen and a track download action.
+- **SDK & MCP parity.** The public SDK re-exports the full control command set
+  (EQ, sleep timer, repeat/shuffle, search, browse, queue, mixes, history, events)
+  on both the local and Connect clients, and ships a runnable `examples/player`.
+  The MCP server adds repeat/shuffle/sleep-timer, whoami, device discovery and
+  targeting, and the queue/album/mix/history tools.
+
+### Changed
+- **Faster, more resilient streaming.** Playback starts as soon as enough audio is
+  buffered instead of waiting for the whole file, so lossless tracks and long
+  podcasts begin quickly; interrupted downloads resume mid-stream over HTTP Range
+  (with entity-continuity checks) and re-resolve expired media URLs; large FLAC
+  buffers are pre-sized to cut memory churn; and pause/stop/skip/seek now ramp out
+  to avoid clicks.
+- **Search runs concurrently.** The four search categories are fetched in parallel
+  and tolerate a partial failure, so results arrive in one round-trip's time
+  across every client.
+- **Realtime audio DSP is vectorized.** Gain, fades, mixing and the equalizer
+  process samples in bulk, lowering CPU on the audio path.
+- **More robust LAN discovery.** Connect re-probes periodically, also probes
+  configured peers over unicast (so multicast-filtered networks like VPNs work),
+  and rebinds when network interfaces change.
+- **Go module path is now `/v2`.** `go get github.com/Cycl0o0/OpenDeezer/v2`
+  resolves the current release; the v2.x SDK is reachable to third-party
+  developers again (v2 tags were previously invisible to `go get`). The SDK now
+  documents an additive-only stability guarantee across minor versions.
+- **Distribution.** CI runs the test suite on Linux, macOS and Windows with a
+  coverage floor; release binaries are built reproducibly (`-trimpath`) with build
+  provenance attestation; release notes are drawn from this changelog; packaging
+  manifest checksums are updated automatically; and F-Droid/IzzyOnDroid metadata
+  is provided for the Android app.
+
+### Fixed
+- **Control-API input validation.** Volume, seek, repeat, shuffle and sleep-timer
+  values are strictly validated (rejecting NaN, out-of-range and malformed input
+  with a `400`); pairing fails closed if the system RNG errors, and repeated bad
+  pairing attempts are rate-limited per source rather than globally.
+- **History and queue accuracy over the control API.** Stopping a track now
+  records the listen, gapless track promotion updates now-playing correctly, and
+  remote cursor alignment no longer corrupts the previous-track history.
+
 ## [2.1.2]
 
 ### Added

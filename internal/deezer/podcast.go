@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
+	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
 )
 
 // SearchPodcasts finds shows via the public REST /search/podcast endpoint.

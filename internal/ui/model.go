@@ -11,18 +11,20 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/internal/discord"
-	"github.com/Cycl0o0/OpenDeezer/internal/discovery"
-	"github.com/Cycl0o0/OpenDeezer/internal/i18n"
-	odlog "github.com/Cycl0o0/OpenDeezer/internal/log"
-	"github.com/Cycl0o0/OpenDeezer/internal/mpris"
-	"github.com/Cycl0o0/OpenDeezer/internal/queue"
-	"github.com/Cycl0o0/OpenDeezer/internal/update"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/discord"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
+	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/mpris"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/update"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -43,11 +45,23 @@ const (
 	screenLyrics
 	screenHelp
 	screenDevices
-	screenRemote      // remote-control: device picker (discovered peers)
-	screenRemoteInput // remote-control: type a peer address by hand
-	screenRemoteCtl   // remote-control: driving a connected peer
-	screenWebRemote   // phone web remote: QR + pairing code
-	screenNoInternet  // transport-level connectivity loss — offer retry, don't log out
+	screenRemote         // remote-control: device picker (discovered peers)
+	screenRemoteInput    // remote-control: type a peer address by hand
+	screenRemoteCtl      // remote-control: driving a connected peer
+	screenWebRemote      // phone web remote: QR + pairing code
+	screenNoInternet     // transport-level connectivity loss — offer retry, don't log out
+	screenPlaylistPick   // add-to-playlist picker (borrows m.list like the device picker)
+	screenPlaylistPrompt // playlist title input (create / rename)
+)
+
+// plPromptKind says what the playlist-title prompt (screenPlaylistPrompt) is for.
+type plPromptKind int
+
+const (
+	plNone            plPromptKind = iota
+	plCreateWithTrack              // "New playlist…" from the add-to-playlist picker
+	plCreateEmpty                  // 'N' on the playlists screen
+	plRename                       // 'R' on the playlists screen
 )
 
 // Model is the root Bubble Tea model.
@@ -98,6 +112,36 @@ type Model struct {
 	episodeMode   bool           // current queue is podcast episodes (plain streams)
 	sleepStep     int            // sleep-timer cycle position (see cycleSleepTimer)
 	downloading   bool           // a track download (D key) is in flight
+
+	// library write-ops state (like toggle, add-to-playlist, playlist CRUD)
+	likedIDs     map[string]bool // liked-track ids: seeded at login, refreshed by Liked Songs, toggled optimistically
+	ownPlaylists bool            // current screenList shows the user's own playlists (enables N/R/X)
+	pickTrack    deezer.Track    // track pending add-to-playlist
+	plPrompt     plPromptKind    // what the playlist-title prompt is for
+	plTarget     deezer.Playlist // rename/delete target
+	plConfirm    bool            // 'X' delete confirmation pending (y/n)
+	plReturn     screen          // screen restored when the title prompt closes
+
+	queueSel     int // queue-view cursor (row navigation on the 'u' screen)
+	lyricsOffset int // manual wheel-scroll offset for plain (unsynced) lyrics
+
+	// pageArtist is the artist whose profile page is currently shown on
+	// screenList ("" ID when the list is any other browse context) — the seed
+	// for the 'm' start-radio key when no track/artist row is selected.
+	pageArtist deezer.ArtistInfo
+
+	// Local listening history (stats screen + control /history/recent). See
+	// internal/ui/history.go for the session fields' lifecycle.
+	hist        *history.Store // nil = recording disabled (e.g. no config dir)
+	histTrack   deezer.Track   // active session's track ("" ID = none)
+	histPosMS   int64          // last observed playback position of histTrack
+	histStart   time.Time      // when the session started
+	histEpisode bool           // session is a podcast episode (not recorded)
+
+	// Control-API queue snapshot cache: the []control.Track is rebuilt only when
+	// the queue's version changes, not on every 1s tick (see publishControl).
+	ctrlQueue    []control.Track
+	ctrlQueueVer uint64
 
 	// GitHub release check (see updatecheck.go / internal/update). The
 	// startup check is silent unless a newer version is found; a manual
@@ -264,23 +308,10 @@ func (m *Model) StartControl(send func(tea.Msg)) error {
 		odlog.Warn("control api: LAN-exposed with same-account auth only; the Deezer user id " +
 			"is not a strong secret. Set OPENDEEZER_CONTROL_TOKEN for a real credential.")
 	}
-	cmds := control.Commands{
-		PlayPause:     func() { send(controlCmdMsg{kind: "playpause"}) },
-		Next:          func() { send(controlCmdMsg{kind: "next"}) },
-		Prev:          func() { send(controlCmdMsg{kind: "prev"}) },
-		Stop:          func() { send(controlCmdMsg{kind: "stop"}) },
-		Restart:       func() { send(controlCmdMsg{kind: "restart"}) },
-		CycleRepeat:   func() { send(controlCmdMsg{kind: "repeat"}) },
-		ToggleShuffle: func() { send(controlCmdMsg{kind: "shuffle"}) },
-		Seek:          func(ms int64) { send(controlCmdMsg{kind: "seek", ms: ms}) },
-		SetVolume:     func(v float64) { send(controlCmdMsg{kind: "volume", vol: v}) },
-		PlayTrack:     func(id string) { send(controlCmdMsg{kind: "playtrack", id: id}) },
-		PlayPlaylist:  func(id string) { send(controlCmdMsg{kind: "playplaylist", id: id}) },
-		SetSleepTimer: func(minutes int, eot bool) {
-			send(controlCmdMsg{kind: "sleep", ms: int64(minutes), eot: eot})
-		},
-		CancelSleepTimer: func() { send(controlCmdMsg{kind: "sleepcancel"}) },
-	}
+	// Shared with the web-remote server: simple commands are marshaled onto the
+	// update loop via send; queue edits round-trip an error the same way (see
+	// buildControlCommands for the full thread-safety contract).
+	cmds := buildControlCommands(send, m.client, m.hist)
 	status := func() control.State {
 		if p := m.ctrlState.Load(); p != nil {
 			return *p
@@ -334,11 +365,16 @@ func (m *Model) StartControl(send func(tea.Msg)) error {
 
 // publishControl refreshes the atomic snapshot the control HTTP goroutine reads.
 // Called on every tick + track change (mirrors publishMedia), so the snapshot is
-// always built on the update loop — the HTTP side only ever reads it.
+// always built on the update loop — the HTTP side only ever reads it. When the
+// snapshot meaningfully changed (track/state/seek/queue edit — not a plain +1s
+// position tick), the SSE event loop is nudged so subscribers see the change
+// immediately instead of on the next fallback tick.
 func (m *Model) publishControl() {
 	if m.ctrl == nil {
 		return
 	}
+	prev := m.ctrlState.Load()
+	prevQueueVer := m.ctrlQueueVer
 	var st control.State
 	switch m.player.State() {
 	case audio.Playing:
@@ -371,14 +407,70 @@ func (m *Model) publishControl() {
 	st.SleepActive = m.player.SleepActive()
 	st.SleepEndOfTrack = m.player.SleepEndOfTrack()
 	st.SleepRemainingMS = m.player.SleepRemainingMS()
-	tracks := m.q.Tracks()
-	if len(tracks) > 0 {
-		st.Queue = make([]control.Track, 0, len(tracks))
-		for _, t := range tracks {
-			st.Queue = append(st.Queue, *ctrlTrack(t))
+	st.Queue = m.ctrlQueueSnapshot()
+	m.ctrlState.Store(&st)
+	if m.ctrlQueueVer != prevQueueVer || controlStateChanged(prev, &st) {
+		m.ctrl.NotifyStateChanged()
+		if m.webRemoteSrv != nil && m.webRemoteSrv != m.ctrl {
+			m.webRemoteSrv.NotifyStateChanged()
 		}
 	}
-	m.ctrlState.Store(&st)
+}
+
+// controlStateChanged reports whether the new snapshot differs from the last
+// one in a way SSE subscribers should hear about now: playback state, active
+// track, mode/volume flips, or a position discontinuity (a seek), but NOT the
+// ordinary ~1s forward creep of the position between ticks — that would turn
+// every tick into an event and defeat the server's coalescing.
+func controlStateChanged(prev, cur *control.State) bool {
+	if prev == nil {
+		return true
+	}
+	if prev.State != cur.State || prev.Repeat != cur.Repeat ||
+		prev.Shuffle != cur.Shuffle || prev.Volume != cur.Volume ||
+		prev.SleepActive != cur.SleepActive {
+		return true
+	}
+	var pid, cid string
+	if prev.Track != nil {
+		pid = prev.Track.ID
+	}
+	if cur.Track != nil {
+		cid = cur.Track.ID
+	}
+	if pid != cid {
+		return true
+	}
+	// Ticks advance the position by ~1s; anything backwards or well past that
+	// is a seek/restart worth publishing immediately.
+	d := cur.PositionMS - prev.PositionMS
+	return d < 0 || d > 3000
+}
+
+// ctrlQueueSnapshot returns the control-API view of the play queue, rebuilding
+// the []control.Track only when the queue's version changed since the last
+// call. publishControl runs on every 1s tick, and re-allocating a big queue's
+// snapshot each second was pure waste; position/state fields still refresh
+// every tick. Version 0 means never mutated, i.e. an empty queue, so the zero
+// cache is already correct at startup. The returned slice is shared across
+// snapshots and must be treated as read-only (the HTTP side only marshals it).
+func (m *Model) ctrlQueueSnapshot() []control.Track {
+	v := m.q.Version()
+	if v == m.ctrlQueueVer {
+		return m.ctrlQueue
+	}
+	tracks := m.q.Tracks()
+	if len(tracks) == 0 {
+		m.ctrlQueue = nil
+	} else {
+		cq := make([]control.Track, 0, len(tracks))
+		for _, t := range tracks {
+			cq = append(cq, *ctrlTrack(t))
+		}
+		m.ctrlQueue = cq
+	}
+	m.ctrlQueueVer = v
+	return m.ctrlQueue
 }
 
 // sleepMinutes maps the sleep-timer cycle step to a duration (0 = off, -1 slot
@@ -451,15 +543,24 @@ func remoteTrack(t *control.Track) deezer.Track {
 	}
 }
 
+// newBrowseList builds the shared browse list. Filtering is enabled but moved
+// off the default "/" (which is Deezer search everywhere in the app) onto
+// ctrl+f; handleKey forwards ctrl+f to the list only on list screens.
+func newBrowseList() list.Model {
+	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.KeyMap.Filter = key.NewBinding(key.WithKeys("ctrl+f"), key.WithHelp("ctrl+f", "filter"))
+	return l
+}
+
 // New builds the root model.
 func New(client *deezer.Client, player *audio.Player) *Model {
 	ti := textinput.New()
 	ti.Placeholder = i18n.T("Search Deezer…")
 	ti.CharLimit = 120
 
-	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
-	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(true)
+	l := newBrowseList()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -476,6 +577,9 @@ func New(client *deezer.Client, player *audio.Player) *Model {
 		q:        queue.New(),
 		finished: make(chan bool, 1),
 	}
+	// Local listening history (stats screen + control /history/recent).
+	// Best-effort: without a config dir, recording is simply disabled.
+	m.hist, _ = history.Default()
 	player.SetOnFinish(func() {
 		// Capture whether this is a gapless swap (still Playing) or a stop, at the
 		// instant of the signal — the UI must not re-sample the live state later,
@@ -501,12 +605,41 @@ func New(client *deezer.Client, player *audio.Player) *Model {
 
 type loginDoneMsg struct{ err error }
 type tracksMsg struct {
-	title  string
-	tracks []deezer.Track
+	title     string
+	tracks    []deezer.Track
+	favorites bool // this is the Liked Songs list — refresh the liked-ids cache
 }
 type playlistsMsg struct {
 	title     string
 	playlists []deezer.Playlist
+}
+
+// artistPageMsg carries a full artist profile (top tracks + albums + related).
+type artistPageMsg struct{ page *deezer.ArtistPage }
+
+// likedIDsMsg seeds/refreshes the liked-track id cache behind the 'f' toggle.
+type likedIDsMsg struct{ ids map[string]bool }
+
+// favToggleMsg reports a like/unlike round-trip so an optimistic cache update
+// can be rolled back on failure.
+type favToggleMsg struct {
+	id    string
+	name  string
+	liked bool // the state we tried to set
+	err   error
+}
+
+// playlistPickMsg opens the add-to-playlist picker with the user's playlists.
+type playlistPickMsg struct {
+	playlists []deezer.Playlist
+	track     deezer.Track
+}
+
+// playlistOpMsg reports a playlist write op (add/create/rename/delete).
+type playlistOpMsg struct {
+	status  string
+	refresh bool // reload the playlists list when it is on screen
+	err     error
 }
 type searchMsg struct{ results *deezer.SearchResults }
 type podcastsMsg struct {
@@ -583,8 +716,30 @@ func (m *Model) favoritesCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return tracksMsg{title: "❤  " + i18n.T("Liked Songs"), tracks: ts}
+		return tracksMsg{title: "❤  " + i18n.T("Liked Songs"), tracks: ts, favorites: true}
 	}
+}
+
+// likedIDsCmd silently seeds the liked-track id cache behind the 'f' toggle
+// (run once after login). Failures are ignored — the cache just stays empty
+// until the Liked Songs view is opened.
+func (m *Model) likedIDsCmd() tea.Cmd {
+	return func() tea.Msg {
+		ts, err := m.client.Favorites()
+		if err != nil {
+			return nil
+		}
+		return likedIDsMsg{ids: likedSet(ts)}
+	}
+}
+
+// likedSet builds the liked-ids cache from a favorites track list.
+func likedSet(ts []deezer.Track) map[string]bool {
+	ids := make(map[string]bool, len(ts))
+	for _, t := range ts {
+		ids[t.ID] = true
+	}
+	return ids
 }
 
 func (m *Model) playlistsCmd() tea.Cmd {
@@ -639,13 +794,16 @@ func (m *Model) chartsCmd() tea.Cmd {
 	}
 }
 
-func (m *Model) artistTopCmd(a deezer.ArtistInfo) tea.Cmd {
+// artistPageCmd fetches the full artist profile (top tracks + albums + related
+// artists) rendered as a sectioned list. Sub-list failures are tolerated by
+// the client, so a partial page still opens.
+func (m *Model) artistPageCmd(a deezer.ArtistInfo) tea.Cmd {
 	return func() tea.Msg {
-		ts, err := m.client.ArtistTop(a.ID)
+		p, err := m.client.ArtistProfile(a.ID)
 		if err != nil {
 			return errMsg{err}
 		}
-		return tracksMsg{title: "♪ " + a.Name, tracks: ts}
+		return artistPageMsg{page: p}
 	}
 }
 
@@ -663,6 +821,35 @@ func (m *Model) flowCmd() tea.Cmd {
 			return errMsg{err}
 		}
 		return tracksMsg{title: "⚡ Flow", tracks: ts}
+	}
+}
+
+// trackMixCmd starts a "song radio" seeded from a track: the mix replaces the
+// queue and starts playing, exactly like Flow feeding playNowMsg.
+func (m *Model) trackMixCmd(id string) tea.Cmd {
+	return func() tea.Msg {
+		ts, err := m.client.TrackMix(id)
+		if err != nil {
+			return errMsg{err}
+		}
+		if len(ts) == 0 {
+			return statusMsg{text: i18n.T("No mix available")}
+		}
+		return playNowMsg{tracks: ts}
+	}
+}
+
+// artistMixCmd starts an "artist radio" (smart radio) seeded from an artist.
+func (m *Model) artistMixCmd(id string) tea.Cmd {
+	return func() tea.Msg {
+		ts, err := m.client.ArtistMix(id)
+		if err != nil {
+			return errMsg{err}
+		}
+		if len(ts) == 0 {
+			return statusMsg{text: i18n.T("No mix available")}
+		}
+		return playNowMsg{tracks: ts}
 	}
 }
 
@@ -697,13 +884,68 @@ func (m *Model) episodeStreamCmd(t deezer.Track) tea.Cmd {
 	}
 }
 
-// likeCurrentCmd adds the currently playing track to favorites.
-func (m *Model) likeCurrentCmd(t deezer.Track) tea.Cmd {
+// favToggleCmd likes or unlikes a track. The caller already flipped the cached
+// liked set optimistically; favToggleMsg carries enough to roll that back.
+func (m *Model) favToggleCmd(t deezer.Track, like bool) tea.Cmd {
 	return func() tea.Msg {
-		if err := m.client.AddFavoriteTrack(t.ID); err != nil {
+		var err error
+		if like {
+			err = m.client.AddFavoriteTrack(t.ID)
+		} else {
+			err = m.client.RemoveFavoriteTrack(t.ID)
+		}
+		return favToggleMsg{id: t.ID, name: t.Name, liked: like, err: err}
+	}
+}
+
+// playlistPickCmd fetches the user's playlists for the add-to-playlist picker.
+func (m *Model) playlistPickCmd(t deezer.Track) tea.Cmd {
+	return func() tea.Msg {
+		ps, err := m.client.Playlists()
+		if err != nil {
 			return errMsg{err}
 		}
-		return statusMsg{"❤ " + i18n.Tf("Liked: %s", t.Name)}
+		return playlistPickMsg{playlists: ps, track: t}
+	}
+}
+
+// addToPlaylistCmd appends a track to one of the user's playlists.
+func (m *Model) addToPlaylistCmd(p deezer.Playlist, t deezer.Track) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.AddToPlaylist(p.ID, t.ID); err != nil {
+			return playlistOpMsg{err: err}
+		}
+		return playlistOpMsg{status: i18n.Tf("Added to %s", p.Name)}
+	}
+}
+
+// createPlaylistCmd creates a playlist, optionally seeded with tracks.
+func (m *Model) createPlaylistCmd(title string, seed []string) tea.Cmd {
+	return func() tea.Msg {
+		if _, err := m.client.CreatePlaylist(title, seed); err != nil {
+			return playlistOpMsg{err: err}
+		}
+		return playlistOpMsg{status: i18n.Tf("Created playlist %s", title), refresh: true}
+	}
+}
+
+// renamePlaylistCmd retitles a playlist the user owns.
+func (m *Model) renamePlaylistCmd(p deezer.Playlist, title string) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.RenamePlaylist(p.ID, title); err != nil {
+			return playlistOpMsg{err: err}
+		}
+		return playlistOpMsg{status: i18n.Tf("Renamed to %s", title), refresh: true}
+	}
+}
+
+// deletePlaylistCmd deletes a playlist the user owns (after the y/n confirm).
+func (m *Model) deletePlaylistCmd(p deezer.Playlist) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.DeletePlaylist(p.ID); err != nil {
+			return playlistOpMsg{err: err}
+		}
+		return playlistOpMsg{status: i18n.T("Playlist deleted"), refresh: true}
 	}
 }
 
