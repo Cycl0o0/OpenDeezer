@@ -4,6 +4,14 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2]
+
+### Fixed
+- **Lint-clean release.** Two `golangci-lint` findings in cgo packages (a
+  `log.Fatal`-after-`defer` in the `examples/player` sample and a tagged-switch
+  suggestion in the terminal queue view) are resolved. No behavior change — this
+  is v2.2.1 with a fully green CI.
+
 ## [2.2.1]
 
 ### Added
