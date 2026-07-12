@@ -353,11 +353,11 @@ func (m *Model) queueView(bodyRows int) string {
 		t := ts[i]
 		marker := "  "
 		line := fmt.Sprintf("%2d. %s — %s", i+1, t.Name, t.ArtistLine())
-		switch {
-		case i == cur:
+		switch i {
+		case cur:
 			marker = accent.Render("▶ ")
 			line = accent.Render(line)
-		case i == m.queueSel:
+		case m.queueSel:
 			marker = accent.Render("› ") // cursor row stays unstyled = brighter than dim
 		default:
 			line = dim.Render(line)

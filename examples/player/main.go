@@ -29,6 +29,14 @@ import (
 const preloadWindowMS = 15_000
 
 func main() {
+	// run does the work and returns an error; main is the only place that may
+	// exit the process, so every defer in run (p.Close, ticker.Stop) still runs.
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	// Playback needs a logged-in session: guard it behind ARL presence so the
 	// example still runs (and explains itself) without credentials.
 	arl := os.Getenv("DEEZER_ARL")
@@ -37,7 +45,7 @@ func main() {
 		fmt.Println("Get it from a browser session on deezer.com: F12 → Application → Cookies → arl.")
 		fmt.Println()
 		fmt.Println("  DEEZER_ARL=<your_arl> go run ./examples/player [track_id ...]")
-		return
+		return nil
 	}
 
 	// The queue: track ids from the command line, or a short demo queue.
@@ -49,14 +57,14 @@ func main() {
 		if id := dz.TrackIDOf(raw); id != "" {
 			ids[i] = id
 		} else {
-			log.Fatalf("could not extract a track id from %q", raw)
+			return fmt.Errorf("could not extract a track id from %q", raw)
 		}
 	}
 
 	// Authenticate.
 	client := dz.New(arl)
 	if err := client.Login(); err != nil {
-		log.Fatalf("login: %v", err)
+		return fmt.Errorf("login: %w", err)
 	}
 	client.SetQuality(dz.QualityHigh) // prefer MP3 320; falls back if not entitled
 	acc := client.Account()
@@ -65,7 +73,7 @@ func main() {
 	// Start the audio engine. This opens the system output device.
 	p, err := player.NewPlayer()
 	if err != nil {
-		log.Fatalf("audio init (an output device is required): %v", err)
+		return fmt.Errorf("audio init (an output device is required): %w", err)
 	}
 	defer p.Close()
 	p.SetGapless(true)
@@ -101,11 +109,11 @@ func main() {
 	idx := 0
 	plan, track, err := resolve(ids[idx])
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Printf("Playing  %s — %s [%s]\n", track.Name, track.ArtistLine(), dz.FormatLabel(plan.Format))
 	if err := p.Play(plan, track.DurationMS); err != nil {
-		log.Fatalf("play: %v", err)
+		return fmt.Errorf("play: %w", err)
 	}
 
 	// preloadNext resolves ids[idx+1] and hands it to the engine for a gapless
@@ -133,7 +141,7 @@ func main() {
 			idx++
 			if idx >= len(ids) {
 				fmt.Println("\nQueue finished.")
-				return
+				return nil
 			}
 			preloaded = false
 			if p.State() == player.Stopped {
@@ -142,10 +150,10 @@ func main() {
 				// engine has already swapped to it gaplessly.)
 				plan, track, err = resolve(ids[idx])
 				if err != nil {
-					log.Fatal(err)
+					return err
 				}
 				if err := p.Play(plan, track.DurationMS); err != nil {
-					log.Fatalf("play: %v", err)
+					return fmt.Errorf("play: %w", err)
 				}
 			} else if track, err = client.Track(ids[idx]); err != nil {
 				track = dz.Track{Name: ids[idx]}
@@ -155,7 +163,7 @@ func main() {
 
 		case <-ticker.C:
 			if p.State() == player.Errored {
-				log.Fatalf("playback error: %s", p.LastError())
+				return fmt.Errorf("playback error: %s", p.LastError())
 			}
 			pos, dur := p.PositionMS(), p.DurationMS()
 			fmt.Printf("\r  %02d:%02d / %02d:%02d",
