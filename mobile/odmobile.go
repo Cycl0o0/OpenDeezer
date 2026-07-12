@@ -968,7 +968,7 @@ func QueueIndex() int {
 }
 
 // QueueVersion returns a counter bumped on every engine-queue CONTENT change
-// (SetQueueJSON, remote /queue/add|remove|move, /play/album, /play/mix/*) —
+// (SetQueueJSON, remote /queue/add|remove|move, /play/album, /play/mix/{track,artist}) —
 // cursor moves don't bump it. The app polls this cheaply and pulls QueueJSON
 // only when a remote controller actually edited the queue.
 func QueueVersion() int64 {
@@ -1420,8 +1420,9 @@ func engineCommands() control.Commands {
 
 // ---- extended control commands: queue edits, album/mix play, history ----
 //
-// These back the control API's /queue/*, /play/album, /play/mix/* and
-// /history/recent endpoints. Like Next/Prev they forward to the routed Connect
+// These back the control API's /queue/{add,jump,remove,move}, /play/album,
+// /play/mix/{track,artist} and /history/recent endpoints. Like Next/Prev they
+// forward to the routed Connect
 // device when one is selected (this instance is then a controller, so queue
 // edits belong to the remote's queue); HistoryRecent stays local — the
 // listening history never leaves the machine that did the listening.

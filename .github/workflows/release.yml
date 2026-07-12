@@ -591,6 +591,12 @@ jobs:
             sed -i "s/sha256sums=('SKIP')/sha256sums=('${TARBALL_SHA}')/" packaging/aur/PKGBUILD
           fi
       - name: Open PR with updated manifests
+        # Best-effort: opening a PR needs the repo setting "Allow GitHub Actions
+        # to create and approve pull requests" enabled. When it's off, the
+        # GITHUB_TOKEN can't create the PR — don't fail the whole release for an
+        # optional manifest-refresh PR (the manifests are still updated in this
+        # job's checkout; enable the setting or open the PR manually).
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ github.token }}

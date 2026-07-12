@@ -4,6 +4,20 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3]
+
+### Fixed
+- **iOS build restored.** The gomobile iOS binding failed to compile because a
+  couple of Go doc comments contained route globs ending in `/*` (e.g.
+  `/play/mix/*`), which gomobile embeds into the generated Objective-C header
+  and clang rejects under `-Werror` as a nested comment. Reworded the comments
+  (`/play/mix/{track,artist}`, `/queue/{add,jump,remove,move}`); verified a clean
+  `gomobile bind -target=ios` with no toolchain patching.
+- **Release no longer fails on the optional manifest PR.** The packaging-manifest
+  auto-PR step is best-effort now: when the repo disallows Actions from opening
+  PRs, the release still succeeds (the manifests are updated in-job; open the PR
+  manually or enable the setting).
+
 ## [2.2.2]
 
 ### Fixed
