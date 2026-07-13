@@ -200,6 +200,33 @@ internal static class DeezerCore
     // GUI liked-ids cache so the now-playing heart reflects real library state.
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZFavoriteIDsJSON();
 
+    // ---- v3.0 additions (Up-Next queue editing + offline caching) ------------
+    // Granular edits applied to the ENGINE queue, which the GUI keeps mirror-
+    // identical to its own _queue (same index space). After each structural edit
+    // the GUI re-asserts the cursor with DZQueueSetIndex from its authoritative
+    // model, so these never have to guess how the edit should shift the cursor.
+    //   DZQueueRemove(i)      -- drop the row at index i.
+    //   DZQueueMove(from,to)  -- relocate the row at `from` to `to`.
+    //   DZQueueInsertNext(js) -- insert ONE track (a JSON object with the same
+    //                            shape as a DZQueueSet element; only "id" is
+    //                            required) right after the current cursor.
+    // Void like DZQueueSetIndex (the sibling cursor mutator); all blocking DZ*
+    // calls, so the GUI runs them off the UI thread.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZQueueRemove(int i);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZQueueMove(int from, int to);
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZQueueInsertNext([MarshalAs(UnmanagedType.LPUTF8Str)] string trackJson);
+    // The engine's current queue as {tracks:[...]} (same shape DZFlowJSON returns,
+    // so Wire.ParseTracks reads it). Present for parity with remote /status reads;
+    // the GUI renders Up-Next from its own _queue model and only falls back here.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZQueueJSON();
+    // Cache a track for offline playback. Returns malloc'd UTF-8 JSON
+    // {"status":"...","key":"<trackId>"} on success or {"error":"..."} on failure
+    // (free with DZFree, like every char* export). PREMIUM-ONLY and blocking (per-
+    // track network + decrypt) -> call off the UI thread like the single-track
+    // download. The returned "key" is the offline track id -> the GUI adds it to its
+    // offline-ids set and stamps a "downloaded" glyph on that row.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZDownloadForOffline([MarshalAs(UnmanagedType.LPUTF8Str)] string trackID);
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -297,4 +324,10 @@ internal static class DeezerCore
     internal static bool GetShuffle() => DZGetShuffle() != 0;
     // Favorite track ids (bare JSON id array) for the liked-ids cache.
     internal static System.Collections.Generic.List<string> FavoriteIDs() => Wire.ParseIdArray(TakeJson(DZFavoriteIDsJSON()));
+
+    // Engine queue read (parity/remote); GUI normally renders Up-Next from _queue.
+    internal static System.Collections.Generic.List<Track> Queue() => Wire.ParseTracks(TakeJson(DZQueueJSON()));
+    // Cache a track for offline playback; returns the raw {"status","key"} /
+    // {"error"} JSON (PREMIUM-ONLY, blocking -- call off the UI thread).
+    internal static string DownloadForOffline(string id) => TakeJson(DZDownloadForOffline(id));
 }

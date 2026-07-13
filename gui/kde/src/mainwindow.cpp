@@ -14,6 +14,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDockWidget>
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
@@ -207,6 +208,26 @@ extern "C" char *DZGetRepeat(void);       // "off" | "all" | "one"
 extern "C" int   DZGetShuffle(void);      // 1 = on, 0 = off
 extern "C" char *DZFavoriteIDsJSON(void); // ["<trackId>", ...]
 
+// v3.0.0 additions — Up-Next queue editor + offline downloads. Redeclared here
+// (like the blocks above) so the GUI still builds against an older generated
+// header; identical redeclarations are harmless. char* results are malloc'd —
+// free with DZFree. DZQueueSet / DZQueueSetIndex / DZQueueIndex are declared in
+// the v2.2.0 block above and reused here.
+//   DZQueueJSON: the engine queue as a JSON array of the shared track shape (the
+//     same shape DZQueueSet consumes; "[]" when empty) — backs the Up-Next panel.
+//   DZQueueRemove(i): drop the queue entry at index i.
+//   DZQueueMove(from,to): relocate the entry at `from` to index `to`.
+//   DZQueueInsertNext(js): insert one track (js = a single track JSON object in
+//     the shared shape) immediately after the current cursor ("Play next").
+//   DZDownloadForOffline(trackID): save a track for offline playback — blocking +
+//     premium-only, like DZDownloadTrack. Returns {"key":"<id>","path":"...",
+//     "error":""}; the "key" identifies the stored track (feeds the offline mirror).
+extern "C" char *DZQueueJSON(void);
+extern "C" void  DZQueueRemove(int i);
+extern "C" void  DZQueueMove(int from, int to);
+extern "C" void  DZQueueInsertNext(char *js);
+extern "C" char *DZDownloadForOffline(char *trackID);
+
 namespace {
 
 // A slider style that makes a left-click on the groove jump straight to that
@@ -352,6 +373,37 @@ QVector<Track> parseTracks(const QByteArray &json) {
     return out;
 }
 
+// Serialize one Track to the shared wire shape consumed by DZQueueSet /
+// DZQueueInsertNext (and re-parsed by parseTrack). Kept in one place so the
+// whole-queue push and the single-track "Play next" insert always agree.
+QJsonObject trackToJsonObj(const Track &t) {
+    QJsonObject o;
+    o["id"]         = t.id;
+    o["name"]       = t.name;
+    o["durationMs"] = static_cast<double>(t.durationMs);
+    o["artistLine"] = t.artistLine;
+    o["artistId"]   = t.artistId;
+    o["albumName"]  = t.albumName;
+    o["artworkUrl"] = t.artworkUrl;
+    o["explicit"]   = t.isExplicit;
+    if (!t.artistId.isEmpty() || !t.artistLine.isEmpty()) {
+        QJsonObject a;
+        a["id"]   = t.artistId;
+        a["name"] = t.artistLine;
+        o["artists"] = QJsonArray{a};
+    }
+    return o;
+}
+
+// The engine queue as a QVector<Track>: DZQueueJSON returns a bare JSON array of
+// the shared track shape.
+QVector<Track> parseQueue(const QByteArray &json) {
+    QVector<Track> out;
+    for (const QJsonValue &v : QJsonDocument::fromJson(json).array())
+        out.push_back(parseTrack(v.toObject()));
+    return out;
+}
+
 // DZDiscoverDevices returns a JSON array (not an object) of device records.
 QVector<ConnectDevice> parseDevices(const QByteArray &json) {
     QVector<ConnectDevice> out;
@@ -460,6 +512,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_quality = SettingsDialog::loadQuality(cfg);
     m_closeToTray = SettingsDialog::loadCloseToTray(cfg);
 
+    // The "Up Next" dock is added to the QMainWindow before the menu so the View
+    // menu can expose its toggle action.
+    buildQueueDock();
     buildMenu();
     buildSidebar();
 
@@ -942,6 +997,16 @@ void MainWindow::buildMenu() {
             m_sidebar->setCurrentRow(4);
     });
 
+    auto *view = menuBar()->addMenu(tr("&View"));
+    if (m_queueDock) {
+        // QDockWidget's own toggle action: checked mirrors visibility, and it
+        // shows/hides the dock. Give it a friendlier label + shortcut.
+        QAction *q = m_queueDock->toggleViewAction();
+        q->setText(tr("&Up Next queue"));
+        q->setShortcut(QKeySequence(QStringLiteral("Ctrl+U")));
+        view->addAction(q);
+    }
+
     auto *help = menuBar()->addMenu(tr("&Help"));
     auto *about = help->addAction(tr("&About OpenDeezer"));
     connect(about, &QAction::triggered, this, [this] {
@@ -1415,8 +1480,39 @@ QWidget *MainWindow::buildTransport() {
     m_previewBadge->setVisible(false);
     h->addWidget(m_previewBadge);
 
+    // "Offline" badge — visible only when the current track is saved for offline
+    // playback (its id is in m_offlineIds; see refreshOfflineIndicators).
+    m_offlineBadge = new QLabel(tr("Offline"));
+    m_offlineBadge->setStyleSheet(
+        "QLabel{background:#1DB954;color:#FFFFFF;border-radius:3px;"
+        "padding:0px 4px;font-size:10px;font-weight:bold;}");
+    m_offlineBadge->setAlignment(Qt::AlignCenter);
+    m_offlineBadge->setFixedHeight(16);
+    m_offlineBadge->setVisible(false);
+    h->addWidget(m_offlineBadge);
+
     m_nowPlaying = new QLabel(tr("Not playing"));
     m_nowPlaying->setMinimumWidth(180);
+    // Right-click the now-playing title to save the current track for offline.
+    m_nowPlaying->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_nowPlaying, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &pos) {
+                if (!m_hasCurrent || m_currentIsEpisode)
+                    return;
+                QMenu menu(this);
+                QAction *off = menu.addAction(tr("Download for offline"));
+                if (m_offlineIds.contains(m_current.id)) {
+                    off->setEnabled(false);
+                    off->setText(tr("Available offline"));
+                } else if (!m_premium) {
+                    off->setEnabled(false);
+                    off->setToolTip(tr("Requires a paid Deezer plan"));
+                    menu.setToolTipsVisible(true);
+                }
+                if (menu.exec(m_nowPlaying->mapToGlobal(pos)) == off &&
+                    off->isEnabled())
+                    downloadForOffline(m_current);
+            });
     h->addWidget(m_nowPlaying, 0);
 
     // Lyrics / Artist detail for the current track, sitting next to its title.
@@ -1544,6 +1640,33 @@ QWidget *MainWindow::buildTransport() {
     connect(m_connectBtn, &QToolButton::clicked, this, &MainWindow::openConnectPicker);
     h->addWidget(m_connectBtn);
 
+    // Up-Next: show/hide the queue editor dock. Mirrors (and drives) the dock's
+    // own toggle action so the button's checked state tracks visibility.
+    if (m_queueDock) {
+        auto *queueBtn = new QToolButton;
+        {
+            QIcon ico = QIcon::fromTheme(QStringLiteral("view-media-playlist"));
+            if (ico.isNull())
+                ico = QIcon::fromTheme(QStringLiteral("media-playlist-normal"));
+            if (ico.isNull())
+                ico = QIcon::fromTheme(QStringLiteral("format-list-unordered"));
+            queueBtn->setIcon(ico);
+        }
+        queueBtn->setText(QString());
+        queueBtn->setIconSize(QSize(22, 22));
+        queueBtn->setAutoRaise(true);
+        queueBtn->setCheckable(true);
+        queueBtn->setChecked(m_queueDock->isVisible());
+        queueBtn->setToolTip(tr("Up Next"));
+        connect(queueBtn, &QToolButton::clicked, this,
+                [this] { m_queueDock->setVisible(!m_queueDock->isVisible()); });
+        // Keep the button in sync when the dock is closed via its own title-bar X
+        // or the View menu.
+        connect(m_queueDock->toggleViewAction(), &QAction::toggled, queueBtn,
+                &QToolButton::setChecked);
+        h->addWidget(queueBtn);
+    }
+
     {
         auto *volLabel = new QLabel;
         volLabel->setPixmap(
@@ -1654,6 +1777,10 @@ void MainWindow::finishLogin(const QByteArray &acct) {
     applyQuality(m_quality);     // apply persisted quality (+ entitlement note)
     refreshConnectButton();      // reflect any active OpenDeezer Connect device
     seedFavorites();             // authoritative liked-ids mirror for truthful hearts
+    if (m_queueDock) {           // reveal the Up-Next dock now that we're logged in
+        m_queueDock->show();
+        refreshQueuePanel();
+    }
     m_poll->start();
     // Qt makes the first sidebar row current when items are added (before login),
     // so setCurrentRow(0) is a no-op here and would NOT re-fire onSidebarChanged —
@@ -2170,6 +2297,70 @@ void MainWindow::download(const QString &id) {
     });
 }
 
+// Save the current / a chosen track for OFFLINE playback (premium-only). Unlike
+// download() (which exports a file to the shared folder), this stores the track
+// in the engine's offline cache. Runs on a worker like every blocking DZ* call;
+// on success the returned {"key"} id (plus the requested id, belt-and-braces)
+// joins m_offlineIds so the "downloaded" indicator lights up everywhere.
+void MainWindow::downloadForOffline(const Track &t) {
+    if (!m_loggedIn || t.id.isEmpty())
+        return;
+    if (!m_premium) { // belt-and-braces: the menu entries are disabled on Free plans
+        statusBar()->showMessage(tr("Downloads require a paid Deezer plan"), 4000);
+        return;
+    }
+    if (m_offlineIds.contains(t.id)) {
+        statusBar()->showMessage(tr("Already available offline"), 3000);
+        return;
+    }
+    statusBar()->showMessage(tr("Saving for offline…"));
+    const QByteArray idb = t.id.toUtf8();
+    const QString origId = t.id;
+    QtConcurrent::run([this, idb, origId] {
+        // takeJson frees the malloc'd result. The fetch + decrypt + store runs
+        // entirely engine-side.
+        const QByteArray status = takeJson(DZDownloadForOffline(cstr(idb)));
+        const QJsonObject o = QJsonDocument::fromJson(status).object();
+        const QString key = o.value("key").toString();
+        const QString err = o.value("error").toString();
+        QMetaObject::invokeMethod(this, [this, key, err, origId] {
+            if (err.isEmpty()) {
+                if (!key.isEmpty())
+                    m_offlineIds.insert(key);
+                m_offlineIds.insert(origId);
+                refreshOfflineIndicators();
+                statusBar()->showMessage(tr("Available offline"), 5000);
+            } else {
+                statusBar()->showMessage(tr("Offline download failed"), 5000);
+                QMessageBox::warning(this, tr("Download for offline"), err);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+// Repaint the "downloaded" markers after m_offlineIds changes: the now-playing
+// badge, the title cells of every populated track table (in place — no art
+// refetch) and the Up-Next panel.
+void MainWindow::refreshOfflineIndicators() {
+    if (m_offlineBadge)
+        m_offlineBadge->setVisible(m_hasCurrent && !m_currentIsEpisode &&
+                                   m_offlineIds.contains(m_current.id));
+    auto repaint = [this](QTableWidget *tbl, const QVector<Track> &vec) {
+        if (!tbl)
+            return;
+        const int n = qMin(tbl->rowCount(), int(vec.size()));
+        for (int i = 0; i < n; ++i)
+            if (auto *it = tbl->item(i, 0))
+                it->setText(displayTitle(vec.at(i)));
+    };
+    repaint(m_trackTable,       m_tableTracks);
+    repaint(m_searchTrackTable, m_searchTracks);
+    repaint(m_artistTopTable,   m_artistTopTracks);
+    repaint(m_chartsTrackTable, m_chartsTracks);
+    repaint(m_historyTable,     m_historyTracks);
+    refreshQueuePanel();
+}
+
 // Save a whole album / playlist to disk (premium-only). Like the single-track
 // download, the entire batch — fetch, Blowfish decrypt and file writes — runs
 // in the engine, so it goes on a worker and reports the summary back on the GUI
@@ -2457,15 +2648,28 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                 QAction *showLy = menu.addAction(tr("Show Lyrics"));
                 QAction *radio  = menu.addAction(tr("Start radio"));
                 menu.addSeparator();
+                // Up-Next queue actions (mirror the engine queue too).
+                QAction *playNext = menu.addAction(tr("Play next"));
+                QAction *addQueue = menu.addAction(tr("Add to queue"));
+                menu.addSeparator();
                 QAction *like  = menu.addAction(tr("Add to Liked Songs"));
                 QAction *addPl = menu.addAction(tr("Add to Playlist…"));
                 menu.addSeparator();
-                // Downloads are premium-only: show the entry always so it's
-                // discoverable, but grey it out with a hint on Free plans.
+                // Downloads are premium-only: show the entries always so they're
+                // discoverable, but grey them out with a hint on Free plans.
                 QAction *dl = menu.addAction(tr("Download"));
+                QAction *dlOffline = menu.addAction(tr("Download for offline"));
+                if (m_offlineIds.contains(t.id)) {
+                    dlOffline->setEnabled(false);
+                    dlOffline->setText(tr("Available offline"));
+                }
                 if (!m_premium) {
                     dl->setEnabled(false);
                     dl->setToolTip(tr("Requires a paid Deezer plan"));
+                    if (dlOffline->isEnabled()) {
+                        dlOffline->setEnabled(false);
+                        dlOffline->setToolTip(tr("Requires a paid Deezer plan"));
+                    }
                     menu.setToolTipsVisible(true);
                 }
                 QAction *removePl = nullptr;
@@ -2478,12 +2682,18 @@ void MainWindow::installTrackMenu(QTableWidget *table, QVector<Track> *src) {
                     openLyricsFor(t.id, t.name + QStringLiteral("   ·   ") + t.artistLine);
                 else if (chosen == radio)
                     startTrackRadio(t.id);
+                else if (chosen == playNext)
+                    queueInsertNext(t);
+                else if (chosen == addQueue)
+                    queueAppend(t);
                 else if (chosen == like)
                     likeTrack(t.id, true);
                 else if (chosen == addPl)
                     addTrackToPlaylist(t);
                 else if (chosen == dl)
                     download(t.id);
+                else if (chosen == dlOffline)
+                    downloadForOffline(t);
                 else if (removePl && chosen == removePl)
                     removeFromCurrentPlaylist(t, row);
             });
@@ -3277,12 +3487,21 @@ void MainWindow::renderArtist(const QByteArray &json, int gen) {
 
 // ---- track table fill + async art ----------------------------------------
 
+// Row title as shown everywhere: the explicit "E" badge, plus a leading "saved
+// offline" glyph (⤓) when the track is available offline.
+QString MainWindow::displayTitle(const Track &t) const {
+    QString s = badgedTitle(t);
+    if (m_offlineIds.contains(t.id))
+        s = QString::fromUtf8("\xE2\xA4\x93 ") + s; // ⤓ U+2913 downwards-to-bar
+    return s;
+}
+
 void MainWindow::fillTrackTable(QTableWidget *table, const QVector<Track> &tracks, int gen) {
     table->clearContents();
     table->setRowCount(tracks.size());
     for (int i = 0; i < tracks.size(); ++i) {
         const Track &t = tracks[i];
-        auto *title = new QTableWidgetItem(badgedTitle(t));
+        auto *title = new QTableWidgetItem(displayTitle(t));
         title->setIcon(placeholderIcon());
         table->setItem(i, 0, title);
         table->setItem(i, 1, new QTableWidgetItem(t.artistLine));
@@ -3336,24 +3555,8 @@ void MainWindow::fetchImage(const QString &url, int gen, std::function<void(cons
 // artworkUrl,explicit}); js is a named local so it outlives the copying call.
 void MainWindow::syncQueueToEngine() {
     QJsonArray arr;
-    for (const Track &t : m_queue) {
-        QJsonObject o;
-        o["id"]         = t.id;
-        o["name"]       = t.name;
-        o["durationMs"] = static_cast<double>(t.durationMs);
-        o["artistLine"] = t.artistLine;
-        o["artistId"]   = t.artistId;
-        o["albumName"]  = t.albumName;
-        o["artworkUrl"] = t.artworkUrl;
-        o["explicit"]   = t.isExplicit;
-        if (!t.artistId.isEmpty() || !t.artistLine.isEmpty()) {
-            QJsonObject a;
-            a["id"]   = t.artistId;
-            a["name"] = t.artistLine;
-            o["artists"] = QJsonArray{a};
-        }
-        arr.push_back(o);
-    }
+    for (const Track &t : m_queue)
+        arr.push_back(trackToJsonObj(t));
     const QByteArray js = QJsonDocument(arr).toJson(QJsonDocument::Compact);
     DZQueueSet(cstr(js));
     DZQueueSetIndex(m_queueIndex);
@@ -3363,6 +3566,275 @@ void MainWindow::syncQueueToEngine() {
 // repeat-one), without re-sending the queue contents.
 void MainWindow::syncQueueIndex() {
     DZQueueSetIndex(m_queueIndex);
+}
+
+// ---- Up-Next queue editor (right dock) ------------------------------------
+
+// Build the "Up Next" dock: the queue list (double-click to jump, context menu
+// for play/move/remove/offline) plus a header Clear and footer move/remove
+// buttons acting on the selected row. Added to the right dock area; visible by
+// default (toggle via the transport button, the View menu or the title-bar X).
+void MainWindow::buildQueueDock() {
+    m_queueDock = new QDockWidget(tr("Up Next"), this);
+    m_queueDock->setObjectName(QStringLiteral("queueDock")); // for saveState()
+    m_queueDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+    auto *panel = new QWidget;
+    auto *v = new QVBoxLayout(panel);
+    v->setContentsMargins(8, 8, 8, 8);
+    v->setSpacing(6);
+
+    auto *head = new QHBoxLayout;
+    auto *title = new QLabel(tr("Up Next"));
+    QFont tf = title->font();
+    tf.setBold(true);
+    title->setFont(tf);
+    head->addWidget(title);
+    head->addStretch(1);
+    auto *clearBtn = new QToolButton;
+    clearBtn->setText(tr("Clear"));
+    clearBtn->setAutoRaise(true);
+    clearBtn->setToolTip(tr("Clear the upcoming tracks"));
+    connect(clearBtn, &QToolButton::clicked, this, &MainWindow::queueClear);
+    head->addWidget(clearBtn);
+    v->addLayout(head);
+
+    m_queueList = new QListWidget;
+    m_queueList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_queueList->setWordWrap(false);
+    // Double-click (or Enter) a row to jump straight to it.
+    connect(m_queueList, &QListWidget::itemActivated, this, [this](QListWidgetItem *it) {
+        queueJumpTo(it->data(Qt::UserRole).toInt());
+    });
+    connect(m_queueList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *it) {
+        queueJumpTo(it->data(Qt::UserRole).toInt());
+    });
+    // Row context menu.
+    m_queueList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_queueList, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &pos) {
+                QListWidgetItem *it = m_queueList->itemAt(pos);
+                if (!it)
+                    return;
+                const int r = it->data(Qt::UserRole).toInt();
+                if (r < 0 || r >= m_queue.size())
+                    return;
+                const Track t = m_queue[r];
+                QMenu menu(this);
+                QAction *play = menu.addAction(tr("Play now"));
+                QAction *up   = menu.addAction(tr("Move up"));
+                QAction *down = menu.addAction(tr("Move down"));
+                up->setEnabled(r > 0);
+                down->setEnabled(r < m_queue.size() - 1);
+                QAction *rem  = menu.addAction(tr("Remove from queue"));
+                rem->setEnabled(r != m_queueIndex); // never yank the playing track
+                menu.addSeparator();
+                QAction *off = menu.addAction(tr("Download for offline"));
+                if (m_offlineIds.contains(t.id)) {
+                    off->setEnabled(false);
+                    off->setText(tr("Available offline"));
+                } else if (!m_premium) {
+                    off->setEnabled(false);
+                    off->setToolTip(tr("Requires a paid Deezer plan"));
+                    menu.setToolTipsVisible(true);
+                }
+                QAction *chosen = menu.exec(m_queueList->viewport()->mapToGlobal(pos));
+                if (chosen == play)       queueJumpTo(r);
+                else if (chosen == up)    queueMove(r, r - 1);
+                else if (chosen == down)  queueMove(r, r + 1);
+                else if (chosen == rem)   queueRemoveAt(r);
+                else if (chosen == off)   downloadForOffline(t);
+            });
+    v->addWidget(m_queueList, 1);
+
+    auto *foot = new QHBoxLayout;
+    auto *upBtn   = new QToolButton;
+    upBtn->setText(QString::fromUtf8("\xE2\x96\xB2")); // ▲
+    upBtn->setToolTip(tr("Move up"));
+    auto *downBtn = new QToolButton;
+    downBtn->setText(QString::fromUtf8("\xE2\x96\xBC")); // ▼
+    downBtn->setToolTip(tr("Move down"));
+    auto *remBtn  = new QToolButton;
+    remBtn->setText(QString::fromUtf8("\xE2\x9C\x95")); // ✕
+    remBtn->setToolTip(tr("Remove from queue"));
+    for (QToolButton *b : {upBtn, downBtn, remBtn})
+        b->setAutoRaise(true);
+    connect(upBtn, &QToolButton::clicked, this, [this] {
+        const int r = m_queueList->currentRow();
+        if (r > 0)
+            queueMove(r, r - 1);
+    });
+    connect(downBtn, &QToolButton::clicked, this, [this] {
+        const int r = m_queueList->currentRow();
+        if (r >= 0 && r < m_queue.size() - 1)
+            queueMove(r, r + 1);
+    });
+    connect(remBtn, &QToolButton::clicked, this, [this] {
+        const int r = m_queueList->currentRow();
+        if (r >= 0 && r != m_queueIndex)
+            queueRemoveAt(r);
+    });
+    foot->addWidget(upBtn);
+    foot->addWidget(downBtn);
+    foot->addWidget(remBtn);
+    foot->addStretch(1);
+    v->addLayout(foot);
+
+    m_queueDock->setWidget(panel);
+    addDockWidget(Qt::RightDockWidgetArea, m_queueDock);
+    resizeDocks({m_queueDock}, {280}, Qt::Horizontal);
+    m_queueDock->hide(); // revealed after login (finishLogin) — see the toggle
+    refreshQueuePanel(); // empty-state placeholder
+}
+
+// Render the Up-Next list. The engine queue (DZQueueJSON) is the display source
+// once logged in — it mirrors m_queue, which the GUI keeps in lock-step — with
+// m_queue as the authority/fallback (a transient size mismatch means the mirror
+// is mid-update, so trust the GUI model). Row data() carries the index used by
+// jump/move/remove; the playing row is bold + accent.
+void MainWindow::refreshQueuePanel() {
+    if (!m_queueList)
+        return;
+    QVector<Track> rows = m_queue;
+    if (m_loggedIn) {
+        const QVector<Track> eng = parseQueue(takeJson(DZQueueJSON()));
+        if (eng.size() == m_queue.size())
+            rows = eng; // engine truth == GUI model
+    }
+    int cur = m_loggedIn ? DZQueueIndex() : m_queueIndex;
+    if (cur < 0 || cur >= rows.size())
+        cur = m_queueIndex;
+
+    QSignalBlocker block(m_queueList);
+    m_queueList->clear();
+    if (rows.isEmpty()) {
+        auto *empty = new QListWidgetItem(tr("Queue is empty"));
+        empty->setFlags(Qt::NoItemFlags);
+        m_queueList->addItem(empty);
+        return;
+    }
+    for (int i = 0; i < rows.size(); ++i) {
+        const Track &t = rows[i];
+        QString label = displayTitle(t);
+        if (!t.artistLine.isEmpty())
+            label += QStringLiteral("  ·  ") + t.artistLine;
+        auto *it = new QListWidgetItem(label);
+        it->setData(Qt::UserRole, i);
+        it->setToolTip(label);
+        if (i == cur) {
+            QFont f = it->font();
+            f.setBold(true);
+            it->setFont(f);
+            it->setForeground(QBrush(QColor(kAccent)));
+        }
+        m_queueList->addItem(it);
+    }
+    if (cur >= 0 && cur < m_queueList->count())
+        m_queueList->scrollToItem(m_queueList->item(cur));
+}
+
+// Point the cursor (GUI + engine) at wherever the actually-playing track sits
+// after a queue edit, so a reorder/removal can never desync playback from the
+// visible queue. Explicitly writing DZQueueSetIndex is safe regardless of any
+// cursor auto-adjust the granular engine op may have applied.
+void MainWindow::realignQueueCursor() {
+    if (m_hasCurrent) {
+        for (int i = 0; i < m_queue.size(); ++i)
+            if (m_queue[i].id == m_current.id) {
+                m_queueIndex = i;
+                break;
+            }
+    }
+    if (m_queueIndex >= m_queue.size())
+        m_queueIndex = m_queue.size() - 1;
+    if (m_loggedIn)
+        DZQueueSetIndex(m_queueIndex);
+}
+
+// Double-click / "Play now": start the chosen queue row. playCurrent() re-aligns
+// the cursor and refreshes the panel.
+void MainWindow::queueJumpTo(int row) {
+    if (row < 0 || row >= m_queue.size())
+        return;
+    m_queueIndex = row;
+    playCurrent();
+}
+
+// Remove a queued track (never the one playing). DZQueueRemove(i) removes the
+// same index in the engine mirror; the cursor is then re-anchored to the current
+// track's new row.
+void MainWindow::queueRemoveAt(int row) {
+    if (row < 0 || row >= m_queue.size() || row == m_queueIndex)
+        return;
+    DZQueueRemove(row);
+    m_queue.removeAt(row);
+    realignQueueCursor();
+    refreshQueuePanel();
+    if (m_queueList)
+        m_queueList->setCurrentRow(qBound(0, row, m_queueList->count() - 1));
+    statusBar()->showMessage(tr("Removed from queue"), 2000);
+}
+
+// Reorder: DZQueueMove(from,to) mirrors QList::move(from,to) on the engine side.
+void MainWindow::queueMove(int from, int to) {
+    if (from < 0 || from >= m_queue.size() || to < 0 || to >= m_queue.size() ||
+        from == to)
+        return;
+    DZQueueMove(from, to);
+    m_queue.move(from, to);
+    realignQueueCursor();
+    refreshQueuePanel();
+    if (m_queueList)
+        m_queueList->setCurrentRow(to);
+}
+
+// "Play next": insert immediately after the current track. DZQueueInsertNext
+// inserts one track JSON after the engine cursor; m_queue mirrors it at
+// m_queueIndex+1. With nothing playing yet, fall back to building a one-track
+// queue via the whole-queue push.
+void MainWindow::queueInsertNext(const Track &t) {
+    if (t.id.isEmpty())
+        return;
+    if (m_queue.isEmpty() || m_queueIndex < 0) {
+        m_queue.append(t);
+        syncQueueToEngine();
+        refreshQueuePanel();
+        statusBar()->showMessage(tr("Added to queue"), 2000);
+        return;
+    }
+    const QByteArray js = QJsonDocument(trackToJsonObj(t)).toJson(QJsonDocument::Compact);
+    DZQueueInsertNext(cstr(js));
+    m_queue.insert(m_queueIndex + 1, t);
+    realignQueueCursor();
+    refreshQueuePanel();
+    statusBar()->showMessage(tr("Playing next"), 2000);
+}
+
+// "Add to queue": append to the end. No dedicated engine export — push the whole
+// queue (DZQueueSet + DZQueueSetIndex via syncQueueToEngine), which byte-matches
+// the mirror to m_queue.
+void MainWindow::queueAppend(const Track &t) {
+    if (t.id.isEmpty())
+        return;
+    m_queue.append(t);
+    syncQueueToEngine();
+    refreshQueuePanel();
+    statusBar()->showMessage(tr("Added to queue"), 2000);
+}
+
+// Clear the upcoming tracks. Keep whatever is playing as the sole remaining row
+// (cursor 0) so playback stays coherent; empty the queue outright when idle.
+void MainWindow::queueClear() {
+    if (m_hasCurrent && !m_currentIsEpisode) {
+        m_queue = {m_current};
+        m_queueIndex = 0;
+    } else {
+        m_queue.clear();
+        m_queueIndex = -1;
+    }
+    syncQueueToEngine();
+    refreshQueuePanel();
+    statusBar()->showMessage(tr("Queue cleared"), 2000);
 }
 
 // ---- playback -------------------------------------------------------------
@@ -3395,11 +3867,14 @@ void MainWindow::playCurrent() {
     QtConcurrent::run([id, dur] { DZPlay(cstr(id), dur); });
     // Gapless/crossfade: prime the engine with the deterministic next track.
     preloadNext();
+    refreshQueuePanel(); // move the "now playing" highlight to this row
 }
 
 void MainWindow::setNowPlaying(const Track &t) {
     if (m_explicitBadge)
         m_explicitBadge->setVisible(t.isExplicit);
+    if (m_offlineBadge)
+        m_offlineBadge->setVisible(m_offlineIds.contains(t.id));
     m_nowPlaying->setText(t.name + "\n" + t.artistLine);
     m_cover->setPixmap(placeholderPix(56));
     refreshLikeButton(); // reflect liked state for the new track
@@ -3815,6 +4290,7 @@ void MainWindow::tick() {
     if (qi >= 0 && qi < m_queue.size() && qi != m_queueIndex) {
         m_queueIndex = qi;
         preloadNext();
+        refreshQueuePanel(); // follow the engine-driven advance in the Up-Next panel
     }
 
     // Show the actual output format next to the now-playing title.
@@ -3834,6 +4310,12 @@ void MainWindow::tick() {
     // not fully available on the current plan / region). Hidden when idle.
     if (m_previewBadge)
         m_previewBadge->setVisible(m_hasCurrent && DZIsPreview() == 1);
+
+    // Reconcile the "offline" badge with the current track (covers a track that
+    // was saved for offline while it kept playing).
+    if (m_offlineBadge)
+        m_offlineBadge->setVisible(m_hasCurrent && !m_currentIsEpisode &&
+                                   m_offlineIds.contains(m_current.id));
 
     // Lyrics page: follow the playing track and keep the synced line highlighted.
     if (m_stack->currentIndex() == 4) {
@@ -3863,6 +4345,7 @@ void MainWindow::tick() {
             m_seek->setRange(0, static_cast<int>(qMax<qint64>(1, m_current.durationMs)));
             m_durLabel->setText(timeText(m_current.durationMs));
             preloadNext();
+            refreshQueuePanel(); // advance the Up-Next highlight
         } else {
             next(); // no preload (or engine stopped) — start the next normally
         }

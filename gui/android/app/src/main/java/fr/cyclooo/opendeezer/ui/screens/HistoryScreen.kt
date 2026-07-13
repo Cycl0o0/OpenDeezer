@@ -102,6 +102,7 @@ private fun HistoryContent(data: HistoryLoad, player: PlayerController) {
                 val track = t.asTrack()
                 TrackRow(
                     track = track,
+                    player = player,
                     onClick = { player.playSingle(track) },
                     onStartRadio = { player.startTrackRadio(track) },
                     trailing = {
@@ -128,6 +129,7 @@ private fun HistoryContent(data: HistoryLoad, player: PlayerController) {
                 val track = e.asTrack()
                 TrackRow(
                     track = track,
+                    player = player,
                     onClick = { player.playSingle(track) },
                     onStartRadio = { player.startTrackRadio(track) },
                 )

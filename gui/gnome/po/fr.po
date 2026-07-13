@@ -1075,3 +1075,73 @@ msgid_plural "%lld plays"
 msgstr[0] "%lld écoute"
 msgstr[1] "%lld écoutes"
 
+
+#: src/main.c
+msgid "Up Next"
+msgstr "À suivre"
+
+#: src/main.c
+msgid "Play next"
+msgstr "Lire ensuite"
+
+#: src/main.c
+msgid "Playing next"
+msgstr "Sera lu ensuite"
+
+#: src/main.c
+msgid "Add to queue"
+msgstr "Ajouter à la file"
+
+#: src/main.c
+msgid "Added to queue"
+msgstr "Ajouté à la file"
+
+#: src/main.c
+msgid "Clear"
+msgstr "Vider"
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr "La file est vide"
+
+#: src/main.c
+msgid "Move up"
+msgstr "Monter"
+
+#: src/main.c
+msgid "Move down"
+msgstr "Descendre"
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr "Retirer de la file"
+
+#: src/main.c
+msgid "Download for offline"
+msgstr "Télécharger hors connexion"
+
+#: src/main.c
+msgid "Available offline"
+msgstr "Disponible hors connexion"
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr "Enregistrement hors connexion…"
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr "Enregistré hors connexion"
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr "« %s » est disponible hors connexion"
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr "Échec du téléchargement hors connexion : %s"
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr "Impossible d'enregistrer ce titre hors connexion"

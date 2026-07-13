@@ -305,6 +305,23 @@ enum Engine {
     /// Aligns the engine queue's cursor to `i` (clamped; no-op when empty).
     static func setQueueIndex(_ i: Int) async { await run { OdmobileSetQueueIndex(i) } }
 
+    // MARK: - Engine queue edits (Up-Next screen)
+
+    /// Removes the engine-queue row at `index` (the engine ignores the currently
+    /// playing row and out-of-range indices, and bumps the queue version so
+    /// remotes see the edit). Runs on the IO queue.
+    static func queueRemove(_ index: Int) async { await run { OdmobileQueueRemove(index) } }
+    /// Reorders the engine queue (`from` -> final index `to`); the cursor follows
+    /// the tracks it referenced. Out-of-range / `from == to` are engine no-ops.
+    static func queueMove(from: Int, to: Int) async { await run { OdmobileQueueMove(from, to) } }
+    /// Inserts `track` immediately after the engine queue's current row
+    /// ("Play Next"). The wire JSON is the same shape `setQueueJSON` accepts; the
+    /// engine takes the first element of the 1-item array.
+    static func queueInsertNext(_ track: Track) async {
+        let json = queueJSON([track])
+        await run { OdmobileQueueInsertNext(json) }
+    }
+
     /// Serializes tracks into the wire shape `setQueueJSON` expects
     /// (`[{id,name,durationMs,artistLine,artistId,artists:[{id,name}],albumName,
     /// artworkUrl,explicit}]`). "[]" for an empty queue.
@@ -361,6 +378,36 @@ enum Engine {
         let json = await run { OdmobileDownloadTrack(id, destDir) }
         return (try? decoder.decode(DownloadResult.self, from: Data(json.utf8)))
             ?? DownloadResult(path: nil, error: nil)
+    }
+
+    /// `OdmobileDownloadForOffline` result: `{"status":"…","key":"…","trackID":"…"}`
+    /// on success (status is "cached"/"already_cached"/"cache_only") or
+    /// `{"error":"…"}` on failure. `key` is `<trackID>.<format>`. All optional so
+    /// a partial/malformed reply still decodes.
+    struct OfflineResult: Decodable {
+        let status: String?
+        let key: String?
+        let trackID: String?
+        let error: String?
+        /// The track id that was cached, derived from `trackID` (preferred) or the
+        /// `<id>.<fmt>` prefix of `key`.
+        var cachedTrackID: String? {
+            if let t = trackID, !t.isEmpty { return t }
+            guard let key, !key.isEmpty else { return nil }
+            let head = key.split(separator: ".", maxSplits: 1).first.map(String.init)
+            return (head?.isEmpty == false) ? head : nil
+        }
+    }
+
+    /// Caches `id`'s raw stream into the on-disk media cache so later plays are
+    /// network-free. Blocking engine-side (network fetch + cache write), so it
+    /// runs on the IO queue. Premium-only, and requires the stream cache to be
+    /// enabled (Settings › Stream cache > 0) — a Free account or a disabled cache
+    /// comes back with the reason in `error`.
+    static func downloadForOffline(id: String) async -> OfflineResult {
+        let json = await run { OdmobileDownloadForOffline(id) }
+        return (try? decoder.decode(OfflineResult.self, from: Data(json.utf8)))
+            ?? OfflineResult(status: nil, key: nil, trackID: nil, error: nil)
     }
     /// Batch-download result for `downloadAlbum`/`downloadPlaylist`:
     /// `{"saved":N,"failed":N,"dir":"…","error":"…"}`. On a Free account it comes

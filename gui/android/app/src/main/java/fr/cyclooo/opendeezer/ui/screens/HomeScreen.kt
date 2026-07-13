@@ -239,9 +239,8 @@ fun HomeScreen(
                                 Box(Modifier.width(280.dp)) {
                                     TrackRow(
                                         track = track,
+                                        player = player,
                                         onClick = { player.playQueue(data.topTracks, index) },
-                                        onDownload = { player.download(track) },
-                                        downloadEnabled = player.premium,
                                     )
                                 }
                             }

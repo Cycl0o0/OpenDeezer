@@ -5,10 +5,13 @@ import SwiftUI
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerController
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var showLyrics = false
     @State private var showDevices = false
+    @State private var showQueue = false
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
 
@@ -69,6 +72,9 @@ struct NowPlayingView: View {
                             .foregroundStyle(Palette.accent)
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    trackMenu
+                }
             }
         }
         .sheet(isPresented: $showLyrics) {
@@ -78,6 +84,9 @@ struct NowPlayingView: View {
         }
         .sheet(isPresented: $showDevices) {
             DevicePickerView()
+        }
+        .sheet(isPresented: $showQueue) {
+            UpNextView()
         }
         .onChange(of: player.hasNowPlaying) { _, hasNowPlaying in
             if !hasNowPlaying { dismiss() }
@@ -279,6 +288,13 @@ struct NowPlayingView: View {
             }
             .accessibilityLabel("Lyrics")
             Spacer()
+            Button { showQueue = true } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 18))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Up Next")
+            Spacer()
             Button { showDevices = true } label: {
                 Image(systemName: player.connectedDeviceAddr.isEmpty ? "hifispeaker" : "hifispeaker.fill")
                     .font(.system(size: 18))
@@ -289,6 +305,33 @@ struct NowPlayingView: View {
         }
         .glassCard(cornerRadius: 22)
         .padding(.horizontal, 4)
+    }
+
+    /// Overflow menu for the current track: offline caching + full download,
+    /// premium-gated like the list rows (Free streams but can't download).
+    @ViewBuilder private var trackMenu: some View {
+        Menu {
+            if session.account?.premium == true, let track = player.current {
+                if downloads.isOffline(track.id) {
+                    Label("Available Offline", systemImage: "checkmark.circle.fill")
+                } else {
+                    Button {
+                        downloads.downloadForOffline(track, isPremium: true)
+                    } label: {
+                        Label("Download for Offline", systemImage: "arrow.down.circle")
+                    }
+                }
+                Button {
+                    downloads.download(track, isPremium: true)
+                } label: {
+                    Label("Download", systemImage: "square.and.arrow.down")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.headline)
+        }
+        .accessibilityLabel("More")
+        .disabled(player.current == nil || session.account?.premium != true)
     }
 
     @ViewBuilder private var nowPlayingBackground: some View {

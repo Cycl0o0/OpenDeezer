@@ -43,6 +43,13 @@ struct OpenDeezerApp: App {
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(!app.loggedIn)
             }
+            // Open the Up-Next editor (the play-queue sheet). Also reachable from
+            // the player bar's queue button.
+            CommandGroup(after: .toolbar) {
+                Button(L("Up Next")) { app.showQueue = true }
+                    .keyboardShortcut("u", modifiers: [.command, .option])
+                    .disabled(!app.loggedIn)
+            }
         }
     }
 }
@@ -93,6 +100,7 @@ struct RootView: View {
         .sheet(isPresented: $app.showArtist) { ArtistView() }
         .sheet(isPresented: $app.showAddToPlaylist) { AddToPlaylistSheet() }
         .sheet(isPresented: $app.showDevicePicker) { DevicePickerView() }
+        .sheet(isPresented: $app.showQueue) { UpNextView() }
     }
 }
 
@@ -640,6 +648,7 @@ struct TrackRowView: View {
                     Text(track.name).lineLimit(1)
                         .foregroundStyle(isCurrent ? DZ.accent : DZ.textPri)
                         .fontWeight(isCurrent ? .semibold : .regular)
+                    if app.isOffline(track) { OfflineBadge() }
                 }
                 Text(track.artistLine).font(.caption).foregroundStyle(DZ.textSec).lineLimit(1)
             }
@@ -658,11 +667,19 @@ struct TrackRowView: View {
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .contextMenu {
             Button { onPlay() } label: { Label(L("Play"), systemImage: "play.fill") }
+            // Up-Next edits: splice after the playing row, or append to the end.
+            Button { app.playNext(track) } label: {
+                Label(L("Play next"), systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            Button { app.addToQueue(track) } label: {
+                Label(L("Add to queue"), systemImage: "text.append")
+            }
             // Start a "song radio" mix seeded from this track (loads + plays it
             // through the same code path Flow uses).
             Button { app.startTrackRadio(track) } label: {
                 Label(L("Start radio"), systemImage: "dot.radiowaves.left.and.right")
             }
+            Divider()
             Button { app.toggleLike(track) } label: {
                 Label(app.isLiked(track) ? L("Unlike") : L("Like"),
                       systemImage: app.isLiked(track) ? "heart.fill" : "heart")
@@ -677,6 +694,12 @@ struct TrackRowView: View {
             }
             .disabled(!app.isPremium)
             .help(app.isPremium ? L("Download") : L("Requires a paid Deezer plan"))
+            // Cache the track for zero-network playback (premium-only, same gate).
+            Button { app.downloadForOffline(track) } label: {
+                Label(L("Download for offline"), systemImage: "arrow.down.circle.dotted")
+            }
+            .disabled(!app.isPremium)
+            .help(app.isPremium ? L("Download for offline") : L("Requires a paid Deezer plan"))
             if let aid = track.artists.first?.id {
                 Button { app.openArtist(aid) } label: {
                     Label(L("Go to Artist"), systemImage: "music.mic")

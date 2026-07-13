@@ -670,4 +670,52 @@
   <data name="Settings_StreamCacheDesc" xml:space="preserve">
     <value>On-disk cache for streamed audio (MB, 0 = off). Applies next launch.</value>
   </data>
+  <data name="Tooltip_Queue" xml:space="preserve">
+    <value>Up next</value>
+  </data>
+  <data name="Queue_Title" xml:space="preserve">
+    <value>Up next</value>
+  </data>
+  <data name="Queue_Empty" xml:space="preserve">
+    <value>The queue is empty.</value>
+  </data>
+  <data name="Queue_Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Queue_MoveUp" xml:space="preserve">
+    <value>Move up</value>
+  </data>
+  <data name="Queue_MoveDown" xml:space="preserve">
+    <value>Move down</value>
+  </data>
+  <data name="Queue_Remove" xml:space="preserve">
+    <value>Remove from queue</value>
+  </data>
+  <data name="Menu_PlayNext" xml:space="preserve">
+    <value>Play next</value>
+  </data>
+  <data name="Menu_AddToQueue" xml:space="preserve">
+    <value>Add to queue</value>
+  </data>
+  <data name="Menu_DownloadOffline" xml:space="preserve">
+    <value>Download for offline</value>
+  </data>
+  <data name="Tooltip_DownloadOffline" xml:space="preserve">
+    <value>Download for offline</value>
+  </data>
+  <data name="Tooltip_Downloaded" xml:space="preserve">
+    <value>Available offline</value>
+  </data>
+  <data name="Offline_DoneTitle" xml:space="preserve">
+    <value>Downloaded for offline</value>
+  </data>
+  <data name="Offline_DoneBody" xml:space="preserve">
+    <value>This track is now available offline.</value>
+  </data>
+  <data name="Offline_FailTitle" xml:space="preserve">
+    <value>Download failed</value>
+  </data>
+  <data name="Offline_FailBody" xml:space="preserve">
+    <value>This track couldn't be downloaded for offline.</value>
+  </data>
 </root>

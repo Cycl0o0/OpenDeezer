@@ -162,8 +162,21 @@ final class AppState: ObservableObject {
 
     // Play queue — playback advances through this, independent of `tracks`
     // (the browsed list), so navigating the library never stops the music.
-    private var queue: [Track] = []
-    private var queueIndex = 0
+    // @Published so the Up-Next editor (UpNextView) re-renders on every queue
+    // edit / advance; still private — the editor reads it through the accessors
+    // below and mutates it only via the queue-edit methods (which keep queueIndex
+    // + current correct and re-mirror into the engine).
+    @Published private var queue: [Track] = []
+    @Published private var queueIndex = 0
+
+    // Up-Next editor sheet + read-only views of the play queue for it.
+    @Published var showQueue = false
+    var queueTracks: [Track] { queue }
+    var currentQueueIndex: Int { queueIndex }
+
+    // Track ids cached for zero-network playback (DZDownloadForOffline). Populated
+    // from a successful offline download; drives the "available offline" badge.
+    @Published var offlineIDs: Set<String> = []
     // True once the queue has been mirrored into the engine (DZQueueSet). While
     // set, the engine owns auto-advance for natural finishes (DZFinishedCount
     // stops bumping for those) and tick() follows the engine's now-playing track
@@ -801,6 +814,49 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: offline download (cache-for-offline)
+
+    // Result of DZDownloadForOffline — {"status":...,"key":...} or {"error":...}.
+    private struct OfflineResult: Decodable {
+        let status: String?
+        let key: String?
+        let error: String?
+    }
+
+    // True when `track` is cached for zero-network playback.
+    func isOffline(_ track: Track) -> Bool { offlineIDs.contains(track.id) }
+
+    // Cache a track's ciphertext for offline (zero-network) playback via
+    // DZDownloadForOffline, off the main thread, with a status toast. Premium-only
+    // + gated exactly like download(_:). On success (freshly "downloaded" or
+    // already "cached") the id joins offlineIDs, lighting the "available offline"
+    // badge on its rows.
+    func downloadForOffline(_ track: Track) {
+        guard isPremium else {
+            setDownloadStatus(L("Requires a paid Deezer plan"))
+            return
+        }
+        let name = track.name
+        if offlineIDs.contains(track.id) {
+            setDownloadStatus(Lf("“%@” is available offline", name))
+            return
+        }
+        let id = track.id
+        setDownloadStatus(Lf("Saving “%@” for offline…", name), autoDismiss: false)
+        Task.detached {
+            let js = Core.downloadForOffline(id)
+            let res = try? JSONDecoder().decode(OfflineResult.self, from: Data(js.utf8))
+            await MainActor.run {
+                if let status = res?.status, status == "downloaded" || status == "cached" {
+                    self.offlineIDs.insert(id)
+                    self.setDownloadStatus(Lf("“%@” available offline", name))
+                } else {
+                    self.setDownloadStatus(res?.error ?? L("Offline download failed."))
+                }
+            }
+        }
+    }
+
     // Guards against a stale auto-dismiss clearing a newer message.
     private var downloadStatusToken = 0
 
@@ -1146,6 +1202,75 @@ final class AppState: ObservableObject {
         if queueIndex > 0 { queueIndex -= 1 }
         syncQueueIndexToEngine()
         playCurrent()
+    }
+
+    // MARK: queue editing (Up-Next editor)
+
+    // Every edit mutates the app-owned play queue (the list playback actually
+    // walks) and re-mirrors it into the engine via syncQueueToEngine — matching
+    // how AppState already manages the queue (DZQueueSet + DZQueueSetIndex). One
+    // source of truth, so what's audible and what the editor shows never diverge.
+
+    // Tap-to-jump: start the queue row at `i`.
+    func jumpToQueueIndex(_ i: Int) {
+        guard i >= 0, i < queue.count else { return }
+        queueIndex = i
+        syncQueueIndexToEngine()
+        playCurrent()
+    }
+
+    // Remove the queue row at `i`. The currently-playing row is never removed (the
+    // audio would outlive the queue) — the editor hides remove on it, and this
+    // guards it too.
+    func removeFromQueue(at i: Int) {
+        guard i >= 0, i < queue.count, i != queueIndex else { return }
+        queue.remove(at: i)
+        if i < queueIndex { queueIndex -= 1 }
+        syncQueueToEngine()
+        reconcilePreload()
+    }
+
+    // Drag-to-reorder. Keep the cursor on the same audible track by following its
+    // id across the move, so playback and Next/Prev stay correct.
+    func moveQueue(from source: IndexSet, to destination: Int) {
+        let curID = (queueIndex >= 0 && queueIndex < queue.count) ? queue[queueIndex].id : nil
+        queue.move(fromOffsets: source, toOffset: destination)
+        if let curID, let idx = queue.firstIndex(where: { $0.id == curID }) {
+            queueIndex = idx
+        }
+        syncQueueToEngine()
+        reconcilePreload()
+    }
+
+    // "Play next": splice `track` in right after the playing row. With nothing
+    // queued yet, just start it.
+    func playNext(_ track: Track) {
+        guard !queue.isEmpty else { play(track, in: [track]); return }
+        queue.insert(track, at: min(queueIndex + 1, queue.count))
+        syncQueueToEngine()
+        reconcilePreload()
+    }
+
+    // "Add to queue": append `track` to the end (or start it if the queue's empty).
+    func addToQueue(_ track: Track) {
+        guard !queue.isEmpty else { play(track, in: [track]); return }
+        queue.append(track)
+        syncQueueToEngine()
+        reconcilePreload()
+    }
+
+    // "Clear": drop everything but the currently-playing track so playback keeps
+    // going with an empty up-next. Empties the queue outright when nothing plays.
+    func clearQueue() {
+        if queueIndex >= 0, queueIndex < queue.count {
+            queue = [queue[queueIndex]]
+            queueIndex = 0
+        } else {
+            queue = []
+            queueIndex = 0
+        }
+        syncQueueToEngine()
+        reconcilePreload()
     }
 
     func setVolume(_ v: Double) {

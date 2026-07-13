@@ -273,4 +273,15 @@
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>
     </plurals>
+    <!-- محرر قائمة الانتظار + التنزيل دون اتصال -->
+    <string name="action_play_next">تشغيل التالي</string>
+    <string name="action_add_to_queue">إضافة إلى قائمة الانتظار</string>
+    <string name="action_clear_queue">مسح قائمة الانتظار</string>
+    <string name="action_download_offline">تنزيل للاستماع دون اتصال</string>
+    <string name="action_remove">إزالة</string>
+    <string name="cd_downloaded">تم التنزيل</string>
+    <string name="cd_reorder">إعادة الترتيب</string>
+    <string name="offline_ready">%1$s متاح دون اتصال</string>
+    <string name="offline_already">%1$s متاح بالفعل دون اتصال</string>
+    <string name="offline_needs_cache">فعّل ذاكرة التخزين المؤقت للبث في الإعدادات للتنزيل دون اتصال</string>
 </resources>

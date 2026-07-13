@@ -1062,3 +1062,73 @@ msgid_plural "%lld plays"
 msgstr[0] ""
 msgstr[1] ""
 
+
+#: src/main.c
+msgid "Up Next"
+msgstr ""
+
+#: src/main.c
+msgid "Play next"
+msgstr ""
+
+#: src/main.c
+msgid "Playing next"
+msgstr ""
+
+#: src/main.c
+msgid "Add to queue"
+msgstr ""
+
+#: src/main.c
+msgid "Added to queue"
+msgstr ""
+
+#: src/main.c
+msgid "Clear"
+msgstr ""
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr ""
+
+#: src/main.c
+msgid "Move up"
+msgstr ""
+
+#: src/main.c
+msgid "Move down"
+msgstr ""
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr ""
+
+#: src/main.c
+msgid "Download for offline"
+msgstr ""
+
+#: src/main.c
+msgid "Available offline"
+msgstr ""
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr ""
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr ""
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr ""
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr ""
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr ""

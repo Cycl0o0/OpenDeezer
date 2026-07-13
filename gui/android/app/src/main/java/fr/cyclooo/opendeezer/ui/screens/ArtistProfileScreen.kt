@@ -169,9 +169,8 @@ private fun ArtistProfileContent(
             itemsIndexed(page.top, key = { i, t -> "t-$i-${t.id}" }) { index, track ->
                 TrackRow(
                     track = track,
+                    player = player,
                     onClick = { player.playQueue(page.top, index) },
-                    onDownload = { player.download(track) },
-                    downloadEnabled = player.premium,
                     onStartRadio = { player.startTrackRadio(track) },
                 )
             }

@@ -183,6 +183,34 @@ extern int   DZQueueSet(char *js);
 extern void  DZQueueSetIndex(int i);
 extern int   DZQueueIndex(void);
 
+/* v3.0.0 additions — declared explicitly (see DZSetRepeat above) so this file
+ * compiles against an older libdeezercore.h; the generated header carries
+ * identical declarations once the archive is rebuilt.
+ *
+ *   Up Next — read + edit the live engine play queue (the same queue DZQueueSet
+ *   mirrors and DZQueueIndex tracks). DZQueueJSON returns the queue as a JSON
+ *   array of tracks in the engine's canonical wire shape ({id,name,durationMs,
+ *   artistLine,artists:[{id,name}],albumName,artworkUrl,explicit}; the same shape
+ *   dz_track_from_json parses), "[]" when empty — free with DZFree. The mutators
+ *   keep the engine cursor pointed at the audible row (indices shift as expected),
+ *   so after any of them re-read DZQueueJSON + DZQueueIndex to resync the GUI:
+ *     DZQueueRemove(i):        drop the row at index i.
+ *     DZQueueMove(from,to):    reorder a row (from -> to).
+ *     DZQueueInsertNext(js):   insert one track (one wire-shape object; only id
+ *       required, the engine enriches the rest) right after the playing cursor.
+ *
+ *   Offline download (Premium only; blocks on network + Blowfish decrypt like
+ *   DZDownloadTrack, so run it on a GTask worker). Saves a track into the managed
+ *   offline store and returns {"key":"<id>"} on success (the id now available
+ *   offline) or {"error":"..."} — free with DZFree. js = one wire-shape track
+ *   object (id required; name/artistLine/artworkUrl/… let the engine tag the
+ *   stored file without a second lookup). */
+extern char *DZQueueJSON(void);
+extern void  DZQueueRemove(int i);
+extern void  DZQueueMove(int from, int to);
+extern void  DZQueueInsertNext(char *js);
+extern char *DZDownloadForOffline(char *js);
+
 /* Deezer "Electric Violet". */
 #define ACCENT "#A238FF"
 
@@ -272,9 +300,13 @@ typedef struct {
   char                 *np_art;        /* artwork URL last loaded into np_cover (refetch guard) */
 
   GtkButton            *like_btn;      /* heart toggle on the now-playing bar */
+  GtkButton            *offline_btn;   /* "Download for offline" toggle on the now-playing bar */
   gboolean              cur_liked;     /* like state for the current track (from liked_ids) */
   GHashTable           *liked_ids;     /* set of liked track ids (id -> id); seeded from
                                         * DZFavoriteIDsJSON so the heart is truthful per track */
+  GHashTable           *offline_ids;   /* set of track ids saved for offline (id -> id); grows
+                                        * as DZDownloadForOffline succeeds (its "key" field) so
+                                        * lists can show a "downloaded" indicator */
   gboolean              playing_episode; /* a podcast episode is playing (no queue) */
   int                   preloaded_index; /* track_store idx last DZPreload'd, -1 none */
 
@@ -403,13 +435,19 @@ typedef struct {
   gboolean              queue_synced;   /* the current track_store was mirrored to the engine
                                          * queue — the engine then owns natural-finish advance,
                                          * so tick() follows DZQueueIndex instead of DZFinishedCount */
+
+  /* ---- Up Next (v3.0.0; a "upnext" stack page rendering DZQueueJSON) ---- */
+  GtkWidget            *upnext_box;      /* inner VBox in the Up Next scrolled window;
+                                          * cleared + rebuilt by upnext_populate */
+  int                   upnext_shown_index; /* DZQueueIndex last rendered — lets the tick
+                                             * refresh the highlight only when the cursor moves */
 } App;
 
 static App *APP; /* single window — a global keeps GTask plumbing tidy */
 
 /* sidebar row kinds */
 enum { ROW_HOME = 0, ROW_LIKED = 1, ROW_PLAYLIST = 2, ROW_CHARTS = 3, ROW_FLOW = 4,
-       ROW_PODCASTS = 5, ROW_HISTORY = 6 };
+       ROW_PODCASTS = 5, ROW_HISTORY = 6, ROW_UPNEXT = 7 };
 
 /* browse kinds (LOAD_TRACK_MIX/LOAD_ARTIST_MIX carry an id and reuse the Flow
  * parse+auto-play path — see load_worker / load_done) */
@@ -434,6 +472,14 @@ static void show_home(App *a);
 
 /* recently-played + stats view (defined after the home view section) */
 static void load_history_async(App *a);
+
+/* Up Next (engine-queue) view + offline downloads (v3.0.0). upnext_populate /
+ * show_upnext live in the Up Next UI section (after the history view); the queue
+ * helpers + offline plumbing are defined early (right after sync_engine_queue and
+ * the download section) so the track menu can reach them. */
+static void show_upnext(App *a);
+static void upnext_populate(App *a);
+static void update_offline_button(App *a);
 static void show_history(App *a);
 
 /* engine queue sync (defined just above populate_tracks) */
@@ -779,6 +825,134 @@ static void sync_engine_queue(App *a) {
   g_object_unref(b);
 }
 
+/* ---------------------------------------------------------------------------
+ * Up Next (engine queue) + offline downloads — shared plumbing (v3.0.0)
+ *
+ * The Up Next view renders the ENGINE queue (DZQueueJSON) and edits it through
+ * DZQueueRemove/Move/InsertNext. track_store is kept a faithful mirror of that
+ * queue (tick() indexes track_store with DZQueueIndex, and next_index() walks it),
+ * so every engine-queue edit is followed by queue_reload_from_engine() to rebuild
+ * track_store + realign current_index from the engine cursor. Playback is never
+ * restarted — the audible track keeps going; only the pointer/UI catch up.
+ * ------------------------------------------------------------------------- */
+
+/* Serialize one track to the engine's accepted wire shape (matches the per-object
+ * fields written by sync_engine_queue). Only id is strictly required; the rest
+ * enrich remote/offline metadata. json-glib escapes names safely. Free with g_free. */
+static char *track_obj_json(const char *id, const char *name, const char *artist,
+                            const char *artist_id, const char *album,
+                            const char *artwork, gint64 dur, gboolean explicit) {
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "id");         json_builder_add_string_value(b, id ? id : "");
+  json_builder_set_member_name(b, "name");       json_builder_add_string_value(b, name ? name : "");
+  json_builder_set_member_name(b, "durationMs"); json_builder_add_int_value(b, dur);
+  json_builder_set_member_name(b, "artistLine"); json_builder_add_string_value(b, artist ? artist : "");
+  json_builder_set_member_name(b, "artistId");   json_builder_add_string_value(b, artist_id ? artist_id : "");
+  json_builder_set_member_name(b, "albumName");  json_builder_add_string_value(b, album ? album : "");
+  json_builder_set_member_name(b, "artworkUrl"); json_builder_add_string_value(b, artwork ? artwork : "");
+  json_builder_set_member_name(b, "explicit");   json_builder_add_boolean_value(b, explicit);
+  json_builder_end_object(b);
+  JsonGenerator *gen = json_generator_new();
+  JsonNode *root = json_builder_get_root(b);
+  json_generator_set_root(gen, root);
+  char *js = json_generator_to_data(gen, NULL);
+  json_node_unref(root);
+  g_object_unref(gen);
+  g_object_unref(b);
+  return js ? js : g_strdup("{}");
+}
+static char *dztrack_json(DzTrack *t) {
+  return track_obj_json(t->id, t->name, t->artist, t->artist_id, t->album,
+                        t->artwork, t->duration_ms, t->explicit);
+}
+
+/* offline-ids set (session-local; seeded by each DZDownloadForOffline "key") */
+static gboolean is_offline(App *a, const char *id) {
+  return a && a->offline_ids && id && *id && g_hash_table_contains(a->offline_ids, id);
+}
+static void offline_mark(App *a, const char *id) {
+  if (a && a->offline_ids && id && *id) g_hash_table_add(a->offline_ids, g_strdup(id));
+}
+
+/* Rebuild track_store from the live engine queue and realign current_index to the
+ * engine cursor. Called after any DZQueueRemove/Move/InsertNext so the GUI's play
+ * queue and the engine queue stay index-aligned (tick() adoption at DZQueueIndex
+ * and next_index() both rely on that). Does NOT touch the audio stream. */
+static void queue_reload_from_engine(App *a) {
+  char *j = DZQueueJSON();
+  g_list_store_remove_all(a->track_store);
+  if (j) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, j, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_ARRAY(root)) {
+        JsonArray *arr = json_node_get_array(root);
+        for (guint i = 0; i < json_array_get_length(arr); i++) {
+          DzTrack *t = dz_track_from_json(json_array_get_object_element(arr, i));
+          g_list_store_append(a->track_store, t);
+          g_object_unref(t);
+        }
+      }
+    }
+    g_object_unref(p);
+    DZFree(j);
+  }
+  guint n = g_list_model_get_n_items(G_LIST_MODEL(a->track_store));
+  int qi = DZQueueIndex();
+  a->current_index = (qi >= 0 && (guint)qi < n) ? qi : -1;
+  a->queue_synced = (n > 0);
+  a->preloaded_index = -1;
+  if (a->current_index >= 0)
+    gtk_single_selection_set_selected(a->track_sel, a->current_index);
+  else
+    gtk_single_selection_set_selected(a->track_sel, GTK_INVALID_LIST_POSITION);
+  a->upnext_shown_index = -2; /* force the Up Next repaint below */
+  upnext_populate(a);
+}
+
+/* "Add to queue": append one wire-shape track object to the tail of the engine
+ * queue (there is no engine append export, so read-modify-write DZQueueJSON), then
+ * reload. The cursor is preserved via DZQueueSetIndex after DZQueueSet parks it. */
+static void queue_append(App *a, const char *obj_json) {
+  if (!obj_json || !*obj_json) return;
+  int keep = DZQueueIndex(); /* the row currently playing (engine truth) */
+  char *cur = DZQueueJSON();
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_array(b);
+  if (cur) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, cur, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_ARRAY(root)) {
+        JsonArray *arr = json_node_get_array(root);
+        for (guint i = 0; i < json_array_get_length(arr); i++)
+          json_builder_add_value(b, json_node_copy(json_array_get_element(arr, i)));
+      }
+    }
+    g_object_unref(p);
+    DZFree(cur);
+  }
+  JsonParser *np = json_parser_new();
+  if (json_parser_load_from_data(np, obj_json, -1, NULL)) {
+    JsonNode *nr = json_parser_get_root(np);
+    if (nr) json_builder_add_value(b, json_node_copy(nr));
+  }
+  g_object_unref(np);
+  json_builder_end_array(b);
+  JsonGenerator *gen = json_generator_new();
+  JsonNode *root = json_builder_get_root(b);
+  json_generator_set_root(gen, root);
+  char *js = json_generator_to_data(gen, NULL);
+  if (DZQueueSet(js ? js : (char *)"[]") == 1 && keep >= 0)
+    DZQueueSetIndex(keep); /* DZQueueSet parks the cursor at 0 — put it back */
+  g_free(js);
+  json_node_unref(root);
+  g_object_unref(gen);
+  g_object_unref(b);
+  queue_reload_from_engine(a);
+}
+
 /* Show the content-header Download button only for an album/playlist view the
  * account may actually download (Premium, like the single-track menu). */
 static void update_list_dl_button(App *a) {
@@ -906,6 +1080,9 @@ static void on_sidebar_selected(GtkListBox *box, GtkListBoxRow *row, gpointer da
     a->list_kind = -1; update_list_dl_button(a);
     show_history(a);
     load_history_async(a);
+  } else if (kind == ROW_UPNEXT) {
+    a->list_kind = -1; update_list_dl_button(a);
+    show_upnext(a); /* renders the live engine queue (DZQueueJSON) */
   } else {
     load_async(a, LOAD_FAVORITES, NULL);
   }
@@ -1079,6 +1256,9 @@ static void update_now_playing_ui(App *a, DzTrack *t, int idx) {
   a->np_art = g_strdup(t->artwork ? t->artwork : "");
   a->cur_liked = liked_contains(a, t->id); /* truthful heart from the seeded liked-ids set */
   update_like_button(a);
+  /* the offline-button state keys off np_id (the canonical current id), which the
+   * tick's now-playing sync owns — it refreshes update_offline_button when the id
+   * lands, so this manual path doesn't (np_id may still be the previous track). */
   mpris_notify_track(a);
   mpris_emit_seeked(a, 0);
 }
@@ -2549,6 +2729,9 @@ static void liked_seed_done(GObject *src, GAsyncResult *res, gpointer data) {
   char *json = g_task_propagate_pointer(G_TASK(res), NULL);
   if (!json) return;
   if (APP->liked_ids) g_hash_table_remove_all(APP->liked_ids); /* replace on account switch */
+  /* the offline set is per-account too; drop it so another account's downloaded
+   * indicators don't linger (it re-seeds as this account saves tracks) */
+  if (APP->offline_ids) g_hash_table_remove_all(APP->offline_ids);
   JsonParser *p = json_parser_new();
   if (json_parser_load_from_data(p, json, -1, NULL)) {
     JsonNode *root = json_parser_get_root(p);
@@ -2627,6 +2810,95 @@ static void start_download(App *a, const char *id, const char *name) {
   GTask *t = g_task_new(NULL, NULL, dl_done, NULL);
   g_task_set_task_data(t, x, dl_ctx_free);
   g_task_run_in_thread(t, dl_worker);
+  g_object_unref(t);
+}
+
+/* ---- save a track for offline playback (Premium only) ----
+ * DZDownloadForOffline blocks (network + Blowfish decrypt) just like
+ * DZDownloadTrack, so it runs on a GTask worker. It returns {"key":"<id>"} on
+ * success (the id now available offline) or {"error":"..."}. On success we record
+ * the key in offline_ids so lists show a "downloaded" indicator. `js` is one
+ * wire-shape track object (built with track_obj_json/dztrack_json). */
+typedef struct { char *js; char *name; gboolean ok; char *key; char *err; } OffCtx;
+static void off_ctx_free(gpointer p) {
+  OffCtx *c = p; g_free(c->js); g_free(c->name); g_free(c->key); g_free(c->err); g_free(c);
+}
+static void off_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)c;
+  OffCtx *x = data;
+  char *st = DZDownloadForOffline(x->js);
+  if (st) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, st, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+        JsonObject *o = json_node_get_object(root);
+        char *err = jstr(o, "error"); /* jstr never returns NULL */
+        if (*err) { x->err = g_steal_pointer(&err); }
+        else      { g_free(err); x->ok = TRUE; x->key = jstr(o, "key"); }
+      }
+    }
+    g_object_unref(p);
+    DZFree(st);
+  }
+  g_task_return_boolean(task, x->ok);
+}
+static void off_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)data;
+  OffCtx *x = g_task_get_task_data(G_TASK(res));
+  gboolean ok = g_task_propagate_boolean(G_TASK(res), NULL);
+  if (ok) {
+    offline_mark(APP, (x->key && *x->key) ? x->key : NULL);
+    if (x->name && *x->name) toastf(APP, _("“%s” is available offline"), x->name);
+    else                     toast(APP, _("Saved for offline"));
+    update_offline_button(APP); /* light the now-playing indicator if it's the current track */
+    if (APP->content_stack &&
+        g_strcmp0(gtk_stack_get_visible_child_name(APP->content_stack), "upnext") == 0)
+      upnext_populate(APP); /* refresh the row's downloaded badge */
+  } else {
+    if (x->err && *x->err) toastf(APP, _("Offline download failed: %s"), x->err);
+    else                   toast(APP, _("Couldn't save that track offline"));
+  }
+}
+/* Kick off an offline save. Premium-gated exactly like the single-track download. */
+static void start_offline_download(App *a, const char *js, const char *name) {
+  if (!a || !a->premium) { toast(a, _("Downloads require Deezer Premium")); return; }
+  if (!js || !*js) return;
+  toast(a, _("Saving for offline…"));
+  OffCtx *x = g_new0(OffCtx, 1);
+  x->js = g_strdup(js);
+  x->name = g_strdup(name ? name : "");
+  GTask *t = g_task_new(NULL, NULL, off_done, NULL);
+  g_task_set_task_data(t, x, off_ctx_free);
+  g_task_run_in_thread(t, off_worker);
+  g_object_unref(t);
+}
+
+/* Reflect the current track's offline state on the now-playing bar button:
+ * accent + non-sensitive once it is downloaded, plain + actionable otherwise. */
+static void update_offline_button(App *a) {
+  if (!a || !a->offline_btn) return;
+  gboolean off = is_offline(a, a->np_id);
+  if (off) {
+    gtk_widget_add_css_class(GTK_WIDGET(a->offline_btn), "dz-active");
+    gtk_button_set_icon_name(a->offline_btn, "emblem-ok-symbolic");
+    gtk_widget_set_tooltip_text(GTK_WIDGET(a->offline_btn), _("Available offline"));
+  } else {
+    gtk_widget_remove_css_class(GTK_WIDGET(a->offline_btn), "dz-active");
+    gtk_button_set_icon_name(a->offline_btn, "folder-download-symbolic");
+    gtk_widget_set_tooltip_text(GTK_WIDGET(a->offline_btn), _("Download for offline"));
+  }
+  gtk_widget_set_sensitive(GTK_WIDGET(a->offline_btn), a->premium && a->np_id && *a->np_id && !off);
+}
+
+/* now-playing "Download for offline" button */
+static void on_offline_clicked(GtkButton *b, gpointer data) {
+  (void)b;
+  App *a = data;
+  DzTrack *t = mpris_current_track(a);
+  if (!t) { toast(a, _("Play a track first")); return; }
+  if (is_offline(a, t->id)) { g_object_unref(t); return; } /* already saved */
+  start_offline_download(a, t->id, t->name); /* DZDownloadForOffline takes a bare track id */
   g_object_unref(t);
 }
 
@@ -2771,6 +3043,45 @@ static void on_tm_radio(GtkButton *b, gpointer mb) {
   gtk_list_box_select_row(APP->sidebar, NULL); /* leave the sidebar so Home reloads later */
   load_async(APP, LOAD_TRACK_MIX, id);
 }
+/* "Play next": insert this track right after the playing cursor in the engine
+ * queue, then reload track_store so the GUI mirror stays index-aligned. */
+static void on_tm_playnext(GtkButton *b, gpointer mb) {
+  (void)b;
+  const char *id  = g_object_get_data(G_OBJECT(mb), "tm_id");
+  const char *nm  = g_object_get_data(G_OBJECT(mb), "tm_name");
+  const char *aid = g_object_get_data(G_OBJECT(mb), "tm_artist");
+  tm_popdown(mb);
+  if (!id || !*id) return;
+  char *js = track_obj_json(id, nm, "", aid, "", "", 0, FALSE);
+  DZQueueInsertNext(js);
+  g_free(js);
+  queue_reload_from_engine(APP);
+  toast(APP, _("Playing next"));
+}
+/* "Add to queue": append this track to the tail of the engine queue. */
+static void on_tm_addqueue(GtkButton *b, gpointer mb) {
+  (void)b;
+  const char *id  = g_object_get_data(G_OBJECT(mb), "tm_id");
+  const char *nm  = g_object_get_data(G_OBJECT(mb), "tm_name");
+  const char *aid = g_object_get_data(G_OBJECT(mb), "tm_artist");
+  tm_popdown(mb);
+  if (!id || !*id) return;
+  char *js = track_obj_json(id, nm, "", aid, "", "", 0, FALSE);
+  queue_append(APP, js);
+  g_free(js);
+  toast(APP, _("Added to queue"));
+}
+/* "Download for offline": Premium-gated, mirrors on_tm_download. */
+static void on_tm_offline(GtkButton *b, gpointer mb) {
+  (void)b;
+  const char *id  = g_object_get_data(G_OBJECT(mb), "tm_id");
+  const char *nm  = g_object_get_data(G_OBJECT(mb), "tm_name");
+  const char *aid = g_object_get_data(G_OBJECT(mb), "tm_artist");
+  tm_popdown(mb);
+  if (!APP || !APP->premium) { toast(APP, _("Downloads require Deezer Premium")); return; }
+  if (!id || !*id) return;
+  start_offline_download(APP, id, nm); /* DZDownloadForOffline takes a bare track id */
+}
 
 static GtkWidget *make_track_menu_button(void) {
   GtkMenuButton *mb = GTK_MENU_BUTTON(gtk_menu_button_new());
@@ -2780,15 +3091,20 @@ static GtkWidget *make_track_menu_button(void) {
 
   GtkWidget *pop = gtk_popover_new();
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  /* premium_only entries (Download) are desensitized for Free accounts; in
+  /* premium_only entries (both downloads) are desensitized for Free accounts; in
    * practice the whole app is gated behind Premium, but track_menu_set also
-   * re-applies this on every bind once the account tier is known. */
+   * re-applies this on every bind once the account tier is known. Every
+   * premium_only button is collected so track_menu_set can re-sensitize them. */
+  GPtrArray *prem = g_ptr_array_new(); /* borrowed button ptrs; owned by the popover */
   struct { const char *label; GCallback cb; gboolean premium_only; } items[] = {
-      {_("Add to Liked Songs"), G_CALLBACK(on_tm_like),     FALSE},
-      {_("Start radio"),        G_CALLBACK(on_tm_radio),    FALSE},
-      {_("Download"),           G_CALLBACK(on_tm_download),  TRUE},
-      {_("Add to Playlist…"),   G_CALLBACK(on_tm_add),       FALSE},
-      {_("Go to Artist"),       G_CALLBACK(on_tm_artist),    FALSE},
+      {_("Add to Liked Songs"),    G_CALLBACK(on_tm_like),     FALSE},
+      {_("Play next"),             G_CALLBACK(on_tm_playnext), FALSE},
+      {_("Add to queue"),          G_CALLBACK(on_tm_addqueue), FALSE},
+      {_("Start radio"),           G_CALLBACK(on_tm_radio),    FALSE},
+      {_("Download"),              G_CALLBACK(on_tm_download),  TRUE},
+      {_("Download for offline"),  G_CALLBACK(on_tm_offline),   TRUE},
+      {_("Add to Playlist…"),      G_CALLBACK(on_tm_add),       FALSE},
+      {_("Go to Artist"),          G_CALLBACK(on_tm_artist),    FALSE},
   };
   for (guint i = 0; i < G_N_ELEMENTS(items); i++) {
     GtkWidget *btn = gtk_button_new_with_label(items[i].label);
@@ -2798,12 +3114,15 @@ static GtkWidget *make_track_menu_button(void) {
     if (GTK_IS_LABEL(lbl)) gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
     g_signal_connect(btn, "clicked", items[i].cb, mb);
     if (items[i].premium_only) {
-      /* stash so track_menu_set can refresh sensitivity once premium is known */
-      g_object_set_data(G_OBJECT(mb), "tm_dl_btn", btn);
+      g_ptr_array_add(prem, btn);
       gtk_widget_set_sensitive(btn, APP && APP->premium);
     }
     gtk_box_append(GTK_BOX(box), btn);
   }
+  /* stash the premium buttons so track_menu_set can refresh sensitivity once the
+   * account tier is known (the array is freed with the menu button) */
+  g_object_set_data_full(G_OBJECT(mb), "tm_prem_btns", prem,
+                         (GDestroyNotify)g_ptr_array_unref);
   gtk_popover_set_child(GTK_POPOVER(pop), box);
   gtk_menu_button_set_popover(mb, pop);
   return GTK_WIDGET(mb);
@@ -2814,9 +3133,11 @@ static void track_menu_set(GtkWidget *mb, const char *id, const char *name,
   g_object_set_data_full(G_OBJECT(mb), "tm_id", g_strdup(id ? id : ""), g_free);
   g_object_set_data_full(G_OBJECT(mb), "tm_name", g_strdup(name ? name : ""), g_free);
   g_object_set_data_full(G_OBJECT(mb), "tm_artist", g_strdup(artist_id ? artist_id : ""), g_free);
-  /* Download is Premium-only; rows only bind after login, so the tier is known */
-  GtkWidget *dl = g_object_get_data(G_OBJECT(mb), "tm_dl_btn");
-  if (dl) gtk_widget_set_sensitive(dl, APP && APP->premium);
+  /* the downloads are Premium-only; rows only bind after login, so the tier is known */
+  GPtrArray *prem = g_object_get_data(G_OBJECT(mb), "tm_prem_btns");
+  if (prem)
+    for (guint i = 0; i < prem->len; i++)
+      gtk_widget_set_sensitive(GTK_WIDGET(g_ptr_array_index(prem, i)), APP && APP->premium);
 }
 
 /* ---- add a track to an existing playlist ---- */
@@ -5089,6 +5410,199 @@ static GtkWidget *build_history_view(App *a) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Up Next — a "upnext" stack page rendering the live engine queue (DZQueueJSON).
+ * The current row is highlighted; activating a row jumps playback to it; per-row
+ * buttons move it up/down (DZQueueMove) or drop it (DZQueueRemove); a header Clear
+ * button empties everything after the current track. Every edit goes through the
+ * engine then queue_reload_from_engine, which keeps track_store index-aligned.
+ * ------------------------------------------------------------------------- */
+
+/* Activating a row jumps playback there. track_store mirrors the engine queue, so
+ * the row index is a valid track_store index and play_index does the right thing
+ * (it also aligns the engine cursor via DZQueueSetIndex). */
+static void on_upnext_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data) {
+  (void)box;
+  App *a = data;
+  if (!row) return;
+  int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "qidx"));
+  if (idx >= 0) play_index(a, idx);
+}
+static void on_upnext_up(GtkButton *b, gpointer data) {
+  App *a = data;
+  int i = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "qidx"));
+  if (i > 0) { DZQueueMove(i, i - 1); queue_reload_from_engine(a); }
+}
+static void on_upnext_down(GtkButton *b, gpointer data) {
+  App *a = data;
+  int i = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "qidx"));
+  DZQueueMove(i, i + 1); /* the down button is insensitive on the last row */
+  queue_reload_from_engine(a);
+}
+static void on_upnext_remove(GtkButton *b, gpointer data) {
+  App *a = data;
+  int i = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "qidx"));
+  DZQueueRemove(i); /* the remove button is insensitive on the playing row */
+  queue_reload_from_engine(a);
+}
+static void on_upnext_clear(GtkButton *b, gpointer data) {
+  (void)b;
+  App *a = data;
+  int cur = DZQueueIndex();
+  if (cur < 0) {
+    DZQueueSet((char *)"[]"); /* nothing playing — clear the whole queue */
+  } else {
+    /* keep the current track; drop everything after it (remove from the tail) */
+    char *j = DZQueueJSON();
+    int n = 0;
+    if (j) {
+      JsonParser *p = json_parser_new();
+      if (json_parser_load_from_data(p, j, -1, NULL)) {
+        JsonNode *r = json_parser_get_root(p);
+        if (r && JSON_NODE_HOLDS_ARRAY(r)) n = (int)json_array_get_length(json_node_get_array(r));
+      }
+      g_object_unref(p);
+      DZFree(j);
+    }
+    for (int i = n - 1; i > cur; i--) DZQueueRemove(i);
+  }
+  queue_reload_from_engine(a);
+}
+
+/* Build one Up Next row (current highlighted, per-row up/down/remove + a
+ * downloaded badge for offline tracks). i is the index in the engine queue. */
+static GtkWidget *upnext_make_row(App *a, JsonObject *o, guint i, int cur, guint n) {
+  char *id = jstr(o, "id"), *name = jstr(o, "name"), *artist = jstr(o, "artistLine"),
+       *album = jstr(o, "albumName");
+  gboolean current = ((int)i == cur);
+
+  GtkWidget *row = adw_action_row_new();
+  gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), TRUE);
+  adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), name);
+  char *sub = (*album) ? g_strdup_printf("%s · %s", artist, album) : g_strdup(artist);
+  adw_action_row_set_subtitle(ADW_ACTION_ROW(row), sub);
+  g_free(sub);
+  g_object_set_data(G_OBJECT(row), "qidx", GINT_TO_POINTER((int)i));
+
+  /* leading: a play glyph on the current row, else the explicit "E" tag/spacer */
+  if (current) {
+    GtkWidget *icon = gtk_image_new_from_icon_name("media-playback-start-symbolic");
+    gtk_widget_add_css_class(icon, "dz-active");
+    adw_action_row_add_prefix(ADW_ACTION_ROW(row), icon);
+    gtk_widget_add_css_class(row, "dz-active");
+  } else if (jbool(o, "explicit")) {
+    adw_action_row_add_prefix(ADW_ACTION_ROW(row), make_explicit_badge());
+  }
+
+  /* suffixes: downloaded badge (if offline) + move up / move down / remove */
+  if (is_offline(a, id)) {
+    GtkWidget *dot = gtk_image_new_from_icon_name("folder-download-symbolic");
+    gtk_widget_add_css_class(dot, "dz-active");
+    gtk_widget_set_tooltip_text(dot, _("Available offline"));
+    adw_action_row_add_suffix(ADW_ACTION_ROW(row), dot);
+  }
+  GtkWidget *up = gtk_button_new_from_icon_name("go-up-symbolic");
+  gtk_widget_add_css_class(up, "flat");
+  gtk_widget_set_valign(up, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(up, _("Move up"));
+  gtk_widget_set_sensitive(up, i > 0);
+  g_object_set_data(G_OBJECT(up), "qidx", GINT_TO_POINTER((int)i));
+  g_signal_connect(up, "clicked", G_CALLBACK(on_upnext_up), a);
+  adw_action_row_add_suffix(ADW_ACTION_ROW(row), up);
+
+  GtkWidget *down = gtk_button_new_from_icon_name("go-down-symbolic");
+  gtk_widget_add_css_class(down, "flat");
+  gtk_widget_set_valign(down, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(down, _("Move down"));
+  gtk_widget_set_sensitive(down, i + 1 < n);
+  g_object_set_data(G_OBJECT(down), "qidx", GINT_TO_POINTER((int)i));
+  g_signal_connect(down, "clicked", G_CALLBACK(on_upnext_down), a);
+  adw_action_row_add_suffix(ADW_ACTION_ROW(row), down);
+
+  GtkWidget *rm = gtk_button_new_from_icon_name("user-trash-symbolic");
+  gtk_widget_add_css_class(rm, "flat");
+  gtk_widget_set_valign(rm, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(rm, _("Remove from queue"));
+  gtk_widget_set_sensitive(rm, !current); /* don't drop the playing row */
+  g_object_set_data(G_OBJECT(rm), "qidx", GINT_TO_POINTER((int)i));
+  g_signal_connect(rm, "clicked", G_CALLBACK(on_upnext_remove), a);
+  adw_action_row_add_suffix(ADW_ACTION_ROW(row), rm);
+
+  g_free(id); g_free(name); g_free(artist); g_free(album);
+  return row;
+}
+
+/* Rebuild the Up Next page from the live engine queue. Cheap enough to call on
+ * open, after every edit, and from the tick when the cursor moves. */
+static void upnext_populate(App *a) {
+  if (!a->upnext_box) return;
+  box_clear(a->upnext_box);
+  int cur = DZQueueIndex();
+  a->upnext_shown_index = cur;
+
+  /* header: title + Clear */
+  GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  GtkWidget *ttl = section_title(_("Up Next"));
+  gtk_widget_set_hexpand(ttl, TRUE);
+  gtk_box_append(GTK_BOX(hdr), ttl);
+  GtkWidget *clear = gtk_button_new_with_label(_("Clear"));
+  gtk_widget_add_css_class(clear, "flat");
+  gtk_widget_set_valign(clear, GTK_ALIGN_CENTER);
+  g_signal_connect(clear, "clicked", G_CALLBACK(on_upnext_clear), a);
+  gtk_box_append(GTK_BOX(hdr), clear);
+  gtk_box_append(GTK_BOX(a->upnext_box), hdr);
+
+  guint n = 0;
+  char *j = DZQueueJSON();
+  if (j) {
+    JsonParser *p = json_parser_new();
+    if (json_parser_load_from_data(p, j, -1, NULL)) {
+      JsonNode *root = json_parser_get_root(p);
+      if (root && JSON_NODE_HOLDS_ARRAY(root)) {
+        JsonArray *arr = json_node_get_array(root);
+        n = json_array_get_length(arr);
+        if (n > 0) {
+          GtkWidget *lb = artist_listbox(G_CALLBACK(on_upnext_row_activated), a);
+          for (guint i = 0; i < n; i++)
+            gtk_list_box_append(GTK_LIST_BOX(lb),
+                                upnext_make_row(a, json_array_get_object_element(arr, i), i, cur, n));
+          gtk_box_append(GTK_BOX(a->upnext_box), lb);
+        }
+      }
+    }
+    g_object_unref(p);
+    DZFree(j);
+  }
+  if (n == 0) {
+    GtkWidget *l = gtk_label_new(_("The queue is empty"));
+    gtk_widget_add_css_class(l, "dim-label");
+    gtk_label_set_xalign(GTK_LABEL(l), 0.0);
+    gtk_box_append(GTK_BOX(a->upnext_box), l);
+  }
+}
+
+static void show_upnext(App *a) {
+  if (a->content_stack) gtk_stack_set_visible_child_name(a->content_stack, "upnext");
+  upnext_populate(a);
+}
+
+/* Created once in on_activate; content is rebuilt by upnext_populate. */
+static GtkWidget *build_upnext_view(App *a) {
+  a->upnext_shown_index = -2;
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_vexpand(scroll, TRUE);
+  a->upnext_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_top(a->upnext_box, 16);
+  gtk_widget_set_margin_bottom(a->upnext_box, 24);
+  gtk_widget_set_margin_start(a->upnext_box, 16);
+  gtk_widget_set_margin_end(a->upnext_box, 16);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), a->upnext_box);
+  return scroll;
+}
+
+/* ---------------------------------------------------------------------------
  * podcasts (an AdwDialog): search shows -> open a show -> play an episode.
  * Episodes use the plain-stream path (DZPlayEpisode); they are not part of the
  * track queue, so a flag suppresses the natural-finish auto-advance for them.
@@ -5467,6 +5981,7 @@ static gboolean tick(gpointer data) {
              * Connect remote advancing the track) */
             a->cur_liked = liked_contains(a, id);
             update_like_button(a);
+            update_offline_button(a); /* reflect this track's offline state */
           }
           g_free(name); g_free(artist); g_free(art);
         }
@@ -5562,6 +6077,15 @@ static gboolean tick(gpointer data) {
       lyrics_load(a, cid);
     }
     lyrics_highlight(a);
+  }
+
+  /* keep the Up Next page's "now playing" highlight in step: when it is the
+   * visible page and the engine cursor has moved (auto-advance, remote /next,
+   * gapless), repaint it. Cheap cached read (DZQueueIndex); skipped otherwise. */
+  if (a->content_stack && a->upnext_box &&
+      g_strcmp0(gtk_stack_get_visible_child_name(a->content_stack), "upnext") == 0 &&
+      DZQueueIndex() != a->upnext_shown_index) {
+    upnext_populate(a);
   }
 
   return G_SOURCE_CONTINUE;
@@ -6416,6 +6940,16 @@ static GtkWidget *build_now_playing(App *a) {
   g_signal_connect(a->like_btn, "clicked", G_CALLBACK(on_like_clicked), a);
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->like_btn));
 
+  /* "Download for offline" — Premium-gated; the icon flips to a check once the
+   * current track is saved (update_offline_button, driven by update_now_playing_ui) */
+  a->offline_btn = GTK_BUTTON(gtk_button_new_from_icon_name("folder-download-symbolic"));
+  gtk_widget_add_css_class(GTK_WIDGET(a->offline_btn), "flat");
+  gtk_widget_set_valign(GTK_WIDGET(a->offline_btn), GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(GTK_WIDGET(a->offline_btn), _("Download for offline"));
+  gtk_widget_set_sensitive(GTK_WIDGET(a->offline_btn), FALSE); /* enabled once a track plays */
+  g_signal_connect(a->offline_btn, "clicked", G_CALLBACK(on_offline_clicked), a);
+  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->offline_btn));
+
   GtkWidget *lyrics_btn = gtk_button_new_from_icon_name("view-list-symbolic");
   gtk_widget_add_css_class(lyrics_btn, "flat");
   gtk_widget_set_valign(lyrics_btn, GTK_ALIGN_CENTER);
@@ -6521,9 +7055,11 @@ static GtkWidget *build_sidebar(App *a) {
   gtk_list_box_append(a->sidebar,
       make_side_row(_("Podcasts"), "", "audio-x-generic-symbolic", ROW_PODCASTS, ""));
   /* appended AFTER Podcasts so the home quick-pick sidebar indices (Home=0 …
-   * Podcasts=4) stay valid; Recently played is index 5 */
+   * Podcasts=4) stay valid; Recently played is index 5, Up Next index 6 */
   gtk_list_box_append(a->sidebar,
       make_side_row(_("Recently played"), "", "document-open-recent-symbolic", ROW_HISTORY, ""));
+  gtk_list_box_append(a->sidebar,
+      make_side_row(_("Up Next"), "", "media-playlist-consecutive-symbolic", ROW_UPNEXT, ""));
 
   GtkWidget *scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), GTK_WIDGET(a->sidebar));
@@ -6591,6 +7127,9 @@ static void on_activate(GApplication *app, gpointer data) {
   /* liked-track set; keys are owned strings freed on removal/replace. Populated
    * from DZFavoriteIDsJSON at login (load_liked_ids_async) so the heart is truthful. */
   a->liked_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+  /* offline-track set; grows as DZDownloadForOffline succeeds (session-local — the
+   * engine exposes no "list offline ids" call, so it seeds from each save's key) */
+  a->offline_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
   APP = a;
 
   /* load persisted settings; quality is applied after login (init_done) */
@@ -6699,6 +7238,7 @@ static void on_activate(GApplication *app, gpointer data) {
   gtk_stack_add_named(GTK_STACK(stack), build_track_view(a),   "tracks");
   gtk_stack_add_named(GTK_STACK(stack), build_browse_view(a),  "browse");
   gtk_stack_add_named(GTK_STACK(stack), build_history_view(a), "history");
+  gtk_stack_add_named(GTK_STACK(stack), build_upnext_view(a),  "upnext");
   adw_toolbar_view_set_content(content_tv, stack);
   adw_toolbar_view_add_bottom_bar(content_tv, build_now_playing(a));
 

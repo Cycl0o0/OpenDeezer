@@ -112,6 +112,13 @@ private fun MainScaffold(vm: AppViewModel) {
                     event.failed > 0 -> context.getString(R.string.download_batch_partial, event.saved, event.failed)
                     else -> context.getString(R.string.download_batch_saved, event.saved)
                 }
+                is DownloadEvent.OfflineReady ->
+                    if (event.alreadyCached) context.getString(R.string.offline_already, event.trackName)
+                    else context.getString(R.string.offline_ready, event.trackName)
+                is DownloadEvent.OfflineFailed ->
+                    if (event.needsCache) context.getString(R.string.offline_needs_cache)
+                    else if (event.error.isBlank()) context.getString(R.string.download_failed_generic)
+                    else context.getString(R.string.download_failed, event.error)
             }
             // Replace any in-flight snackbar so the result supersedes "Downloading…"
             // without the collector blocking on the previous one's timeout.

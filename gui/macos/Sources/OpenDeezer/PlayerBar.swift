@@ -105,6 +105,7 @@ struct PlayerBar: View {
                     Text(app.current?.name ?? L("Nothing playing"))
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DZ.textPri)
                         .lineLimit(1)
+                    if let c = app.current, app.isOffline(c) { OfflineBadge() }
                 }
                 HStack(spacing: 6) {
                     Text(subtitleText)
@@ -129,6 +130,20 @@ struct PlayerBar: View {
             }
         }
         .frame(maxWidth: 420)
+        // Now-Playing quick actions: cache the current track for offline (premium-
+        // gated like the download action) and jump to the Up-Next editor.
+        .contextMenu {
+            if let c = app.current, !app.playingEpisode {
+                Button { app.downloadForOffline(c) } label: {
+                    Label(L("Download for offline"), systemImage: "arrow.down.circle.dotted")
+                }
+                .disabled(!app.isPremium)
+                .help(app.isPremium ? L("Download for offline") : L("Requires a paid Deezer plan"))
+            }
+            Button { app.showQueue = true } label: {
+                Label(L("Up Next"), systemImage: "list.bullet")
+            }
+        }
     }
 
     private var subtitleText: String {
@@ -186,13 +201,19 @@ struct PlayerBar: View {
                 app.discoverDevices()
             }
             .help(app.isConnectedRemote ? L("Connected — choose a device") : L("Connect to a device"))
+            // Open the Up-Next editor (editable play queue).
+            iconButton("list.bullet", tint: app.showQueue ? DZ.accent : DZ.textSec) {
+                app.showQueue = true
+            }
+            .help(L("Up Next"))
+            .accessibilityLabel(L("Up Next"))
             HStack(spacing: 6) {
                 Image(systemName: "speaker.fill").font(.system(size: 11)).foregroundStyle(DZ.textSec)
                 Slider(value: Binding(get: { app.volume }, set: { app.setVolume($0) }), in: 0...1)
                     .frame(width: 84).tint(DZ.accent)
             }
         }
-        .frame(width: 282, alignment: .trailing)
+        .frame(width: 316, alignment: .trailing)
     }
 
     private func iconButton(_ symbol: String, size: CGFloat = 15,

@@ -265,4 +265,15 @@
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>
     </plurals>
+    <!-- Редактор очереди + загрузка офлайн -->
+    <string name="action_play_next">Играть следующим</string>
+    <string name="action_add_to_queue">Добавить в очередь</string>
+    <string name="action_clear_queue">Очистить очередь</string>
+    <string name="action_download_offline">Скачать офлайн</string>
+    <string name="action_remove">Удалить</string>
+    <string name="cd_downloaded">Скачано</string>
+    <string name="cd_reorder">Изменить порядок</string>
+    <string name="offline_ready">%1$s доступно офлайн</string>
+    <string name="offline_already">%1$s уже офлайн</string>
+    <string name="offline_needs_cache">Включите кэш потока в настройках, чтобы скачивать офлайн</string>
 </resources>

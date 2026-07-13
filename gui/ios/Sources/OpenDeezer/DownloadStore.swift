@@ -12,9 +12,43 @@ final class DownloadStore: ObservableObject {
     /// success, or an error on failure. `nil` hides the toast.
     @Published var status: String?
 
+    /// Track ids cached for offline playback this session (populated as
+    /// `downloadForOffline` succeeds), so rows can show a "downloaded" checkmark.
+    @Published private(set) var offlineTrackIDs: Set<String> = []
+
     private var token = 0
 
     private init() {}
+
+    /// Whether `id` has been cached for offline playback this session.
+    func isOffline(_ id: String) -> Bool { offlineTrackIDs.contains(id) }
+
+    /// Cache `track`'s stream for offline playback (premium-only, and needs the
+    /// stream cache enabled — the engine surfaces both gates as an error). On
+    /// success the track id is remembered so its row shows a downloaded check.
+    func downloadForOffline(_ track: Track, isPremium: Bool) {
+        guard isPremium else {
+            setStatus(String(localized: "Requires a paid Deezer plan"))
+            return
+        }
+        if isOffline(track.id) {
+            setStatus(String(localized: "“\(track.name)” is already available offline"))
+            return
+        }
+        let name = track.name
+        let id = track.id
+        setStatus(String(localized: "Saving “\(name)” for offline…"), autoDismiss: false)
+        Task {
+            let result = await Engine.downloadForOffline(id: id)
+            if let error = result.error, !error.isEmpty {
+                setStatus(error)
+                return
+            }
+            offlineTrackIDs.insert(id)
+            if let cached = result.cachedTrackID { offlineTrackIDs.insert(cached) }
+            setStatus(String(localized: "“\(name)” is available offline"))
+        }
+    }
 
     /// Download `track` into the shared default folder. Premium-only: Free
     /// accounts stream (standard 128 kbps) but can't download, so we guard here

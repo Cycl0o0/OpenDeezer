@@ -228,6 +228,12 @@ struct TrackRow: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                if downloads.isOffline(track.id) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(Palette.accent)
+                        .font(.caption)
+                        .accessibilityLabel("Downloaded")
+                }
                 if isCurrent && player.isPlaying {
                     Image(systemName: "speaker.wave.2.fill")
                         .foregroundStyle(Palette.accent)
@@ -271,6 +277,16 @@ struct TrackRow: View {
                 Label("Play", systemImage: "play.fill")
             }
             Button {
+                player.playNext(track)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            Button {
+                player.addToQueue(track)
+            } label: {
+                Label("Add to Queue", systemImage: "text.append")
+            }
+            Button {
                 player.startRadio(seededBy: track)
             } label: {
                 Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
@@ -285,13 +301,22 @@ struct TrackRow: View {
             } label: {
                 Label("Add to Playlist", systemImage: "text.badge.plus")
             }
-            // Downloads save the full track to disk — premium-only, so it's
+            // Downloads save the full track to disk — premium-only, so they're
             // shown only for paid accounts (Free streams but can't download).
             if session.account?.premium == true {
+                if downloads.isOffline(track.id) {
+                    Label("Available Offline", systemImage: "checkmark.circle.fill")
+                } else {
+                    Button {
+                        downloads.downloadForOffline(track, isPremium: true)
+                    } label: {
+                        Label("Download for Offline", systemImage: "arrow.down.circle")
+                    }
+                }
                 Button {
                     downloads.download(track, isPremium: true)
                 } label: {
-                    Label("Download", systemImage: "arrow.down.circle")
+                    Label("Download", systemImage: "square.and.arrow.down")
                 }
             }
         }

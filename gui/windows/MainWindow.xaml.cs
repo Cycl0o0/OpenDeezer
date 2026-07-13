@@ -103,9 +103,14 @@ public sealed partial class MainWindow : Window
         RootGrid.RowDefinitions.Add(RowStar());
         RootGrid.RowDefinitions.Add(RowAuto());
 
-        var updateBar = BuildUpdateBar();
-        Grid.SetRow(updateBar, 0);
-        RootGrid.Children.Add(updateBar);
+        // Row 0 hosts the (collapsed) update banner and a transient offline-download
+        // status InfoBar, stacked so either can show without reserving space.
+        var topBars = new StackPanel { Spacing = 0 };
+        topBars.Children.Add(BuildUpdateBar());
+        _offlineInfoBar = new InfoBar { IsOpen = false, IsClosable = true };
+        topBars.Children.Add(_offlineInfoBar);
+        Grid.SetRow(topBars, 0);
+        RootGrid.Children.Add(topBars);
 
         BuildNav();
         BuildPages();
@@ -637,7 +642,13 @@ public sealed partial class MainWindow : Window
         ToolTipService.SetToolTip(_addBtn, Loc.S("Tooltip_AddToPlaylist"));
         AutomationProperties.SetName(_addBtn, Loc.S("Tooltip_AddToPlaylist"));
         _addBtn.Click += OnAddCurrentToPlaylist;
-        left.Children.Add(_likeBtn); left.Children.Add(_addBtn);
+        // Download for offline (premium-only): caches the current track for offline
+        // playback. Enabled/disabled per-track in SetNowPlaying (premium + not an episode).
+        _downloadBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Download
+        ToolTipService.SetToolTip(_downloadBtn, Loc.S("Tooltip_DownloadOffline"));
+        AutomationProperties.SetName(_downloadBtn, Loc.S("Tooltip_DownloadOffline"));
+        _downloadBtn.Click += OnDownloadCurrentOffline;
+        left.Children.Add(_likeBtn); left.Children.Add(_addBtn); left.Children.Add(_downloadBtn);
         Grid.SetColumn(left, 0); bar.Children.Add(left);
 
         // ---- CENTRE: transport row (shuffle - prev - play - next - repeat) + seek row ----
@@ -742,10 +753,34 @@ public sealed partial class MainWindow : Window
         _connectFlyout.Content = cp;
         _connectFlyout.Opened += OnConnectOpened;
         _connectBtn.Flyout = _connectFlyout;
+        // Up-Next queue: a flyout listing the current queue (jump / reorder / remove /
+        // clear). Rebuilt on open and after each edit (RefreshQueuePanel).
+        _queueBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // List
+        ToolTipService.SetToolTip(_queueBtn, Loc.S("Tooltip_Queue"));
+        AutomationProperties.SetName(_queueBtn, Loc.S("Tooltip_Queue"));
+        _queueFlyout = new Flyout();
+        var qp = new StackPanel { Spacing = 8, MinWidth = 320, Padding = new Thickness(4), FlowDirection = Loc.FlowDirection };
+        var qHeader = new Grid();
+        qHeader.ColumnDefinitions.Add(ColStar());
+        qHeader.ColumnDefinitions.Add(ColAuto());
+        var qTitle = new TextBlock { Text = Loc.S("Queue_Title"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(qTitle, 0); qHeader.Children.Add(qTitle);
+        _queueClearBtn = new Button { Content = Loc.S("Queue_Clear"), FontSize = 12, Padding = new Thickness(8, 2, 8, 2) };
+        _queueClearBtn.Click += OnQueueClear;
+        Grid.SetColumn(_queueClearBtn, 1); qHeader.Children.Add(_queueClearBtn);
+        qp.Children.Add(qHeader);
+        _queueStatus = new TextBlock { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        _queueList = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true, MaxHeight = 380 };
+        _queueList.ItemClick += OnQueueRowClick;
+        qp.Children.Add(_queueStatus); qp.Children.Add(_queueList);
+        _queueFlyout.Content = qp;
+        _queueFlyout.Opened += OnQueueFlyoutOpened;
+        _queueFlyout.Closed += OnQueueFlyoutClosed;
+        _queueBtn.Flyout = _queueFlyout;
         var volIcon = new FontIcon { Glyph = "", FontSize = 14, VerticalAlignment = VerticalAlignment.Center }; // Volume
         _volume = new Slider { Minimum = 0, Maximum = 100, Value = 100, Width = 100, VerticalAlignment = VerticalAlignment.Center, Foreground = _accent };
         _volume.ValueChanged += OnVolumeChanged;
-        right.Children.Add(_lyricsBtn); right.Children.Add(_artistBtn); right.Children.Add(_connectBtn);
+        right.Children.Add(_queueBtn); right.Children.Add(_lyricsBtn); right.Children.Add(_artistBtn); right.Children.Add(_connectBtn);
         right.Children.Add(volIcon); right.Children.Add(_volume);
         Grid.SetColumn(right, 2); bar.Children.Add(right);
 
@@ -778,9 +813,10 @@ public sealed partial class MainWindow : Window
     private UIElement MakeTrackRow(Track t, int index)
     {
         var g = new Grid { Tag = index, Height = 56, Padding = new Thickness(6, 4, 6, 4), ColumnSpacing = 12 };
-        g.ColumnDefinitions.Add(ColAuto());
-        g.ColumnDefinitions.Add(ColStar());
-        g.ColumnDefinitions.Add(ColAuto());
+        g.ColumnDefinitions.Add(ColAuto()); // 0 artwork
+        g.ColumnDefinitions.Add(ColStar()); // 1 title/artist
+        g.ColumnDefinitions.Add(ColAuto()); // 2 offline "downloaded" glyph
+        g.ColumnDefinitions.Add(ColAuto()); // 3 duration
         var img = new Image { Width = 44, Height = 44, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(img, 0); g.Children.Add(img);
         var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -802,8 +838,16 @@ public sealed partial class MainWindow : Window
         }
         sp.Children.Add(artist);
         Grid.SetColumn(sp, 1); g.Children.Add(sp);
+        // "Downloaded" glyph for tracks cached for offline this session (ids from
+        // DownloadForOffline's {key}); MarkOffline repaints the list to surface it.
+        if (_offlineIds.Contains(t.Id))
+        {
+            var off = new FontIcon { Glyph = "", FontSize = 12, Foreground = _accent, VerticalAlignment = VerticalAlignment.Center };
+            ToolTipService.SetToolTip(off, Loc.S("Tooltip_Downloaded"));
+            Grid.SetColumn(off, 2); g.Children.Add(off);
+        }
         var dur = new TextBlock { Text = Wire.TimeText(t.DurationMs), Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(dur, 2); g.Children.Add(dur);
+        Grid.SetColumn(dur, 3); g.Children.Add(dur);
         if (!string.IsNullOrEmpty(t.ArtworkUrl)) LoadArt(img, t.ArtworkUrl, _artGen, false);
         // Right-click actions (skipped for podcast episodes, which can't be liked /
         // added to a music playlist).
@@ -814,13 +858,21 @@ public sealed partial class MainWindow : Window
             like.Click += OnRowLike;
             var add = new MenuFlyoutItem { Text = Loc.S("Menu_AddToPlaylist"), Tag = t.Id };
             add.Click += OnRowAddToPlaylist;
+            // Up-Next queue: insert right after the playing track, or append to the end.
+            // Capture the Track (full metadata is needed to build the queue row / engine
+            // insert payload), not just its id.
+            var tCap = t;
+            var playNext = new MenuFlyoutItem { Text = Loc.S("Menu_PlayNext") };
+            playNext.Click += (_, _) => OnRowPlayNext(tCap);
+            var addQueue = new MenuFlyoutItem { Text = Loc.S("Menu_AddToQueue") };
+            addQueue.Click += (_, _) => OnRowAddToQueue(tCap);
             // Start radio: a "song radio" mix seeded from this track (loads + plays
             // through the same path as Flow).
             var radio = new MenuFlyoutItem { Text = Loc.S("Menu_StartRadio"), Tag = t.Id };
             radio.Click += OnRowStartRadio;
-            mf.Items.Add(like); mf.Items.Add(add); mf.Items.Add(radio);
-            // Download (premium-only offline export). Disabled with an explanatory
-            // tooltip for Free accounts, which the engine refuses anyway.
+            mf.Items.Add(like); mf.Items.Add(add); mf.Items.Add(playNext); mf.Items.Add(addQueue); mf.Items.Add(radio);
+            // Download (premium-only offline export to a folder). Disabled with an
+            // explanatory tooltip for Free accounts, which the engine refuses anyway.
             var dl = new MenuFlyoutItem { Text = Loc.S("Menu_Download"), Tag = t.Id };
             if (_account.Premium)
                 dl.Click += OnRowDownload;
@@ -830,6 +882,20 @@ public sealed partial class MainWindow : Window
                 ToolTipService.SetToolTip(dl, Loc.S("Menu_DownloadRequiresPremium"));
             }
             mf.Items.Add(dl);
+            // Download for offline (premium-only): cache for offline playback (stamps
+            // the row's "downloaded" glyph on success).
+            var dlOff = new MenuFlyoutItem { Text = Loc.S("Menu_DownloadOffline") };
+            if (_account.Premium)
+            {
+                string offId = t.Id;
+                dlOff.Click += (_, _) => DownloadForOffline(offId);
+            }
+            else
+            {
+                dlOff.IsEnabled = false;
+                ToolTipService.SetToolTip(dlOff, Loc.S("Menu_DownloadRequiresPremium"));
+            }
+            mf.Items.Add(dlOff);
             g.ContextFlyout = mf;
         }
         return g;
@@ -2089,27 +2155,31 @@ public sealed partial class MainWindow : Window
         foreach (var t in q) if (t.IsEpisode) return true;
         return false;
     }
+    // One Track -> the engine's queue-element JSON object (the shape DZQueueSet /
+    // DZQueueInsertNext parse; only "id" is required, the rest keep remote /status
+    // rows and a re-synced queue fully labelled).
+    private static JsonObject TrackToJsonObject(Track t)
+    {
+        var artists = new JsonArray();
+        if (!string.IsNullOrEmpty(t.ArtistId) || !string.IsNullOrEmpty(t.ArtistLine))
+            artists.Add(new JsonObject { ["id"] = t.ArtistId, ["name"] = t.ArtistLine });
+        return new JsonObject
+        {
+            ["id"] = t.Id,
+            ["name"] = t.Name,
+            ["durationMs"] = t.DurationMs,
+            ["artistLine"] = t.ArtistLine,
+            ["artistId"] = t.ArtistId,
+            ["artists"] = artists,
+            ["albumName"] = t.AlbumName,
+            ["artworkUrl"] = t.ArtworkUrl,
+            ["explicit"] = t.IsExplicit,
+        };
+    }
     private static string BuildQueueJson(List<Track> q)
     {
         var arr = new JsonArray();
-        foreach (var t in q)
-        {
-            var artists = new JsonArray();
-            if (!string.IsNullOrEmpty(t.ArtistId) || !string.IsNullOrEmpty(t.ArtistLine))
-                artists.Add(new JsonObject { ["id"] = t.ArtistId, ["name"] = t.ArtistLine });
-            arr.Add(new JsonObject
-            {
-                ["id"] = t.Id,
-                ["name"] = t.Name,
-                ["durationMs"] = t.DurationMs,
-                ["artistLine"] = t.ArtistLine,
-                ["artistId"] = t.ArtistId,
-                ["artists"] = artists,
-                ["albumName"] = t.AlbumName,
-                ["artworkUrl"] = t.ArtworkUrl,
-                ["explicit"] = t.IsExplicit,
-            });
-        }
+        foreach (var t in q) arr.Add(TrackToJsonObject(t));
         return arr.ToJsonString();
     }
     // (Re)build: replace the engine queue + align the cursor. The index push is
@@ -2200,6 +2270,13 @@ public sealed partial class MainWindow : Window
             _likeBtn.IsEnabled = !t.IsEpisode;
         }
         if (_addBtn != null) _addBtn.IsEnabled = !t.IsEpisode;
+        // Download for offline: premium-only and never for podcast episodes. Point the
+        // tooltip at the premium requirement when the account can't use it.
+        if (_downloadBtn != null)
+        {
+            _downloadBtn.IsEnabled = _account.Premium && !t.IsEpisode;
+            ToolTipService.SetToolTip(_downloadBtn, _account.Premium ? Loc.S("Tooltip_DownloadOffline") : Loc.S("Menu_DownloadRequiresPremium"));
+        }
         UpdateSmtcMetadata(t); // push to the OS media overlay / lock screen
     }
     private void Next()
@@ -2224,6 +2301,283 @@ public sealed partial class MainWindow : Window
         PlayCurrent();
         SyncEngineQueueIndex();
     }
+
+    // ---- Up-Next queue panel (transport flyout) ------------------------------
+    // Backed by the GUI's authoritative _queue / _queueIndex. Structural edits
+    // mutate that model first, then apply the SAME granular edit to the engine
+    // queue (only while _queueSynced -- an episode queue is engine-unsynced) and
+    // re-assert the cursor, reusing the newest-wins _queueSyncIndexGen guard the
+    // engine-sync path already uses. The panel is rebuilt on open and after every
+    // edit; OnTick refreshes the highlight live while it is open.
+    private void OnQueueFlyoutOpened(object sender, object args) { _queueOpen = true; RefreshQueuePanel(); }
+    private void OnQueueFlyoutClosed(object sender, object args) { _queueOpen = false; }
+
+    private void RefreshQueuePanel()
+    {
+        if (_queueList == null) return;
+        _queueRenderedIndex = _queueIndex;
+        _queueList.Items.Clear();
+        if (_queue.Count == 0)
+        {
+            _queueStatus.Text = Loc.S("Queue_Empty");
+            _queueStatus.Visibility = Visibility.Visible;
+            if (_queueClearBtn != null) _queueClearBtn.IsEnabled = false;
+            return;
+        }
+        _queueStatus.Visibility = Visibility.Collapsed;
+        if (_queueClearBtn != null) _queueClearBtn.IsEnabled = true;
+        for (int i = 0; i < _queue.Count; i++)
+            _queueList.Items.Add(MakeQueueRow(_queue[i], i));
+    }
+
+    // One Up-Next row: play-indicator (current) + title/artist + move up/down +
+    // remove. Tag carries the queue index (row click jumps to it).
+    private UIElement MakeQueueRow(Track t, int index)
+    {
+        bool current = index == _queueIndex;
+        var g = new Grid { Tag = index, Padding = new Thickness(4, 2, 2, 2), ColumnSpacing = 8, MinWidth = 300 };
+        g.ColumnDefinitions.Add(ColAuto());   // 0 play indicator
+        g.ColumnDefinitions.Add(ColStar());   // 1 title/artist
+        g.ColumnDefinitions.Add(ColAuto());   // 2 move up
+        g.ColumnDefinitions.Add(ColAuto());   // 3 move down
+        g.ColumnDefinitions.Add(ColAuto());   // 4 remove
+        if (current)
+        {
+            var nowIcon = new FontIcon { Glyph = "", FontSize = 12, Foreground = _accent, VerticalAlignment = VerticalAlignment.Center }; // Play
+            Grid.SetColumn(nowIcon, 0); g.Children.Add(nowIcon);
+        }
+        var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        sp.Children.Add(new TextBlock
+        {
+            Text = t.Name,
+            FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal,
+            Foreground = current ? _accent : null,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        sp.Children.Add(new TextBlock { Text = t.ArtistLine, Opacity = 0.6, FontSize = 12, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis });
+        Grid.SetColumn(sp, 1); g.Children.Add(sp);
+        var up = QueueIconButton("", Loc.S("Queue_MoveUp"), index);   // ChevronUp
+        up.IsEnabled = index > 0;
+        up.Click += OnQueueMoveUp;
+        Grid.SetColumn(up, 2); g.Children.Add(up);
+        var down = QueueIconButton("", Loc.S("Queue_MoveDown"), index); // ChevronDown
+        down.IsEnabled = index < _queue.Count - 1;
+        down.Click += OnQueueMoveDown;
+        Grid.SetColumn(down, 3); g.Children.Add(down);
+        var rm = QueueIconButton("", Loc.S("Queue_Remove"), index);    // Delete
+        rm.Click += OnQueueRemove;
+        Grid.SetColumn(rm, 4); g.Children.Add(rm);
+        return g;
+    }
+    private static Button QueueIconButton(string glyph, string tip, int index)
+    {
+        var b = new Button
+        {
+            Content = new FontIcon { Glyph = glyph, FontSize = 12 },
+            Tag = index,
+            Padding = new Thickness(6, 2, 6, 2),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(b, tip);
+        AutomationProperties.SetName(b, tip);
+        return b;
+    }
+
+    private void OnQueueRowClick(object s, ItemClickEventArgs e)
+    {
+        int i = TagIndex(e.ClickedItem);
+        if (i < 0 || i >= _queue.Count || i == _queueIndex) return;
+        _queueIndex = i;
+        PlayCurrent();
+        SyncEngineQueueIndex();  // realign the engine cursor to the jumped row
+        RefreshQueuePanel();
+    }
+    private void OnQueueMoveUp(object s, RoutedEventArgs e)
+    {
+        int i = TagIndex(s); if (i > 0) MoveQueueItem(i, i - 1);
+    }
+    private void OnQueueMoveDown(object s, RoutedEventArgs e)
+    {
+        int i = TagIndex(s); if (i >= 0 && i < _queue.Count - 1) MoveQueueItem(i, i + 1);
+    }
+    private void OnQueueRemove(object s, RoutedEventArgs e)
+    {
+        int i = TagIndex(s); if (i >= 0) RemoveQueueItem(i);
+    }
+
+    // Relocate a queue row, adjust the play cursor the way a list-move does, mirror
+    // the edit into the engine, and repaint the panel.
+    private void MoveQueueItem(int from, int to)
+    {
+        if (from < 0 || from >= _queue.Count || to < 0 || to >= _queue.Count || from == to) return;
+        var t = _queue[from];
+        _queue.RemoveAt(from);
+        _queue.Insert(to, t);
+        if (from == _queueIndex) _queueIndex = to;
+        else if (from < _queueIndex && to >= _queueIndex) _queueIndex--;
+        else if (from > _queueIndex && to <= _queueIndex) _queueIndex++;
+        ApplyEngineQueueEdit(() => DeezerCore.DZQueueMove(from, to));
+        RearmPreloadAfterQueueEdit();
+        RefreshQueuePanel();
+    }
+    // Remove a queue row. Removing the playing row starts the track that slides into
+    // its slot (or stops when the queue empties); otherwise playback is untouched.
+    // The play cursor is adjusted FIRST so the single engine task (remove + cursor
+    // re-assert) carries the final index -- no separate, racy cursor push.
+    private void RemoveQueueItem(int i)
+    {
+        if (i < 0 || i >= _queue.Count) return;
+        bool wasCurrent = i == _queueIndex;
+        _queue.RemoveAt(i);
+        if (_queue.Count == 0) _queueIndex = -1;
+        else if (wasCurrent) { if (_queueIndex >= _queue.Count) _queueIndex = _queue.Count - 1; }
+        else if (i < _queueIndex) _queueIndex--; // cursor slid down under the removed row
+        ApplyEngineQueueEdit(() => DeezerCore.DZQueueRemove(i));
+        if (wasCurrent && _queueIndex >= 0) PlayCurrent(); // start the track now in this slot (arms its own preload)
+        else RearmPreloadAfterQueueEdit();                 // a plain edit may change the deterministic next
+        RefreshQueuePanel();
+    }
+    // "Clear queue": drop everything except the currently playing track (keeps
+    // playback going), then re-push the trimmed queue to the engine.
+    private void OnQueueClear(object s, RoutedEventArgs e)
+    {
+        if (_queue.Count == 0) return;
+        if (_queueIndex >= 0 && _queueIndex < _queue.Count)
+        {
+            _queue = new List<Track> { _queue[_queueIndex] };
+            _queueIndex = 0;
+        }
+        else { _queue = new List<Track>(); _queueIndex = -1; }
+        SyncEngineQueueSet();
+        RearmPreloadAfterQueueEdit();
+        RefreshQueuePanel();
+    }
+
+    // Track-menu "Play next": insert right after the current row (via the engine's
+    // insert-next export); an empty/idle queue just starts the track.
+    private void QueuePlayNext(Track t)
+    {
+        if (string.IsNullOrEmpty(t.Id)) return;
+        if (_queue.Count == 0 || _queueIndex < 0) { PlayFrom(new List<Track> { t }, 0); return; }
+        int at = Math.Min(_queueIndex + 1, _queue.Count);
+        _queue.Insert(at, t);
+        string js = TrackToJsonObject(t).ToJsonString();
+        ApplyEngineQueueEdit(() => DeezerCore.DZQueueInsertNext(js));
+        RearmPreloadAfterQueueEdit();
+        RefreshQueuePanel();
+    }
+    // Track-menu "Add to queue": append at the end (no dedicated engine export, so
+    // re-push the whole queue); an empty/idle queue just starts the track.
+    private void QueueAppend(Track t)
+    {
+        if (string.IsNullOrEmpty(t.Id)) return;
+        if (_queue.Count == 0 || _queueIndex < 0) { PlayFrom(new List<Track> { t }, 0); return; }
+        _queue.Add(t);
+        SyncEngineQueueSet();
+        RearmPreloadAfterQueueEdit();
+        RefreshQueuePanel();
+    }
+    private void OnRowPlayNext(Track t) => QueuePlayNext(t);
+    private void OnRowAddToQueue(Track t) => QueueAppend(t);
+
+    // Apply a granular structural edit to the engine queue, then re-assert the
+    // cursor from the (already-updated) GUI model so the engine matches regardless
+    // of how the export handles the cursor. Skipped when the queue is not mirrored
+    // (episode / empty). Off-thread like every blocking DZ* call, and gen-guarded
+    // (shared counter) so a later edit's cursor wins on out-of-order completion.
+    private async void ApplyEngineQueueEdit(Action engineEdit)
+    {
+        if (!_queueSynced) return;
+        int idx = _queueIndex;
+        int gen = ++_queueSyncIndexGen;
+        _queueSyncPending++;
+        try
+        {
+            await Task.Run(() =>
+            {
+                engineEdit();
+                if (idx >= 0 && gen == Volatile.Read(ref _queueSyncIndexGen))
+                    DeezerCore.DZQueueSetIndex(idx);
+            });
+        }
+        finally { _queueSyncPending--; }
+    }
+    // A structural edit can change the deterministic next track: re-arm the gapless
+    // preload onto the new next, or drop a now-stale one (DZClearPreload's case).
+    private void RearmPreloadAfterQueueEdit()
+    {
+        if (!_settings.Gapless) return;
+        if (HasDeterministicNext(out int n)) DispatchPreload(_queue[n].Id, _queue[n].DurationMs);
+        else
+        {
+            int gen = _playDispatchGen;
+            _playChain = _playChain.ContinueWith(_ =>
+            {
+                if (gen == Volatile.Read(ref _playDispatchGen)) DeezerCore.DZClearPreload();
+            }, TaskScheduler.Default);
+        }
+    }
+
+    // ---- offline caching (Download for offline; PREMIUM-ONLY) ----------------
+    // Cache a track for offline playback off the UI thread (blocking, forwards over
+    // HTTP when casting), then flash a transient InfoBar and stamp the "downloaded"
+    // glyph on its row (id echoed back as {key}).
+    private async void DownloadForOffline(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        if (!_account.Premium)
+        {
+            ShowOfflineInfo(false, Loc.S("Offline_FailTitle"), Loc.S("Menu_DownloadRequiresPremium"));
+            return;
+        }
+        string json = await Task.Run(() => DeezerCore.DownloadForOffline(id));
+        string key = "", err = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrEmpty(json) ? "{}" : json);
+            key = doc.RootElement.Str("key");
+            err = doc.RootElement.Str("error");
+        }
+        catch { }
+        if (string.IsNullOrEmpty(err))
+        {
+            MarkOffline(string.IsNullOrEmpty(key) ? id : key);
+            ShowOfflineInfo(true, Loc.S("Offline_DoneTitle"), Loc.S("Offline_DoneBody"));
+        }
+        else ShowOfflineInfo(false, Loc.S("Offline_FailTitle"), err);
+    }
+    // Record an offline track id and, if it is visible in the current list, repaint
+    // so its "downloaded" glyph appears immediately.
+    private void MarkOffline(string id)
+    {
+        if (string.IsNullOrEmpty(id) || !_offlineIds.Add(id)) return;
+        if (_trackList != null && _tracks.Exists(t => t.Id == id)) FillTrackList(_trackList, _tracks);
+    }
+    // Transient status banner (auto-dismisses); reuses the top-of-window InfoBar row.
+    private void ShowOfflineInfo(bool success, string title, string message)
+    {
+        if (_offlineInfoBar == null) return;
+        _offlineInfoBar.Severity = success ? InfoBarSeverity.Success : InfoBarSeverity.Error;
+        _offlineInfoBar.Title = title;
+        _offlineInfoBar.Message = message;
+        _offlineInfoBar.IsOpen = true;
+        _offlineInfoTimer ??= CreateOfflineInfoTimer();
+        _offlineInfoTimer.Stop();
+        _offlineInfoTimer.Start();
+    }
+    private DispatcherQueueTimer CreateOfflineInfoTimer()
+    {
+        var t = DispatcherQueue.CreateTimer();
+        t.Interval = TimeSpan.FromSeconds(5);
+        t.IsRepeating = false;
+        t.Tick += (s, _) => { s.Stop(); if (_offlineInfoBar != null) _offlineInfoBar.IsOpen = false; };
+        return t;
+    }
+    private void OnDownloadCurrentOffline(object s, RoutedEventArgs e) => DownloadForOffline(CurrentTrackId());
+
     // Off-thread like every other blocking DZ* call: when routed over Connect these
     // forward over HTTP (15 s timeout), so they must never run on the dispatcher.
     private async void OnShuffle(object s, RoutedEventArgs e)
@@ -2458,6 +2812,10 @@ public sealed partial class MainWindow : Window
             bool shuf = DeezerCore.GetShuffle();
             if (shuf != _shuffle) ApplyShuffleDisplay(shuf);
         }
+
+        // Keep the open Up-Next panel's current-track highlight live as playback
+        // advances (queue content only changes via explicit edits, which repaint).
+        if (_queueOpen && _queueIndex != _queueRenderedIndex) RefreshQueuePanel();
     }
 
     // ---- SystemMediaTransportControls (OS media overlay / media keys) --------
@@ -3543,12 +3901,27 @@ public sealed partial class MainWindow : Window
     private string _engineNowId = "";       // last id DZNowPlayingJSON reported
     private string _engineNowArtistId = ""; // last artistId DZNowPlayingJSON reported (B3: Connect artist nav)
     private Slider _seek = null!, _volume = null!;
-    private Button _playBtn = null!, _repeatBtn = null!, _addBtn = null!, _lyricsBtn = null!, _artistBtn = null!;
+    private Button _playBtn = null!, _repeatBtn = null!, _addBtn = null!, _lyricsBtn = null!, _artistBtn = null!, _downloadBtn = null!;
     private FontIcon _playIcon = null!, _repeatIcon = null!;
     private ToggleButton _shuffleBtn = null!, _likeBtn = null!;
     private bool _suppressLike;
     // liked-track id cache (seeded from DZFavoriteIDsJSON) -> a truthful now-playing heart
     private HashSet<string> _likedIds = new();
+
+    // Up-Next queue panel (transport flyout; backed by _queue / _queueIndex).
+    private Button _queueBtn = null!, _queueClearBtn = null!;
+    private Flyout _queueFlyout = null!;
+    private ListView _queueList = null!;
+    private TextBlock _queueStatus = null!;
+    private bool _queueOpen;            // flyout open (drives the live-highlight refresh)
+    private int _queueRenderedIndex = -1; // _queueIndex last painted into the panel
+
+    // Offline caching (Download for offline). _offlineIds collects ids cached this
+    // session (from DZDownloadForOffline's {key}) to stamp the "downloaded" glyph;
+    // _offlineInfoBar + its auto-dismiss timer flash the result.
+    private HashSet<string> _offlineIds = new();
+    private InfoBar _offlineInfoBar = null!;
+    private DispatcherQueueTimer? _offlineInfoTimer;
 
     // Connect picker
     private Button _connectBtn = null!;

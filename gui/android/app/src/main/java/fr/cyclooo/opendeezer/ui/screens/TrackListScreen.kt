@@ -110,9 +110,8 @@ fun TrackList(tracks: List<Track>?, player: PlayerController, modifier: Modifier
                     itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { index, track ->
                         TrackRow(
                             track = track,
+                            player = player,
                             onClick = { player.playQueue(list, index) },
-                            onDownload = { player.download(track) },
-                            downloadEnabled = player.premium,
                             onStartRadio = if (track.isEpisode) null else { { player.startTrackRadio(track) } },
                         )
                     }

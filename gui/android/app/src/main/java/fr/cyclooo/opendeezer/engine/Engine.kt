@@ -165,6 +165,32 @@ object Engine {
     fun queueSnapshot(): QueueSnapshot? =
         Json.queueSnapshot(runCatching { Odmobile.queueJSON() }.getOrNull())
 
+    // ---- engine queue edits (app -> engine; P4 native queue editor) ----
+    // Mutate the engine-owned queue directly so remote controllers stay
+    // consistent; each bumps QueueVersion, which the PlayerController poll adopts
+    // to re-sync the app queue + UI. gomobile maps Go int -> Java long, hence the
+    // toLong() on the index arguments.
+
+    // Removes the track at [index] (the engine refuses to drop the playing row).
+    suspend fun queueRemove(index: Int) = io { runCatching { Odmobile.queueRemove(index.toLong()) }.let {} }
+    // Reorders the queue (from -> to); the cursor/history follow. Out-of-range /
+    // from==to are engine-side no-ops.
+    suspend fun queueMove(from: Int, to: Int) =
+        io { runCatching { Odmobile.queueMove(from.toLong(), to.toLong()) }.let {} }
+    // Inserts the wire-shaped [trackJson] (single object or 1-element array)
+    // immediately after the current row.
+    suspend fun queueInsertNext(trackJson: String) =
+        io { runCatching { Odmobile.queueInsertNext(trackJson) }.let {} }
+
+    // ---- offline download (premium-only; requires the stream cache enabled) ----
+    // Populates the on-disk media cache with the raw ciphertext for [id] so it
+    // can later play with zero network. Returns the engine's raw JSON:
+    // {"status":"cached|already_cached|cache_only","key":"...","trackID":"..."}
+    // or {"error":"..."} (e.g. "media cache disabled" when the stream cache is
+    // off). Blocking / network-bound — pinned to Dispatchers.IO.
+    suspend fun downloadForOffline(id: String): String =
+        io { runCatching { Odmobile.downloadForOffline(id) }.getOrDefault("""{"error":"failed"}""") }
+
     // ---- downloads (premium-only; the engine rejects the request otherwise) ----
     // Returns the engine's raw JSON: {"path":"..."} on success or {"error":"..."}.
     // Pass "" for [dir] to save into the shared default download folder.

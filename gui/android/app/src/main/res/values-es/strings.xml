@@ -261,4 +261,15 @@
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>
     </plurals>
+    <!-- Editor de cola + descarga sin conexión -->
+    <string name="action_play_next">Reproducir a continuación</string>
+    <string name="action_add_to_queue">Añadir a la cola</string>
+    <string name="action_clear_queue">Vaciar la cola</string>
+    <string name="action_download_offline">Descargar sin conexión</string>
+    <string name="action_remove">Quitar</string>
+    <string name="cd_downloaded">Descargado</string>
+    <string name="cd_reorder">Reordenar</string>
+    <string name="offline_ready">%1$s disponible sin conexión</string>
+    <string name="offline_already">%1$s ya sin conexión</string>
+    <string name="offline_needs_cache">Activa la caché de streaming en Ajustes para descargar sin conexión</string>
 </resources>

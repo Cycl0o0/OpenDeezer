@@ -257,4 +257,15 @@
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>
     </plurals>
+    <!-- कतार संपादक + ऑफ़लाइन डाउनलोड -->
+    <string name="action_play_next">अगला चलाएँ</string>
+    <string name="action_add_to_queue">कतार में जोड़ें</string>
+    <string name="action_clear_queue">कतार साफ़ करें</string>
+    <string name="action_download_offline">ऑफ़लाइन के लिए डाउनलोड करें</string>
+    <string name="action_remove">हटाएँ</string>
+    <string name="cd_downloaded">डाउनलोड किया गया</string>
+    <string name="cd_reorder">क्रम बदलें</string>
+    <string name="offline_ready">%1$s ऑफ़लाइन उपलब्ध</string>
+    <string name="offline_already">%1$s पहले से ऑफ़लाइन</string>
+    <string name="offline_needs_cache">ऑफ़लाइन डाउनलोड के लिए सेटिंग में स्ट्रीम कैश सक्षम करें</string>
 </resources>

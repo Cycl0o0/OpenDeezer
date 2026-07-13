@@ -43,9 +43,9 @@ fun SearchResultsList(
             itemsIndexed(results.tracks, key = { i, t -> "t-$i-${t.id}" }) { index, track ->
                 TrackRow(
                     track = track,
+                    player = player,
                     onClick = { player.playQueue(results.tracks, index) },
-                    onDownload = { player.download(track) },
-                    downloadEnabled = player.premium,
+                    onStartRadio = if (track.isEpisode) null else { { player.startTrackRadio(track) } },
                 )
             }
         }

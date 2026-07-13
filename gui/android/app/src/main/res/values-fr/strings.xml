@@ -262,4 +262,15 @@
         <item quantity="many">%1$d d\'écoutes</item>
         <item quantity="other">%1$d écoutes</item>
     </plurals>
+    <!-- Éditeur de file + téléchargement hors ligne -->
+    <string name="action_play_next">Lire ensuite</string>
+    <string name="action_add_to_queue">Ajouter à la file</string>
+    <string name="action_clear_queue">Vider la file</string>
+    <string name="action_download_offline">Télécharger hors ligne</string>
+    <string name="action_remove">Retirer</string>
+    <string name="cd_downloaded">Téléchargé</string>
+    <string name="cd_reorder">Réorganiser</string>
+    <string name="offline_ready">%1$s disponible hors ligne</string>
+    <string name="offline_already">%1$s déjà hors ligne</string>
+    <string name="offline_needs_cache">Activez le cache de flux dans les Réglages pour télécharger hors ligne</string>
 </resources>

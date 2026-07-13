@@ -21,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -233,6 +235,8 @@ private fun PlayerControls(
     // optimistic and reverts with a snackbar if the write fails.
     val likedIds by player.likedIds.collectAsState()
     val liked = !track.isEpisode && likedIds.contains(track.id)
+    val offlineIds by player.offlineIds.collectAsState()
+    val offlineReady = offlineIds.contains(track.id)
 
     val duration = state.durationMs.coerceAtLeast(1L)
     val livePosFraction = (state.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
@@ -323,6 +327,19 @@ private fun PlayerControls(
             enabled = player.premium && !track.isEpisode,
         ) {
             Icon(Icons.Filled.Download, contentDescription = stringResource(R.string.action_download))
+        }
+        // Download for offline: populate the media cache so this track can play
+        // with zero network. Premium-only + non-episode; the badge fills once the
+        // track is cache-available this session.
+        IconButton(
+            onClick = { player.downloadForOffline(track) },
+            enabled = player.premium && !track.isEpisode,
+        ) {
+            Icon(
+                if (offlineReady) Icons.Filled.DownloadDone else Icons.Filled.DownloadForOffline,
+                contentDescription = stringResource(R.string.action_download_offline),
+                tint = if (offlineReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 

@@ -434,6 +434,109 @@ final class PlayerController: ObservableObject {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
+    // MARK: - Up-Next queue editing
+
+    /// Whether the row at `index` is the one currently playing (never removable).
+    func isCurrentQueueRow(_ index: Int) -> Bool { index == currentIndex }
+
+    /// Start the queued row at `index` (Up-Next tap-to-jump). Mirrors the
+    /// advance/previous path: repoint the cursor, (re)start it, align the engine.
+    func jumpToQueueIndex(_ index: Int) {
+        guard queue.indices.contains(index) else { return }
+        currentIndex = index
+        playCurrent()
+        syncEngineQueueIndex()
+    }
+
+    /// Remove the Up-Next rows at `offsets` (the currently playing row can't be
+    /// removed — the engine guards this too, so playback never cuts out). Removes
+    /// high-to-low so the surviving indices stay valid for both queues.
+    func removeFromQueue(atOffsets offsets: IndexSet) {
+        let indices = offsets.sorted(by: >).filter { queue.indices.contains($0) && $0 != currentIndex }
+        guard !indices.isEmpty else { return }
+        for i in indices {
+            queue.remove(at: i)
+            if let ci = currentIndex, i < ci { currentIndex = ci - 1 }
+        }
+        let idx = currentIndex ?? -1
+        Task {
+            for i in indices { await Engine.queueRemove(i) }
+            await Engine.setQueueIndex(idx)
+        }
+        // What plays next may have changed: drop and re-arm the gapless preload.
+        preloadedId = nil
+        armPreload()
+    }
+
+    /// Reorder the queue (drag-to-reorder in the Up-Next list). Translates
+    /// SwiftUI's insert-before `destination` to the engine's final-index `to`,
+    /// then remaps the cursor with the exact arithmetic the engine's Move uses so
+    /// the local index and the engine cursor stay identical.
+    func moveInQueue(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard let from = source.first else { return }
+        let to = destination > from ? destination - 1 : destination
+        guard from != to, queue.indices.contains(from), queue.indices.contains(to) else { return }
+        let track = queue.remove(at: from)
+        queue.insert(track, at: to)
+        // Same remap as internal/queue Move: remove-at-from then insert-at-to.
+        func remap(_ x: Int) -> Int {
+            var x = x
+            if x == from { return to }
+            if x > from { x -= 1 }
+            if x >= to { x += 1 }
+            return x
+        }
+        if let ci = currentIndex { currentIndex = remap(ci) }
+        let idx = currentIndex ?? -1
+        Task {
+            await Engine.queueMove(from: from, to: to)
+            await Engine.setQueueIndex(idx)
+        }
+        preloadedId = nil
+        armPreload()
+    }
+
+    /// Insert `track` to play right after the current one ("Play Next"). Starts
+    /// it directly when nothing is queued yet.
+    func playNext(_ track: Track) {
+        guard current != nil, let ci = currentIndex, queue.indices.contains(ci) else {
+            play(track)
+            return
+        }
+        queue.insert(track, at: ci + 1) // after current; cursor unchanged
+        Task { await Engine.queueInsertNext(track) }
+        preloadedId = nil
+        armPreload()
+    }
+
+    /// Append `track` to the end of the queue ("Add to Queue"). Starts it
+    /// directly when nothing is queued yet. There's no granular engine "append",
+    /// so the whole (small) queue is re-pushed — the existing sync pattern.
+    func addToQueue(_ track: Track) {
+        guard current != nil, !queue.isEmpty else {
+            play(track)
+            return
+        }
+        queue.append(track)
+        syncEngineQueue()
+        preloadedId = nil
+        armPreload()
+    }
+
+    /// Clear every queued row except the one playing ("Clear" in Up Next); stops
+    /// playback outright when nothing is playing.
+    func clearQueue() {
+        guard let ci = currentIndex, queue.indices.contains(ci) else {
+            stopPlayback()
+            return
+        }
+        queue = [queue[ci]]
+        currentIndex = 0
+        preloadedId = nil
+        syncEngineQueue()
+        armPreload()
+    }
+
     // MARK: - Engine queue sync (app queue -> engine)
 
     /// Push the whole app queue + current index into the engine so web/Connect

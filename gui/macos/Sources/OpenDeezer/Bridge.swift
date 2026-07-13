@@ -331,6 +331,51 @@ enum Core {
     /// Moves the engine queue's cursor to `i` (clamped engine-side).
     static func queueSetIndex(_ i: Int) { DZQueueSetIndex(Int32(i)) }
 
+    // MARK: queue editing — Up-Next editor (3.0)
+
+    // The engine now exposes surgical queue edits (DZQueueRemove/DZQueueMove/
+    // DZQueueInsertNext) plus a full snapshot (DZQueueJSON). AppState keeps the
+    // GUI's own play queue authoritative and re-mirrors it with DZQueueSet after
+    // each edit (one source of truth), so these thin wrappers exist for parity /
+    // callers that want to drive the engine queue directly.
+
+    /// Full engine-queue snapshot: content-version, cursor and tracks — lets a
+    /// GUI adopt queue edits made by a remote controller.
+    struct QueueSnapshot: Decodable {
+        let version: Int64
+        let index: Int
+        let tracks: [Track]
+    }
+    static func queueJSON() -> QueueSnapshot? {
+        decode(QueueSnapshot.self, takeJSON(DZQueueJSON()))
+    }
+    /// Content-mutation counter (bumped by set/add/remove/move, not cursor moves).
+    static var queueVersion: Int64 { Int64(DZQueueVersion()) }
+    /// Engine queue cursor (-1 when empty / unsynced).
+    static var queueIndex: Int { Int(DZQueueIndex()) }
+
+    /// Removes the engine queue's track at `i` (the playing row is guarded engine-side).
+    static func queueRemove(_ i: Int) { DZQueueRemove(Int32(i)) }
+    /// Reorders the engine queue, moving `from` to `to` (cursor follows the moved track).
+    static func queueMove(from: Int, to: Int) { DZQueueMove(Int32(from), Int32(to)) }
+    /// Splices `track` into the engine queue right after the playing row ("play next").
+    static func queueInsertNext(_ track: Track) {
+        guard let data = try? JSONEncoder().encode(track),
+              let js = String(data: data, encoding: .utf8) else { return }
+        withC(js) { DZQueueInsertNext($0) }
+    }
+
+    // MARK: offline download (cache a track's ciphertext for zero-network play)
+
+    // DZDownloadForOffline pre-fetches the encrypted ciphertext into the on-disk
+    // media cache and persists the stream meta, so a later DZPlay serves it with
+    // zero network. Blocking + premium-only like DZDownloadTrack — call it off the
+    // main thread. Returns {"status":"downloaded"|"cached","key":"..."} on success
+    // or {"error":"..."}.
+    static func downloadForOffline(_ id: String) -> String {
+        takeString(withC(id) { DZDownloadForOffline($0) })
+    }
+
     // MARK: podcasts (v0.4)
 
     static func searchPodcasts(_ q: String) -> [Podcast] {

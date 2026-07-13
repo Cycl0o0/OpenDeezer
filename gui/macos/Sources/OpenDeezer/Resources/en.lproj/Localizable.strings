@@ -246,3 +246,21 @@
 "Stream cache" = "Stream cache";
 "%d MB" = "%d MB";
 "On-disk cache for streamed audio (0 = off). Applies at next launch." = "On-disk cache for streamed audio (0 = off). Applies at next launch.";
+
+/* Up-Next editor + queue edits (3.0) */
+"Up Next" = "Up Next";
+"Clear" = "Clear";
+"%d in queue" = "%d in queue";
+"Nothing in the queue" = "Nothing in the queue";
+"Play a track and it'll show up here." = "Play a track and it'll show up here.";
+"Play next" = "Play next";
+"Add to queue" = "Add to queue";
+"Remove from queue" = "Remove from queue";
+
+/* Download for offline (3.0) */
+"Download for offline" = "Download for offline";
+"Available offline" = "Available offline";
+"Saving “%@” for offline…" = "Saving “%@” for offline…";
+"“%@” available offline" = "“%@” available offline";
+"“%@” is available offline" = "“%@” is available offline";
+"Offline download failed." = "Offline download failed.";

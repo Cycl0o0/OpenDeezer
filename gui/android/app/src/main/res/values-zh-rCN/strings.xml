@@ -253,4 +253,15 @@
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>
     </plurals>
+    <!-- 队列编辑器 + 离线下载 -->
+    <string name="action_play_next">下一首播放</string>
+    <string name="action_add_to_queue">添加到队列</string>
+    <string name="action_clear_queue">清空队列</string>
+    <string name="action_download_offline">下载以离线播放</string>
+    <string name="action_remove">移除</string>
+    <string name="cd_downloaded">已下载</string>
+    <string name="cd_reorder">重新排序</string>
+    <string name="offline_ready">%1$s 可离线播放</string>
+    <string name="offline_already">%1$s 已离线</string>
+    <string name="offline_needs_cache">在设置中启用流媒体缓存以下载离线内容</string>
 </resources>

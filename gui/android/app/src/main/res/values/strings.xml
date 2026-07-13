@@ -295,4 +295,15 @@
         <item quantity="one">Pauses in %1$d minute</item>
         <item quantity="other">Pauses in %1$d minutes</item>
     </plurals>
+    <!-- Queue editor + download for offline -->
+    <string name="action_play_next">Play next</string>
+    <string name="action_add_to_queue">Add to queue</string>
+    <string name="action_clear_queue">Clear queue</string>
+    <string name="action_download_offline">Download for offline</string>
+    <string name="action_remove">Remove</string>
+    <string name="cd_downloaded">Downloaded</string>
+    <string name="cd_reorder">Reorder</string>
+    <string name="offline_ready">%1$s available offline</string>
+    <string name="offline_already">%1$s already offline</string>
+    <string name="offline_needs_cache">Enable the stream cache in Settings to download for offline</string>
 </resources>

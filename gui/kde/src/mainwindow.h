@@ -34,6 +34,7 @@ class QSystemTrayIcon;
 class QFrame;
 class QVBoxLayout;
 class QPushButton;
+class QDockWidget;
 QT_END_NAMESPACE
 
 class MprisController;
@@ -126,6 +127,13 @@ private:
     void showAddToPlaylistPicker(const Track &t, const QVector<Playlist> &ps);
     void removeFromCurrentPlaylist(const Track &t, int row);
     void download(const QString &id);                     // DZDownloadTrack (premium-only)
+    // Save a track for offline playback (premium-only): DZDownloadForOffline on a
+    // worker, toast the result and record its {key} id so the "downloaded"
+    // indicator (see displayTitle) lights up. refreshOfflineIndicators repaints
+    // the markers across the visible track tables, the queue panel and the
+    // now-playing badge.
+    void downloadForOffline(const Track &t);
+    void refreshOfflineIndicators();
     // Batch downloads (premium-only): a whole album / playlist to the shared
     // folder via DZDownloadAlbum / DZDownloadPlaylist, on the same worker shape
     // as download(); downloadBatch is the shared body.
@@ -183,6 +191,10 @@ private:
     void playEpisode(const Episode &e, const QString &showName = QString());
 
     // ---- track table filling + async cover art ----
+    // Row title as shown in every track table / the queue panel: the explicit "E"
+    // badge (badgedTitle) plus a leading "downloaded" glyph when the track is
+    // available offline (id in m_offlineIds).
+    QString displayTitle(const Track &t) const;
     void fillTrackTable(QTableWidget *table, const QVector<Track> &tracks, int gen);
     void fetchImage(const QString &url, int gen, std::function<void(const QImage &)> apply);
 
@@ -193,6 +205,25 @@ private:
     // owns natural-finish auto-advance (see tick()'s DZQueueIndex follow).
     void syncQueueToEngine();
     void syncQueueIndex();
+
+    // ---- Up-Next queue editor (right-side dock) ----
+    // buildQueueDock builds the dock (list + Clear / move / remove controls);
+    // refreshQueuePanel re-renders it from the engine queue (DZQueueJSON, with the
+    // GUI's m_queue as the fallback + authority). The edit ops mutate BOTH the GUI
+    // model (m_queue/m_queueIndex — the playback source of truth) and the engine
+    // mirror (DZQueueRemove / DZQueueMove / DZQueueInsertNext), then realign the
+    // cursor to the actually-playing track so a reorder/removal never desyncs
+    // playback. queueJumpTo double-click-plays a row; queueAppend / queueClear go
+    // through the whole-queue push (DZQueueSet via syncQueueToEngine).
+    void buildQueueDock();
+    void refreshQueuePanel();
+    void queueJumpTo(int row);
+    void queueRemoveAt(int row);
+    void queueMove(int from, int to);
+    void queueInsertNext(const Track &t);   // "Play next"
+    void queueAppend(const Track &t);       // "Add to queue"
+    void queueClear();
+    void realignQueueCursor();              // cursor -> current track's new row
 
     // ---- playback ----
     void playFrom(const QVector<Track> &list, int index);
@@ -256,6 +287,10 @@ private:
     QListWidget   *m_sidebar       = nullptr;
     QStackedWidget*m_stack         = nullptr;
 
+    // "Up Next" queue editor dock (right dock area) + its list of queue rows.
+    QDockWidget   *m_queueDock     = nullptr;
+    QListWidget   *m_queueList     = nullptr;
+
     // Central widget's top-level layout — the update banner inserts itself at
     // row 0 above the sidebar/content splitter, and removes itself on dismiss.
     QVBoxLayout   *m_centralLayout = nullptr;
@@ -314,6 +349,7 @@ private:
                 *m_posLabel = nullptr, *m_durLabel = nullptr;
     QLabel      *m_explicitBadge = nullptr;  // styled "E" tag shown for explicit tracks
     QLabel      *m_previewBadge  = nullptr;  // styled "Preview" tag while DZIsPreview()==1
+    QLabel      *m_offlineBadge  = nullptr;  // styled "Offline" tag when the current track is saved offline
     QTimer      *m_poll = nullptr;
 
     // ---- data ----
@@ -347,6 +383,10 @@ private:
     // best-effort local mirror: seeded from the Liked Songs view and updated on
     // every like/unlike so the heart reflects state for known tracks.
     QSet<QString> m_likedIds;
+    // Track ids saved for offline playback, learned from the {key} DZDownloadForOffline
+    // returns. Like m_likedIds this is a best-effort per-session mirror (there is no
+    // bulk "list offline ids" query); it drives the "downloaded" indicator.
+    QSet<QString> m_offlineIds;
     QString       m_currentPlaylistId;       // set while the shared table shows a playlist
     QString       m_currentPlaylistName;     // its display name (batch-download message)
     QString       m_currentAlbumId;          // set while the shared table shows an album

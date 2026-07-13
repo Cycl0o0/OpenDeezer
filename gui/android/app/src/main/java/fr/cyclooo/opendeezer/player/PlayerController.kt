@@ -62,6 +62,19 @@ sealed interface DownloadEvent {
         val failed: Int,
         val error: String,
     ) : DownloadEvent
+
+    // Offline-cache population outcome for a single track (Download for offline).
+    // [alreadyCached] distinguishes "was already available" from a fresh fetch.
+    data class OfflineReady(override val trackName: String, val alreadyCached: Boolean) : DownloadEvent
+
+    // Offline-cache population failed. [needsCache] is true when the raw-stream
+    // cache is disabled (the user must enable it in Settings), so the UI can show
+    // an actionable hint instead of a bare error.
+    data class OfflineFailed(
+        override val trackName: String,
+        val needsCache: Boolean,
+        val error: String,
+    ) : DownloadEvent
 }
 
 /**
@@ -128,6 +141,12 @@ class PlayerController(private val scope: CoroutineScope) {
     private val _favoriteFailures = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val favoriteFailures: SharedFlow<Unit> = _favoriteFailures.asSharedFlow()
 
+    // Track ids populated into the offline media cache this session, so lists can
+    // render a "downloaded" badge. Accumulated from successful downloadForOffline
+    // results (the engine has no lookup for cached ids).
+    private val _offlineIds = MutableStateFlow<Set<String>>(emptySet())
+    val offlineIds: StateFlow<Set<String>> = _offlineIds.asStateFlow()
+
     fun start() {
         if (pollJob?.isActive == true) return
         lastFinished = Engine.finishedCount()
@@ -191,6 +210,36 @@ class PlayerController(private val scope: CoroutineScope) {
             if (err.isNotBlank()) DownloadEvent.Failed(trackName, err)
             else DownloadEvent.Saved(trackName, o.optString("path"))
         }.getOrDefault(DownloadEvent.Failed(trackName, ""))
+
+    /**
+     * Populates the offline media cache for [track] (raw ciphertext + plan meta)
+     * so it can later play with zero network, reporting the outcome via
+     * [downloadEvents] and, on success, marking the id in [offlineIds]. Premium-
+     * only and requires the raw-stream cache enabled in Settings — the engine
+     * rejects otherwise, surfaced as [DownloadEvent.OfflineFailed]. Episodes
+     * resolve through a different path and aren't cacheable here.
+     */
+    fun downloadForOffline(track: Track) {
+        if (track.isEpisode) return
+        scope.launch {
+            _downloadEvents.emit(DownloadEvent.Started(track.name))
+            val json = Engine.downloadForOffline(track.id)
+            val event = parseOffline(json, track.name)
+            if (event is DownloadEvent.OfflineReady) _offlineIds.value = _offlineIds.value + track.id
+            _downloadEvents.emit(event)
+        }
+    }
+
+    private fun parseOffline(json: String, trackName: String): DownloadEvent =
+        runCatching {
+            val o = JSONObject(json)
+            val err = o.optString("error")
+            if (err.isNotBlank()) {
+                DownloadEvent.OfflineFailed(trackName, needsCache = err.contains("cache"), error = err)
+            } else {
+                DownloadEvent.OfflineReady(trackName, alreadyCached = o.optString("status") == "already_cached")
+            }
+        }.getOrDefault(DownloadEvent.OfflineFailed(trackName, needsCache = false, error = ""))
 
     /** Downloads a whole album to the shared folder; reports a batch summary. */
     fun downloadAlbum(id: String, name: String) = downloadBatch(name) { Engine.downloadAlbum(id) }
@@ -282,6 +331,48 @@ class PlayerController(private val scope: CoroutineScope) {
             startCurrent()
         }
     }
+
+    // ---- queue editing (P4 native queue editor) ----
+    // These mutate the ENGINE queue via the edit exports rather than the local
+    // list; each bumps QueueVersion, which the poll's adoptEngineQueueIfChanged
+    // pulls back in to re-sync `queue`/`index` + the UI. Keeping the engine as the
+    // single source of truth means remote controllers stay consistent and the
+    // cursor/history follow moves + removes engine-side.
+
+    /** Reorders the queue (from -> to). from==to and out-of-range are no-ops. */
+    fun moveInQueue(from: Int, to: Int) {
+        if (from == to) return
+        scope.launch { Engine.queueMove(from, to) }
+    }
+
+    /** Removes the queue row at [i]. The engine refuses to drop the playing row. */
+    fun removeFromQueue(i: Int) {
+        scope.launch { Engine.queueRemove(i) }
+    }
+
+    /** Inserts [track] immediately after the current row (keeps playing). */
+    fun playNext(track: Track) {
+        val json = queueJson(listOf(track))
+        scope.launch { Engine.queueInsertNext(json) }
+    }
+
+    /**
+     * Appends [track] to the end of the queue. There is no engine "append"
+     * export, so this mutates the app queue (new reference) and lets the next
+     * push mirror the full list into the engine. Starts playback when the queue
+     * is empty.
+     */
+    fun addToQueue(track: Track) {
+        if (queue.isEmpty()) {
+            playSingle(track)
+            return
+        }
+        queue = queue + track
+        pushImmediate()
+    }
+
+    /** Clears the queue and stops playback (removing the playing row too). */
+    fun clearQueue() = stopPlayback()
 
     fun togglePause() = control { Engine.togglePause() }
 

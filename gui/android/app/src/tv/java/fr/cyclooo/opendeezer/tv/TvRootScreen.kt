@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,7 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.DownloadForOffline
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
@@ -70,6 +77,7 @@ import fr.cyclooo.opendeezer.engine.SearchResults
 import fr.cyclooo.opendeezer.engine.Track
 import fr.cyclooo.opendeezer.engine.TrackStat
 import fr.cyclooo.opendeezer.player.DownloadEvent
+import fr.cyclooo.opendeezer.player.PlayerController
 import fr.cyclooo.opendeezer.ui.components.Artwork
 import kotlinx.coroutines.launch
 
@@ -133,6 +141,13 @@ fun TvRootScreen(vm: AppViewModel) {
                     event.failed > 0 -> context.getString(R.string.download_batch_partial, event.saved, event.failed)
                     else -> context.getString(R.string.download_batch_saved, event.saved)
                 }
+                is DownloadEvent.OfflineReady ->
+                    if (event.alreadyCached) context.getString(R.string.offline_already, event.trackName)
+                    else context.getString(R.string.offline_ready, event.trackName)
+                is DownloadEvent.OfflineFailed ->
+                    if (event.needsCache) context.getString(R.string.offline_needs_cache)
+                    else if (event.error.isBlank()) context.getString(R.string.download_failed_generic)
+                    else context.getString(R.string.download_failed, event.error)
             }
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
@@ -173,6 +188,7 @@ fun TvRootScreen(vm: AppViewModel) {
                             onOpenPlaylist = { openPlaylist(it) },
                         )
                         TvNav.History -> TvHistory(onPlay = { track -> player.playQueue(listOf(track), 0) })
+                        TvNav.Queue -> TvQueue(player)
                         TvNav.Settings -> TvSettingsScreen(account = vm.account, onLogout = { vm.logout() })
                     }
                 }
@@ -716,5 +732,133 @@ private fun TvNowPlayingBar(
             TvPill("", onClick = onPlayPause, leadingIcon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow)
             TvPill("", onClick = onNext, leadingIcon = Icons.Filled.SkipNext)
         }
+    }
+}
+
+/**
+ * The 10-foot queue editor. D-pad reorder is impractical, so each row exposes
+ * move up/down, remove and (premium) download-for-offline as focusable pills;
+ * "Clear" empties the queue. All edits route through the engine edit exports, so
+ * the poll re-adopts and the list stays in lockstep with playback.
+ */
+@Composable
+private fun TvQueue(player: PlayerController) {
+    val state by player.state.collectAsStateWithLifecycle()
+    val offlineIds by player.offlineIds.collectAsStateWithLifecycle()
+    val queue = state.queue
+
+    Column(
+        Modifier.fillMaxSize().padding(48.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text(
+                stringResource(R.string.queue_title),
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+            Spacer(Modifier.weight(1f))
+            if (queue.isNotEmpty()) {
+                TvPill(
+                    stringResource(R.string.action_clear_queue),
+                    onClick = { player.clearQueue() },
+                    leadingIcon = Icons.Filled.DeleteSweep,
+                )
+            }
+        }
+        if (queue.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.queue_empty), color = TvPalette.TextDim, style = MaterialTheme.typography.titleMedium)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(queue, key = { i, t -> "q-$i-${t.id}" }) { i, t ->
+                    TvQueueRow(
+                        track = t,
+                        isCurrent = i == state.index,
+                        offlineDownloaded = offlineIds.contains(t.id),
+                        premium = player.premium,
+                        canUp = i > 0,
+                        canDown = i < queue.lastIndex,
+                        onPlay = { player.jumpTo(i) },
+                        onUp = { player.moveInQueue(i, i - 1) },
+                        onDown = { player.moveInQueue(i, i + 1) },
+                        onRemove = { player.removeFromQueue(i) },
+                        onDownloadOffline = { player.downloadForOffline(t) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvQueueRow(
+    track: Track,
+    isCurrent: Boolean,
+    offlineDownloaded: Boolean,
+    premium: Boolean,
+    canUp: Boolean,
+    canDown: Boolean,
+    onPlay: () -> Unit,
+    onUp: () -> Unit,
+    onDown: () -> Unit,
+    onRemove: () -> Unit,
+    onDownloadOffline: () -> Unit,
+) {
+    val bg = if (isCurrent) TvPalette.Purple.copy(alpha = 0.18f) else Color.Transparent
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))) {
+            Artwork(track.artworkUrl, Modifier.fillMaxSize(), corner = 8)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                track.name,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                track.artistLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = TvPalette.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (offlineDownloaded) {
+            Icon(Icons.Filled.DownloadDone, contentDescription = stringResource(R.string.cd_downloaded), tint = TvPalette.Purple)
+        }
+        if (isCurrent) {
+            Text(
+                stringResource(R.string.cd_now_playing),
+                style = MaterialTheme.typography.labelMedium,
+                color = TvPalette.Purple,
+                fontWeight = FontWeight.Bold,
+            )
+        } else {
+            TvPill("", onClick = onPlay, leadingIcon = Icons.Filled.PlayArrow)
+        }
+        if (canUp) TvPill("", onClick = onUp, leadingIcon = Icons.Filled.KeyboardArrowUp)
+        if (canDown) TvPill("", onClick = onDown, leadingIcon = Icons.Filled.KeyboardArrowDown)
+        if (premium) {
+            TvPill(
+                "",
+                onClick = onDownloadOffline,
+                leadingIcon = if (offlineDownloaded) Icons.Filled.DownloadDone else Icons.Filled.DownloadForOffline,
+            )
+        }
+        if (!isCurrent) TvPill("", onClick = onRemove, leadingIcon = Icons.Filled.Delete)
     }
 }
