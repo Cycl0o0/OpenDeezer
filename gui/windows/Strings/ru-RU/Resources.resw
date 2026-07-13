@@ -265,6 +265,9 @@
   <data name="Connect_PlayingOnFormat" xml:space="preserve">
     <value>Воспроизведение на {0}</value>
   </data>
+  <data name="Connect_PlayHere" xml:space="preserve">
+    <value>Слушать здесь</value>
+  </data>
   <data name="ConnectType_Terminal" xml:space="preserve">
     <value>Терминал</value>
   </data>

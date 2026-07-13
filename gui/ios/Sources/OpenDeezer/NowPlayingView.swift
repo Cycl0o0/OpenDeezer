@@ -24,6 +24,12 @@ struct NowPlayingView: View {
                             .padding(.top, 28)
                             .padding(.horizontal, 28)
 
+                        if !player.connectedDeviceAddr.isEmpty {
+                            castingBanner
+                                .padding(.top, 16)
+                                .padding(.horizontal, 28)
+                        }
+
                         scrubber
                             .padding(.top, 18)
                             .padding(.horizontal, 28)
@@ -76,6 +82,42 @@ struct NowPlayingView: View {
         .onChange(of: player.hasNowPlaying) { _, hasNowPlaying in
             if !hasNowPlaying { dismiss() }
         }
+        // Re-sync liked ids from server truth when the player opens so the heart
+        // is accurate for the current (and every) track.
+        .task { await library.refreshFavoriteIDs() }
+    }
+
+    /// Explicit "Playing on <device>" indicator with a Play-here shortcut, shown
+    /// while routed to a Connect device (beyond the small toolbar Connect label).
+    private var castingBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "hifispeaker.2.fill")
+                .font(.title3)
+                .foregroundStyle(Palette.accent)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Playing on")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(player.connectedDeviceLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button {
+                Task { await player.disconnect() }
+            } label: {
+                Text("Play here")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Palette.accent)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .glassCard(cornerRadius: 18)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(localized: "Playing on \(player.connectedDeviceLabel)"))
     }
 
     // MARK: - Sections
@@ -141,7 +183,14 @@ struct NowPlayingView: View {
             HStack {
                 Text(Track.timeText(isScrubbing ? Int64(scrubValue) : player.positionMs))
                 Spacer()
-                if !player.formatLabel.isEmpty {
+                if player.state == .loading {
+                    HStack(spacing: 5) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text("Buffering…")
+                    }
+                    .foregroundStyle(Palette.accent)
+                } else if !player.formatLabel.isEmpty {
                     Text(player.formatLabel)
                 }
                 Spacer()

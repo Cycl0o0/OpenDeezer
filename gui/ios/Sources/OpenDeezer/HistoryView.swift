@@ -44,9 +44,9 @@ struct HistoryView: View {
 
                     if !recent.isEmpty {
                         Section("Recently Played") {
-                            ForEach(Array(recent.enumerated()), id: \.element.id) { index, entry in
+                            ForEach(recent) { entry in
                                 Button {
-                                    player.playQueue(recentTracks, startAt: index)
+                                    replay(entry)
                                 } label: {
                                     recentRow(entry)
                                 }
@@ -85,7 +85,21 @@ struct HistoryView: View {
         .refreshable { await load() }
     }
 
-    private var recentTracks: [Track] { recent.map(\.asTrack) }
+    /// Track-only history rows — episodes replay through the podcast player, so
+    /// they're excluded from the music queue we build for a tapped song.
+    private var trackEntries: [HistoryEntry] { recent.filter { !$0.isEpisode } }
+
+    /// Replay a history row (B14): an episode routes to the podcast player; a
+    /// song starts a queue of the recent songs at the tapped one.
+    private func replay(_ entry: HistoryEntry) {
+        if entry.isEpisode {
+            player.playEpisode(entry.asEpisode)
+        } else {
+            let entries = trackEntries
+            let start = entries.firstIndex(of: entry) ?? 0
+            player.playQueue(entries.map(\.asTrack), startAt: start)
+        }
+    }
 
     private func recentRow(_ entry: HistoryEntry) -> some View {
         HStack(spacing: 12) {

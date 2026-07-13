@@ -120,6 +120,14 @@ private fun MainScaffold(vm: AppViewModel) {
         }
     }
 
+    // A failed optimistic Like toggle was reverted — tell the user.
+    LaunchedEffect(player) {
+        player.favoriteFailures.collect {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch { snackbarHostState.showSnackbar(context.getString(R.string.favorite_update_failed)) }
+        }
+    }
+
     Scaffold(
         // Inner screen Scaffolds manage system-bar insets; this outer one only
         // contributes the bottom player bar so the top inset isn't applied twice.

@@ -265,6 +265,9 @@
   <data name="Connect_PlayingOnFormat" xml:space="preserve">
     <value>{0} पर चल रहा है</value>
   </data>
+  <data name="Connect_PlayHere" xml:space="preserve">
+    <value>यहाँ चलाएँ</value>
+  </data>
   <data name="ConnectType_Terminal" xml:space="preserve">
     <value>टर्मिनल</value>
   </data>

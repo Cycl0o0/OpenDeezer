@@ -171,8 +171,20 @@ data class HistoryEntry(
     val title: String,
     val artist: String,
     val album: String,
+    // "" / "track" = song, "episode" = podcast episode. Routes replay to the
+    // right engine path (episodes resolve through playEpisode, not play).
+    val kind: String,
     val startedAt: Long,        // unix seconds
     val durationPlayedSec: Long,
+)
+
+// A snapshot of the engine-side queue (QueueJSON): the app adopts it when a
+// remote controller edits this device's queue so now-playing + auto-advance
+// stay correct. version bumps on every content change; index is the cursor.
+data class QueueSnapshot(
+    val version: Long,
+    val index: Int,
+    val tracks: List<Track>,
 )
 
 // Aggregated listening stats over a window (mirrors HistoryStatsJSON).
@@ -484,11 +496,36 @@ object Json {
                     title = it.optString("title"),
                     artist = it.optString("artist"),
                     album = it.optString("album"),
+                    kind = it.optString("kind"),
                     startedAt = it.optLong("startedAt"),
                     durationPlayedSec = it.optLong("durationPlayedSec"),
                 )
             }
         }
+    }
+
+    // FavoriteIDsJSON returns a bare JSON array of track-id strings (e.g.
+    // ["123","456"]); "[]" / unparseable yields an empty set.
+    fun favoriteIds(s: String?): Set<String> {
+        val arr = try {
+            if (s.isNullOrBlank()) null else JSONArray(s)
+        } catch (_: Throwable) {
+            null
+        } ?: return emptySet()
+        return buildSet {
+            for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { add(it) }
+        }
+    }
+
+    // QueueJSON returns {"version":N,"index":I,"tracks":[..]} in the shared list
+    // wire shape; null when missing/unparseable.
+    fun queueSnapshot(s: String?): QueueSnapshot? {
+        val o = obj(s) ?: return null
+        return QueueSnapshot(
+            version = o.optLong("version"),
+            index = o.optInt("index", -1),
+            tracks = tracksOf(o.optJSONArray("tracks")),
+        )
     }
 
     fun historyStats(s: String?): HistoryStats {

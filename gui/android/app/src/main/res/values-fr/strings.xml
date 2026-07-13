@@ -231,6 +231,7 @@
     <string name="download_saved_generic">%1$s téléchargé</string>
     <string name="download_failed">Échec du téléchargement : %1$s</string>
     <string name="download_failed_generic">Échec du téléchargement</string>
+    <string name="favorite_update_failed">Impossible de modifier « J\'aime » — vérifiez votre connexion.</string>
     <string name="preview_chip">Extrait</string>
     <string name="account_free_hint">Compte gratuit · qualité standard (128 kbps)</string>
     <string name="settings_ads">Publicités</string>

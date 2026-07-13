@@ -405,9 +405,11 @@ internal static class Wire
         return outl;
     }
 
-    // DZHistoryRecentJSON returns a BARE array [{trackId,title,artist,album,...}].
-    // Each entry becomes an id-playable Track (duration unknown -> the engine
-    // fills it on play; no artwork url is stored in history).
+    // DZHistoryRecentJSON returns a BARE array [{trackId,title,artist,album,kind}].
+    // Each entry becomes an id-playable Track (duration unknown -> the engine fills
+    // it on play; no artwork url is stored in history). kind=="episode" flags a
+    // podcast episode so the shared play path routes it through DZPlayEpisode
+    // (B14 history replay).
     public static List<Track> ParseHistoryRecent(string json)
     {
         var outl = new List<Track>();
@@ -419,7 +421,38 @@ internal static class Wire
             {
                 string id = v.Str("trackId");
                 if (string.IsNullOrEmpty(id)) continue;
-                outl.Add(new Track { Id = id, Name = v.Str("title"), ArtistLine = v.Str("artist"), AlbumName = v.Str("album") });
+                outl.Add(new Track
+                {
+                    Id = id,
+                    Name = v.Str("title"),
+                    ArtistLine = v.Str("artist"),
+                    AlbumName = v.Str("album"),
+                    IsEpisode = v.Str("kind") == "episode",
+                });
+            }
+        return outl;
+    }
+
+    // A bare JSON array of ids (["123",...] or [123,...]) -> list of string ids.
+    // Seeds the GUI liked-ids cache from DZFavoriteIDsJSON; tolerates numeric ids.
+    public static List<string> ParseIdArray(string json)
+    {
+        var outl = new List<string>();
+        using var doc = TryParse(json);
+        if (doc == null) return outl;
+        var root = doc.RootElement;
+        if (root.ValueKind == JsonValueKind.Array)
+            foreach (var v in root.EnumerateArray())
+            {
+                if (v.ValueKind == JsonValueKind.String)
+                {
+                    var s = v.GetString();
+                    if (!string.IsNullOrEmpty(s)) outl.Add(s);
+                }
+                else if (v.ValueKind == JsonValueKind.Number)
+                {
+                    outl.Add(v.GetRawText());
+                }
             }
         return outl;
     }

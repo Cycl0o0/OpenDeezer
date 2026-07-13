@@ -28,6 +28,18 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Refresh only the liked-track id set via the lightweight `favoriteIDs`
+    /// fetch (no full track objects), so the heart is truthful for any track
+    /// without the heavier favorites refresh. Skips overwriting on an empty
+    /// result — the engine returns "[]" on a transient fetch failure too, and we
+    /// don't want a blip to wipe every heart. `toggleFavorite` still handles the
+    /// unlike-your-last-favorite case optimistically.
+    func refreshFavoriteIDs() async {
+        let ids = await Engine.favoriteIDs()
+        guard !ids.isEmpty else { return }
+        favoriteIDs = Set(ids)
+    }
+
     func refreshPlaylists() async {
         if let lists = try? await Engine.playlists() {
             playlists = lists

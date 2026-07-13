@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -20,6 +22,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.media.session.MediaButtonReceiver
+import coil.Coil
+import coil.request.ImageRequest
 import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground media-playback service. The Go engine renders audio in-process;
@@ -45,6 +50,13 @@ class PlaybackService : Service() {
     private var hasFocus = false
     private var pausedByFocusLoss = false
     private var lastNotifKey = ""
+
+    // Lock-screen / notification artwork. artUrl is the track art currently
+    // loaded (or loading); artBitmap is the decoded image once ready. lastState
+    // lets a late-arriving bitmap refresh the session/notification.
+    private var artUrl: String? = null
+    private var artBitmap: Bitmap? = null
+    private var lastState: PlayerState = PlayerState()
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         val c = controller ?: return@OnAudioFocusChangeListener
@@ -105,6 +117,24 @@ class PlaybackService : Service() {
                 override fun onStop() {
                     Companion.controller?.stopPlayback()
                 }
+
+                // Lock-screen / Android Auto shuffle + repeat toggles map to the
+                // controller (which forwards to the engine / any Connect remote).
+                override fun onSetShuffleMode(shuffleMode: Int) {
+                    Companion.controller?.setShuffle(shuffleMode != PlaybackStateCompat.SHUFFLE_MODE_NONE)
+                }
+
+                override fun onSetRepeatMode(repeatMode: Int) {
+                    Companion.controller?.setRepeat(
+                        when (repeatMode) {
+                            PlaybackStateCompat.REPEAT_MODE_ONE -> 2
+                            PlaybackStateCompat.REPEAT_MODE_ALL,
+                            PlaybackStateCompat.REPEAT_MODE_GROUP,
+                            -> 1
+                            else -> 0
+                        },
+                    )
+                }
             })
             isActive = true
         }
@@ -146,6 +176,16 @@ class PlaybackService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiped from recents: stop playback and tear the service down so no
+        // zombie audio outlives the visible app. The controller is owned by the
+        // Application (not the Activity), so its stopPlayback() still runs here.
+        Companion.controller?.stopPlayback()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         abandonFocus()
         // Never leave the output suspended once focus handling goes away.
@@ -163,17 +203,40 @@ class PlaybackService : Service() {
     private fun onState(st: PlayerState) {
         // Focus is only relevant while this device renders audio locally.
         if (st.isPlaying && st.connectedDevice.isBlank() && !hasFocus) requestFocus()
+        lastState = st
+        ensureArtwork(st.current?.artworkUrl)
+        applyToSession(st)
+    }
 
+    /** Publishes [st] to the MediaSession + notification (called on state change and once artwork loads). */
+    private fun applyToSession(st: PlayerState) {
         val s = session ?: return
         val t = st.current
-        s.setMetadata(
-            MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, t?.name ?: getString(R.string.app_name))
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, t?.artistLine.orEmpty())
-                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, t?.albumName.orEmpty())
-                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, st.durationMs)
-                .build(),
+        val art = currentArt(t?.artworkUrl)
+        val meta = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, t?.name ?: getString(R.string.app_name))
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, t?.artistLine.orEmpty())
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, t?.albumName.orEmpty())
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, st.durationMs)
+        // Lock-screen artwork: both keys so different OEM lock screens pick it up.
+        art?.let {
+            meta.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+            meta.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, it)
+        }
+        s.setMetadata(meta.build())
+
+        // Reflect shuffle/repeat so lock-screen / Auto toggles show the right state.
+        s.setShuffleMode(
+            if (st.shuffle) PlaybackStateCompat.SHUFFLE_MODE_ALL else PlaybackStateCompat.SHUFFLE_MODE_NONE,
         )
+        s.setRepeatMode(
+            when (st.repeatMode) {
+                2 -> PlaybackStateCompat.REPEAT_MODE_ONE
+                1 -> PlaybackStateCompat.REPEAT_MODE_ALL
+                else -> PlaybackStateCompat.REPEAT_MODE_NONE
+            },
+        )
+
         val playbackState = when (st.state) {
             Engine.PLAYING -> PlaybackStateCompat.STATE_PLAYING
             Engine.PAUSED -> PlaybackStateCompat.STATE_PAUSED
@@ -186,17 +249,56 @@ class PlaybackService : Service() {
                     PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
                         PlaybackStateCompat.ACTION_PLAY_PAUSE or PlaybackStateCompat.ACTION_STOP or
                         PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                        PlaybackStateCompat.ACTION_SEEK_TO,
+                        PlaybackStateCompat.ACTION_SEEK_TO or
+                        PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE or PlaybackStateCompat.ACTION_SET_REPEAT_MODE,
                 )
                 .setState(playbackState, st.positionMs, 1f)
                 .build(),
         )
 
-        // Re-notify only on track/state changes; position rides the session state.
-        val key = "${t?.id}|${st.state}|${st.durationMs}"
+        // Re-notify on track/state/artwork changes; position rides the session state.
+        val key = "${t?.id}|${st.state}|${st.durationMs}|${art != null}"
         if (key != lastNotifKey) {
             lastNotifKey = key
             runCatching { NotificationManagerCompat.from(this).notify(NOTIF_ID, buildNotification(st)) }
+        }
+    }
+
+    /** The decoded artwork bitmap iff it belongs to [url] (guards fast track skips). */
+    private fun currentArt(url: String?): Bitmap? =
+        if (!url.isNullOrBlank() && url == artUrl) artBitmap else null
+
+    /**
+     * Loads the track artwork (via Coil, off the main thread) for the lock-screen
+     * / notification image, then refreshes the session once it's ready. Best-effort
+     * — a failed/absent load just leaves the small icon. Skips work when the art
+     * URL hasn't changed.
+     */
+    private fun ensureArtwork(url: String?) {
+        if (url.isNullOrBlank()) {
+            artUrl = null
+            artBitmap = null
+            return
+        }
+        if (url == artUrl) return // already loaded / loading for this track
+        artUrl = url
+        artBitmap = null
+        scope?.launch {
+            val bmp = withContext(Dispatchers.IO) {
+                runCatching {
+                    val req = ImageRequest.Builder(applicationContext)
+                        .data(url)
+                        .allowHardware(false) // MediaSession/notification need a software bitmap
+                        .build()
+                    (Coil.imageLoader(applicationContext).execute(req).drawable as? BitmapDrawable)?.bitmap
+                }.getOrNull()
+            }
+            // Apply only if this is still the current track's art (a fast skip
+            // may have superseded it).
+            if (artUrl == url && bmp != null) {
+                artBitmap = bmp
+                applyToSession(lastState)
+            }
         }
     }
 
@@ -219,6 +321,14 @@ class PlaybackService : Service() {
             am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
         }
         hasFocus = granted == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (hasFocus) {
+            // A synchronous grant after a transient loss (call ends, another app
+            // releases focus) may not deliver an async AUDIOFOCUS_GAIN, so the
+            // output could stay suspended → silent playback. Un-suspend here and
+            // clear any pending focus-loss resume so audio actually resumes.
+            pausedByFocusLoss = false
+            Engine.setOutputSuspended(false)
+        }
     }
 
     private fun abandonFocus() {
@@ -248,6 +358,7 @@ class PlaybackService : Service() {
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setLargeIcon(currentArt(t?.artworkUrl))
             .setContentTitle(t?.name ?: getString(R.string.app_name))
             .setContentText(t?.artistLine.orEmpty())
             .setContentIntent(contentIntent)

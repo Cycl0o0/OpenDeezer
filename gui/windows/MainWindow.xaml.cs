@@ -37,6 +37,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -630,21 +631,56 @@ public sealed partial class MainWindow : Window
         left.Children.Add(_previewBadge);
         _likeBtn = new ToggleButton { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Heart
         ToolTipService.SetToolTip(_likeBtn, Loc.S("Tooltip_Like"));
+        AutomationProperties.SetName(_likeBtn, Loc.S("Tooltip_Like")); // icon-only -> give screen readers a name
         _likeBtn.Click += OnLike;
         _addBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Add to playlist
         ToolTipService.SetToolTip(_addBtn, Loc.S("Tooltip_AddToPlaylist"));
+        AutomationProperties.SetName(_addBtn, Loc.S("Tooltip_AddToPlaylist"));
         _addBtn.Click += OnAddCurrentToPlaylist;
         left.Children.Add(_likeBtn); left.Children.Add(_addBtn);
         Grid.SetColumn(left, 0); bar.Children.Add(left);
 
         // ---- CENTRE: transport row (shuffle - prev - play - next - repeat) + seek row ----
         var center = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        // Casting chip: a "Playing on <device>" pill with a "Play here" button,
+        // shown only while a Connect device owns playback (UpdateConnectIndicator
+        // toggles it). "Play here" disconnects, returning playback to this computer.
+        var chipWhite = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+        _castChip = new Border
+        {
+            Background = _accent,
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10, 2, 4, 2),
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        var castRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        castRow.Children.Add(new FontIcon { Glyph = "", FontSize = 12, Foreground = chipWhite, VerticalAlignment = VerticalAlignment.Center }); // Cast
+        _castChipText = new TextBlock { Foreground = chipWhite, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 220 };
+        castRow.Children.Add(_castChipText);
+        var playHereBtn = new Button
+        {
+            Content = Loc.S("Connect_PlayHere"),
+            FontSize = 12,
+            Padding = new Thickness(8, 1, 8, 2),
+            Foreground = chipWhite,
+            Background = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
+            BorderThickness = new Thickness(0),
+        };
+        ToolTipService.SetToolTip(playHereBtn, Loc.S("Connect_PlayHere"));
+        AutomationProperties.SetName(playHereBtn, Loc.S("Connect_PlayHere"));
+        playHereBtn.Click += (_, _) => { _connectFlyout?.Hide(); DispatchDisconnect(); }; // return playback here
+        castRow.Children.Add(playHereBtn);
+        _castChip.Child = castRow;
+        center.Children.Add(_castChip);
         var tr = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _shuffleBtn = new ToggleButton { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Shuffle
         ToolTipService.SetToolTip(_shuffleBtn, Loc.S("Tooltip_Shuffle"));
+        AutomationProperties.SetName(_shuffleBtn, Loc.S("Tooltip_Shuffle"));
         _shuffleBtn.Click += OnShuffle;
         var prevBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Previous
         ToolTipService.SetToolTip(prevBtn, Loc.S("Tooltip_Previous"));
+        AutomationProperties.SetName(prevBtn, Loc.S("Tooltip_Previous"));
         prevBtn.Click += (_, _) => Prev();
         // Play/pause as a filled accent circle - the Groove signature.
         _playIcon = new FontIcon { Glyph = "", FontSize = 16, Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)) }; // Play (white on accent)
@@ -658,14 +694,17 @@ public sealed partial class MainWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         ToolTipService.SetToolTip(_playBtn, Loc.S("Tooltip_PlayPause"));
+        AutomationProperties.SetName(_playBtn, Loc.S("Tooltip_PlayPause"));
         // Off-thread: when routed over Connect this forwards over HTTP (15 s timeout).
         _playBtn.Click += async (_, _) => await Task.Run(DeezerCore.DZTogglePause);
         var nextBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } }; // Next
         ToolTipService.SetToolTip(nextBtn, Loc.S("Tooltip_Next"));
+        AutomationProperties.SetName(nextBtn, Loc.S("Tooltip_Next"));
         nextBtn.Click += (_, _) => Next();
         _repeatIcon = new FontIcon { Glyph = "", FontSize = 14 }; // RepeatAll
         _repeatBtn = new Button { Content = _repeatIcon };
         ToolTipService.SetToolTip(_repeatBtn, Loc.S("Tooltip_RepeatOff"));
+        AutomationProperties.SetName(_repeatBtn, Loc.S("Tooltip_RepeatOff")); // kept in sync in ApplyRepeatDisplay
         _repeatBtn.Click += OnRepeat;
         tr.Children.Add(_shuffleBtn); tr.Children.Add(prevBtn); tr.Children.Add(_playBtn); tr.Children.Add(nextBtn); tr.Children.Add(_repeatBtn);
         center.Children.Add(tr);
@@ -683,13 +722,16 @@ public sealed partial class MainWindow : Window
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
         _lyricsBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // ClosedCaption
         ToolTipService.SetToolTip(_lyricsBtn, Loc.S("Tooltip_Lyrics"));
+        AutomationProperties.SetName(_lyricsBtn, Loc.S("Tooltip_Lyrics"));
         _lyricsBtn.Click += (_, _) => ShowLyrics();
         _artistBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Contact
         ToolTipService.SetToolTip(_artistBtn, Loc.S("Tooltip_Artist"));
+        AutomationProperties.SetName(_artistBtn, Loc.S("Tooltip_Artist"));
         _artistBtn.Click += OnArtist;
         // OpenDeezer Connect: a discreet cast button whose flyout lists LAN devices.
         _connectBtn = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(6, 2, 6, 2) }; // Cast
         ToolTipService.SetToolTip(_connectBtn, Loc.S("Tooltip_Connect"));
+        AutomationProperties.SetName(_connectBtn, Loc.S("Tooltip_Connect"));
         _connectFlyout = new Flyout();
         var cp = new StackPanel { Spacing = 8, MinWidth = 280, Padding = new Thickness(4), FlowDirection = Loc.FlowDirection };
         cp.Children.Add(new TextBlock { Text = Loc.S("Connect_Title"), FontWeight = FontWeights.SemiBold });
@@ -852,6 +894,14 @@ public sealed partial class MainWindow : Window
     {
         _searchGrid.Items.Clear();
         _searchActions.Clear();
+        // Artists first (their tile opens the artist page); then albums + playlists.
+        foreach (var ar in _searchArtists)
+        {
+            int idx = _searchActions.Count;
+            var arc = ar;
+            _searchActions.Add(() => OpenArtist(arc.Id));
+            _searchGrid.Items.Add(MakeTile(ar.Name, Wire.FansText(ar.NbFans), ar.ArtworkUrl, idx));
+        }
         foreach (var a in _searchAlbums)
         {
             int idx = _searchActions.Count;
@@ -955,6 +1005,7 @@ public sealed partial class MainWindow : Window
         _nowTitle.Text = Loc.S("Status_CheckingAccount");
         var acct = await Task.Run(() => DeezerCore.Account());
         _account = acct;
+        SeedLikedIds(); // populate the liked-ids cache so the heart is truthful from the first track
         // A Deezer Free account streams FULL tracks at 128 kbps through the engine
         // (not 30-second previews), so it uses the app exactly like Premium. Premium
         // is still tracked to gate the Download menu item; LoadHome surfaces a subtle
@@ -1192,6 +1243,7 @@ public sealed partial class MainWindow : Window
         _tracks = tracks;
         _artGen++;
         FillTrackList(_trackList, _tracks);
+        SeedLikedIds(); // refresh the liked-ids cache from the just-loaded favorites
     }
 
     private async void LoadCharts()
@@ -1533,12 +1585,13 @@ public sealed partial class MainWindow : Window
         if (!_loggedIn) return;
         string q = _searchBox.Text;
         if (string.IsNullOrEmpty(q)) return;
-        var (tracks, albums, plists) = await Task.Run(() =>
+        var (tracks, artists, albums, plists) = await Task.Run(() =>
         {
             string json = DeezerCore.TakeJson(DeezerCore.DZSearchJSON(q));
-            return (Wire.ParseTracks(json), Wire.ParseAlbums(json), Wire.ParsePlaylists(json));
+            return (Wire.ParseTracks(json), Wire.ParseArtists(json), Wire.ParseAlbums(json), Wire.ParsePlaylists(json));
         });
         _searchTracks = tracks;
+        _searchArtists = artists;
         _searchAlbums = albums;
         _searchPlaylists = plists;
         _artGen++;
@@ -1619,6 +1672,17 @@ public sealed partial class MainWindow : Window
     private void UpdateConnectIndicator(string addr, string name)
     {
         _connectedAddr = addr;
+        // Casting chip: visible with "Playing on <device>" while a Connect device
+        // owns playback; collapsed (zero footprint) otherwise.
+        if (_castChip != null)
+        {
+            if (!string.IsNullOrEmpty(addr))
+            {
+                _castChipText.Text = Loc.Format("Connect_PlayingOnFormat", string.IsNullOrEmpty(name) ? addr : name);
+                _castChip.Visibility = Visibility.Visible;
+            }
+            else _castChip.Visibility = Visibility.Collapsed;
+        }
         if (_connectBtn == null) return;
         if (!string.IsNullOrEmpty(addr))
         {
@@ -1646,7 +1710,29 @@ public sealed partial class MainWindow : Window
     }
     private async void DispatchLike(string id, bool like)
     {
+        // Keep the liked-ids cache in step so the heart stays truthful across track
+        // changes (and a row-like updates the now-playing heart when it's the same
+        // track). Runs on the UI thread before the blocking engine call.
+        if (like) _likedIds.Add(id); else _likedIds.Remove(id);
+        if (id == CurrentTrackId()) RefreshLikeForCurrent();
         await Task.Run(() => { if (like) DeezerCore.DZAddFavorite(id); else DeezerCore.DZRemoveFavorite(id); });
+    }
+    // Seed the liked-ids cache from the engine's favorite-id list (off-thread), then
+    // refresh the now-playing heart to match. Called at login and on favorites load.
+    private async void SeedLikedIds()
+    {
+        if (!_loggedIn) return;
+        var ids = await Task.Run(() => DeezerCore.FavoriteIDs());
+        _likedIds = new HashSet<string>(ids);
+        RefreshLikeForCurrent();
+    }
+    // Set the now-playing heart from the liked-ids cache for the current track.
+    private void RefreshLikeForCurrent()
+    {
+        if (_likeBtn == null) return;
+        string id = CurrentTrackId();
+        bool liked = !string.IsNullOrEmpty(id) && _likedIds.Contains(id);
+        _suppressLike = true; _likeBtn.IsChecked = liked; _suppressLike = false;
     }
     private void OnRowLike(object sender, RoutedEventArgs e)
     {
@@ -2104,11 +2190,13 @@ public sealed partial class MainWindow : Window
         _cover.Source = null;
         int token = ++_playGen;
         if (!string.IsNullOrEmpty(t.ArtworkUrl)) LoadArt(_cover, t.ArtworkUrl, token, true);
-        // No "is-liked" query exists; reset the heart to off on every track change.
+        // Seed the heart from the liked-ids cache (populated at login / favorites
+        // load) so it reflects real library state per track, not a blanket off.
         // Like / add-to-playlist are library-track only, so disable them for episodes.
         if (_likeBtn != null)
         {
-            _suppressLike = true; _likeBtn.IsChecked = false; _suppressLike = false;
+            bool liked = !t.IsEpisode && _likedIds.Contains(t.Id);
+            _suppressLike = true; _likeBtn.IsChecked = liked; _suppressLike = false;
             _likeBtn.IsEnabled = !t.IsEpisode;
         }
         if (_addBtn != null) _addBtn.IsEnabled = !t.IsEpisode;
@@ -2140,8 +2228,8 @@ public sealed partial class MainWindow : Window
     // forward over HTTP (15 s timeout), so they must never run on the dispatcher.
     private async void OnShuffle(object s, RoutedEventArgs e)
     {
-        _shuffle = _shuffleBtn.IsChecked == true;
-        if (_shuffle) _shuffleBtn.Foreground = _accent; else _shuffleBtn.ClearValue(Control.ForegroundProperty);
+        ApplyShuffleDisplay(_shuffleBtn.IsChecked == true);
+        _lastTransportTick = Environment.TickCount64; // hold off the engine-truth reconcile briefly
         int on = _shuffle ? 1 : 0;
         // Next is no longer deterministic -> drop any armed gapless preload so a
         // stale next track can't be swapped in (DZClearPreload's documented case).
@@ -2158,6 +2246,8 @@ public sealed partial class MainWindow : Window
         _repeatIcon.Glyph = _repeat == 2 ? "" : ""; // RepeatOne or RepeatAll
         if (_repeat == 0) _repeatBtn.ClearValue(Control.ForegroundProperty); else _repeatBtn.Foreground = _accent;
         ToolTipService.SetToolTip(_repeatBtn, _repeat == 0 ? Loc.S("Tooltip_RepeatOff") : _repeat == 1 ? Loc.S("Tooltip_RepeatAll") : Loc.S("Tooltip_RepeatOne"));
+        AutomationProperties.SetName(_repeatBtn, _repeat == 0 ? Loc.S("Tooltip_RepeatOff") : _repeat == 1 ? Loc.S("Tooltip_RepeatAll") : Loc.S("Tooltip_RepeatOne"));
+        _lastTransportTick = Environment.TickCount64; // hold off the engine-truth reconcile briefly
         int mode = _repeat;
         bool clearPreload = !HasDeterministicNext(out _); // repeat-one never preloads; drop a stale one
         await Task.Run(() =>
@@ -2165,6 +2255,27 @@ public sealed partial class MainWindow : Window
             DeezerCore.DZSetRepeat(mode);
             if (clearPreload) DeezerCore.DZClearPreload();
         });
+    }
+    // Reflect a repeat mode (0 off / 1 all / 2 one) on the transport WITHOUT
+    // sending a command -- used by the OnTick engine-truth reconcile (and casting).
+    // Glyphs are the Segoe MDL2 RepeatOne / RepeatAll (as \u so the source stays
+    // ASCII); they match the literal glyphs OnRepeat sets on a local toggle.
+    private void ApplyRepeatDisplay(int mode)
+    {
+        _repeat = mode;
+        _repeatIcon.Glyph = mode == 2 ? "" : ""; // RepeatOne / RepeatAll
+        if (mode == 0) _repeatBtn.ClearValue(Control.ForegroundProperty); else _repeatBtn.Foreground = _accent;
+        string name = mode == 0 ? Loc.S("Tooltip_RepeatOff") : mode == 1 ? Loc.S("Tooltip_RepeatAll") : Loc.S("Tooltip_RepeatOne");
+        ToolTipService.SetToolTip(_repeatBtn, name);
+        AutomationProperties.SetName(_repeatBtn, name);
+    }
+    // Reflect a shuffle state on the toggle without firing OnShuffle (Click is a
+    // user-only event; a programmatic IsChecked change never re-invokes it).
+    private void ApplyShuffleDisplay(bool on)
+    {
+        _shuffle = on;
+        if (_shuffleBtn.IsChecked != on) _shuffleBtn.IsChecked = on;
+        if (on) _shuffleBtn.Foreground = _accent; else _shuffleBtn.ClearValue(Control.ForegroundProperty);
     }
     private void OnSeekChanged(object s, RangeBaseValueChangedEventArgs e)
     {
@@ -2333,6 +2444,19 @@ public sealed partial class MainWindow : Window
                         DispatchPreload(_queue[gn].Id, _queue[gn].DurationMs);
                 }
             }
+        }
+
+        // Engine-truth transport reconcile: adopt the engine's repeat/shuffle so the
+        // display never drifts and, when casting, mirrors the remote device. Held
+        // off briefly after a local toggle so an in-flight (possibly HTTP) command
+        // isn't fought by a stale read. OnShuffle/OnRepeat send the command; this
+        // reconciles the displayed state.
+        if (Environment.TickCount64 - _lastTransportTick > 1200)
+        {
+            int rep = DeezerCore.GetRepeat();
+            if (rep != _repeat) ApplyRepeatDisplay(rep);
+            bool shuf = DeezerCore.GetShuffle();
+            if (shuf != _shuffle) ApplyShuffleDisplay(shuf);
         }
     }
 
@@ -3423,6 +3547,8 @@ public sealed partial class MainWindow : Window
     private FontIcon _playIcon = null!, _repeatIcon = null!;
     private ToggleButton _shuffleBtn = null!, _likeBtn = null!;
     private bool _suppressLike;
+    // liked-track id cache (seeded from DZFavoriteIDsJSON) -> a truthful now-playing heart
+    private HashSet<string> _likedIds = new();
 
     // Connect picker
     private Button _connectBtn = null!;
@@ -3432,6 +3558,9 @@ public sealed partial class MainWindow : Window
     private List<ConnectDevice> _connectDevices = new();
     private string _connectedAddr = "";
     private int _connectGen;
+    // Casting chip in the now-playing bar ("Playing on <device>" + "Play here").
+    private Border _castChip = null!;
+    private TextBlock _castChipText = null!;
 
     // lyrics view
     private UIElement _lyricsPage = null!;
@@ -3459,11 +3588,13 @@ public sealed partial class MainWindow : Window
     private List<Track> _tracks = new(), _searchTracks = new(), _queue = new();
     private List<Playlist> _playlists = new(), _searchPlaylists = new();
     private List<Album> _searchAlbums = new();
-    private readonly List<Action> _searchActions = new(); // album/playlist tile -> open
+    private List<ArtistInfo> _searchArtists = new();
+    private readonly List<Action> _searchActions = new(); // artist/album/playlist tile -> open
 
     private bool _loggedIn, _shuffle, _updatingSeek, _updatingVol, _suppressNav;
     private int _lastFinished, _artGen, _playGen, _queueIndex = -1, _repeat;
     private long _lastSeekTick;
+    private long _lastTransportTick; // debounce window for the OnTick repeat/shuffle reconcile
     private int _browseGen; // drops stale track-list fetches (mirrors _lyricsGen/_connectGen)
 
     // play dispatch serialization (DispatchPlay/DispatchPreload)

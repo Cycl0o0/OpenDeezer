@@ -193,8 +193,16 @@ struct HistoryEntry: Codable, Hashable, Identifiable {
     let album: String?
     let startedAt: Int64          // unix seconds
     let durationPlayedSec: Int64  // seconds actually listened
+    // "episode" for a podcast episode, otherwise a music track. Optional +
+    // tolerant so a history file written before the engine emitted `kind` still
+    // decodes (a missing value simply routes as a music track — the old path).
+    let kind: String?
 
     var id: String { "\(trackId)#\(startedAt)" }
+
+    // A podcast episode replays through the plain-stream episode path, not the
+    // encrypted music-track resolver.
+    var isEpisode: Bool { kind == "episode" }
 }
 
 // One aggregated top-track row (DZHistoryStatsJSON.topTracks[]).

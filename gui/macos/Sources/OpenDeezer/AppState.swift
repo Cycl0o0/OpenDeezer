@@ -7,7 +7,19 @@ enum Section: Hashable {
     case home, liked, playlists, search, charts, flow, podcasts, history
 }
 
-enum RepeatMode: Int { case off, all, one }
+enum RepeatMode: Int {
+    case off, all, one
+
+    // Maps the engine's DZGetRepeat string ("off"|"all"|"one") to the mode; any
+    // unknown/empty value falls back to .off.
+    init(fromEngine s: String) {
+        switch s {
+        case "all": self = .all
+        case "one": self = .one
+        default:    self = .off
+        }
+    }
+}
 
 // ListKind marks the shared track-list screen as a downloadable album or
 // playlist so the hero can offer a "Download album/playlist" action. nil for
@@ -285,6 +297,14 @@ final class AppState: ObservableObject {
         tray.attach(app: self)
         startTimer()
         loadHome()
+        // Seed the truthful heart state from the account's favorites up front, so
+        // the like button is accurate on every track — even ones played from
+        // Search / Charts / a shared link before the Liked view is ever opened.
+        // Off the main thread (it hits the network); toggleLike reconciles later.
+        Task.detached {
+            let ids = Core.favoriteIDs()
+            await MainActor.run { self.likedIDs = Set(ids) }
+        }
     }
 
     static func loadARL() -> String? {
@@ -397,9 +417,13 @@ final class AppState: ObservableObject {
         busy = true
         Task.detached {
             let ts = Core.favorites()
+            // Re-seed the heart UI from the authoritative favorite-id set rather
+            // than only the displayed rows, so it stays complete (and correct for
+            // tracks played elsewhere) after favorites (re)load.
+            let ids = Core.favoriteIDs()
             await MainActor.run {
                 self.tracks = ts
-                self.likedIDs = Set(ts.map { $0.id })   // seed the heart UI
+                self.likedIDs = Set(ids)
                 self.busy = false
             }
         }
@@ -460,7 +484,7 @@ final class AppState: ObservableObject {
                 self.tracks = ts
                 self.busy = false
                 if let first = ts.first {
-                    self.shuffle = false
+                    self.applyShuffle(false)
                     self.play(first, in: ts)
                 }
             }
@@ -513,7 +537,7 @@ final class AppState: ObservableObject {
                 self.tracks = ts
                 self.busy = false
                 if let first = ts.first {
-                    self.shuffle = false
+                    self.applyShuffle(false)
                     self.play(first, in: ts)
                 }
             }
@@ -539,17 +563,42 @@ final class AppState: ObservableObject {
         }
     }
 
-    // Play a recently-played row by track id. The history list is turned into a
-    // lightweight queue so next/prev walk it; the engine reports the real
-    // duration/format via tick() once playback starts.
+    // Play a recently-played row. Podcast episodes (kind == "episode") replay
+    // through the plain-stream episode path — the encrypted music-track resolver
+    // would fail on an episode id — and stay standalone. Music tracks walk a
+    // lightweight queue built from the history's track rows (episodes excluded so
+    // next/prev never land on one); the engine reports the real duration/format
+    // via tick() once playback starts.
     func playHistory(_ entry: HistoryEntry) {
-        let list = historyEntries.map { h in
-            Track(id: h.trackId, name: h.title, durationMs: 0, artists: [],
-                  artistLine: h.artist, albumName: h.album ?? "",
-                  artworkUrl: "", explicit: false)
+        if entry.isEpisode {
+            playHistoryEpisode(entry)
+            return
         }
+        let list = historyEntries
+            .filter { !$0.isEpisode }
+            .map { h in
+                Track(id: h.trackId, name: h.title, durationMs: 0, artists: [],
+                      artistLine: h.artist, albumName: h.album ?? "",
+                      artworkUrl: "", explicit: false)
+            }
         guard let t = list.first(where: { $0.id == entry.trackId }) else { return }
         play(t, in: list)
+    }
+
+    // Replay a podcast-episode history row via the episode play path (mirrors
+    // playEpisode(_:), but sourced from a HistoryEntry rather than an Episode).
+    private func playHistoryEpisode(_ entry: HistoryEntry) {
+        playingEpisode = true
+        let t = Track(id: entry.trackId, name: entry.title, durationMs: 0, artists: [],
+                      artistLine: entry.artist,
+                      albumName: entry.album ?? "", artworkUrl: "", explicit: false)
+        current = t
+        durationMs = 0
+        positionMs = 0
+        lastState = .loading
+        nowPlaying.update(track: t, state: .loading, positionMs: 0, durationMs: 0)
+        let id = entry.trackId
+        Task.detached { Core.playEpisode(id, durationMs: 0) }
     }
 
     // Play a top-track stat row by track id (single-track queue).
@@ -563,12 +612,12 @@ final class AppState: ObservableObject {
     // Play-all / shuffle-all from a hero header.
     func playAll() {
         guard let first = tracks.first else { return }
-        shuffle = false
+        applyShuffle(false)
         play(first, in: tracks)
     }
     func shuffleAll() {
         guard !tracks.isEmpty else { return }
-        shuffle = true
+        applyShuffle(true)
         play(tracks.randomElement()!, in: tracks)
     }
     func runSearch() {
@@ -670,15 +719,20 @@ final class AppState: ObservableObject {
         return likedIDs.contains(c.id)
     }
 
-    // One-shot like/unlike with optimistic local state (no is-liked query exists).
+    // Like/unlike with optimistic local state, reconciled against the engine:
+    // flip the heart immediately, then revert if the add/remove call fails so the
+    // UI never claims a like the account doesn't actually have.
     func toggleLike(_ track: Track) {
         let id = track.id
-        if likedIDs.contains(id) {
-            likedIDs.remove(id)
-            Task.detached { Core.removeFavorite(id) }
-        } else {
-            likedIDs.insert(id)
-            Task.detached { Core.addFavorite(id) }
+        let wasLiked = likedIDs.contains(id)
+        if wasLiked { likedIDs.remove(id) } else { likedIDs.insert(id) }
+        Task.detached {
+            let ok = wasLiked ? Core.removeFavorite(id) : Core.addFavorite(id)
+            if !ok {
+                await MainActor.run {
+                    if wasLiked { self.likedIDs.insert(id) } else { self.likedIDs.remove(id) }
+                }
+            }
         }
     }
     func toggleLikeCurrent() {
@@ -970,9 +1024,16 @@ final class AppState: ObservableObject {
 
     // MARK: playback
 
-    func play(_ track: Track, in list: [Track]) {
+    // `index`, when given, is the tapped row's position — used verbatim so a
+    // duplicate track (the same id appearing more than once in `list`) starts
+    // from the row the user actually clicked, not firstIndex's first match.
+    func play(_ track: Track, in list: [Track], at index: Int? = nil) {
         queue = list
-        queueIndex = list.firstIndex(of: track) ?? 0
+        if let index, index >= 0, index < list.count {
+            queueIndex = index
+        } else {
+            queueIndex = list.firstIndex(of: track) ?? 0
+        }
         syncQueueToEngine()   // queue (re)built — mirror the whole queue + cursor
         playCurrent()
     }
@@ -1140,19 +1201,30 @@ final class AppState: ObservableObject {
         Core.setReplayGain(on)
     }
 
-    // Toggle shuffle and forward the change to the connected remote (if any).
+    // Transport shuffle toggle: send the command and let tick() reconcile
+    // `shuffle` from Core.getShuffle. Intentionally does NOT set `shuffle` here —
+    // the engine is the source of truth, so a mode changed locally (another
+    // client) or on the connected remote always shows correctly, even while
+    // casting. (reconcilePreload runs in tick when the reconciled value changes.)
     func setShuffle(_ on: Bool) {
-        shuffle = on
         Task.detached { Core.setShuffle(on) }
-        reconcilePreload()
     }
 
-    // Advance the repeat cycle (off → all → one → off) and forward to remote.
+    // Advance the repeat cycle (off → all → one → off). Like setShuffle this only
+    // sends the command; tick() reconciles `repeatMode` from Core.getRepeat so
+    // local and remote changes both show the truth.
     func cycleRepeat() {
-        repeatMode = RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off
-        let mode = repeatMode.rawValue
+        let mode = (repeatMode.rawValue + 1) % 3
         Task.detached { Core.setRepeat(mode) }
-        reconcilePreload()
+    }
+
+    // Set shuffle locally AND forward it to the engine (the truth tick()
+    // reconciles from), for compound actions like Shuffle-all / Play-all / Flow
+    // where the mode is intrinsic to the action — so the next poll can't revert
+    // it. The transport toggle above stays command-only by contrast.
+    private func applyShuffle(_ on: Bool) {
+        shuffle = on
+        Task.detached { Core.setShuffle(on) }
     }
 
     // MARK: polling
@@ -1188,6 +1260,27 @@ final class AppState: ObservableObject {
             let v = Core.volume
             if abs(v - volume) > 0.001 { volume = v }
         }
+        // Repeat / shuffle truth (B1): the engine owns the real mode — changed
+        // here, by another local client (phone remote / control API), or on the
+        // connected remote device — so drive the displayed controls from
+        // Core.getShuffle / Core.getRepeat. A change can also invalidate an armed
+        // next-track preload, so reconcile it.
+        let engShuffle = Core.getShuffle()
+        if engShuffle != shuffle {
+            shuffle = engShuffle
+            reconcilePreload()
+        }
+        let engRepeat = RepeatMode(fromEngine: Core.getRepeat())
+        if engRepeat != repeatMode {
+            repeatMode = engRepeat
+            reconcilePreload()
+        }
+        // Casting truth: another client (or a dropped remote) can change the
+        // routed device out from under us, so mirror the engine's connected
+        // device each tick — this drives the "Playing on <device>" chip and keeps
+        // the Connect button's active state honest.
+        let dev = Core.connectedDevice
+        if dev != connectedDeviceAddr { connectedDeviceAddr = dev }
         // Engine-truth now-playing sync. DZNowPlayingJSON reports the track the
         // engine is ACTUALLY playing — started here via the control API, or, when
         // routed through OpenDeezer Connect, the REMOTE device's current track.

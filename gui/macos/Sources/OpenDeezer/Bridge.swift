@@ -71,6 +71,12 @@ enum Core {
     static func favorites() -> [Track] {
         decode(TracksResponse.self, takeJSON(DZFavoritesJSON()))?.tracks ?? []
     }
+    /// The account's liked-track ids (DZFavoriteIDsJSON) as a bare JSON string
+    /// array (e.g. ["123","456"]). Seeds the truthful heart state so the like
+    /// button is accurate on every track — not just tracks in the loaded list.
+    static func favoriteIDs() -> [String] {
+        decode([String].self, takeJSON(DZFavoriteIDsJSON())) ?? []
+    }
     static func playlists() -> [Playlist] {
         decode(PlaylistsResponse.self, takeJSON(DZPlaylistsJSON()))?.playlists ?? []
     }
@@ -194,6 +200,16 @@ enum Core {
     static func setRepeat(_ mode: Int) { DZSetRepeat(Int32(mode)) }
     /// Forwards the shuffle change to the connected remote device when routed.
     static func setShuffle(_ on: Bool) { DZSetShuffle(on ? 1 : 0) }
+
+    // DZGetRepeat / DZGetShuffle report the mode the engine is ACTUALLY in — the
+    // engine queue's when playing here (so a change made by any local client is
+    // seen), or the routed device's snapshot when casting. The poll reads these
+    // so the displayed repeat/shuffle always reflect the truth.
+
+    /// Engine repeat mode: "off" | "all" | "one".
+    static func getRepeat() -> String { takeString(DZGetRepeat()) }
+    /// True when the engine reports shuffle on.
+    static func getShuffle() -> Bool { DZGetShuffle() == 1 }
 
     // MARK: audio quality
 

@@ -188,6 +188,18 @@ internal static class DeezerCore
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern void DZQueueSetIndex(int i);
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZQueueIndex();
 
+    // ---- v3.0 additions (engine-truth transport + liked-ids cache) -----------
+    // DZGetRepeat / DZGetShuffle report the ENGINE's current repeat/shuffle state;
+    // when casting over Connect these mirror the remote device, so the transport
+    // bar reconciles its displayed state from them each poll tick (fixes drift and
+    // reflects the remote). DZGetRepeat is a plain string ("off"/"all"/"one",
+    // free with DZFree like every char*); DZGetShuffle is 0/1.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZGetRepeat();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZGetShuffle();
+    // Bare JSON array of the account's favorite track ids (["123",...]); seeds the
+    // GUI liked-ids cache so the now-playing heart reflects real library state.
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZFavoriteIDsJSON();
+
     // ---- helpers -------------------------------------------------------------
     // Own a DZ*JSON / char* result, copy it (UTF-8) and release it with DZFree.
     // Mirrors the C++ TakeJson(char*).
@@ -268,4 +280,21 @@ internal static class DeezerCore
     // Media (raw-stream) cache budget in MB; SetMediaCacheMB applies next launch.
     internal static int MediaCacheMB() => DZMediaCacheMB();
     internal static bool SetMediaCacheMB(int mb) => DZSetMediaCacheMB(mb) == 1;
+
+    // ---- v3.0 typed wrappers -------------------------------------------------
+    // Engine-truth transport state. Repeat maps the engine string onto the 0/1/2
+    // the GUI already uses (off/all/one); anything unexpected falls back to off so
+    // the display degrades safely. A numeric string is tolerated too.
+    internal static int GetRepeat()
+    {
+        switch (TakeJson(DZGetRepeat()))
+        {
+            case "one": case "2": return 2;
+            case "all": case "1": return 1;
+            default: return 0; // "off" / "" / unknown
+        }
+    }
+    internal static bool GetShuffle() => DZGetShuffle() != 0;
+    // Favorite track ids (bare JSON id array) for the liked-ids cache.
+    internal static System.Collections.Generic.List<string> FavoriteIDs() => Wire.ParseIdArray(TakeJson(DZFavoriteIDsJSON()));
 }

@@ -38,6 +38,19 @@
 extern void DZSetRepeat(int mode); /* 0=off 1=all 2=one; forwards to remote if connected */
 extern void DZSetShuffle(int on);  /* 0=off 1=on;        forwards to remote if connected */
 
+/* Truthful transport + like state — added to the engine after the last archive
+ * was built (see DZSetRepeat above), so declare them explicitly until the
+ * generated header carries them.
+ *   DZGetRepeat():   current repeat mode "off"|"all"|"one" (the routed remote's
+ *     when casting, else the local engine queue); free the result with DZFree.
+ *   DZGetShuffle():  1 when shuffle is on, else 0 (routed snapshot when casting).
+ *   DZFavoriteIDsJSON(): the account's liked-track ids as a JSON string array
+ *     (["123","456"], or {"error":...} on failure); BLOCKS on the favorites
+ *     fetch, so call it off the main thread. Free the result with DZFree. */
+extern char *DZGetRepeat(void);
+extern int   DZGetShuffle(void);
+extern char *DZFavoriteIDsJSON(void);
+
 /* Home aggregator — returns {"topTracks":[jTrack],"topAlbums":[jAlbum],"playlists":[jPlaylist]};
  * best-effort (empty sections are omitted); free result with DZFree. */
 extern char *DZHomeJSON(void);
@@ -247,6 +260,7 @@ typedef struct {
   GtkLabel             *np_title, *np_subtitle, *pos_label, *dur_label;
   GtkWidget            *np_explicit;  /* "E" badge beside the now-playing title */
   GtkWidget            *np_preview;   /* "PREVIEW" badge — shown when only a 30s preview plays */
+  GtkLabel             *cast_badge;   /* "Playing on <device>" pill; visible only while casting */
   GtkPicture           *np_cover;
   GtkScale             *seek, *volume;
 
@@ -258,7 +272,9 @@ typedef struct {
   char                 *np_art;        /* artwork URL last loaded into np_cover (refetch guard) */
 
   GtkButton            *like_btn;      /* heart toggle on the now-playing bar */
-  gboolean              cur_liked;     /* local like state for the current track */
+  gboolean              cur_liked;     /* like state for the current track (from liked_ids) */
+  GHashTable           *liked_ids;     /* set of liked track ids (id -> id); seeded from
+                                        * DZFavoriteIDsJSON so the heart is truthful per track */
   gboolean              playing_episode; /* a podcast episode is playing (no queue) */
   int                   preloaded_index; /* track_store idx last DZPreload'd, -1 none */
 
@@ -430,6 +446,10 @@ static void maybe_preload_next(App *a);
 static void advance_pointer_gapless(App *a);
 static void update_like_button(App *a);
 static void start_like(App *a, const char *id, gboolean like);
+static gboolean liked_contains(App *a, const char *id);
+static void liked_set(App *a, const char *id, gboolean liked);
+static void load_liked_ids_async(App *a);
+static void play_episode(App *a, const char *id, const char *title, const char *art, gint64 dur);
 static GtkWidget *make_track_menu_button(void);
 static void track_menu_set(GtkWidget *mb, const char *id, const char *name, const char *artist_id);
 static void open_add_to_playlist(App *a, const char *track_id, const char *track_name);
@@ -747,6 +767,12 @@ static void sync_engine_queue(App *a) {
   /* only follow the engine cursor (tick resync) once the mirror actually took —
    * on a parse failure the GUI keeps owning auto-advance via DZFinishedCount */
   a->queue_synced = (n > 0) && (ok == 1);
+  /* B (cursor adoption): DZQueueSet parks the engine cursor at 0. Align it to the
+   * row we are actually playing (a->current_index). For a browse (current_index
+   * == -1) the engine no-ops this (AlignIndex ignores negatives), so the cursor
+   * stays at 0 — the tick's current_index>=0 guard is what then skips adoption,
+   * keeping a browse from hijacking the now-playing bar. */
+  if (a->queue_synced) DZQueueSetIndex(a->current_index);
   g_free(js);
   json_node_unref(root);
   g_object_unref(gen);
@@ -1051,7 +1077,7 @@ static void update_now_playing_ui(App *a, DzTrack *t, int idx) {
   start_cover_fetch(a, t->artwork);
   g_free(a->np_art);
   a->np_art = g_strdup(t->artwork ? t->artwork : "");
-  a->cur_liked = FALSE; /* no is-liked query — reset the heart on every track */
+  a->cur_liked = liked_contains(a, t->id); /* truthful heart from the seeded liked-ids set */
   update_like_button(a);
   mpris_notify_track(a);
   mpris_emit_seeked(a, 0);
@@ -2495,6 +2521,61 @@ static void start_like(App *a, const char *id, gboolean like) {
   g_object_unref(t);
 }
 
+/* ---- truthful liked-track set (seeds the heart across track changes) ----
+ * The engine has no is-liked query, so we mirror the account's favourites into a
+ * set at login (like KDE/macOS keep their m_likedIds). update_now_playing_ui
+ * reads it to set the heart per track; the like/unlike toggles keep it in step. */
+static gboolean liked_contains(App *a, const char *id) {
+  return a && a->liked_ids && id && *id && g_hash_table_contains(a->liked_ids, id);
+}
+static void liked_set(App *a, const char *id, gboolean liked) {
+  if (!a || !a->liked_ids || !id || !*id) return;
+  if (liked) g_hash_table_add(a->liked_ids, g_strdup(id)); /* key doubles as value; g_free frees it */
+  else       g_hash_table_remove(a->liked_ids, id);
+}
+
+/* Seed the liked-ids set from DZFavoriteIDsJSON. The favourites fetch BLOCKS, so
+ * it runs on a worker; the JSON string array is parsed into the set on the main
+ * loop (an {"error":...} object is a non-array node and is simply skipped). */
+static void liked_seed_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
+  (void)src; (void)data; (void)c;
+  char *j = DZFavoriteIDsJSON();
+  char *dup = g_strdup(j ? j : "[]");
+  if (j) DZFree(j);
+  g_task_return_pointer(task, dup, g_free);
+}
+static void liked_seed_done(GObject *src, GAsyncResult *res, gpointer data) {
+  (void)src; (void)data;
+  char *json = g_task_propagate_pointer(G_TASK(res), NULL);
+  if (!json) return;
+  if (APP->liked_ids) g_hash_table_remove_all(APP->liked_ids); /* replace on account switch */
+  JsonParser *p = json_parser_new();
+  if (json_parser_load_from_data(p, json, -1, NULL)) {
+    JsonNode *root = json_parser_get_root(p);
+    if (root && JSON_NODE_HOLDS_ARRAY(root)) {
+      JsonArray *arr = json_node_get_array(root);
+      guint n = json_array_get_length(arr);
+      for (guint i = 0; i < n; i++) {
+        const char *id = json_array_get_string_element(arr, i);
+        if (id && *id && APP->liked_ids) g_hash_table_add(APP->liked_ids, g_strdup(id));
+      }
+    }
+  }
+  g_object_unref(p);
+  g_free(json);
+  /* the track already showing may be in the freshly-seeded set — refresh the heart */
+  if (APP->np_id && *APP->np_id) {
+    APP->cur_liked = liked_contains(APP, APP->np_id);
+    update_like_button(APP);
+  }
+}
+static void load_liked_ids_async(App *a) {
+  (void)a;
+  GTask *t = g_task_new(NULL, NULL, liked_seed_done, NULL);
+  g_task_run_in_thread(t, liked_seed_worker);
+  g_object_unref(t);
+}
+
 /* ---- download a track to a file (Premium only) ----
  * DZDownloadTrack blocks (network + Blowfish decrypt), so it runs on a worker.
  * It returns malloc'd JSON — {"path":"..."} on success or {"error":"..."} — which
@@ -2632,6 +2713,7 @@ static void on_like_clicked(GtkButton *b, gpointer data) {
   gboolean ns = !a->cur_liked;
   start_like(a, t->id, ns);
   a->cur_liked = ns; /* optimistic local toggle */
+  liked_set(a, t->id, ns); /* keep the liked-ids set truthful for later track changes */
   update_like_button(a);
   g_object_unref(t);
 }
@@ -2645,7 +2727,13 @@ static void on_tm_like(GtkButton *b, gpointer mb) {
   (void)b;
   const char *id = g_object_get_data(G_OBJECT(mb), "tm_id");
   tm_popdown(mb);
-  if (id && *id) start_like(APP, id, TRUE);
+  if (!id || !*id) return;
+  start_like(APP, id, TRUE);
+  liked_set(APP, id, TRUE); /* record so the heart stays truthful */
+  if (g_strcmp0(id, APP->np_id) == 0) { /* liked the track that is playing — light the heart */
+    APP->cur_liked = TRUE;
+    update_like_button(APP);
+  }
 }
 static void on_tm_add(GtkButton *b, gpointer mb) {
   (void)b;
@@ -4107,30 +4195,50 @@ static void open_artist(App *a, const char *artist_id) {
 }
 
 /* now-playing-bar shortcuts */
-static void on_repeat_clicked(GtkButton *b, gpointer data) {
-  (void)b;
-  App *a = data;
-  a->repeat_mode = (a->repeat_mode + 1) % 3; /* off=0 → all=1 → one=2 → off */
-  transport_call(TR_SET_REPEAT, a->repeat_mode);
-  /* swap the icon for repeat-one, keep the same icon (dimmed vs. accent) for off/all */
+
+/* Reflect a->repeat_mode on the repeat button (icon swaps to repeat-one; accent
+ * on for all/one). Shared by the click handler and the tick's reconcile from
+ * engine truth (DZGetRepeat), so both paths render the mode identically. */
+static void apply_repeat_button(App *a) {
+  if (!a->repeat_btn) return;
   gtk_button_set_icon_name(a->repeat_btn,
       a->repeat_mode == 2 ? "media-playlist-repeat-song-symbolic"
-                           : "media-playlist-repeat-symbolic");
+                          : "media-playlist-repeat-symbolic");
   if (a->repeat_mode == 0)
     gtk_widget_remove_css_class(GTK_WIDGET(a->repeat_btn), "dz-active");
   else
     gtk_widget_add_css_class(GTK_WIDGET(a->repeat_btn), "dz-active");
 }
-
-static void on_shuffle_clicked(GtkButton *b, gpointer data) {
-  (void)b;
-  App *a = data;
-  a->shuffle_on = !a->shuffle_on;
-  transport_call(TR_SET_SHUFFLE, a->shuffle_on ? 1 : 0);
+/* Reflect a->shuffle_on on the shuffle button — shared by the click handler and
+ * the tick's reconcile from engine truth (DZGetShuffle). */
+static void apply_shuffle_button(App *a) {
+  if (!a->shuffle_btn) return;
   if (a->shuffle_on)
     gtk_widget_add_css_class(GTK_WIDGET(a->shuffle_btn), "dz-active");
   else
     gtk_widget_remove_css_class(GTK_WIDGET(a->shuffle_btn), "dz-active");
+}
+
+/* B1: the click handlers only SEND the command; the engine owns repeat/shuffle
+ * and the tick reconciles the buttons from DZGetRepeat/DZGetShuffle (which also
+ * reflect the routed remote when casting). The local field is updated
+ * optimistically so consecutive clicks advance before the next tick lands. */
+static void on_repeat_clicked(GtkButton *b, gpointer data) {
+  (void)b;
+  App *a = data;
+  int next = (a->repeat_mode + 1) % 3; /* off=0 → all=1 → one=2 → off */
+  transport_call(TR_SET_REPEAT, next);
+  a->repeat_mode = next;
+  apply_repeat_button(a);
+}
+
+static void on_shuffle_clicked(GtkButton *b, gpointer data) {
+  (void)b;
+  App *a = data;
+  gboolean next = !a->shuffle_on;
+  transport_call(TR_SET_SHUFFLE, next ? 1 : 0);
+  a->shuffle_on = next;
+  apply_shuffle_button(a);
 }
 
 static void on_lyrics_clicked(GtkButton *b, gpointer data) { (void)b; open_lyrics((App *)data); }
@@ -4756,6 +4864,13 @@ static void on_history_recent_activated(GtkListBox *box, GtkListBoxRow *row, gpo
   if (!row || !a->history_tracks) return;
   int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "idx"));
   if (idx < 0 || (guint)idx >= a->history_tracks->len) return;
+  /* B14: a podcast-episode row replays through the episode path (plain stream,
+   * no track queue) — routing it as a track would fail to play. */
+  if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "episode"))) {
+    DzTrack *ep = g_ptr_array_index(a->history_tracks, idx);
+    play_episode(a, ep->id, ep->name, ep->artwork, ep->duration_ms);
+    return;
+  }
   g_list_store_remove_all(a->track_store);
   for (guint i = 0; i < a->history_tracks->len; i++)
     g_list_store_append(a->track_store, g_ptr_array_index(a->history_tracks, i));
@@ -4806,7 +4921,8 @@ static void history_populate(App *a, const char *recent_json, const char *stats_
           for (guint i = 0; i < n; i++) {
             JsonObject *e = json_array_get_object_element(arr, i);
             char *tid = jstr(e, "trackId"), *title = jstr(e, "title"),
-                 *art = jstr(e, "artist"), *alb = jstr(e, "album");
+                 *art = jstr(e, "artist"), *alb = jstr(e, "album"), *kind = jstr(e, "kind");
+            gboolean is_ep = (g_strcmp0(kind, "episode") == 0); /* B14: podcast episode row */
             DzTrack *t = dz_track_new(tid, title, art, alb, "", 0, "", FALSE);
             g_ptr_array_add(a->history_tracks, t); /* takes the owning ref */
             GtkWidget *row = adw_action_row_new();
@@ -4817,10 +4933,13 @@ static void history_populate(App *a, const char *recent_json, const char *stats_
             adw_action_row_set_subtitle(ADW_ACTION_ROW(row), sub);
             g_free(sub);
             adw_action_row_add_prefix(ADW_ACTION_ROW(row),
-                                      gtk_image_new_from_icon_name("audio-x-generic-symbolic"));
+                gtk_image_new_from_icon_name(is_ep ? "audio-input-microphone-symbolic"
+                                                   : "audio-x-generic-symbolic"));
             g_object_set_data(G_OBJECT(row), "idx", GINT_TO_POINTER((int)i));
+            /* remember the kind so activation replays episodes via the episode path */
+            g_object_set_data(G_OBJECT(row), "episode", GINT_TO_POINTER(is_ep ? 1 : 0));
             gtk_list_box_append(GTK_LIST_BOX(lb), row);
-            g_free(tid); g_free(title); g_free(art); g_free(alb);
+            g_free(tid); g_free(title); g_free(art); g_free(alb); g_free(kind);
           }
           gtk_box_append(GTK_BOX(a->history_box), lb);
           any_recent = TRUE;
@@ -5277,6 +5396,38 @@ static gboolean tick(gpointer data) {
   if (a->np_preview)
     gtk_widget_set_visible(a->np_preview, DZIsPreview() == 1);
 
+  /* B1: reconcile the repeat/shuffle buttons with engine truth (the routed
+   * remote's state when casting, else the local queue). The click handlers only
+   * send the command, so the engine — not the GUI — owns the state; these are
+   * cheap cached reads. DZGetRepeat returns a malloc'd string; free it. */
+  {
+    char *rep = DZGetRepeat();
+    if (rep) {
+      int m = (g_strcmp0(rep, "one") == 0) ? 2 : (g_strcmp0(rep, "all") == 0) ? 1 : 0;
+      if (m != a->repeat_mode) { a->repeat_mode = m; apply_repeat_button(a); }
+      DZFree(rep);
+    }
+    gboolean sh = (DZGetShuffle() == 1);
+    if (sh != a->shuffle_on) { a->shuffle_on = sh; apply_shuffle_button(a); }
+  }
+
+  /* Casting badge: show "Playing on <device>" on the transport while routed to an
+   * OpenDeezer Connect device (DZConnectedDevice non-empty), hidden otherwise. */
+  if (a->cast_badge) {
+    char *caddr = DZConnectedDevice(); /* malloc'd; "" = local */
+    if (caddr && *caddr) {
+      const char *dev = (a->connect_name && *a->connect_name) ? a->connect_name : caddr;
+      char *txt = g_strdup_printf(_("Playing on %s"), dev);
+      if (g_strcmp0(txt, gtk_label_get_label(a->cast_badge)) != 0)
+        gtk_label_set_label(a->cast_badge, txt);
+      gtk_widget_set_visible(GTK_WIDGET(a->cast_badge), TRUE);
+      g_free(txt);
+    } else {
+      gtk_widget_set_visible(GTK_WIDGET(a->cast_badge), FALSE);
+    }
+    if (caddr) DZFree(caddr);
+  }
+
   /* Keep the now-playing bar in step with the engine truth: DZNowPlayingJSON
    * reports the track ACTUALLY playing — a track started via the control API on
    * this device, or the remote device's current track when routed via OpenDeezer
@@ -5311,6 +5462,11 @@ static gboolean tick(gpointer data) {
             }
             g_free(a->np_id);
             a->np_id = g_strdup(id);
+            /* truthful heart for engine/remote-driven track changes too (this
+             * path runs when update_now_playing_ui didn't, e.g. control-API or a
+             * Connect remote advancing the track) */
+            a->cur_liked = liked_contains(a, id);
+            update_like_button(a);
           }
           g_free(name); g_free(artist); g_free(art);
         }
@@ -5360,7 +5516,13 @@ static gboolean tick(gpointer data) {
   if (a->queue_synced && !a->playing_episode) {
     int qi = DZQueueIndex();
     guint qn = g_list_model_get_n_items(G_LIST_MODEL(a->track_store));
-    if (qi >= 0 && (guint)qi < qn && qi != a->current_index) {
+    /* B (cursor adoption): only adopt an engine-driven advance — a track was
+     * already playing (current_index >= 0) and the engine moved the cursor. A
+     * fresh browse resets current_index to -1 while DZQueueSet parks the engine
+     * cursor at 0; without this guard the tick would adopt row 0 and hijack the
+     * now-playing bar. The DZNowPlayingJSON poll above still tracks remote-driven
+     * playback for display, so nothing regresses when nothing is playing yet. */
+    if (a->current_index >= 0 && qi >= 0 && (guint)qi < qn && qi != a->current_index) {
       a->current_index = qi;
       DzTrack *qt = g_list_model_get_item(G_LIST_MODEL(a->track_store), qi);
       if (qt) { update_now_playing_ui(a, qt, qi); g_object_unref(qt); }
@@ -5761,6 +5923,7 @@ static void init_done(GObject *src, GAsyncResult *res, gpointer data) {
     /* refresh (not just append) so switching accounts replaces the previous
      * account's playlists instead of stacking the new ones underneath */
     sidebar_refresh_playlists(APP);
+    load_liked_ids_async(APP); /* seed truthful heart state from the account's favourites */
     /* select Home (row 0) → triggers the home discovery page load. Unselect
      * first so the selection actually CHANGES and on_sidebar_selected re-fires
      * even if row 0 was already selected before login (else: empty Home). */
@@ -5897,6 +6060,15 @@ static void load_css(void) {
       "  font-weight:800;"
       "  padding:0px 5px;"
       "  border-radius:4px;"
+      "  color:#ffffff;"
+      "  background-color:" ACCENT ";"
+      "}\n"
+      /* casting pill: "Playing on <device>" on the transport while routed */
+      ".dz-cast-badge{"
+      "  font-size:0.72em;"
+      "  font-weight:700;"
+      "  padding:1px 8px;"
+      "  border-radius:9999px;"
       "  color:#ffffff;"
       "  background-color:" ACCENT ";"
       "}\n";
@@ -6226,6 +6398,16 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_box_append(GTK_BOX(titles), GTK_WIDGET(a->np_subtitle));
   gtk_box_append(GTK_BOX(bar), titles);
 
+  /* casting badge — "Playing on <device>", shown only while routed to a Connect
+   * device (the 300 ms tick sets its text + visibility from DZConnectedDevice) */
+  a->cast_badge = GTK_LABEL(gtk_label_new(""));
+  gtk_widget_add_css_class(GTK_WIDGET(a->cast_badge), "dz-cast-badge");
+  gtk_label_set_ellipsize(a->cast_badge, PANGO_ELLIPSIZE_END);
+  gtk_label_set_max_width_chars(a->cast_badge, 22);
+  gtk_widget_set_valign(GTK_WIDGET(a->cast_badge), GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(GTK_WIDGET(a->cast_badge), FALSE);
+  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->cast_badge));
+
   /* like / lyrics / artist shortcuts for the current track */
   a->like_btn = GTK_BUTTON(gtk_button_new_from_icon_name("emblem-favorite-symbolic"));
   gtk_widget_add_css_class(GTK_WIDGET(a->like_btn), "flat");
@@ -6406,6 +6588,9 @@ static void on_activate(GApplication *app, gpointer data) {
   a->app = ADW_APPLICATION(app);
   a->current_index = -1;
   a->preloaded_index = -1;
+  /* liked-track set; keys are owned strings freed on removal/replace. Populated
+   * from DZFavoriteIDsJSON at login (load_liked_ids_async) so the heart is truthful. */
+  a->liked_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
   APP = a;
 
   /* load persisted settings; quality is applied after login (init_done) */

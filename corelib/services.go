@@ -57,6 +57,11 @@ var (
 
 	curMu    sync.Mutex
 	curTrack deezer.Track
+	// curKind is the media kind of curTrack for history recording: "" = song
+	// (set by setCurrentTrack, the common path) and history.KindEpisode =
+	// podcast (set by setCurrentEpisode). Guarded by curMu alongside curTrack so
+	// the recorder never pairs a track with a stale kind.
+	curKind string
 
 	// preloadedTrack remembers the identity (id + duration) of the stream last
 	// armed on the player via DZPreload. The player's pending next source is set
@@ -81,9 +86,22 @@ var (
 func setCurrentTrack(t deezer.Track) {
 	curMu.Lock()
 	curTrack = t
+	curKind = "" // a song; episodes go through setCurrentEpisode
 	curMu.Unlock()
 	// Every track change (play, auto-advance, gapless promote, async metadata
 	// enrichment, remote sync) is a state change controllers care about.
+	notifyControlState()
+}
+
+// setCurrentEpisode is setCurrentTrack for a podcast episode: it records the
+// now-playing exactly like setCurrentTrack but tags the media kind so the
+// history recorder stamps Kind="episode". Native history screens then replay the
+// entry through DZPlayEpisode instead of the music-track resolver (DZPlay).
+func setCurrentEpisode(t deezer.Track) {
+	curMu.Lock()
+	curTrack = t
+	curKind = history.KindEpisode
+	curMu.Unlock()
 	notifyControlState()
 }
 
@@ -112,6 +130,15 @@ func currentTrack() deezer.Track {
 	curMu.Lock()
 	defer curMu.Unlock()
 	return curTrack
+}
+
+// currentTrackSnapshot returns the now-playing track together with its media
+// kind ("" = song, history.KindEpisode = podcast), read under a single lock so
+// the history recorder never pairs a track with a stale kind.
+func currentTrackSnapshot() (deezer.Track, string) {
+	curMu.Lock()
+	defer curMu.Unlock()
+	return curTrack, curKind
 }
 
 // curPlayer reads the live player global. (curClient is defined in deezercore.go.)
@@ -689,7 +716,7 @@ func fetchEpisodeMeta(c *deezer.Client, id string) {
 	}
 	// Only keep it if the user hasn't moved on to another episode meanwhile.
 	if currentTrack().ID == id {
-		setCurrentTrack(ep.AsTrack())
+		setCurrentEpisode(ep.AsTrack())
 	}
 }
 
@@ -1224,10 +1251,11 @@ func historyStats(sinceDays int) map[string]any {
 	return map[string]any{"topTracks": topTracks, "topArtists": topArtists, "totalSeconds": total}
 }
 
-// listenEntry converts an outgoing track + listened milliseconds into a
-// history entry. ok=false when it isn't worth recording: no track id, or under
-// a second of listening (start-skips, double-taps).
-func listenEntry(prev deezer.Track, playedMS int64) (history.Entry, bool) {
+// listenEntry converts an outgoing track + its media kind ("" = song,
+// history.KindEpisode = podcast) + listened milliseconds into a history entry.
+// ok=false when it isn't worth recording: no track id, or under a second of
+// listening (start-skips, double-taps).
+func listenEntry(prev deezer.Track, kind string, playedMS int64) (history.Entry, bool) {
 	if prev.ID == "" || playedMS < 1000 {
 		return history.Entry{}, false
 	}
@@ -1239,16 +1267,18 @@ func listenEntry(prev deezer.Track, playedMS int64) (history.Entry, bool) {
 		Title:             prev.Name,
 		Artist:            prev.ArtistLine(),
 		Album:             prev.AlbumName,
+		Kind:              kind,
 		StartedAt:         time.Now().Unix() - playedMS/1000,
 		DurationPlayedSec: playedMS / 1000,
 	}, true
 }
 
-// recordListen appends the outgoing track to the local listening history. The
-// file write (append + fsync) runs on its own goroutine so callers on the
-// player's manage/callback path never block on disk I/O.
-func recordListen(prev deezer.Track, playedMS int64) {
-	e, ok := listenEntry(prev, playedMS)
+// recordListen appends the outgoing track to the local listening history,
+// tagged with its media kind so replay can route (song -> DZPlay, episode ->
+// DZPlayEpisode). The file write (append + fsync) runs on its own goroutine so
+// callers on the player's manage/callback path never block on disk I/O.
+func recordListen(prev deezer.Track, kind string, playedMS int64) {
+	e, ok := listenEntry(prev, kind, playedMS)
 	if !ok {
 		return
 	}
@@ -1282,7 +1312,8 @@ func noteTrackTransition(p *audio.Player) {
 func recordTransition(state audio.State, positionMS int64) {
 	switch state {
 	case audio.Playing, audio.Paused:
-		recordListen(currentTrack(), positionMS)
+		t, kind := currentTrackSnapshot()
+		recordListen(t, kind, positionMS)
 	}
 }
 
@@ -1333,7 +1364,8 @@ func noteTrackFinished() {
 	if p := curPlayer(); p != nil {
 		state, lastErr, posMS, havePlayer = p.State(), p.LastError(), p.PositionMS(), true
 	}
-	recordFinished(currentTrack(), state, lastErr, posMS, havePlayer)
+	prev, kind := currentTrackSnapshot()
+	recordFinished(prev, kind, state, lastErr, posMS, havePlayer)
 }
 
 // recordFinished is noteTrackFinished's pure core (testable without a live audio
@@ -1341,7 +1373,7 @@ func noteTrackFinished() {
 // not a real listen, B4) and otherwise records the outgoing listen using the
 // track duration — or the player's actual end position when it retained one (a
 // real finish, not a gapless promote where the player is already Playing next).
-func recordFinished(prev deezer.Track, state audio.State, lastErr string, positionMS int64, havePlayer bool) {
+func recordFinished(prev deezer.Track, kind string, state audio.State, lastErr string, positionMS int64, havePlayer bool) {
 	if havePlayer && isErroredFinish(state, lastErr, positionMS) {
 		return
 	}
@@ -1349,5 +1381,5 @@ func recordFinished(prev deezer.Track, state audio.State, lastErr string, positi
 	if havePlayer && state != audio.Playing && positionMS > 0 {
 		playedMS = positionMS
 	}
-	recordListen(prev, playedMS)
+	recordListen(prev, kind, playedMS)
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.VolumeUp
@@ -17,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,7 +51,13 @@ fun QueueScreen(player: PlayerController, onBack: () -> Unit) {
             if (state.queue.isEmpty()) {
                 CenteredMessage(stringResource(R.string.queue_empty))
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                val listState = rememberLazyListState()
+                // Keep the playing row on screen as the queue auto-advances or the
+                // user opens the screen mid-playback.
+                LaunchedEffect(state.index) {
+                    if (state.index in state.queue.indices) listState.animateScrollToItem(state.index)
+                }
+                LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     itemsIndexed(state.queue, key = { i, t -> "$i-${t.id}" }) { index, track ->
                         val isCurrent = index == state.index
                         TrackRow(

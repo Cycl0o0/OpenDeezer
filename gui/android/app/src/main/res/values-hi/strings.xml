@@ -227,6 +227,7 @@
     <string name="download_saved_generic">%1$s डाउनलोड हो गया</string>
     <string name="download_failed">डाउनलोड विफल: %1$s</string>
     <string name="download_failed_generic">डाउनलोड विफल</string>
+    <string name="favorite_update_failed">पसंद अपडेट नहीं हो सकी — अपना कनेक्शन जांचें।</string>
     <string name="preview_chip">झलक</string>
     <string name="account_free_hint">मुफ़्त खाता · मानक गुणवत्ता (128 kbps)</string>
     <string name="settings_ads">विज्ञापन</string>

@@ -32,8 +32,20 @@ data class PlayerState(
     val shuffle: Boolean = false,
 ) {
     val isPlaying: Boolean get() = state == Engine.PLAYING
-    val hasNext: Boolean get() = index in 0 until queue.lastIndex
-    val hasPrev: Boolean get() = index > 0
+
+    // B15: next/prev availability honors shuffle + repeat.
+    //  - shuffle: there's always another track to jump to (queue > 1).
+    //  - repeat-all: "next" wraps past the end, so it's available there too.
+    //  - prev restarts the current track at index 0, so it's available whenever
+    //    something is loaded.
+    val hasNext: Boolean get() = when {
+        queue.isEmpty() || index < 0 -> false
+        shuffle && queue.size > 1 -> true
+        index < queue.lastIndex -> true
+        repeatMode == 1 -> true
+        else -> false
+    }
+    val hasPrev: Boolean get() = queue.isNotEmpty() && index >= 0
 }
 
 /** One-shot download outcome surfaced to the UI shell (rendered as a snackbar). */
@@ -94,9 +106,32 @@ class PlayerController(private val scope: CoroutineScope) {
     private var syncedQueueRef: List<Track>? = null
     private var syncedIndex: Int = Int.MIN_VALUE
 
+    // M1: the last engine QueueVersion we've reconciled with. The poll adopts the
+    // engine queue when this moves for a reason other than our own push (a remote
+    // controller edited this device's queue). queuePushInFlight blocks adoption
+    // while our own SetQueueJSON is landing (it bumps the version).
+    private var lastEngineQueueVersion: Long = Engine.queueVersion()
+    private var queuePushInFlight: Boolean = false
+
+    // B1: >0 while a local repeat/shuffle change is being forwarded to the
+    // engine, so the poll won't briefly revert the UI to the engine's pre-change
+    // value before the change lands.
+    private var modeSendInFlight: Int = 0
+
+    // Cached liked-track ids (engine truth) so hearts render without a per-track
+    // lookup; the Now Playing heart collects this and toggles optimistically.
+    private val _likedIds = MutableStateFlow<Set<String>>(emptySet())
+    val likedIds: StateFlow<Set<String>> = _likedIds.asStateFlow()
+
+    // One-shot "couldn't update Like" signal (a failed optimistic toggle was
+    // reverted); the UI shell shows a snackbar / toast.
+    private val _favoriteFailures = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val favoriteFailures: SharedFlow<Unit> = _favoriteFailures.asSharedFlow()
+
     fun start() {
         if (pollJob?.isActive == true) return
         lastFinished = Engine.finishedCount()
+        refreshLikedIds()
         pollJob = scope.launch {
             while (isActive) {
                 poll()
@@ -195,19 +230,48 @@ class PlayerController(private val scope: CoroutineScope) {
         }
     }
 
+    // B15: manual skip honors shuffle + repeat, mirroring the poll's natural-
+    // completion policy — shuffle jumps to a random other track, repeat-all wraps
+    // past the ends. Repeat-one governs auto-advance only, so it doesn't block a
+    // deliberate skip. null means "nowhere to go".
+    private fun manualNextIndex(): Int? = when {
+        queue.isEmpty() -> null
+        shuffleEnabled && queue.size > 1 -> queue.indices.filter { it != index }.random()
+        index < queue.lastIndex -> index + 1
+        repeatMode == 1 -> 0
+        else -> null
+    }
+
+    // The prev target when it isn't a restart: a random other track under
+    // shuffle, the previous row, or (repeat-all) a wrap to the end. null means
+    // "restart the current track" (prev at index 0 with no wrap).
+    private fun manualPrevIndex(): Int? = when {
+        queue.isEmpty() -> null
+        shuffleEnabled && queue.size > 1 -> queue.indices.filter { it != index }.random()
+        index > 0 -> index - 1
+        repeatMode == 1 -> queue.lastIndex
+        else -> null
+    }
+
     fun next() {
-        if (index < queue.lastIndex) {
-            index++
-            startCurrent()
-        }
+        val target = manualNextIndex() ?: return
+        index = target
+        startCurrent()
     }
 
     fun prev() {
-        // Restart the current track if we're past a few seconds, else go back.
-        if (Engine.positionMs() > 3000L || index <= 0) {
+        // Past a few seconds, "prev" restarts the current track (matches every
+        // music player); otherwise step back honoring shuffle/repeat, and at the
+        // very start with no wrap, restart instead.
+        if (Engine.positionMs() > 3000L) {
+            control { Engine.seek(0) }
+            return
+        }
+        val target = manualPrevIndex()
+        if (target == null) {
             control { Engine.seek(0) }
         } else {
-            index--
+            index = target
             startCurrent()
         }
     }
@@ -238,19 +302,60 @@ class PlayerController(private val scope: CoroutineScope) {
         pushImmediate()
     }
 
-    // B4: set repeat mode locally and forward to any connected remote.
-    // mode: 0=off, 1=all, 2=one
+    // B4: set repeat mode locally and forward to the engine (which forwards to
+    // any connected remote). mode: 0=off, 1=all, 2=one.
     fun setRepeat(mode: Int) {
         repeatMode = mode.coerceIn(0, 2)
-        control { Engine.setRepeat(repeatMode) }
+        sendMode { Engine.setRepeat(repeatMode) }
         reconcilePreload()
     }
 
-    // B4: toggle shuffle locally and forward to any connected remote.
+    // B4: toggle shuffle locally and forward to the engine / any connected remote.
     fun setShuffle(on: Boolean) {
         shuffleEnabled = on
-        control { Engine.setShuffle(if (on) 1 else 0) }
+        sendMode { Engine.setShuffle(if (on) 1 else 0) }
         reconcilePreload()
+    }
+
+    // Forwards a local repeat/shuffle change to the engine off the main thread (a
+    // routed Connect device makes this a 15s-timeout HTTP call) while suppressing
+    // the poll's mode reconciliation until it lands, so the UI can't flicker back
+    // to the engine's pre-change value in between.
+    private fun sendMode(block: () -> Unit) {
+        modeSendInFlight++
+        scope.launch {
+            withContext(Dispatchers.IO) { block() }
+            modeSendInFlight--
+            pushImmediate()
+        }
+    }
+
+    // ---- truthful favourites ----
+
+    /** Refresh the cached liked-id set from engine truth (login + after a toggle). */
+    fun refreshLikedIds() {
+        scope.launch { _likedIds.value = Engine.favoriteIds() }
+    }
+
+    /**
+     * Optimistically flips the heart, then reconciles: on success re-pulls the
+     * authoritative id set; on failure reverts the cache and signals a snackbar
+     * revert via [favoriteFailures]. Episodes aren't favouritable.
+     */
+    fun toggleFavorite(track: Track) {
+        if (track.isEpisode) return
+        val id = track.id
+        val wasLiked = _likedIds.value.contains(id)
+        _likedIds.value = if (wasLiked) _likedIds.value - id else _likedIds.value + id
+        scope.launch {
+            val ok = if (wasLiked) Engine.removeFavorite(id) else Engine.addFavorite(id)
+            if (ok) {
+                _likedIds.value = Engine.favoriteIds()
+            } else {
+                _likedIds.value = if (wasLiked) _likedIds.value + id else _likedIds.value - id
+                _favoriteFailures.emit(Unit)
+            }
+        }
     }
 
     // When routed to a Connect device these engine calls do synchronous HTTP
@@ -336,11 +441,67 @@ class PlayerController(private val scope: CoroutineScope) {
         scope.launch { armPreload() }
     }
 
+    // B1: drive repeat/shuffle from engine truth so the UI reflects casting and
+    // external/remote changes. Suppressed while a local change is in flight (see
+    // sendMode) so we don't fight our own not-yet-applied toggle.
+    private fun syncModesFromEngine() {
+        if (modeSendInFlight > 0) return
+        val r = Engine.repeatMode()
+        val s = Engine.shuffleOn()
+        if (r != repeatMode || s != shuffleEnabled) {
+            repeatMode = r
+            shuffleEnabled = s
+            reconcilePreload()
+        }
+    }
+
+    // M1: adopt the engine-side queue when a remote controller edits this
+    // device's queue (QueueVersion bumps). Replaces the local queue + cursor so
+    // now-playing is correct and auto-advance walks the full remote-loaded list
+    // instead of stopping after one track. Guards against echoing our own push.
+    // Returns true when it took over this poll tick.
+    private fun adoptEngineQueueIfChanged(): Boolean {
+        if (queuePushInFlight) return false
+        val v = Engine.queueVersion()
+        if (v == lastEngineQueueVersion) return false
+        val snap = Engine.queueSnapshot()
+        if (snap == null) {
+            lastEngineQueueVersion = v
+            return false
+        }
+        lastEngineQueueVersion = snap.version
+        if (snap.tracks.isEmpty()) return false
+        val newIndex = snap.index.coerceIn(0, snap.tracks.lastIndex)
+        queue = snap.tracks
+        index = newIndex
+        // Mark adopted content as already-synced so syncEngineQueue() won't echo
+        // it straight back to the engine.
+        syncedQueueRef = queue
+        syncedIndex = index
+        preloadedId = null
+        // If the engine is already rendering the adopted track (a remote
+        // controller both loaded and started it), adopt silently and let the poll
+        // auto-advance from here; otherwise start it locally.
+        val engineNow = Engine.nowPlaying()
+        val adoptedId = snap.tracks.getOrNull(newIndex)?.id
+        val engineLive = Engine.state() == Engine.PLAYING || Engine.state() == Engine.LOADING
+        if (engineNow != null && engineNow.id == adoptedId && engineLive) {
+            lastFinished = Engine.finishedCount()
+            scope.launch { armPreload() }
+            pushImmediate()
+        } else {
+            startCurrent()
+        }
+        return true
+    }
+
     private fun poll() {
         if (startInFlight) {
             push()
             return
         }
+        syncModesFromEngine()
+        if (adoptEngineQueueIfChanged()) return
         val finished = Engine.finishedCount()
         if (finished > lastFinished) {
             lastFinished = finished
@@ -428,9 +589,14 @@ class PlayerController(private val scope: CoroutineScope) {
                 syncedQueueRef = q
                 syncedIndex = i
                 val json = queueJson(q)
+                queuePushInFlight = true
                 scope.launch {
                     Engine.setQueueJson(json)
                     Engine.setQueueIndex(i)
+                    // Our own SetQueueJSON bumped QueueVersion; record it so the
+                    // poll's adoption doesn't mistake our push for a remote edit.
+                    lastEngineQueueVersion = Engine.queueVersion()
+                    queuePushInFlight = false
                 }
             }
             i != syncedIndex -> {

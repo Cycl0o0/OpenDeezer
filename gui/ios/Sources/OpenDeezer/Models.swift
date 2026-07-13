@@ -329,14 +329,29 @@ struct HistoryEntry: Decodable, Hashable, Identifiable {
     let album: String?
     let startedAt: Int64        // unix seconds
     let durationPlayedSec: Int64 // seconds actually listened
+    // "" / "track" = song, "episode" = podcast. Absent on legacy rows (the field
+    // is omitempty engine-side), so it's optional and decodes to nil there.
+    let kind: String?
 
     // Distinct rows even when the same track appears multiple times.
     var id: String { "\(trackId)-\(startedAt)" }
+
+    /// A podcast episode rather than a song — replay routes through the episode
+    /// player instead of the music-track resolver (B14).
+    var isEpisode: Bool { kind == "episode" }
 
     /// Adapt a history row to a Track so it can flow through the normal player
     /// queue (duration is unknown here — the engine resolves the real one).
     var asTrack: Track {
         Track(id: trackId, name: title, durationMs: 0, artistLine: artist, albumName: album ?? "")
+    }
+
+    /// Adapt an episode history row to an Episode so it replays via the podcast
+    /// player. Total duration isn't stored in history (the engine reports 0 for
+    /// podcasts and resolves what it can), so it's left 0.
+    var asEpisode: Episode {
+        Episode(id: trackId, title: title, description: "", artworkUrl: "",
+                durationMs: 0, releaseDate: "", podcastName: artist)
     }
 }
 

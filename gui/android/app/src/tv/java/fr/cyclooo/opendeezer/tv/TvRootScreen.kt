@@ -138,6 +138,13 @@ fun TvRootScreen(vm: AppViewModel) {
         }
     }
 
+    // A failed optimistic Like toggle was reverted — surface it as a Toast on TV.
+    LaunchedEffect(player) {
+        player.favoriteFailures.collect {
+            Toast.makeText(context, context.getString(R.string.favorite_update_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(TvPalette.screen)) {
         Row(Modifier.fillMaxSize().padding(bottom = if (playerState.current != null) 108.dp else 0.dp)) {
             TvNavRail(
@@ -567,10 +574,12 @@ private fun TvHistory(onPlay: (Track) -> Unit) {
 }
 
 // History carries only id/title/artist; synthesise a minimal Track and let the
-// engine resolve the full stream on play (durationMs unknown = 0).
+// engine resolve the full stream on play (durationMs unknown = 0). B14: episode
+// rows (kind=="episode") route replay to the podcast play path.
 private fun HistoryEntry.asHistoryTrack(): Track = Track(
     id = trackId, name = title, durationMs = 0L, artists = emptyList(),
     artistLine = artist, albumName = album, artworkUrl = "", explicit = false,
+    isEpisode = kind == "episode",
 )
 
 private fun TrackStat.asHistoryTrack(): Track = Track(

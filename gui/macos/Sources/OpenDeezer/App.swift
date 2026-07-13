@@ -604,7 +604,7 @@ struct TrackTable: View {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { idx, t in
                 TrackRowView(index: idx, track: t,
                              isCurrent: app.current?.id == t.id) {
-                    app.play(t, in: tracks)
+                    app.play(t, in: tracks, at: idx)
                 }
                 Divider().overlay(DZ.hairline).padding(.leading, 24)
             }
@@ -818,7 +818,7 @@ struct SearchView: View {
                         ForEach(Array(app.searchTracks.enumerated()), id: \.element.id) { i, t in
                             TrackRowView(index: i, track: t,
                                          isCurrent: app.current?.id == t.id) {
-                                app.play(t, in: app.searchTracks)
+                                app.play(t, in: app.searchTracks, at: i)
                             }
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)

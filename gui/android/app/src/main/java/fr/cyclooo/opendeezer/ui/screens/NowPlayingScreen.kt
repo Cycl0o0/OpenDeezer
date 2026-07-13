@@ -44,12 +44,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,7 +65,6 @@ import fr.cyclooo.opendeezer.ui.HingeSplit
 import fr.cyclooo.opendeezer.ui.LocalFoldState
 import fr.cyclooo.opendeezer.ui.components.Artwork
 import fr.cyclooo.opendeezer.ui.components.formatDuration
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -226,18 +224,15 @@ private fun PlayerControls(
     track: Track,
     onLyrics: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
-
-    var liked by remember(track.id) { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
     var volDrag by remember { mutableStateOf<Float?>(null) }
 
-    // Reconcile the heart with the engine's real favourite state so an
-    // already-liked track shows filled and the first tap removes it.
-    LaunchedEffect(track.id) {
-        liked = !track.isEpisode && Engine.isFavorite(track.id)
-    }
+    // Truthful heart: driven by the cached liked-id set (engine truth), so an
+    // already-liked track shows filled without a per-track lookup. Toggling is
+    // optimistic and reverts with a snackbar if the write fails.
+    val likedIds by player.likedIds.collectAsState()
+    val liked = !track.isEpisode && likedIds.contains(track.id)
 
     val duration = state.durationMs.coerceAtLeast(1L)
     val livePosFraction = (state.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
@@ -264,12 +259,7 @@ private fun PlayerControls(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
-            onClick = {
-                liked = !liked
-                scope.launch {
-                    if (liked) Engine.addFavorite(track.id) else Engine.removeFavorite(track.id)
-                }
-            },
+            onClick = { player.toggleFavorite(track) },
             enabled = !track.isEpisode,
         ) {
             Icon(

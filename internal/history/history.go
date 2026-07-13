@@ -21,15 +21,33 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
 )
 
-// Entry is one listened-to track.
+// Kind values for Entry.Kind. A song carries "" (the zero value, which is also
+// how legacy JSONL lines written before Kind existed decode) or KindTrack;
+// KindEpisode marks a podcast episode so native history screens can route a
+// replay to the episode player instead of the music-track resolver.
+const (
+	KindTrack   = "track"
+	KindEpisode = "episode"
+)
+
+// Entry is one item from the local listening history — a played song or podcast
+// episode. Kind marks which: "" (legacy/default) or KindTrack is a song,
+// KindEpisode is a podcast episode. Old lines with no "kind" field decode as ""
+// and are therefore treated as songs (backward compatible).
 type Entry struct {
 	TrackID           string `json:"trackId"`
 	Title             string `json:"title"`
 	Artist            string `json:"artist"`
 	Album             string `json:"album,omitempty"`
+	Kind              string `json:"kind,omitempty"`    // "" / "track" = song, "episode" = podcast
 	StartedAt         int64  `json:"startedAt"`         // unix seconds
 	DurationPlayedSec int64  `json:"durationPlayedSec"` // seconds actually listened
 }
+
+// isEpisode reports whether this entry is a podcast episode rather than a song.
+// Music aggregates (TopTracks/TopArtists) exclude episodes so a binge-listened
+// podcast can't masquerade as a top "track" or "artist".
+func (e Entry) isEpisode() bool { return e.Kind == KindEpisode }
 
 // TrackStat aggregates plays of one track.
 type TrackStat struct {
@@ -245,6 +263,7 @@ func (s *Store) Recent(n int) ([]Entry, error) {
 
 // TopTracks returns the n most-played tracks since the given time (zero time =
 // all history), ordered by play count, then total listened time, then title.
+// Podcast episodes are excluded — this is a music-only stat.
 func (s *Store) TopTracks(since time.Time, n int) ([]TrackStat, error) {
 	if err := s.load(); err != nil {
 		return nil, err
@@ -253,7 +272,7 @@ func (s *Store) TopTracks(since time.Time, n int) ([]TrackStat, error) {
 	cut := sinceUnix(since)
 	byKey := map[string]*TrackStat{}
 	for _, e := range s.entries {
-		if e.StartedAt < cut {
+		if e.StartedAt < cut || e.isEpisode() {
 			continue
 		}
 		key := e.TrackID
@@ -290,6 +309,8 @@ func (s *Store) TopTracks(since time.Time, n int) ([]TrackStat, error) {
 
 // TopArtists returns the n most-played artists since the given time (zero time
 // = all history), ordered by play count, then total listened time, then name.
+// Podcast episodes are excluded — this is a music-only stat (a show's name would
+// otherwise land in the artist chart).
 func (s *Store) TopArtists(since time.Time, n int) ([]ArtistStat, error) {
 	if err := s.load(); err != nil {
 		return nil, err
@@ -298,7 +319,7 @@ func (s *Store) TopArtists(since time.Time, n int) ([]ArtistStat, error) {
 	cut := sinceUnix(since)
 	byArtist := map[string]*ArtistStat{}
 	for _, e := range s.entries {
-		if e.StartedAt < cut || e.Artist == "" {
+		if e.StartedAt < cut || e.Artist == "" || e.isEpisode() {
 			continue
 		}
 		st, ok := byArtist[e.Artist]
@@ -330,7 +351,8 @@ func (s *Store) TopArtists(since time.Time, n int) ([]ArtistStat, error) {
 }
 
 // TotalListenedSec sums the seconds listened since the given time (zero time =
-// all history).
+// all history). This is total listening time across all media — songs and
+// podcast episodes alike (unlike TopTracks/TopArtists, which are music-only).
 func (s *Store) TotalListenedSec(since time.Time) (int64, error) {
 	if err := s.load(); err != nil {
 		return 0, err

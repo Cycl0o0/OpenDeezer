@@ -37,9 +37,11 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -191,7 +193,36 @@ extern "C" int   DZQueueSet(char *js);
 extern "C" void  DZQueueSetIndex(int i);
 extern "C" int   DZQueueIndex(void);
 
+// v3.0.0 additions. Redeclared here (like the blocks above) so the GUI still
+// builds against an older generated header; identical redeclarations are
+// harmless. All three read the routed remote's state when casting, so a casting
+// host GUI reflects the real state.
+//   DZGetRepeat: current repeat mode as "off" / "all" / "one" — malloc'd C
+//     string, free with DZFree.
+//   DZGetShuffle: 1 when shuffle is on, else 0.
+//   DZFavoriteIDsJSON: the account's liked-track ids as a JSON array of strings
+//     (e.g. ["123","456"]; "[]" when none) — malloc'd, free with DZFree. Backs
+//     truthful heart state without shipping every track's full metadata.
+extern "C" char *DZGetRepeat(void);       // "off" | "all" | "one"
+extern "C" int   DZGetShuffle(void);      // 1 = on, 0 = off
+extern "C" char *DZFavoriteIDsJSON(void); // ["<trackId>", ...]
+
 namespace {
+
+// A slider style that makes a left-click on the groove jump straight to that
+// position (absolute set), instead of paging one step toward it. Applied to the
+// seek slider so a click seeks directly to the clicked point (drag still works,
+// driven by the existing sliderPressed/Released handlers).
+class DirectJumpSliderStyle : public QProxyStyle {
+public:
+    using QProxyStyle::QProxyStyle;
+    int styleHint(StyleHint hint, const QStyleOption *opt, const QWidget *w,
+                  QStyleHintReturn *ret) const override {
+        if (hint == SH_Slider_AbsoluteSetButtons)
+            return Qt::LeftButton;
+        return QProxyStyle::styleHint(hint, opt, w, ret);
+    }
+};
 
 const char *kAccent = "#A238FF"; // Deezer "Electric Violet"
 
@@ -1333,12 +1364,14 @@ QWidget *MainWindow::buildSearchPage() {
     m_searchResults->setMovement(QListView::Static);
     m_searchResults->setWordWrap(true);
     connect(m_searchResults, &QListWidget::itemActivated, this, [this](QListWidgetItem *it) {
-        const int kind = it->data(Qt::UserRole).toInt();       // 0 album, 1 playlist
+        const int kind = it->data(Qt::UserRole).toInt();       // 0 album, 1 playlist, 2 artist
         const int idx  = it->data(Qt::UserRole + 1).toInt();
         if (kind == 0 && idx < m_searchAlbums.size())
             openAlbum(m_searchAlbums[idx]);
         else if (kind == 1 && idx < m_searchPlaylists.size())
             openPlaylist(m_searchPlaylists[idx]);
+        else if (kind == 2 && idx < m_searchArtists.size())
+            openArtist(m_searchArtists[idx].id);
     });
     v->addWidget(m_searchResults, 1);
 
@@ -1442,6 +1475,12 @@ QWidget *MainWindow::buildTransport() {
     h->addWidget(m_posLabel);
     m_seek = new QSlider(Qt::Horizontal);
     m_seek->setRange(0, 1);
+    // Click anywhere on the groove to jump straight there (drag still seeks via
+    // the sliderPressed/Released handlers below). Parented to the slider so the
+    // proxy style is destroyed with it.
+    auto *seekStyle = new DirectJumpSliderStyle;
+    seekStyle->setParent(m_seek);
+    m_seek->setStyle(seekStyle);
     h->addWidget(m_seek, 1);
     m_durLabel = new QLabel("0:00");
     h->addWidget(m_durLabel);
@@ -1482,14 +1521,9 @@ QWidget *MainWindow::buildTransport() {
     m_repeatBtn->setAutoRaise(true);
     m_repeatBtn->setToolTip(tr("Repeat: off"));
     connect(m_repeatBtn, &QToolButton::clicked, this, [this] {
-        m_repeat = (m_repeat + 1) % 3;
-        m_repeatBtn->setIcon(QIcon::fromTheme(
-            m_repeat == 2 ? QStringLiteral("media-playlist-repeat-song")
-                          : QStringLiteral("media-playlist-repeat")));
-        m_repeatBtn->setChecked(m_repeat != 0);
-        m_repeatBtn->setToolTip(m_repeat == 0 ? tr("Repeat: off")
-                                : m_repeat == 1 ? tr("Repeat: all")
-                                                : tr("Repeat: one"));
+        // Click cycles off -> all -> one; paint the new state and command the
+        // engine. tick() reconciles the button back to engine truth afterwards.
+        applyRepeatButton((m_repeat + 1) % 3);
         const int mode = m_repeat;
         QtConcurrent::run([mode] { DZSetRepeat(mode); });
     });
@@ -1619,6 +1653,7 @@ void MainWindow::finishLogin(const QByteArray &acct) {
     }
     applyQuality(m_quality);     // apply persisted quality (+ entitlement note)
     refreshConnectButton();      // reflect any active OpenDeezer Connect device
+    seedFavorites();             // authoritative liked-ids mirror for truthful hearts
     m_poll->start();
     // Qt makes the first sidebar row current when items are added (before login),
     // so setCurrentRow(0) is a no-op here and would NOT re-fire onSidebarChanged —
@@ -1713,6 +1748,25 @@ void MainWindow::showNoInternet() {
 
 // ---- browse ---------------------------------------------------------------
 
+// Seed the liked-ids mirror from the engine at login so the transport heart is
+// truthful for EVERY track from the first play — not only after the Liked Songs
+// view has been visited. DZFavoriteIDsJSON fetches favorites over the network,
+// so it runs on a worker; the rebuild + heart repaint marshal back to the GUI
+// thread. loadFavorites() later rebuilds this from the full favorites load.
+void MainWindow::seedFavorites() {
+    if (!m_loggedIn)
+        return;
+    QtConcurrent::run([this] {
+        const QByteArray j = takeJson(DZFavoriteIDsJSON());
+        QMetaObject::invokeMethod(this, [this, j] {
+            m_likedIds.clear();
+            for (const QJsonValue &v : QJsonDocument::fromJson(j).array())
+                m_likedIds.insert(v.toString());
+            refreshLikeButton();
+        }, Qt::QueuedConnection);
+    });
+}
+
 void MainWindow::loadFavorites() {
     if (!m_loggedIn)
         return;
@@ -1726,7 +1780,10 @@ void MainWindow::loadFavorites() {
         QMetaObject::invokeMethod(this, [this, tracks] {
             const int gen = ++m_artGen;
             m_tableTracks = tracks;
-            // These are liked by definition — seed the local heart state.
+            // This IS the full liked set — clear + rebuild the mirror so unlikes
+            // made elsewhere (phone, web, another device) are pruned, not just
+            // additions accumulated.
+            m_likedIds.clear();
             for (const Track &t : tracks)
                 m_likedIds.insert(t.id);
             refreshLikeButton();
@@ -1957,18 +2014,36 @@ void MainWindow::runSearch() {
             fillTrackTable(m_searchTrackTable, m_searchTracks, gen);
 
             m_searchAlbums.clear();
+            m_searchArtists.clear();
             m_searchPlaylists.clear();
             for (const QJsonValue &v : obj.value("albums").toArray())
                 m_searchAlbums.push_back(parseAlbum(v.toObject()));
+            for (const QJsonValue &v : obj.value("artists").toArray())
+                m_searchArtists.push_back(parseArtistInfo(v.toObject()));
             for (const QJsonValue &v : obj.value("playlists").toArray())
                 m_searchPlaylists.push_back(parsePlaylist(v.toObject()));
 
+            // kind tags in UserRole: 0 album, 2 artist, 1 playlist (matches the
+            // itemActivated router above and the charts grid convention).
             m_searchResults->clear();
             for (int i = 0; i < m_searchAlbums.size(); ++i) {
                 const Album &a = m_searchAlbums[i];
                 auto *it = new QListWidgetItem(QIcon(placeholderPix(110)), a.name + "\n" + a.artistLine);
                 it->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
                 it->setData(Qt::UserRole, 0);
+                it->setData(Qt::UserRole + 1, i);
+                m_searchResults->addItem(it);
+                if (!a.artworkUrl.isEmpty())
+                    fetchImage(a.artworkUrl, gen, [it](const QImage &img) {
+                        it->setIcon(QIcon(QPixmap::fromImage(img).scaled(
+                            110, 110, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+                    });
+            }
+            for (int i = 0; i < m_searchArtists.size(); ++i) {
+                const ArtistInfo &a = m_searchArtists[i];
+                auto *it = new QListWidgetItem(QIcon(placeholderPix(110)), a.name + "\n" + tr("Artist"));
+                it->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
+                it->setData(Qt::UserRole, 2);
                 it->setData(Qt::UserRole + 1, i);
                 m_searchResults->addItem(it);
                 if (!a.artworkUrl.isEmpty())
@@ -2663,7 +2738,22 @@ QWidget *MainWindow::buildHistoryPage() {
     // gets the shared track context menu ("Start radio", "Show Lyrics", …) too.
     m_historyTable = makeTrackTable();
     connect(m_historyTable, &QTableWidget::cellActivated, this,
-            [this](int row, int) { playFrom(m_historyTracks, row); });
+            [this](int row, int) {
+                if (row < 0 || row >= m_historyTracks.size())
+                    return;
+                const Track &t = m_historyTracks[row];
+                if (t.isEpisode) {
+                    // Podcast episode: replay via the standalone episode path.
+                    // The engine enriches title/show/artwork + reports the real
+                    // duration once the stream is prepared, so 0 duration is fine.
+                    Episode e;
+                    e.id    = t.id;
+                    e.title = t.name;
+                    playEpisode(e, t.artistLine); // artistLine = the show name
+                } else {
+                    playFrom(m_historyTracks, row);
+                }
+            });
     installTrackMenu(m_historyTable, &m_historyTracks);
     v->addWidget(m_historyTable, 2);
 
@@ -2729,6 +2819,9 @@ void MainWindow::loadHistory() {
                 t.name       = o.value("title").toString();
                 t.artistLine = o.value("artist").toString();
                 t.albumName  = o.value("album").toString();
+                // kind=="episode" rows are podcast episodes — replayed via the
+                // plain-stream episode path, not the encrypted track pipeline.
+                t.isEpisode  = o.value("kind").toString() == QLatin1String("episode");
                 if (!t.id.isEmpty())
                     m_historyTracks.push_back(t);
             }
@@ -2867,7 +2960,7 @@ void MainWindow::openPodcast(const Podcast &p) {
 // Episodes use the plain-stream path (DZPlayEpisode), not the encrypted track
 // pipeline, so they sit outside the queue: clearing it makes next/prev and
 // auto-advance no-ops while the episode plays.
-void MainWindow::playEpisode(const Episode &e) {
+void MainWindow::playEpisode(const Episode &e, const QString &showName) {
     if (!m_loggedIn || e.id.isEmpty())
         return;
     m_queue.clear();
@@ -2876,7 +2969,7 @@ void MainWindow::playEpisode(const Episode &e) {
     Track t;
     t.id         = e.id;
     t.name       = e.title;
-    t.artistLine = m_currentPodcastName;
+    t.artistLine = showName.isEmpty() ? m_currentPodcastName : showName;
     t.artworkUrl = e.artworkUrl;
     t.durationMs = e.durationMs;
     m_current    = t;
@@ -3552,6 +3645,35 @@ void MainWindow::disconnectDevice() {
     });
 }
 
+// Paint the repeat toggle for the given mode (0 off, 1 all, 2 one) and record it
+// in m_repeat. Emits nothing to the engine — the click handler commands DZSetRepeat
+// and tick() calls this to reconcile the button with engine truth (phone remote /
+// control API / routed device). Uses QToolButton::clicked (not toggled), so
+// setChecked here never re-fires the cycle handler.
+void MainWindow::applyRepeatButton(int mode) {
+    m_repeat = mode;
+    if (!m_repeatBtn)
+        return;
+    m_repeatBtn->setIcon(QIcon::fromTheme(
+        mode == 2 ? QStringLiteral("media-playlist-repeat-song")
+                  : QStringLiteral("media-playlist-repeat")));
+    m_repeatBtn->setChecked(mode != 0);
+    m_repeatBtn->setToolTip(mode == 0 ? tr("Repeat: off")
+                            : mode == 1 ? tr("Repeat: all")
+                                        : tr("Repeat: one"));
+}
+
+// Set the shuffle toggle without re-commanding the engine. m_shuffleBtn drives
+// DZSetShuffle from its toggled() signal, so tick()'s reconcile blocks signals
+// while syncing the button to engine truth to avoid a feedback command.
+void MainWindow::applyShuffleButton(bool on) {
+    m_shuffle = on;
+    if (!m_shuffleBtn)
+        return;
+    QSignalBlocker block(m_shuffleBtn);
+    m_shuffleBtn->setChecked(on);
+}
+
 // Paint the cast button: accent + the device name in the tooltip when routed to
 // a remote device, plain otherwise. The connected address is authoritative.
 void MainWindow::refreshConnectButton() {
@@ -3562,6 +3684,7 @@ void MainWindow::refreshConnectButton() {
         connected = QString::fromUtf8(c);
         DZFree(c);
     }
+    m_castAddr = connected; // cache the truth tick() diffs against
     const bool remote = !connected.isEmpty();
     m_connectBtn->setStyleSheet(remote ? QString("QToolButton{color:%1;}").arg(kAccent)
                                        : QString());
@@ -3569,6 +3692,22 @@ void MainWindow::refreshConnectButton() {
         ? tr("Connected to %1 — choose a device")
               .arg(m_connectName.isEmpty() ? connected : m_connectName)
         : tr("Connect to a device"));
+
+    // Persistent "Playing on <device>" indicator in the status-bar corner while
+    // routed to a Connect device; hidden when playing locally. Built lazily on
+    // first cast (mirrors the Free-quality hint).
+    if (remote) {
+        const QString name = m_connectName.isEmpty() ? connected : m_connectName;
+        if (!m_castLabel) {
+            m_castLabel = new QLabel;
+            m_castLabel->setStyleSheet(QString("color:%1;font-weight:bold;").arg(kAccent));
+            statusBar()->addPermanentWidget(m_castLabel);
+        }
+        m_castLabel->setText(tr("Playing on %1").arg(name));
+        m_castLabel->show();
+    } else if (m_castLabel) {
+        m_castLabel->hide();
+    }
 }
 
 // ---- poll loop ------------------------------------------------------------
@@ -3590,6 +3729,47 @@ void MainWindow::tick() {
 
     m_playBtn->setIcon(style()->standardIcon(
         st == 2 ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
+
+    // Reconcile the repeat/shuffle toggles with the engine's truth so external
+    // changes (phone remote, control API, a routed Connect device) reflect. The
+    // click/toggle handlers command the engine; this reads it back. DZGetRepeat
+    // returns "off"/"all"/"one" (malloc'd — free with DZFree).
+    if (char *rp = DZGetRepeat()) {
+        const QByteArray mode(rp);
+        DZFree(rp);
+        const int rm = mode == "one" ? 2 : mode == "all" ? 1 : 0;
+        if (rm != m_repeat)
+            applyRepeatButton(rm);
+    }
+    const bool sh = (DZGetShuffle() != 0);
+    if (sh != m_shuffle)
+        applyShuffleButton(sh);
+
+    // Mirror an externally-changed volume (phone remote / control API / routed
+    // device) back into the slider while no local send is pending, so the slider
+    // tracks reality and the next local nudge can't snap audio to a stale value.
+    // Guard against a slider drag in progress. Block signals so setValue doesn't
+    // bounce back through setVolume as a redundant command. (Mirrors macOS.)
+    if (!m_volInFlight.load() && !m_vol->isSliderDown()) {
+        const int v = static_cast<int>(qRound(DZVolume() * 100));
+        if (v != m_vol->value()) {
+            QSignalBlocker block(m_vol);
+            m_vol->setValue(v);
+        }
+    }
+
+    // Keep the casting indicator honest against the engine's connected-device
+    // truth (covers a remote-initiated disconnect). DZConnectedDevice is a cheap
+    // cached read; only repaint when it actually changes.
+    {
+        QString conn;
+        if (char *c = DZConnectedDevice()) {
+            conn = QString::fromUtf8(c);
+            DZFree(c);
+        }
+        if (conn != m_castAddr)
+            refreshConnectButton();
+    }
 
     // Mirror playback status + position to the OS media controls. DZState enum:
     // 0 Stopped, 1 Loading, 2 Playing, 3 Paused, 4 Errored.

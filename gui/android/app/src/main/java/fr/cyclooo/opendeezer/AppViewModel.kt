@@ -13,7 +13,6 @@ import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.player.PlaybackService
-import fr.cyclooo.opendeezer.player.PlayerController
 import kotlinx.coroutines.launch
 
 enum class AuthStage { LOADING, NEEDS_LOGIN, NO_INTERNET, READY }
@@ -21,7 +20,12 @@ enum class AuthStage { LOADING, NEEDS_LOGIN, NO_INTERNET, READY }
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = Prefs(app)
-    val player = PlayerController(viewModelScope)
+
+    // The controller is owned by the Application (an app-lifetime scope), not the
+    // Activity's viewModelScope: playback + its poll loop must outlive Activity/
+    // ViewModel teardown (swipe-from-recents) so the foreground service can never
+    // strand zombie audio nothing drives. See OpenDeezerApplication.
+    val player = (app as OpenDeezerApplication).player
 
     var stage by mutableStateOf(AuthStage.LOADING)
         private set

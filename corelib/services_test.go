@@ -548,31 +548,85 @@ func TestEngineHistoryRecentReturnsJSON(t *testing.T) {
 	}
 }
 
+// TestEpisodeListenRecordsKind proves the episode play path stamps
+// Kind="episode" on the recorded history entry (so a native history screen
+// replays it via DZPlayEpisode), a song stays Kind="", and the kind reaches the
+// /history/recent JSON wire — the exact shape DZHistoryRecentJSON serves.
+func TestEpisodeListenRecordsKind(t *testing.T) {
+	t.Cleanup(func() { setCurrentTrack(deezer.Track{}) })
+	setHistoryStore(history.New(filepath.Join(t.TempDir(), "history.jsonl")))
+
+	// Play an episode, then swap away: the transition (player still Playing)
+	// records the outgoing episode via currentTrackSnapshot -> recordListen.
+	setCurrentEpisode(deezer.Track{ID: "ep1", Name: "Episode", DurationMS: 600000})
+	recordTransition(audio.Playing, 120000)
+	entries := waitHistory(t, 1)
+	if entries[0].TrackID != "ep1" || entries[0].Kind != history.KindEpisode {
+		t.Fatalf("episode listen = %+v, want trackId=ep1 Kind=episode", entries[0])
+	}
+
+	// A song recorded next carries no kind (setCurrentTrack clears it).
+	setCurrentTrack(deezer.Track{ID: "s1", Name: "Song", DurationMS: 200000})
+	recordTransition(audio.Playing, 90000)
+	entries = waitHistory(t, 2)
+	if entries[0].TrackID != "s1" || entries[0].Kind != "" {
+		t.Fatalf("song listen = %+v, want trackId=s1 empty Kind", entries[0])
+	}
+
+	// The kind reaches the /history/recent JSON wire that DZHistoryRecentJSON serves.
+	raw, err := engineHistoryRecent(10)
+	if err != nil {
+		t.Fatalf("engineHistoryRecent: %v", err)
+	}
+	var wire []history.Entry
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("unmarshal recent JSON: %v", err)
+	}
+	byID := map[string]history.Entry{}
+	for _, e := range wire {
+		byID[e.TrackID] = e
+	}
+	if byID["ep1"].Kind != history.KindEpisode {
+		t.Fatalf("recent JSON episode kind = %q, want episode (raw=%s)", byID["ep1"].Kind, raw)
+	}
+	if byID["s1"].Kind != "" {
+		t.Fatalf("recent JSON song kind = %q, want empty", byID["s1"].Kind)
+	}
+}
+
 // TestListenEntry proves the history-record guards: no id and sub-second
 // listens are dropped (start-skips, pause/resume can't produce records), the
 // listened time is clamped to the track duration, and the fields map through.
 func TestListenEntry(t *testing.T) {
-	if _, ok := listenEntry(deezer.Track{}, 5000); ok {
+	if _, ok := listenEntry(deezer.Track{}, "", 5000); ok {
 		t.Fatal("track without an id must not be recorded")
 	}
-	if _, ok := listenEntry(deezer.Track{ID: "1"}, 999); ok {
+	if _, ok := listenEntry(deezer.Track{ID: "1"}, "", 999); ok {
 		t.Fatal("sub-second listens must not be recorded")
 	}
 	e, ok := listenEntry(deezer.Track{
 		ID: "42", Name: "Song", AlbumName: "Album", DurationMS: 3000,
 		Artists: []deezer.Artist{{ID: "7", Name: "Artist"}},
-	}, 10000)
+	}, "", 10000)
 	if !ok {
 		t.Fatal("valid listen was dropped")
 	}
 	if e.TrackID != "42" || e.Title != "Song" || e.Artist != "Artist" || e.Album != "Album" {
 		t.Fatalf("entry fields = %+v", e)
 	}
+	if e.Kind != "" {
+		t.Fatalf("song entry Kind = %q, want empty", e.Kind)
+	}
 	if e.DurationPlayedSec != 3 {
 		t.Fatalf("played sec = %d, want 3 (clamped to track duration)", e.DurationPlayedSec)
 	}
 	if e.StartedAt == 0 {
 		t.Fatal("StartedAt must be derived, not left for Record's now()")
+	}
+	// An episode listen carries Kind="episode" so replay can route it.
+	ep, ok := listenEntry(deezer.Track{ID: "9", Name: "Ep", DurationMS: 3000}, history.KindEpisode, 10000)
+	if !ok || ep.Kind != history.KindEpisode {
+		t.Fatalf("episode entry = %+v ok=%v, want Kind=episode", ep, ok)
 	}
 }
 
@@ -887,13 +941,13 @@ func TestErroredFinishNotRecorded(t *testing.T) {
 
 	// An errored finish records nothing (recordFinished returns before spawning
 	// the async write, so an immediate read is authoritative).
-	recordFinished(prev, audio.Errored, "decode failed", 0, true)
+	recordFinished(prev, "", audio.Errored, "decode failed", 0, true)
 	if got, _ := historyStore().Recent(10); len(got) != 0 {
 		t.Fatalf("errored finish was recorded: %+v", got)
 	}
 
 	// A clean finish IS recorded.
-	recordFinished(prev, audio.Stopped, "", 0, true)
+	recordFinished(prev, "", audio.Stopped, "", 0, true)
 	if entries := waitHistory(t, 1); entries[0].TrackID != "E" {
 		t.Fatalf("clean finish recorded %q, want E", entries[0].TrackID)
 	}

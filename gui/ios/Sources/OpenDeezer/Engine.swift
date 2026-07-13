@@ -86,6 +86,13 @@ enum Engine {
     static func favorites() async throws -> [Track] {
         try decode(await run { OdmobileFavorites() }, as: TracksResponse.self).tracks
     }
+    /// Just the account's liked-track ids (a lightweight `FavoriteIDsJSON` fetch,
+    /// no full track objects) so hearts stay truthful cheaply. Comes back "[]" on
+    /// error or logged out, so callers guard against wiping a good cache.
+    static func favoriteIDs() async -> [String] {
+        let json = await run { OdmobileFavoriteIDsJSON() }
+        return (try? decoder.decode([String].self, from: Data(json.utf8))) ?? []
+    }
     static func playlists() async throws -> [Playlist] {
         try decode(await run { OdmobilePlaylists() }, as: PlaylistsResponse.self).playlists
     }
@@ -274,6 +281,14 @@ enum Engine {
     /// Async like setVolume: Connect-routed, so a blocking HTTP POST engine-side.
     static func setRepeat(_ mode: Int) async { await run { OdmobileSetRepeat(mode) } }
     static func setShuffle(_ on: Bool) async { await run { OdmobileSetShuffle(on ? 1 : 0) } }
+    /// The engine's current repeat mode ("off"|"all"|"one"). While routed to a
+    /// Connect device this is the *remote host's* mode (its routed snapshot), so
+    /// the UI can reflect casting/external changes. A cheap mutex-guarded read
+    /// (no network), so — like `state`/`connectedDevice` — it's called directly.
+    static func getRepeat() -> String { OdmobileGetRepeat() }
+    /// Whether shuffle is on per the engine (the remote host's flag while
+    /// casting). Cheap synchronous read, same as `getRepeat`.
+    static func getShuffle() -> Bool { OdmobileGetShuffle() }
 
     // MARK: - Engine queue sync (app queue -> engine)
 

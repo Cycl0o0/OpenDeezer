@@ -440,31 +440,78 @@ func TestEngineHistoryRecentReturnsJSON(t *testing.T) {
 	}
 }
 
+// TestEpisodeListenRecordsKind proves the episode play path stamps
+// Kind="episode" on the recorded history entry (so a native history screen
+// replays it via PlayEpisodeMS), a song stays Kind="", and the kind reaches the
+// HistoryRecentJSON wire the apps parse.
+func TestEpisodeListenRecordsKind(t *testing.T) {
+	t.Cleanup(func() { setCurrentTrack(deezer.Track{}) })
+	setHistoryStore(history.New(filepath.Join(t.TempDir(), "history.jsonl")))
+
+	setCurrentEpisode(deezer.Track{ID: "ep1", Name: "Episode", DurationMS: 600000})
+	recordTransition(audio.Playing, 120000)
+	entries := waitHistory(t, 1)
+	if entries[0].TrackID != "ep1" || entries[0].Kind != history.KindEpisode {
+		t.Fatalf("episode listen = %+v, want trackId=ep1 Kind=episode", entries[0])
+	}
+
+	setCurrentTrack(deezer.Track{ID: "s1", Name: "Song", DurationMS: 200000})
+	recordTransition(audio.Playing, 90000)
+	entries = waitHistory(t, 2)
+	if entries[0].TrackID != "s1" || entries[0].Kind != "" {
+		t.Fatalf("song listen = %+v, want trackId=s1 empty Kind", entries[0])
+	}
+
+	// The kind reaches the HistoryRecentJSON wire the apps route replay on.
+	var wire []history.Entry
+	if err := json.Unmarshal([]byte(HistoryRecentJSON(10)), &wire); err != nil {
+		t.Fatalf("unmarshal HistoryRecentJSON: %v", err)
+	}
+	byID := map[string]history.Entry{}
+	for _, e := range wire {
+		byID[e.TrackID] = e
+	}
+	if byID["ep1"].Kind != history.KindEpisode {
+		t.Fatalf("HistoryRecentJSON episode kind = %q, want episode", byID["ep1"].Kind)
+	}
+	if byID["s1"].Kind != "" {
+		t.Fatalf("HistoryRecentJSON song kind = %q, want empty", byID["s1"].Kind)
+	}
+}
+
 // TestListenEntry proves the history-record guards: no id and sub-second
 // listens are dropped (start-skips, pause/resume can't produce records), the
 // listened time is clamped to the track duration, and the fields map through.
 func TestListenEntry(t *testing.T) {
-	if _, ok := listenEntry(deezer.Track{}, 5000); ok {
+	if _, ok := listenEntry(deezer.Track{}, "", 5000); ok {
 		t.Fatal("track without an id must not be recorded")
 	}
-	if _, ok := listenEntry(deezer.Track{ID: "1"}, 999); ok {
+	if _, ok := listenEntry(deezer.Track{ID: "1"}, "", 999); ok {
 		t.Fatal("sub-second listens must not be recorded")
 	}
 	e, ok := listenEntry(deezer.Track{
 		ID: "42", Name: "Song", AlbumName: "Album", DurationMS: 3000,
 		Artists: []deezer.Artist{{ID: "7", Name: "Artist"}},
-	}, 10000)
+	}, "", 10000)
 	if !ok {
 		t.Fatal("valid listen was dropped")
 	}
 	if e.TrackID != "42" || e.Title != "Song" || e.Artist != "Artist" || e.Album != "Album" {
 		t.Fatalf("entry fields = %+v", e)
 	}
+	if e.Kind != "" {
+		t.Fatalf("song entry Kind = %q, want empty", e.Kind)
+	}
 	if e.DurationPlayedSec != 3 {
 		t.Fatalf("played sec = %d, want 3 (clamped to track duration)", e.DurationPlayedSec)
 	}
 	if e.StartedAt == 0 {
 		t.Fatal("StartedAt must be derived, not left for Record's now()")
+	}
+	// An episode listen carries Kind="episode" so replay can route it.
+	ep, ok := listenEntry(deezer.Track{ID: "9", Name: "Ep", DurationMS: 3000}, history.KindEpisode, 10000)
+	if !ok || ep.Kind != history.KindEpisode {
+		t.Fatalf("episode entry = %+v ok=%v, want Kind=episode", ep, ok)
 	}
 }
 

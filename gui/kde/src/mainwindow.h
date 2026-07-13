@@ -44,6 +44,7 @@ struct Track {
     QString artistId;            // jTrack.artists[0].id — drives the artist view
     qint64  durationMs = 0;
     bool    isExplicit = false;  // jTrack.explicit — shows the "E" badge
+    bool    isEpisode  = false;  // history rows only: replay via the episode path
 };
 struct Album {
     QString id, name, artistLine, artworkUrl;
@@ -116,6 +117,7 @@ private:
     void          installTrackMenu(QTableWidget *table, QVector<Track> *src);
 
     // ---- favourites / playlists mutations (v0.4) ----
+    void seedFavorites();                                 // liked-ids mirror at login
     void toggleLikeCurrent();                              // heart on the transport
     void likeTrack(const QString &trackId, bool like);    // one-shot like/unlike
     void setLikeButton(bool liked);                       // paint the heart
@@ -175,7 +177,10 @@ private:
     // ---- podcasts (v0.4) ----
     void runPodcastSearch();
     void openPodcast(const Podcast &p);
-    void playEpisode(const Episode &e);
+    // Play a podcast episode via the plain-stream path. showName supplies the
+    // now-playing "artist" line; empty falls back to m_currentPodcastName (the
+    // open podcast's title). History replay passes the show name from the entry.
+    void playEpisode(const Episode &e, const QString &showName = QString());
 
     // ---- track table filling + async cover art ----
     void fillTrackTable(QTableWidget *table, const QVector<Track> &tracks, int gen);
@@ -197,6 +202,12 @@ private:
     void prev();
     void setVolume(int percent);
     void setNowPlaying(const Track &t);
+    // Paint the repeat/shuffle toggles for a given engine state. The click/toggle
+    // handlers command the engine; tick() calls these to reconcile the buttons
+    // with engine truth (phone remote / control API / routed device) — they emit
+    // nothing to the engine (shuffle blocks signals to avoid a feedback command).
+    void applyRepeatButton(int mode);   // 0 off, 1 all, 2 one
+    void applyShuffleButton(bool on);
     void tick();
     // Gapless/crossfade: the deterministic (non-shuffle) next index, and a
     // preload of that track so the engine can swap to it seamlessly on finish.
@@ -313,6 +324,7 @@ private:
     QVector<Track>    m_tableTracks;    // rows currently shown in m_trackTable
     QVector<Track>    m_searchTracks;   // rows currently shown in m_searchTrackTable
     QVector<Album>    m_searchAlbums;
+    QVector<ArtistInfo> m_searchArtists; // artist tiles in m_searchResults (kind 2)
     QVector<Playlist> m_searchPlaylists;
     QVector<Playlist> m_playlists;
 
@@ -383,6 +395,8 @@ private:
     QString          m_lastStatus;              // dedupe MPRIS PlaybackStatus
     QString          m_connectName;             // friendly name of the connected device
     bool             m_connectScanning = false; // a Connect discovery scan is in flight
+    QString          m_castAddr;                // last DZConnectedDevice() seen (tick diff)
+    QLabel          *m_castLabel = nullptr;     // status-bar "Playing on <device>" indicator
     int              m_quality     = 0;         // 0 Normal, 1 High, 2 HiFi
     bool             m_replayGain  = false;     // loudness normalization (DZReplayGain)
     bool             m_closeToTray = true;      // honour close-to-tray setting

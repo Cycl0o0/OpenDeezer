@@ -223,6 +223,7 @@
     <string name="download_saved_generic">已下载 %1$s</string>
     <string name="download_failed">下载失败：%1$s</string>
     <string name="download_failed_generic">下载失败</string>
+    <string name="favorite_update_failed">无法更新喜欢，请检查网络连接。</string>
     <string name="preview_chip">试听</string>
     <string name="account_free_hint">免费账户 · 标准音质（128 kbps）</string>
     <string name="settings_ads">广告</string>

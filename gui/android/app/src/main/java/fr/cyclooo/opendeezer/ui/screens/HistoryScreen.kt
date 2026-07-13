@@ -159,6 +159,8 @@ private fun ArtistStatRow(a: ArtistStat) {
 
 // History carries only id/title/artist, so we synthesise a minimal Track: the
 // engine resolves the full stream + metadata when it plays (durationMs unknown = 0).
+// B14: episode rows carry kind=="episode" so replay routes to the podcast play
+// path (Engine.playEpisode) instead of the track path.
 private fun HistoryEntry.asTrack(): Track = Track(
     id = trackId,
     name = title,
@@ -168,6 +170,7 @@ private fun HistoryEntry.asTrack(): Track = Track(
     albumName = album,
     artworkUrl = "",
     explicit = false,
+    isEpisode = kind == "episode",
 )
 
 private fun TrackStat.asTrack(): Track = Track(

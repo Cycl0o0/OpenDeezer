@@ -235,6 +235,7 @@
     <string name="download_saved_generic">%1$s загружено</string>
     <string name="download_failed">Не удалось загрузить: %1$s</string>
     <string name="download_failed_generic">Не удалось загрузить</string>
+    <string name="favorite_update_failed">Не удалось обновить «Нравится» — проверьте подключение.</string>
     <string name="preview_chip">Фрагмент</string>
     <string name="account_free_hint">Бесплатный аккаунт · стандартное качество (128 kbps)</string>
     <string name="settings_ads">Реклама</string>

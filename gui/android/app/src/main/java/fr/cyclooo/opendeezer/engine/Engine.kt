@@ -64,6 +64,12 @@ object Engine {
     // reconcile against the loaded favourites list. Best-effort — false on error.
     suspend fun isFavorite(id: String): Boolean =
         runCatching { favorites().any { it.id == id } }.getOrDefault(false)
+
+    // The account's liked track ids in a single call (reuses the same favourites
+    // fetch the library view uses), so hearts render truthfully across lists
+    // without a per-track lookup. Empty on error / not logged in.
+    suspend fun favoriteIds(): Set<String> =
+        io { Json.favoriteIds(runCatching { Odmobile.favoriteIDsJSON() }.getOrNull()) }
     suspend fun playlists(): List<Playlist> = io { Json.playlists(Odmobile.playlists()) }
     suspend fun playlistTracks(id: String): List<Track> = io { Json.tracks(Odmobile.playlistTracks(id)) }
     suspend fun albumTracks(id: String): List<Track> = io { Json.tracks(Odmobile.albumTracks(id)) }
@@ -147,6 +153,17 @@ object Engine {
     suspend fun setQueueJson(json: String): Boolean =
         io { runCatching { Odmobile.setQueueJSON(json); true }.getOrDefault(false) }
     suspend fun setQueueIndex(i: Int) = io { runCatching { Odmobile.setQueueIndex(i.toLong()) }.let {} }
+
+    // ---- engine queue adoption (engine -> app) ----
+    // QueueVersion bumps on every engine-queue CONTENT change (a remote
+    // controller editing this device's queue, /play/album, …); cursor moves
+    // don't bump it. The poll watches this cheaply (a single long read) and
+    // pulls the full [queueSnapshot] only when it moves, so the app can adopt
+    // remote queue edits (fixes wrong now-playing + remote-loaded albums
+    // stopping after one track). Both are synchronous engine reads (no network).
+    fun queueVersion(): Long = runCatching { Odmobile.queueVersion() }.getOrDefault(0L)
+    fun queueSnapshot(): QueueSnapshot? =
+        Json.queueSnapshot(runCatching { Odmobile.queueJSON() }.getOrNull())
 
     // ---- downloads (premium-only; the engine rejects the request otherwise) ----
     // Returns the engine's raw JSON: {"path":"..."} on success or {"error":"..."}.
@@ -268,6 +285,17 @@ object Engine {
     fun setRepeat(mode: Int) = runCatching { Odmobile.setRepeat(mode.toLong()) }.let {}
     // on: 0=off, 1=on
     fun setShuffle(on: Int) = runCatching { Odmobile.setShuffle(on.toLong()) }.let {}
+
+    // Engine-owned repeat/shuffle truth. While routed to a Connect device these
+    // return the remote host's mode (its routed snapshot), so the poll reflects
+    // the host's real mode when casting and picks up external/remote changes.
+    // mode: 0=off, 1=all, 2=one.
+    fun repeatMode(): Int = when (runCatching { Odmobile.getRepeat() }.getOrDefault("off")) {
+        "all" -> 1
+        "one" -> 2
+        else -> 0
+    }
+    fun shuffleOn(): Boolean = runCatching { Odmobile.getShuffle() }.getOrDefault(false)
 
     // ---- phone web remote ----
 

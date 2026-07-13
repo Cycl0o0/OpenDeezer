@@ -243,6 +243,7 @@
     <string name="download_saved_generic">تم تنزيل %1$s</string>
     <string name="download_failed">فشل التنزيل: %1$s</string>
     <string name="download_failed_generic">فشل التنزيل</string>
+    <string name="favorite_update_failed">تعذّر تحديث الإعجاب — تحقّق من اتصالك.</string>
     <string name="preview_chip">معاينة</string>
     <string name="account_free_hint">حساب مجاني · جودة قياسية (128 kbps)</string>
     <string name="settings_ads">الإعلانات</string>

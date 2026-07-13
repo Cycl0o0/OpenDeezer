@@ -179,6 +179,82 @@ func TestRotationCapsEntries(t *testing.T) {
 	}
 }
 
+// TestKindRoundTripsAndExcludesEpisodesFromMusicStats proves an entry's media
+// Kind survives a write + reload from disk, that a legacy line with no "kind"
+// field decodes as a song (Kind==""), and that podcast episodes are kept out of
+// the music-only TopTracks/TopArtists charts while still counting toward the
+// overall TotalListenedSec.
+func TestKindRoundTripsAndExcludesEpisodesFromMusicStats(t *testing.T) {
+	s := testStore(t)
+	now := time.Now().Unix()
+	song := Entry{TrackID: "1", Title: "Song", Artist: "Band", StartedAt: now - 10, DurationPlayedSec: 100}
+	ep := Entry{TrackID: "e1", Title: "Ep 1", Artist: "The Show", StartedAt: now - 5, DurationPlayedSec: 900, Kind: KindEpisode}
+	for _, e := range []Entry{song, ep} {
+		if err := s.Record(e); err != nil {
+			t.Fatalf("Record: %v", err)
+		}
+	}
+	// Append a legacy line written before Kind existed (no "kind" field).
+	f, err := os.OpenFile(s.Path(), os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := fmt.Sprintf(`{"trackId":"old","title":"Legacy","artist":"Band","startedAt":%d,"durationPlayedSec":50}`, now-2)
+	if _, err := f.WriteString(legacy + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	// Fresh store: the Kind must survive the reload, and the legacy line decodes
+	// as a song ("").
+	s2 := New(s.Path())
+	got, err := s2.Recent(0)
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	kinds := map[string]string{}
+	for _, e := range got {
+		kinds[e.TrackID] = e.Kind
+	}
+	if kinds["e1"] != KindEpisode {
+		t.Errorf("episode Kind = %q, want %q", kinds["e1"], KindEpisode)
+	}
+	if kinds["1"] != "" {
+		t.Errorf("song Kind = %q, want empty", kinds["1"])
+	}
+	if kinds["old"] != "" {
+		t.Errorf("legacy line Kind = %q, want empty (backward compatible)", kinds["old"])
+	}
+
+	// Music stats exclude the episode entirely.
+	tracks, err := s2.TopTracks(time.Time{}, 10)
+	if err != nil {
+		t.Fatalf("TopTracks: %v", err)
+	}
+	for _, ts := range tracks {
+		if ts.TrackID == "e1" {
+			t.Fatalf("episode leaked into TopTracks: %+v", tracks)
+		}
+	}
+	if len(tracks) != 2 { // the song + the legacy song
+		t.Fatalf("TopTracks = %+v, want 2 songs", tracks)
+	}
+	artists, err := s2.TopArtists(time.Time{}, 10)
+	if err != nil {
+		t.Fatalf("TopArtists: %v", err)
+	}
+	for _, a := range artists {
+		if a.Artist == "The Show" {
+			t.Fatalf("episode's show leaked into TopArtists: %+v", artists)
+		}
+	}
+	// But total listening time still counts the episode's 900s.
+	total, err := s2.TotalListenedSec(time.Time{})
+	if err != nil || total != 100+900+50 {
+		t.Fatalf("TotalListenedSec = %d err %v, want %d (all media)", total, err, 100+900+50)
+	}
+}
+
 func TestConcurrentWriterAndReaders(t *testing.T) {
 	s := testStore(t)
 	var wg sync.WaitGroup

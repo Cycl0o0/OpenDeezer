@@ -231,6 +231,7 @@
     <string name="download_saved_generic">%1$s descargado</string>
     <string name="download_failed">Error al descargar: %1$s</string>
     <string name="download_failed_generic">Error al descargar</string>
+    <string name="favorite_update_failed">No se pudo actualizar Me gusta: comprueba tu conexión.</string>
     <string name="preview_chip">Vista previa</string>
     <string name="account_free_hint">Cuenta gratuita · calidad estándar (128 kbps)</string>
     <string name="settings_ads">Anuncios</string>

@@ -22,6 +22,33 @@ enum RepeatMode: Int, CaseIterable {
         case .one: return String(localized: "Repeat One")
         }
     }
+
+    /// The lock-screen / Control-Center repeat type this mode maps to.
+    var mpRepeatType: MPRepeatType {
+        switch self {
+        case .off: return .off
+        case .all: return .all
+        case .one: return .one
+        }
+    }
+
+    /// Maps the engine's string mode ("off"|"all"|"one") back to a case.
+    init(engine s: String) {
+        switch s {
+        case "all": self = .all
+        case "one": self = .one
+        default: self = .off
+        }
+    }
+
+    /// Maps a lock-screen repeat command's type to a case.
+    init(mp type: MPRepeatType) {
+        switch type {
+        case .all: self = .all
+        case .one: self = .one
+        default: self = .off
+        }
+    }
 }
 
 /// Owns the play queue and mirrors the Go engine's transport state for the UI.
@@ -41,6 +68,13 @@ final class PlayerController: ObservableObject {
     @Published private(set) var durationMs: Int64 = 0
     @Published var isShuffle = false {
         didSet {
+            // Reconciling from engine truth (B1): don't echo the value straight
+            // back to the engine or re-arm — just reflect it.
+            guard !applyingEngineState else { return }
+            // Hold off reconciling for a beat so the optimistic value isn't
+            // reverted before the engine (or, while casting, the remote host)
+            // confirms the change.
+            suppressModeReconcileUntil = Date().addingTimeInterval(Self.modeReconcileGrace)
             let on = isShuffle
             Task { await Engine.setShuffle(on) }
             // Shuffle changes what "next" means: re-arm (or discard) the preload.
@@ -49,15 +83,31 @@ final class PlayerController: ObservableObject {
     }
     @Published private(set) var repeatMode: RepeatMode = .off
     @Published private(set) var formatLabel: String = ""
+    /// Set while `tick()` reconciles isShuffle/repeatMode from the engine so the
+    /// isShuffle didSet doesn't loop the reconciled value back to the engine.
+    private var applyingEngineState = false
+    /// Reconciliation pauses until this instant after a local shuffle/repeat
+    /// write, so the optimistic value survives until the engine confirms it.
+    private var suppressModeReconcileUntil: Date?
+    private static let modeReconcileGrace: TimeInterval = 1.5
     /// True when the engine fell back to Deezer's 30-second preview for the
     /// current track (rare — Free normally streams the full 128 kbps track).
     @Published private(set) var isPreview = false
     @Published private(set) var artwork: UIImage?
     @Published private(set) var connectedDeviceAddr: String = ""
+    /// Friendly name of the routed Connect device, captured when we connect so
+    /// the Now Playing "Playing on <device>" banner can name it (the engine only
+    /// exposes the addr). Cleared when routing goes back to local.
+    @Published private(set) var connectedDeviceName: String = ""
     @Published private(set) var volume: Double = Engine.volume()
 
     var isPlaying: Bool { state == .playing }
     var hasNowPlaying: Bool { current != nil }
+    /// A human label for the routed device: its name if we captured one, else
+    /// the raw host:port address.
+    var connectedDeviceLabel: String {
+        connectedDeviceName.isEmpty ? connectedDeviceAddr : connectedDeviceName
+    }
     var canGoNext: Bool {
         guard let currentIndex, !queue.isEmpty else { return false }
         return (isShuffle && queue.count > 1) || repeatMode == .all || currentIndex < queue.count - 1
@@ -113,7 +163,14 @@ final class PlayerController: ObservableObject {
             formatLabel = Engine.format()
             isPreview = current != nil && Engine.isPreview()
         }
-        connectedDeviceAddr = Engine.connectedDevice()
+        let addr = Engine.connectedDevice()
+        connectedDeviceAddr = addr
+        // Routing dropped back to local (e.g. the engine disconnected): forget
+        // the captured device name so the casting banner disappears cleanly.
+        if addr.isEmpty { connectedDeviceName = "" }
+        // B1: reflect the engine's shuffle/repeat truth — its own queue locally,
+        // or the routed remote host's snapshot while casting / driven externally.
+        reconcileTransportModes()
 
         let finished = Engine.finishedCount()
         if playbackRequestPending {
@@ -418,14 +475,53 @@ final class PlayerController: ObservableObject {
         }
     }
 
-    func toggleShuffle() { isShuffle.toggle() }
+    func toggleShuffle() { setShuffle(!isShuffle) }
+
+    /// Set shuffle to an explicit state (transport button or lock-screen
+    /// command). Writing `isShuffle` triggers its didSet, which forwards to the
+    /// engine and re-arms the preload.
+    func setShuffle(_ on: Bool) {
+        guard on != isShuffle else { return }
+        isShuffle = on
+    }
 
     func cycleRepeat() {
-        repeatMode = RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off
-        let mode = repeatMode.rawValue
-        Task { await Engine.setRepeat(mode) }
-        // Repeat changes what "next" means: re-arm (or discard) the preload.
+        setRepeatMode(RepeatMode(rawValue: (repeatMode.rawValue + 1) % 3) ?? .off)
+    }
+
+    /// Set the repeat mode to an explicit value (transport button or lock-screen
+    /// command). Forwards to the engine and re-arms the preload since "next" may
+    /// have changed.
+    func setRepeatMode(_ mode: RepeatMode) {
+        guard mode != repeatMode else { return }
+        repeatMode = mode
+        suppressModeReconcileUntil = Date().addingTimeInterval(Self.modeReconcileGrace)
+        let m = mode.rawValue
+        Task { await Engine.setRepeat(m) }
         armPreload()
+    }
+
+    /// Drive the published isShuffle/repeatMode from the engine's truth — the
+    /// engine queue locally, or the routed remote host's snapshot while casting
+    /// (so external/remote changes show here). Suppressed briefly after a local
+    /// write so an optimistic value isn't reverted before the engine confirms.
+    private func reconcileTransportModes() {
+        if let until = suppressModeReconcileUntil {
+            if Date() < until { return }
+            suppressModeReconcileUntil = nil
+        }
+        let engineShuffle = Engine.getShuffle()
+        if engineShuffle != isShuffle {
+            applyingEngineState = true
+            isShuffle = engineShuffle
+            applyingEngineState = false
+            armPreload()
+        }
+        let engineRepeat = RepeatMode(engine: Engine.getRepeat())
+        if engineRepeat != repeatMode {
+            repeatMode = engineRepeat
+            armPreload()
+        }
     }
 
     func setVolume(_ v: Double) {
@@ -538,6 +634,7 @@ final class PlayerController: ObservableObject {
         let ok = await Engine.connectDevice(device.addr)
         if ok {
             connectedDeviceAddr = device.addr
+            connectedDeviceName = device.name
             // Remote playback streams on the remote: discard the local preload.
             armPreload()
         }
@@ -546,6 +643,7 @@ final class PlayerController: ObservableObject {
     func disconnect() async {
         await Engine.disconnectDevice()
         connectedDeviceAddr = ""
+        connectedDeviceName = ""
         // Back to local playback: re-arm the next queue entry if one is knowable.
         armPreload()
     }
@@ -571,6 +669,15 @@ final class PlayerController: ObservableObject {
     // MARK: - Now Playing Info Center + Remote Command Center
 
     private func updateNowPlayingInfo() {
+        // Reflect shuffle/repeat on the lock screen / Control Center, and keep
+        // skip availability mode-aware (canGoNext already accounts for
+        // shuffle/repeat/queue position).
+        let cc = MPRemoteCommandCenter.shared()
+        cc.changeShuffleModeCommand.currentShuffleType = isShuffle ? .items : .off
+        cc.changeRepeatModeCommand.currentRepeatType = repeatMode.mpRepeatType
+        cc.nextTrackCommand.isEnabled = canGoNext
+        cc.previousTrackCommand.isEnabled = hasNowPlaying
+
         guard let track = current else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.name,
@@ -612,6 +719,21 @@ final class PlayerController: ObservableObject {
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let position = Int64(event.positionTime * 1000)
             Task { @MainActor in self?.seek(to: position) }
+            return .success
+        }
+        // Shuffle / repeat from Control Center + the lock screen, mapped onto the
+        // engine via setShuffle/setRepeat (their current state is published back
+        // through updateNowPlayingInfo's currentShuffleType/currentRepeatType).
+        cc.changeShuffleModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            let on = event.shuffleType != .off
+            Task { @MainActor in self?.setShuffle(on) }
+            return .success
+        }
+        cc.changeRepeatModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            let mode = RepeatMode(mp: event.repeatType)
+            Task { @MainActor in self?.setRepeatMode(mode) }
             return .success
         }
     }

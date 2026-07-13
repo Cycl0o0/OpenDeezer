@@ -137,6 +137,14 @@
 "Lyrics" = "Lyrics";
 "Connected — choose a device" = "Connected — choose a device";
 "Connect to a device" = "Connect to a device";
+/* Casting chip: names the Connect device audio is routed to. */
+"Playing on %@" = "Playing on %@";
+
+/* Transport accessibility (VoiceOver labels + current value) */
+"Repeat" = "Repeat";
+"On" = "On";
+"All" = "All";
+"One" = "One";
 
 /* Lyrics / artist */
 "No lyrics available" = "No lyrics available";

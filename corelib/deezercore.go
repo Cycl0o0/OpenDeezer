@@ -1116,6 +1116,10 @@ func DZArtistMixJSON(id *C.char) *C.char {
 // control API's /history/recent serves); n <= 0 returns all. Empty/unavailable
 // history yields "[]". Release with DZFree.
 //
+// Each entry is {trackId,title,artist,album?,kind?,startedAt,durationPlayedSec}.
+// "kind" is omitted or "track" for a song and "episode" for a podcast episode —
+// a GUI routes replay on it: episode -> DZPlayEpisode(trackId), else DZPlay.
+//
 //export DZHistoryRecentJSON
 func DZHistoryRecentJSON(n C.int) *C.char {
 	st := historyStore()
@@ -1135,8 +1139,10 @@ func DZHistoryRecentJSON(n C.int) *C.char {
 //
 //	topArtists:[{artist,plays,totalSec}], totalSeconds:N}. Empty/unavailable
 //
-// history yields the same shape with empty arrays and totalSeconds:0. Release
-// with DZFree.
+// history yields the same shape with empty arrays and totalSeconds:0. topTracks
+// and topArtists are music-only (podcast episodes are excluded so a binged show
+// can't pollute the charts); totalSeconds is all listening time. Release with
+// DZFree.
 //
 //export DZHistoryStatsJSON
 func DZHistoryStatsJSON(sinceDays C.int) *C.char {
@@ -1358,8 +1364,10 @@ func DZPlayEpisode(episodeID *C.char, durationMS C.longlong) C.int {
 	}
 	clearPreloadedTrack() // p.Play discarded any pending preload; drop its stash too
 	// Track the now-playing so DZNowPlayingJSON reflects this episode;
-	// enrich with title / podcast name / artwork asynchronously.
-	setCurrentTrack(deezer.Track{ID: id, DurationMS: int64(durationMS)})
+	// enrich with title / podcast name / artwork asynchronously. setCurrentEpisode
+	// (not setCurrentTrack) tags the media kind so this listen lands in history as
+	// Kind="episode" and native history screens replay it via DZPlayEpisode.
+	setCurrentEpisode(deezer.Track{ID: id, DurationMS: int64(durationMS)})
 	go fetchEpisodeMeta(c, id)
 	return 1
 }

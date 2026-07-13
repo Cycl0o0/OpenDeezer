@@ -79,15 +79,21 @@ final class SessionStore: ObservableObject {
 
     func logout() {
         KeychainStore.delete(key: arlKey)
+        let wasCasting = !PlayerController.shared.connectedDeviceAddr.isEmpty
         PlayerController.shared.stopPlayback()
         // Stop advertising / serving the account over the network — otherwise
         // a paired web remote or Connect peer can keep driving the logged-out
         // account while the app shows the login screen.
         RemoteHostStore.shared.disableAll()
-        // Tear down the engine session as well (control server, Connect-host
-        // advertiser, Deezer client) so nothing keeps running under the old
-        // account; the next login re-inits services fresh.
-        Task { await Engine.logout() }
+        // Disconnect the active Connect peer BEFORE wiping the session: halt the
+        // remote device and clear app-side routing state (connectedDeviceAddr/
+        // name) first, then tear down the engine session (control server,
+        // Connect-host advertiser, Deezer client). Ordered in one Task so the
+        // disconnect lands before logout; the next login re-inits services fresh.
+        Task {
+            if wasCasting { await PlayerController.shared.disconnect() }
+            await Engine.logout()
+        }
         account = nil
         phase = .loggedOut
     }

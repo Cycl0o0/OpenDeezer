@@ -19,6 +19,7 @@ struct PlayerBar: View {
         GlassEffectContainer(spacing: 18) {
             HStack(spacing: 16) {
                 transport
+                castingChip
                 Spacer(minLength: 12)
                 nowPlaying
                 Spacer(minLength: 12)
@@ -36,7 +37,10 @@ struct PlayerBar: View {
         HStack(spacing: 18) {
             iconButton(app.shuffle ? "shuffle.circle.fill" : "shuffle",
                        tint: app.shuffle ? DZ.accent : DZ.textSec) { app.setShuffle(!app.shuffle) }
+                .accessibilityLabel(L("Shuffle"))
+                .accessibilityValue(app.shuffle ? L("On") : L("Off"))
             iconButton("backward.fill", size: 16, tint: DZ.textPri) { app.prev() }
+                .accessibilityLabel(L("Previous"))
             Button { app.togglePause() } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 18, weight: .bold))
@@ -45,13 +49,51 @@ struct PlayerBar: View {
                     .glassEffect(.regular.tint(DZ.accent).interactive(), in: Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(L("Play / Pause"))
             iconButton("forward.fill", size: 16, tint: DZ.textPri) { app.next() }
+                .accessibilityLabel(L("Next"))
             iconButton(app.repeatMode == .one ? "repeat.1" : "repeat",
                        tint: app.repeatMode == .off ? DZ.textSec : DZ.accent) {
                 app.cycleRepeat()
             }
+            .accessibilityLabel(L("Repeat"))
+            .accessibilityValue(repeatValueLabel)
         }
         .frame(width: 230, alignment: .leading)
+    }
+
+    // VoiceOver value for the repeat control's current mode.
+    private var repeatValueLabel: String {
+        switch app.repeatMode {
+        case .off: return L("Off")
+        case .all: return L("All")
+        case .one: return L("One")
+        }
+    }
+
+    // Casting chip: shown only while routed to a Connect device. Names the device
+    // and offers a one-click "Play here" that returns playback to this computer
+    // (the engine resumes locally). Kept truthful by the tick's connectedDevice
+    // mirror, so it also appears/updates when another client changes the route.
+    @ViewBuilder private var castingChip: some View {
+        if app.isConnectedRemote {
+            HStack(spacing: 8) {
+                Image(systemName: "wave.3.right")
+                    .font(.system(size: 11)).foregroundStyle(DZ.accent)
+                Text(Lf("Playing on %@", app.connectedDeviceName))
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(DZ.textPri)
+                    .lineLimit(1)
+                Button { app.disconnectDevice() } label: {
+                    Text(L("Play here"))
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(DZ.accent)
+                }
+                .buttonStyle(.plain)
+                .help(L("Play here"))
+                .accessibilityLabel(L("Play here"))
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .glassEffect(.regular, in: Capsule())
+        }
     }
 
     private var nowPlaying: some View {
@@ -123,6 +165,8 @@ struct PlayerBar: View {
             }
             .disabled(app.current == nil || app.playingEpisode)
             .help(app.isCurrentLiked ? L("Unlike") : L("Like"))
+            .accessibilityLabel(L("Like"))
+            .accessibilityValue(app.isCurrentLiked ? L("On") : L("Off"))
             // Lyrics for the now-playing track.
             iconButton("quote.bubble", tint: app.showLyrics ? DZ.accent : DZ.textSec) {
                 app.showLyrics = true
