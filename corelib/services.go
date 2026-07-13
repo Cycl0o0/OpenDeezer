@@ -16,6 +16,7 @@ import (
 	"net"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
 	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/version"
 )
@@ -54,6 +56,13 @@ var (
 	// new port or torn down, instead of leaving a ghost advertising a dead port.
 	// Guarded by mu (mirrors the TUI's model.advertiser). (B10)
 	advertiser *discovery.Responder
+
+	// mediaCache is the on-disk raw-stream cache attached to the player in DZInit
+	// (nil when disabled via media.json mediaCacheMB<=0). Held here — not only on
+	// the player — so preparePlan can prefer a zero-network cache-sourced plan and
+	// DZDownloadForOffline can pre-fetch ciphertext + persist meta into it.
+	// Guarded by mu (set once under DZInit's lock, read via curMediaCache).
+	mediaCache *mediacache.Cache
 
 	curMu    sync.Mutex
 	curTrack deezer.Track
@@ -177,6 +186,160 @@ func clearPreloadedTrack() { setPreloadedTrack(deezer.Track{}) }
 func clearEnginePreload() {
 	withPlayer(func(p *audio.Player) { p.ClearPreload() })
 	clearPreloadedTrack()
+}
+
+// ---- offline media cache (zero-network cached playback + explicit download) ----
+
+// curMediaCache reads the attached on-disk raw-stream cache (nil when disabled).
+func curMediaCache() *mediacache.Cache {
+	mu.Lock()
+	defer mu.Unlock()
+	return mediaCache
+}
+
+// getCtrlSrv reads the shared control server under mu (nil when disabled), so
+// callers off the UI thread — e.g. the player's onFinish callback — can publish
+// a finished edge without racing the settings-toggle writers of ctrlSrv.
+func getCtrlSrv() *control.Server {
+	mu.Lock()
+	defer mu.Unlock()
+	return ctrlSrv
+}
+
+// pendingMeta stashes the StreamMeta of freshly-resolved encrypted full tracks
+// (keyed by track id), so a following NATURAL finish — by which point the audio
+// layer has teed the whole ciphertext into the media cache — can persist the
+// meta and make the track fully cache-playable (zero network) next time.
+// Cache-sourced plans (CDNURL=="") and previews/plain streams are never stashed.
+var (
+	pendingMetaMu sync.Mutex
+	pendingMeta   = map[string]mediacache.StreamMeta{}
+)
+
+// storePendingMeta records the plan's StreamMeta for id when it is a freshly
+// resolved, cacheable stream (encrypted, non-preview, real CDN URL). Called by
+// preparePlan; consumed by persistFinishedMeta on a natural finish.
+func storePendingMeta(id string, plan *deezer.StreamPlan) {
+	if plan == nil || id == "" || plan.CDNURL == "" || !plan.Encrypted || plan.Preview {
+		return
+	}
+	pendingMetaMu.Lock()
+	pendingMeta[id] = mediacache.StreamMeta{
+		Format:    plan.Format,
+		Encrypted: plan.Encrypted,
+		GainDB:    plan.GainDB,
+		Preview:   plan.Preview,
+	}
+	pendingMetaMu.Unlock()
+}
+
+// persistFinishedMeta writes the stashed StreamMeta for id into the media cache
+// after a natural finish, so PrepareStreamCached later serves the track with no
+// network. No-op when the cache is off or no meta was stashed for id (cached,
+// preview or plain streams). Consumes the pending entry.
+func persistFinishedMeta(id string) {
+	if id == "" {
+		return
+	}
+	pendingMetaMu.Lock()
+	m, ok := pendingMeta[id]
+	if ok {
+		delete(pendingMeta, id)
+	}
+	pendingMetaMu.Unlock()
+	if !ok {
+		return
+	}
+	if mc := curMediaCache(); mc != nil {
+		_ = mc.PutMeta(id+"."+m.Format, m)
+	}
+}
+
+// preparePlan resolves a playable stream plan for id, preferring the on-disk
+// media cache when one is attached: a fully-cached track (its StreamMeta was
+// persisted on a prior natural finish) yields a plan with CDNURL=="" that the
+// audio layer serves with zero network. On a cache miss it falls back to the
+// normal PrepareStream network path. Either way it stashes the freshly-resolved
+// plan's meta (encrypted full tracks only) so a following natural finish makes
+// the track cache-playable. Every local play path (DZPlay/DZPreload/
+// enginePlayResolved) goes through here for consistent offline behavior.
+func preparePlan(c *deezer.Client, id string) (*deezer.StreamPlan, error) {
+	var (
+		plan *deezer.StreamPlan
+		err  error
+	)
+	if mc := curMediaCache(); mc != nil {
+		plan, err = c.PrepareStreamCached(id, mc)
+	} else {
+		plan, err = c.PrepareStream(id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	storePendingMeta(id, plan)
+	return plan, nil
+}
+
+// onNaturalFinish is the player's onFinish callback, factored out of DZInit so
+// it is unit-testable. An errored finish (CDN/decode failure, ~0 played) is not
+// a real end: refresh state and return. Otherwise: capture the finishing track
+// id (before any advance moves currentTrack on), record the listen, persist its
+// stream meta into the media cache (offline: PutMeta after the successful first
+// stream), auto-advance the engine queue (or bump the GUI finished-counter so
+// exactly one queue mechanism advances), publish the natural end-of-track edge
+// to /events subscribers, and push a fresh state snapshot.
+func onNaturalFinish() {
+	if erroredFinish() {
+		notifyControlState()
+		return
+	}
+	tid := currentTrack().ID
+	noteTrackFinished()
+	persistFinishedMeta(tid)
+	if !engineAdvanceOnFinish() {
+		mu.Lock()
+		finished++
+		mu.Unlock()
+	}
+	if srv := getCtrlSrv(); srv != nil && tid != "" {
+		srv.NotifyFinished(tid)
+	}
+	notifyControlState()
+}
+
+// tracksFromInsertJSON decodes DZQueueInsertNext's payload, which may be either
+// a single wire track object {...} or a JSON array [...] of them. Reuses the
+// shared queue decoders (queueTracksFromJSON/trackFromWire). Entries without an
+// id are dropped; a bad payload yields an empty slice (a no-op insert).
+func tracksFromInsertJSON(js string) []deezer.Track {
+	js = strings.TrimSpace(js)
+	if js == "" {
+		return nil
+	}
+	if strings.HasPrefix(js, "[") {
+		ts, _ := queueTracksFromJSON(js)
+		return ts
+	}
+	var w bridge.Track
+	if err := json.Unmarshal([]byte(js), &w); err != nil || w.ID == "" {
+		return nil
+	}
+	return []deezer.Track{trackFromWire(w)}
+}
+
+// engineQueueInsertNext splices ts (in order) right after the current track,
+// discarding a preloaded next (the upcoming track changed) and bumping the
+// version + notifying so a GUI/controller resyncs. Local-only mutation of
+// engineQ — the GUI Up-Next editor owns this queue.
+func engineQueueInsertNext(ts []deezer.Track) {
+	if len(ts) == 0 {
+		return
+	}
+	queueMu.Lock()
+	engineQ.InsertAfterCurrent(ts...)
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
 }
 
 // fetchTrackMeta fills in the full metadata for the current track (title/artist/
@@ -686,8 +849,23 @@ func engineCommands() control.Commands {
 				}
 			}
 		},
-		QueueAdd:      engineQueueAdd,
-		QueueJump:     engineQueueJump,
+		QueueAdd:  engineQueueAdd,
+		QueueJump: engineQueueJump,
+		// SetQueue lets a controller replace the engine queue wholesale (cursor at
+		// index). Mirrors DZQueueSet + DZQueueSetIndex in one hop: parse, Set,
+		// clear a now-stale preload, and notify. Nil-safe (parse error surfaced).
+		SetQueue: func(tracksJSON string, index int) error {
+			ts, err := queueTracksFromJSON(tracksJSON)
+			if err != nil {
+				return err
+			}
+			queueMu.Lock()
+			engineQ.Set(ts, index)
+			queueMu.Unlock()
+			clearEnginePreload()
+			notifyControlState()
+			return nil
+		},
 		QueueRemove:   engineQueueRemove,
 		QueueMove:     engineQueueMove,
 		PlayAlbum:     enginePlayAlbum,
@@ -733,7 +911,7 @@ func playSuperseded(seq uint64) bool { return playSeq.Load() != seq }
 // recording it as the current track. Blocking (network round-trip); callers must
 // be off the realtime audio path.
 func enginePlayResolved(c *deezer.Client, p *audio.Player, t deezer.Track) bool {
-	plan, err := c.PrepareStream(t.ID)
+	plan, err := preparePlan(c, t.ID)
 	if err != nil {
 		return false
 	}
@@ -753,7 +931,7 @@ func enginePlayResolved(c *deezer.Client, p *audio.Player, t deezer.Track) bool 
 // at launch. Without the guard a slow auto-advance resolve could clobber the
 // track the user started while it was resolving. (B3)
 func enginePlayResolvedGuarded(c *deezer.Client, p *audio.Player, t deezer.Track, seq uint64) bool {
-	plan, err := c.PrepareStream(t.ID)
+	plan, err := preparePlan(c, t.ID)
 	if err != nil {
 		return false
 	}

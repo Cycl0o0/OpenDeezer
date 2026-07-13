@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
 )
 
@@ -991,5 +995,347 @@ func TestSetRemoteStateIdentityChecked(t *testing.T) {
 	}
 	if finB != startFinished+1 {
 		t.Fatalf("current device end-of-track did not bump finished: %d -> %d", startFinished, finB)
+	}
+}
+
+// ---- Phase-4 corelib wiring: SetQueue hook, NotifyFinished, queue edits, offline ----
+
+// resetOfflineGlobals clears the media-cache + pending-meta globals so an
+// offline test can't leak a cache into a later test's preparePlan/persist path.
+func resetOfflineGlobals() {
+	mu.Lock()
+	mediaCache = nil
+	mu.Unlock()
+	pendingMetaMu.Lock()
+	pendingMeta = map[string]mediacache.StreamMeta{}
+	pendingMetaMu.Unlock()
+}
+
+// TestSetQueueCommandHookReplacesEngineQueue proves the control command
+// SetQueue(tracksJSON, index) parses the wire payload, replaces engineQ with the
+// cursor at index, and surfaces in engineState (/status). Mirrors the mobile
+// binding's SetQueue hook.
+func TestSetQueueCommandHookReplacesEngineQueue(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	clearRoutedRemote()
+
+	cmds := engineCommands()
+	if cmds.SetQueue == nil {
+		t.Fatal("SetQueue hook must be wired")
+	}
+	if err := cmds.SetQueue(`[{"id":"a"},{"id":"b"},{"id":"c"}]`, 1); err != nil {
+		t.Fatalf("SetQueue: %v", err)
+	}
+	st := engineState()
+	got := make([]string, len(st.Queue))
+	for i, tr := range st.Queue {
+		got[i] = tr.ID
+	}
+	if len(got) != 3 || got[0] != "a" || got[1] != "b" || got[2] != "c" {
+		t.Fatalf("queue after SetQueue = %v, want [a b c]", got)
+	}
+	if engineQueueIndex() != 1 {
+		t.Fatalf("cursor after SetQueue(index=1) = %d, want 1", engineQueueIndex())
+	}
+	// A bad payload is surfaced as an error and leaves the queue untouched.
+	if err := cmds.SetQueue(`{"not":"an array"}`, 0); err == nil {
+		t.Fatal("SetQueue with a non-array payload must error")
+	}
+	if engineQueueIndex() != 1 {
+		t.Fatalf("a failed SetQueue disturbed the cursor: %d", engineQueueIndex())
+	}
+}
+
+// TestOnNaturalFinishNotifiesControlServer proves the factored onFinish callback
+// publishes a natural end-of-track edge to the control server's /events
+// subscribers (NotifyFinished) with the finishing track id AND bumps the GUI
+// finished-counter when the engine queue didn't own the finish. The errored-vs-
+// natural guard itself is covered by TestErroredFinishNotRecorded.
+func TestOnNaturalFinishNotifiesControlServer(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	setHistoryStore(history.New(filepath.Join(t.TempDir(), "history.jsonl")))
+	clearRoutedRemote()
+
+	// Empty engine queue: engineAdvanceOnFinish returns false, so the GUI
+	// finished-counter path runs and NotifyFinished still fires.
+	queueMu.Lock()
+	engineQ.Set(nil, 0)
+	queueMu.Unlock()
+
+	srv := control.New(control.Config{Addr: "127.0.0.1:0"}, engineState, engineAccount, engineCommands(), deezer.New("arl"))
+	if err := srv.Start(); err != nil {
+		t.Fatalf("start control server: %v", err)
+	}
+	waitServing(t, srv.Addr())
+	mu.Lock()
+	ctrlSrv = srv
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		s := ctrlSrv
+		ctrlSrv, ctrlSrvUserID = nil, ""
+		mu.Unlock()
+		if s != nil {
+			s.Close()
+		}
+	})
+
+	ready := make(chan struct{})
+	gotFinished := make(chan string, 1)
+	go func() {
+		resp, err := http.Get("http://" + srv.Addr() + "/events")
+		if err != nil {
+			close(ready)
+			return
+		}
+		defer resp.Body.Close()
+		sc := bufio.NewScanner(resp.Body)
+		sawState, expectFinishedData := false, false
+		for sc.Scan() {
+			line := sc.Text()
+			switch {
+			case strings.HasPrefix(line, "event: finished"):
+				expectFinishedData = true
+			case strings.HasPrefix(line, "event: state"):
+				if !sawState {
+					sawState = true
+					close(ready) // subscriber is registered now
+				}
+			case expectFinishedData && strings.HasPrefix(line, "data: "):
+				var fe struct {
+					TrackID string `json:"trackId"`
+				}
+				_ = json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &fe)
+				gotFinished <- fe.TrackID
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("SSE subscriber never received the initial state event")
+	}
+
+	mu.Lock()
+	before := finished
+	mu.Unlock()
+	setCurrentTrack(deezer.Track{ID: "t1", DurationMS: 200000})
+
+	onNaturalFinish()
+
+	select {
+	case id := <-gotFinished:
+		if id != "t1" {
+			t.Fatalf("finished SSE event trackId = %q, want t1", id)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no finished SSE event after a natural finish")
+	}
+
+	mu.Lock()
+	after := finished
+	mu.Unlock()
+	if after != before+1 {
+		t.Fatalf("GUI finished-counter: %d -> %d, want +1 (unsynced queue)", before, after)
+	}
+}
+
+// TestTracksFromInsertJSONAcceptsObjectOrArray proves DZQueueInsertNext's
+// flexible decoder: a single wire object, an array of them, and rejects junk.
+func TestTracksFromInsertJSONAcceptsObjectOrArray(t *testing.T) {
+	if ts := tracksFromInsertJSON(`{"id":"solo","name":"S"}`); len(ts) != 1 || ts[0].ID != "solo" {
+		t.Fatalf("single object decode = %+v, want one track id=solo", ts)
+	}
+	if ts := tracksFromInsertJSON(`[{"id":"a"},{"id":"b"}]`); len(ts) != 2 || ts[0].ID != "a" || ts[1].ID != "b" {
+		t.Fatalf("array decode = %+v, want [a b]", ts)
+	}
+	if ts := tracksFromInsertJSON(``); len(ts) != 0 {
+		t.Fatalf("empty payload = %+v, want none", ts)
+	}
+	if ts := tracksFromInsertJSON(`{"no":"id"}`); len(ts) != 0 {
+		t.Fatalf("id-less object = %+v, want none", ts)
+	}
+	if ts := tracksFromInsertJSON(`not json`); len(ts) != 0 {
+		t.Fatalf("junk payload = %+v, want none", ts)
+	}
+}
+
+// TestQueueEditExportsMutateEngineQueue proves the GUI Up-Next edit path behind
+// DZQueueInsertNext / DZQueueRemove / DZQueueMove: insert-next splices after the
+// cursor preserving order, remove guards the playing row, move follows the
+// cursor, and every edit bumps the content version for GUI resync.
+func TestQueueEditExportsMutateEngineQueue(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	clearRoutedRemote()
+
+	engineQueueSet([]deezer.Track{{ID: "1"}, {ID: "2"}, {ID: "3"}}) // cursor 0
+	v0 := engineQueueVersion()
+
+	// Insert-next (via the export's decoder): array order preserved after cursor.
+	engineQueueInsertNext(tracksFromInsertJSON(`[{"id":"X"},{"id":"Y"}]`))
+	ids := func() []string {
+		ts, _, _ := engineQueueSnapshot()
+		out := make([]string, len(ts))
+		for i, tr := range ts {
+			out[i] = tr.ID
+		}
+		return out
+	}
+	if got, want := ids(), []string{"1", "X", "Y", "2", "3"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("after insert-next = %v, want %v", got, want)
+	}
+	if engineQueueVersion() <= v0 {
+		t.Fatal("insert-next did not bump the queue version")
+	}
+
+	// Remove guards the playing row (index 0), removes a non-playing row.
+	if err := engineQueueRemove(0); err == nil {
+		t.Fatal("removing the playing row must error")
+	}
+	if err := engineQueueRemove(1); err != nil { // drop "X"
+		t.Fatalf("engineQueueRemove(1): %v", err)
+	}
+	if got, want := ids(), []string{"1", "Y", "2", "3"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("after remove = %v, want %v", got, want)
+	}
+
+	// Move reorders without changing what's audible (cursor stays on "1").
+	if err := engineQueueMove(3, 0); err != nil {
+		t.Fatalf("engineQueueMove(3,0): %v", err)
+	}
+	if got, want := ids(), []string{"3", "1", "Y", "2"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("after move = %v, want %v", got, want)
+	}
+	if cur, _ := func() (deezer.Track, bool) {
+		queueMu.Lock()
+		defer queueMu.Unlock()
+		return engineQ.Current()
+	}(); cur.ID != "1" {
+		t.Fatalf("move changed the audible track to %q, want 1", cur.ID)
+	}
+}
+
+// TestPreparePlanPrefersCache proves the offline cached-plan preference: with a
+// media cache holding a track's meta, preparePlan returns a zero-network,
+// cache-sourced plan (CDNURL==""); a cache miss falls back to the network
+// PrepareStream (which errors "not logged in" for this un-logged-in client).
+func TestPreparePlanPrefersCache(t *testing.T) {
+	t.Cleanup(resetOfflineGlobals)
+
+	mc, err := mediacache.New(t.TempDir(), 8<<20)
+	if err != nil {
+		t.Fatalf("mediacache.New: %v", err)
+	}
+	if err := mc.PutMeta("cached1.MP3_128", mediacache.StreamMeta{Format: "MP3_128", Encrypted: true, GainDB: -3}); err != nil {
+		t.Fatalf("PutMeta: %v", err)
+	}
+	mu.Lock()
+	mediaCache = mc
+	mu.Unlock()
+
+	c := deezer.New("arl") // not logged in: a cache hit must not need the network
+
+	plan, err := preparePlan(c, "cached1")
+	if err != nil {
+		t.Fatalf("preparePlan(cached) unexpected error: %v", err)
+	}
+	if plan.CDNURL != "" {
+		t.Fatalf("cache-sourced plan must have empty CDNURL, got %q", plan.CDNURL)
+	}
+	if plan.Format != "MP3_128" || !plan.Encrypted {
+		t.Fatalf("cache-sourced plan meta mismatch: %+v", plan)
+	}
+	// A cache-sourced plan is already cached: preparePlan must NOT stash pending
+	// meta for it (nothing to re-persist on finish).
+	pendingMetaMu.Lock()
+	_, stashed := pendingMeta["cached1"]
+	pendingMetaMu.Unlock()
+	if stashed {
+		t.Fatal("preparePlan stashed pending meta for an already-cached plan")
+	}
+
+	// Cache miss on an un-logged-in client falls back to the network path.
+	if _, err := preparePlan(c, "missing2"); err == nil {
+		t.Fatal("preparePlan on a cache miss (not logged in) must error via PrepareStream")
+	}
+}
+
+// TestStoreAndPersistPendingMeta proves the natural-finish offline persistence:
+// a freshly-resolved encrypted plan is stashed then written into the cache on
+// finish, while cache-sourced and preview plans are never stashed.
+func TestStoreAndPersistPendingMeta(t *testing.T) {
+	t.Cleanup(resetOfflineGlobals)
+
+	mc, err := mediacache.New(t.TempDir(), 8<<20)
+	if err != nil {
+		t.Fatalf("mediacache.New: %v", err)
+	}
+	mu.Lock()
+	mediaCache = mc
+	mu.Unlock()
+
+	// Encrypted full plan with a real CDN URL: stashed, then persisted on finish.
+	storePendingMeta("full1", &deezer.StreamPlan{CDNURL: "http://cdn/x", TrackID: "full1", Format: "MP3_320", GainDB: -2, Encrypted: true})
+	// Preview and cache-sourced (CDNURL=="") plans must NOT be stashed.
+	storePendingMeta("prev1", &deezer.StreamPlan{CDNURL: "http://cdn/p", TrackID: "prev1", Format: "MP3_128", Encrypted: false, Preview: true})
+	storePendingMeta("cch1", &deezer.StreamPlan{CDNURL: "", TrackID: "cch1", Format: "FLAC", Encrypted: true})
+
+	pendingMetaMu.Lock()
+	_, hasFull := pendingMeta["full1"]
+	_, hasPrev := pendingMeta["prev1"]
+	_, hasCch := pendingMeta["cch1"]
+	pendingMetaMu.Unlock()
+	if !hasFull || hasPrev || hasCch {
+		t.Fatalf("pending stash = full:%v preview:%v cached:%v, want full only", hasFull, hasPrev, hasCch)
+	}
+
+	persistFinishedMeta("full1")
+	m, ok := mc.GetMetaForTrack("full1")
+	if !ok || m.Format != "MP3_320" || !m.Encrypted {
+		t.Fatalf("persisted meta = (%+v, %v), want MP3_320 encrypted", m, ok)
+	}
+	// The pending entry is consumed exactly once.
+	pendingMetaMu.Lock()
+	_, still := pendingMeta["full1"]
+	pendingMetaMu.Unlock()
+	if still {
+		t.Fatal("persistFinishedMeta did not consume the pending entry")
+	}
+}
+
+// TestFetchCiphertextToCache proves the offline download body path: raw bytes at
+// a URL are fetched fully and committed to the cache under the plan key, then
+// served back by Get.
+func TestFetchCiphertextToCache(t *testing.T) {
+	want := []byte("ciphertext-bytes-0123456789")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(want)
+	}))
+	defer srv.Close()
+
+	mc, err := mediacache.New(t.TempDir(), 8<<20)
+	if err != nil {
+		t.Fatalf("mediacache.New: %v", err)
+	}
+	key := "dl1.MP3_128"
+	if err := fetchCiphertextToCache(mc, key, srv.URL); err != nil {
+		t.Fatalf("fetchCiphertextToCache: %v", err)
+	}
+	rc, sz, ok := mc.Get(key)
+	if !ok {
+		t.Fatal("cache miss after fetchCiphertextToCache")
+	}
+	defer rc.Close()
+	if sz != int64(len(want)) {
+		t.Fatalf("cached size = %d, want %d", sz, len(want))
+	}
+	got := make([]byte, sz)
+	if _, err := rc.Read(got); err != nil && err.Error() != "EOF" {
+		t.Fatalf("read cached body: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("cached body = %q, want %q", got, want)
 	}
 }

@@ -274,3 +274,82 @@ func TestSetStreamCacheNilSafe(t *testing.T) {
 		t.Fatal("SetStreamCache(nil) did not clear the cache")
 	}
 }
+
+// TestStreamCacheOfflineHit verifies that an offline play (plan.CDNURL == "")
+// with a cache hit successfully decodes byte-identical PCM data with zero HTTP requests.
+func TestStreamCacheOfflineHit(t *testing.T) {
+	const trackID = "123456"
+	cipher := makeCipher(100000)
+	want, err := deezer.DecryptTrack(trackID, cipher)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mc := newTestCache(t)
+	// Seed the cache directly
+	cacheKey := trackID + ".MP3_320"
+	teeReader := mc.TeeReader(cacheKey, bytes.NewReader(cipher))
+	_, err = io.ReadAll(teeReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create plan with empty CDNURL
+	plan := &deezer.StreamPlan{
+		CDNURL:    "",
+		TrackID:   trackID,
+		Format:    "MP3_320",
+		Encrypted: true,
+	}
+
+	s := newSource(plan, 10000)
+	s.cache = mc
+	s.download()
+
+	if got := drainStreamBuffer(s.sb); !bytes.Equal(got, want) {
+		t.Fatalf("offline hit play mismatch: got %d bytes, want %d", len(got), len(want))
+	}
+	if e := s.lastErr(); e != "" {
+		t.Fatalf("unexpected error on offline play: %s", e)
+	}
+
+	// Check that size handling worked correctly using the cached size
+	s.sb.mu.Lock()
+	total := s.sb.total
+	s.sb.mu.Unlock()
+	if total != int64(len(cipher)) {
+		t.Fatalf("offline play content length = %d, want %d", total, len(cipher))
+	}
+}
+
+// TestStreamCacheOfflineMiss verifies that an offline play (plan.CDNURL == "")
+// with a cache miss fails immediately with ErrOffline, without panic or HTTP dialing.
+func TestStreamCacheOfflineMiss(t *testing.T) {
+	mc := newTestCache(t)
+	// Create plan with empty CDNURL and no entry in cache
+	plan := &deezer.StreamPlan{
+		CDNURL:    "",
+		TrackID:   "not_cached_track",
+		Format:    "MP3_320",
+		Encrypted: true,
+	}
+
+	s := newSource(plan, 10000)
+	s.cache = mc
+	s.download()
+
+	// Ensure the source error was set to ErrOffline
+	gotErr := s.lastErr()
+	if gotErr != ErrOffline.Error() {
+		t.Fatalf("expected error %q, got %q", ErrOffline.Error(), gotErr)
+	}
+
+	// Drain streamBuffer should return the same error
+	_, err := s.sb.Read(make([]byte, 100))
+	if err == nil {
+		t.Fatal("expected read error from streamBuffer, got nil")
+	}
+	if !errors.Is(err, ErrOffline) {
+		t.Fatalf("expected streamBuffer error errors.Is(ErrOffline), got %v", err)
+	}
+}

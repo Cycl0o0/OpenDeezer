@@ -79,6 +79,12 @@ var (
 	// (app-owned queue driven by FinishedCount). Guarded by queueMu.
 	queueMu sync.Mutex
 	engineQ = queue.New()
+
+	// mediaCache is the optional on-disk raw ciphertext cache (populated on
+	// first full stream of cacheable tracks, and by DownloadForOffline). When
+	// non-nil, Play/Preload prefer PrepareStreamCached for zero-net playback
+	// of previously downloaded tracks. Guarded by mu.
+	mediaCache *mediacache.Cache
 )
 
 // Stable JSON DTOs and Deezer-to-wire conversions live in internal/bridge.
@@ -98,6 +104,11 @@ func jstr(v any, err error) string {
 
 func curClient() *deezer.Client { mu.Lock(); defer mu.Unlock(); return client }
 func curPlayer() *audio.Player  { mu.Lock(); defer mu.Unlock(); return player }
+func curMediaCache() *mediacache.Cache {
+	mu.Lock()
+	defer mu.Unlock()
+	return mediaCache
+}
 func setCurrentTrack(t deezer.Track) uint64 {
 	curMu.Lock()
 	curGen++
@@ -157,6 +168,13 @@ func notifyControlState() {
 	}
 }
 
+// getCtrlSrv returns the active control server under lock (nil-safe for callers).
+func getCtrlSrv() *control.Server {
+	mu.Lock()
+	defer mu.Unlock()
+	return ctrlSrv
+}
+
 // withPlayerNotify runs a state-mutating player action, then pokes the SSE
 // loop. Read-only accessors keep the plain curPlayer() pattern.
 func withPlayerNotify(fn func(*audio.Player)) {
@@ -178,6 +196,13 @@ func currentTrackSnapshot() (deezer.Track, string) {
 	curMu.Lock()
 	defer curMu.Unlock()
 	return curTrack, curKind
+}
+
+// currentTrackID returns just the id of the current track (convenience, nil-safe).
+func currentTrackID() string {
+	curMu.Lock()
+	defer curMu.Unlock()
+	return curTrack.ID
 }
 
 // setPreloadedTrack stashes the identity of the stream just armed on the
@@ -213,6 +238,42 @@ func clearEnginePreload() {
 	clearPreloadedTrack()
 }
 
+// ---- offline cache meta (populated after first successful stream) ----
+
+var (
+	metaMu       sync.Mutex
+	pendingMetas = map[string]mediacache.StreamMeta{} // trackID -> meta captured on network resolve; committed on natural finish
+)
+
+// storePendingMeta remembers the StreamMeta from a network-sourced plan so that
+// noteTrackFinished (on natural end, after the tee has committed the body) can
+// PutMeta for future PrepareStreamCached hits.
+func storePendingMeta(id string, plan *deezer.StreamPlan) {
+	if id == "" || plan == nil {
+		return
+	}
+	m := mediacache.StreamMeta{
+		Format:    plan.Format,
+		Encrypted: plan.Encrypted,
+		GainDB:    plan.GainDB,
+		Preview:   plan.Preview,
+	}
+	metaMu.Lock()
+	pendingMetas[id] = m
+	metaMu.Unlock()
+}
+
+// takePendingMeta removes and returns a stored meta (called on natural finish).
+func takePendingMeta(id string) (mediacache.StreamMeta, bool) {
+	metaMu.Lock()
+	m, ok := pendingMetas[id]
+	if ok {
+		delete(pendingMetas, id)
+	}
+	metaMu.Unlock()
+	return m, ok
+}
+
 // ---- lifecycle ----
 
 // Init logs in with the ARL and starts the engine. Returns true on success.
@@ -240,40 +301,7 @@ func Init(arl string) bool {
 				}
 			}
 		}
-		player.SetOnFinish(func() {
-			// An errored finish is NOT a natural end-of-track (B4): the audio layer
-			// stores the source's decode/stream error on the player (or flips to
-			// Errored on device loss) with essentially nothing played before firing
-			// onFinish. Don't record a phantom listen, advance the queue, or bump the
-			// finished counter — just refresh state so the UI leaves 'playing'.
-			if erroredFinish(curPlayer()) {
-				notifyControlState()
-				return
-			}
-			// The finished track was listened to its natural end — record it in the
-			// local history now (covers both a real finish and a gapless promote; a
-			// following Play sees the player Stopped/already-swapped and won't
-			// re-record it). Must run before syncQueueOnGaplessPromote, which moves
-			// currentTrack forward on a promote.
-			noteTrackFinished()
-			// Keep the synced engine queue + now-playing aligned when the player
-			// gaplessly promoted a preloaded next track. The finished counter still
-			// bumps in every case — the app drives its own advance off it (and must
-			// NOT re-Play after a promote: State() is still Playing then).
-			//
-			// B3: mobile's auto-advance is fully synchronous. onFinish does no
-			// network resolve/Play of its own — the app drives its next track off
-			// FinishedCount, and the engine command paths (engineNext/enginePrev/
-			// engineQueueJump) resolve + Play inline on the caller's goroutine. There
-			// is no late async resolve that could overwrite a newer user Play, so no
-			// playSeq generation guard is needed here (unlike corelib, whose onFinish
-			// resolves the next track on a fresh goroutine).
-			syncQueueOnGaplessPromote()
-			mu.Lock()
-			finished++
-			mu.Unlock()
-			notifyControlState() // track ended/advanced: push a fresh SSE snapshot
-		})
+		player.SetOnFinish(onFinish)
 	}
 	mu.Unlock()
 
@@ -430,7 +458,7 @@ func Preload(id string) error {
 	if !p.Gapless() && p.CrossfadeMS() == 0 {
 		return nil // the player would drop the preload; skip the network resolve
 	}
-	plan, err := c.PrepareStream(id)
+	plan, err := preparePlan(c, id)
 	if err != nil {
 		return err
 	}
@@ -466,6 +494,26 @@ func queuedDurationMS(id string) int64 {
 		}
 	}
 	return 0
+}
+
+// preparePlan resolves a stream plan, preferring PrepareStreamCached (zero net
+// + CDNURL=="") when a media cache is attached and has meta for the track. On
+// a miss (network plan returned) the meta is stashed so a natural finish can
+// PutMeta after the body has been teed into cache.
+func preparePlan(c *deezer.Client, id string) (*deezer.StreamPlan, error) {
+	if mc := curMediaCache(); mc != nil {
+		if plan, err := c.PrepareStreamCached(id, mc); err == nil {
+			if plan.CDNURL != "" {
+				storePendingMeta(id, plan)
+			}
+			return plan, nil
+		}
+	}
+	plan, err := c.PrepareStream(id)
+	if err == nil {
+		storePendingMeta(id, plan)
+	}
+	return plan, err
 }
 
 // ---- browse ----
@@ -715,7 +763,7 @@ func Play(trackID string, durationMS int64) bool {
 	if c == nil || p == nil {
 		return false
 	}
-	plan, err := c.PrepareStream(trackID)
+	plan, err := preparePlan(c, trackID)
 	if err != nil {
 		odlog.Warn("resolve %s: %v", trackID, err)
 		return false
@@ -817,6 +865,102 @@ func DownloadDir() string { return config.LoadDownloadDir() }
 
 // SetDownloadDir persists the download folder ("" resets to the default).
 func SetDownloadDir(path string) bool { return ok(config.SaveDownloadDir(path)) }
+
+// DownloadForOffline fetches the raw ciphertext for id into the media cache
+// (if not already present) and ensures the plan meta is stored via PutMeta so
+// subsequent plays can use PrepareStreamCached with zero network (cache-only
+// plan). Returns JSON status {"status":"...","key":"...","trackID":"..."} or
+// {"error":"..."}. When plan.CDNURL=="" (meta hit) it checks for the body and
+// short-circuits cleanly without network if present; otherwise forces a resolve
+// to obtain a URL for the body fetch. Call off the UI thread. Requires cache
+// enabled (MediaCacheMB>0) at startup.
+func DownloadForOffline(id string) string {
+	c := curClient()
+	mc := curMediaCache()
+	if c == nil {
+		return jstr(nil, fmt.Errorf("not logged in"))
+	}
+	if mc == nil {
+		return jstr(nil, fmt.Errorf("media cache disabled"))
+	}
+	plan, err := c.PrepareStreamCached(id, mc)
+	if err != nil {
+		return jstr(nil, err)
+	}
+	key := plan.TrackID + "." + plan.Format
+	if key == "." {
+		key = id + "."
+	}
+	if plan.CDNURL == "" {
+		// meta hit from GetMetaForTrack: cache-only plan. If body already
+		// present we are done (clean no-net case).
+		if _, _, ok := mc.Get(key); ok {
+			return jstr(map[string]any{"status": "already_cached", "key": key, "trackID": id}, nil)
+		}
+		// meta without body (uncommon): force a network resolve to obtain CDNURL
+		// so we can populate the ciphertext. PrepareStreamCached would have
+		// hidden the URL.
+		plan, err = c.PrepareStream(id)
+		if err != nil {
+			return jstr(nil, err)
+		}
+		if plan.CDNURL == "" {
+			// still no URL (very odd); report cleanly
+			return jstr(map[string]any{"status": "cache_only", "key": key, "trackID": id}, nil)
+		}
+		key = plan.TrackID + "." + plan.Format
+	}
+	// ensure body present (fetch raw ciphertext if missing)
+	if _, _, ok := mc.Get(key); !ok {
+		if ferr := fetchCipherToCache(mc, plan); ferr != nil {
+			return jstr(nil, ferr)
+		}
+	}
+	// store/refresh meta so PrepareStreamCached hits even if this was a body-only populate
+	m := mediacache.StreamMeta{
+		Format:    plan.Format,
+		Encrypted: plan.Encrypted,
+		GainDB:    plan.GainDB,
+		Preview:   plan.Preview,
+	}
+	_ = mc.PutMeta(key, m)
+	return jstr(map[string]any{"status": "cached", "key": key, "trackID": id}, nil)
+}
+
+// fetchCipherToCache performs a direct CDN GET of the raw (cipher/plain) body
+// and writes it via mc.Put so the cache owns the full ciphertext. Used only by
+// DownloadForOffline (normal first-play uses the audio layer's TeeReader).
+func fetchCipherToCache(mc *mediacache.Cache, plan *deezer.StreamPlan) error {
+	if plan == nil || plan.CDNURL == "" {
+		return fmt.Errorf("no CDN URL for cache population")
+	}
+	key := plan.TrackID + "." + plan.Format
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, plan.CDNURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 OpenDeezer/0.1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("CDN status %s", resp.Status)
+	}
+	wc, err := mc.Put(key)
+	if err != nil {
+		return err
+	}
+	_, cerr := io.Copy(wc, resp.Body)
+	cerr2 := wc.Close()
+	if cerr != nil {
+		return cerr
+	}
+	return cerr2
+}
 
 // MediaCacheMB returns the on-disk raw-stream cache budget in megabytes
 // (media.json; 0 = cache disabled, the default).
@@ -1065,6 +1209,65 @@ func QueueJSON() string {
 		"index":   idx,
 		"tracks":  bridge.FromTracks(ts),
 	}, nil)
+}
+
+// ---- Phase 4 queue-edit exports (for native Android/iOS queue screens) ----
+
+// QueueRemove removes the track at index from the engine queue (if valid and
+// not the playing row). It is the direct export for mobile queue UIs to mutate
+// engineQ (bumping version) so remote controllers see consistent state.
+func QueueRemove(index int) {
+	queueMu.Lock()
+	if n := engineQ.Len(); index >= 0 && index < n && index != engineQ.Index() {
+		engineQ.Remove(index)
+	}
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
+}
+
+// QueueMove reorders the engine queue (from -> to). Cursor/history follow.
+// from==to and out-of-range are no-ops.
+func QueueMove(from, to int) {
+	queueMu.Lock()
+	if n := engineQ.Len(); from >= 0 && from < n && to >= 0 && to < n && from != to {
+		engineQ.Move(from, to)
+	}
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
+}
+
+// QueueInsertNext inserts the track described by trackJSON (wire shape, same
+// as SetQueueJSON payload; accepts either a single object or a 1-element array)
+// immediately after the current row (or at start if empty). Bumps version.
+func QueueInsertNext(trackJSON string) {
+	t, err := queueTrackFromJSON(trackJSON)
+	if err != nil || t.ID == "" {
+		return
+	}
+	queueMu.Lock()
+	engineQ.InsertAfterCurrent(t)
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
+}
+
+// queueTrackFromJSON is QueueInsertNext's parser: accepts the wire JSON for
+// either a single track object or an array (takes first); reuses the SetQueue
+// conversion so artist fallbacks etc work.
+func queueTrackFromJSON(js string) (deezer.Track, error) {
+	if ts, err := queueTracksFromJSON(js); err == nil && len(ts) > 0 {
+		return ts[0], nil
+	}
+	var w bridge.Track
+	if err := json.Unmarshal([]byte(js), &w); err != nil {
+		return deezer.Track{}, err
+	}
+	if w.ID == "" {
+		return deezer.Track{}, fmt.Errorf("track JSON has no id")
+	}
+	return trackFromWire(w), nil
 }
 
 // queueTracksFromJSON decodes an app queue payload: a JSON array of tracks in
@@ -1420,7 +1623,7 @@ func toControlTrack(t deezer.Track) control.Track {
 // enginePlayResolved resolves a stream for t and starts it on the player,
 // recording it as the current track. Blocking (network round-trip).
 func enginePlayResolved(c *deezer.Client, p *audio.Player, t deezer.Track) bool {
-	plan, err := c.PrepareStream(t.ID)
+	plan, err := preparePlan(c, t.ID)
 	if err != nil {
 		return false
 	}
@@ -1530,7 +1733,23 @@ func engineCommands() control.Commands {
 			}
 			Play(id, durationMS)
 		},
-		PlayPlaylist:  func(id string) {},
+		PlayPlaylist: func(id string) {},
+		// Phase 4 Connect v2: SetQueue lets a remote controller atomically
+		// replace the host queue (and point the cursor). We parse the app's
+		// wire JSON and Set on engineQ (mirrors SetQueueJSON but honors the
+		// index the host supplied).
+		SetQueue: func(tracksJSON string, index int) error {
+			ts, err := queueTracksFromJSON(tracksJSON)
+			if err != nil {
+				return err
+			}
+			queueMu.Lock()
+			engineQ.Set(ts, index)
+			queueMu.Unlock()
+			clearEnginePreload() // upcoming track may have changed
+			notifyControlState()
+			return nil
+		},
 		QueueAdd:      engineQueueAdd,
 		QueueJump:     engineQueueJump,
 		QueueRemove:   engineQueueRemove,
@@ -1974,6 +2193,16 @@ func noteTrackFinished() {
 		}
 	}
 	recordListen(prev, kind, playedMS)
+
+	// Phase 4 offline: after a successful first stream (body teed by audio on
+	// natural EOF), commit the meta so PrepareStreamCached can serve it with
+	// zero network on future plays (and across restarts).
+	if mc := curMediaCache(); mc != nil && prev.ID != "" {
+		if m, ok := takePendingMeta(prev.ID); ok {
+			key := prev.ID + "." + m.Format
+			_ = mc.PutMeta(key, m)
+		}
+	}
 }
 
 // erroredFinish reports whether the player's most recent finish was a failure
@@ -1999,6 +2228,52 @@ func isErroredFinish(state audio.State, lastErr string, positionMS int64) bool {
 		return false // a clean finish / gapless promote clears LastError
 	}
 	return positionMS < 1000 // errored with ~0 played: not a real listen
+}
+
+// onFinish is the player's finish callback (set in Init). It is factored out so
+// the Phase-4 NotifyFinished wiring (natural finishes only) is unit-testable.
+func onFinish() {
+	// An errored finish is NOT a natural end-of-track (B4): the audio layer
+	// stores the source's decode/stream error on the player (or flips to
+	// Errored on device loss) with essentially nothing played before firing
+	// onFinish. Don't record a phantom listen, advance the queue, or bump the
+	// finished counter — just refresh state so the UI leaves 'playing'.
+	p := curPlayer()
+	if erroredFinish(p) {
+		notifyControlState()
+		return
+	}
+	// Capture the finishing track's ID *before* any promote bookkeeping moves
+	// currentTrack, so NotifyFinished reports the track that actually ended.
+	tid := currentTrackID()
+	// The finished track was listened to its natural end — record it in the
+	// local history now (covers both a real finish and a gapless promote; a
+	// following Play sees the player Stopped/already-swapped and won't
+	// re-record it). Must run before syncQueueOnGaplessPromote, which moves
+	// currentTrack forward on a promote.
+	noteTrackFinished()
+	// Keep the synced engine queue + now-playing aligned when the player
+	// gaplessly promoted a preloaded next track. The finished counter still
+	// bumps in every case — the app drives its own advance off it (and must
+	// NOT re-Play after a promote: State() is still Playing then).
+	//
+	// B3: mobile's auto-advance is fully synchronous. onFinish does no
+	// network resolve/Play of its own — the app drives its next track off
+	// FinishedCount, and the engine command paths (engineNext/enginePrev/
+	// engineQueueJump) resolve + Play inline on the caller's goroutine. There
+	// is no late async resolve that could overwrite a newer user Play, so no
+	// playSeq generation guard is needed here (unlike corelib, whose onFinish
+	// resolves the next track on a fresh goroutine).
+	syncQueueOnGaplessPromote()
+	mu.Lock()
+	finished++
+	mu.Unlock()
+	// Phase 4: publish natural finish edge to /events subscribers (nil-safe).
+	// Only for natural finishes (errored guard already returned above).
+	if srv := getCtrlSrv(); srv != nil && tid != "" {
+		srv.NotifyFinished(tid)
+	}
+	notifyControlState() // track ended/advanced: push a fresh SSE snapshot
 }
 
 // ---- OpenDeezer Connect (controller side) ----

@@ -13,6 +13,7 @@ package audio
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -119,6 +120,10 @@ type pcmStream interface {
 	io.Reader
 	Seek(offset int64, whence int) (int64, error)
 }
+
+// ErrOffline is returned when attempting to play a track offline (empty CDN URL)
+// but the track is not present in the local StreamCache.
+var ErrOffline = errors.New("offline: track not cached and no CDN URL available")
 
 // streamHTTPClient fetches audio bodies. It sets connect/TLS/response-header
 // timeouts so a stalled handshake or dead server fails fast, but deliberately
@@ -1041,9 +1046,26 @@ func (s *source) download() {
 				s.sb.finish(nil)
 				return
 			}
+			if s.plan.CDNURL == "" {
+				err := rerr
+				if err == nil {
+					err = io.ErrUnexpectedEOF
+				}
+				s.setErr(err)
+				s.sb.finish(err)
+				return
+			}
 			odlog.Debug("stream %s: cache read failed at %d (%v); falling back to HTTP",
 				s.plan.TrackID, consumed, rerr)
+		} else if s.plan.CDNURL == "" {
+			s.setErr(ErrOffline)
+			s.sb.finish(ErrOffline)
+			return
 		}
+	} else if s.plan.CDNURL == "" {
+		s.setErr(ErrOffline)
+		s.sb.finish(ErrOffline)
+		return
 	}
 
 	for {

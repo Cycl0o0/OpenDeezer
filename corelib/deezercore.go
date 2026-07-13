@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -164,48 +165,19 @@ func DZInit(arl *C.char) C.int {
 			if dir, err := config.Dir(); err == nil {
 				if mc, err := mediacache.New(filepath.Join(dir, "mediacache"), int64(mb)<<20); err == nil {
 					player.SetStreamCache(mc)
+					mediaCache = mc // retained for preparePlan + DZDownloadForOffline (set under mu)
 					odlog.Info("media cache on (%d MB)", mb)
 				} else {
 					odlog.Warn("media cache: %v", err)
 				}
 			}
 		}
-		player.SetOnFinish(func() {
-			// A CDN/decode failure surfaces as a finish carrying an error with
-			// ~no audio played (internal/audio stores the source error into
-			// LastError and stops). That is NOT a real listen: don't record it in
-			// history and don't auto-advance (which would skip-cascade through a
-			// whole playlist of failing tracks). Just push a fresh state snapshot
-			// so the GUI sees the error/stopped state. (B4)
-			if erroredFinish() {
-				notifyControlState()
-				return
-			}
-			// The finished track was listened to its natural end — record it in the
-			// local history now (covers both a real finish and a gapless promote; a
-			// following Play sees the player Stopped/already-swapped and won't
-			// re-record it). Must run before engineAdvanceOnFinish, which moves
-			// currentTrack forward on a promote.
-			noteTrackFinished()
-			// Engine-side auto-advance: when a queued track ends naturally, move to
-			// the next track in the engine queue and start it. The network resolve +
-			// Play is offloaded to its own goroutine inside engineAdvanceOnFinish, so
-			// this callback — invoked from the player's manage() goroutine — never
-			// blocks on I/O.
-			//
-			// engineAdvanceOnFinish reports whether the engine queue actually owned
-			// this finish. Only bump the GUI-facing finished counter (which native
-			// c-archive GUIs poll via DZFinishedCount to run their OWN queue) when it
-			// did NOT, so exactly one queue mechanism advances per natural finish —
-			// otherwise a remote-controlled GUI that also has its own queue loaded
-			// would double-advance.
-			if !engineAdvanceOnFinish() {
-				mu.Lock()
-				finished++
-				mu.Unlock()
-			}
-			notifyControlState() // track ended/advanced: push a fresh SSE snapshot
-		})
+		// onNaturalFinish (services.go) is the factored callback: it drops an
+		// errored finish (B4), records the natural-end listen, persists the
+		// finished track's stream meta into the media cache (offline), runs the
+		// engine-side auto-advance vs. GUI finished-counter split, publishes the
+		// end-of-track edge to /events subscribers, and pushes a fresh snapshot.
+		player.SetOnFinish(onNaturalFinish)
 	}
 	mu.Unlock()
 
@@ -435,7 +407,7 @@ func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
 	if c == nil || p == nil {
 		return 0
 	}
-	plan, err := c.PrepareStream(id)
+	plan, err := preparePlan(c, id)
 	if err != nil {
 		return 0
 	}
@@ -1324,7 +1296,7 @@ func DZPreload(trackID *C.char, durationMS C.longlong) {
 		return
 	}
 	id := C.GoString(trackID)
-	plan, err := c.PrepareStream(id)
+	plan, err := preparePlan(c, id)
 	if err != nil {
 		return
 	}
@@ -1524,4 +1496,124 @@ func DZQueueJSON() *C.char {
 		"index":   idx,
 		"tracks":  bridge.FromTracks(ts),
 	}, nil)
+}
+
+// ---- engine queue edits (GUI Up-Next) ----
+
+// DZQueueRemove removes the track at index i from the engine queue. The playing
+// row can't be removed (guarded like the control API's /queue/remove — the audio
+// would keep playing a track no longer in the queue, desyncing controllers).
+// When routed to a Connect device the edit forwards to it. The version bump +
+// state notify let a GUI resync its Up-Next via DZQueueVersion/DZQueueJSON.
+//
+//export DZQueueRemove
+func DZQueueRemove(i C.int) { _ = engineQueueRemove(int(i)) }
+
+// DZQueueMove reorders the engine queue, moving the track at `from` to `to`. The
+// cursor, history and shuffle cycle follow the moved track (queue.Move), so what
+// is audible never changes; from == to is a no-op. Forwards to a routed Connect
+// device. Bumps the version + notifies for GUI resync.
+//
+//export DZQueueMove
+func DZQueueMove(from, to C.int) { _ = engineQueueMove(int(from), int(to)) }
+
+// DZQueueInsertNext splices tracks into the engine queue right after the playing
+// row ("play next"), for the GUI Up-Next editor. js is a single wire track
+// object {...} or a JSON array [...] of them (same shape every list call
+// returns; only id is required). A preloaded next is dropped (the upcoming track
+// changed) and the version bumps + state notifies for GUI/controller resync.
+//
+//export DZQueueInsertNext
+func DZQueueInsertNext(js *C.char) { engineQueueInsertNext(tracksFromInsertJSON(C.GoString(js))) }
+
+// ---- offline download (cache a full track's ciphertext for zero-network play) ----
+
+// DZDownloadForOffline pre-fetches trackID's raw (still-encrypted) ciphertext
+// into the on-disk media cache and persists its stream meta, so a later DZPlay
+// serves it with zero network (PrepareStreamCached returns a CDNURL=="" plan the
+// audio layer plays straight from cache). Returns {"status":...,"key":...} on
+// success ("downloaded" when freshly fetched, "cached" when already present) or
+// {"error":...}. Full encrypted tracks only — previews, podcast episodes and
+// plain streams are never cached (use DZDownloadTrack for a decoded file on
+// disk). Requires the media cache enabled (media.json mediaCacheMB>0). Blocking:
+// call it off the UI thread. Release the result with DZFree.
+//
+//export DZDownloadForOffline
+func DZDownloadForOffline(trackID *C.char) *C.char {
+	id := C.GoString(trackID)
+	if id == "" {
+		return jsonStr(nil, errors.New("empty track id"))
+	}
+	mc := curMediaCache()
+	if mc == nil {
+		return jsonStr(nil, errors.New("media cache disabled (set mediaCacheMB in media.json)"))
+	}
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	// Prefer the cache: an already-downloaded track (its meta was persisted)
+	// short-circuits to a CDNURL=="" plan — report it cleanly, no re-fetch.
+	plan, err := c.PrepareStreamCached(id, mc)
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	key := plan.TrackID + "." + plan.Format
+	if plan.CDNURL == "" {
+		return jsonStr(map[string]string{"status": "cached", "key": key}, nil)
+	}
+	if !plan.Encrypted || plan.Preview {
+		// Only full encrypted tracks are cached at rest (mirrors the audio layer);
+		// previews/plain streams have nothing to serve offline from cache.
+		return jsonStr(nil, errors.New("track not eligible for offline (preview or unencrypted stream)"))
+	}
+	if err := fetchCiphertextToCache(mc, key, plan.CDNURL); err != nil {
+		return jsonStr(nil, err)
+	}
+	// Persist the meta so PrepareStreamCached finds it (making the cached body a
+	// zero-network plan). Best-effort: a meta write failure only costs a re-resolve.
+	_ = mc.PutMeta(key, mediacache.StreamMeta{
+		Format:    plan.Format,
+		Encrypted: plan.Encrypted,
+		GainDB:    plan.GainDB,
+		Preview:   plan.Preview,
+	})
+	return jsonStr(map[string]string{"status": "downloaded", "key": key}, nil)
+}
+
+// fetchCiphertextToCache downloads the raw stream body at url fully into memory,
+// then commits it to the media cache under key in one Put. Buffering first means
+// a torn download never commits a partial (a mediacache Put commits on Close
+// with any bytes written), so an offline entry is always the complete
+// ciphertext. Bounded body read guards against a runaway response.
+func fetchCiphertextToCache(mc *mediacache.Cache, key, url string) error {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 OpenDeezer")
+	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("CDN returned %s", resp.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20)) // 256 MB ceiling
+	if err != nil {
+		return err
+	}
+	if len(body) == 0 {
+		return errors.New("empty stream body")
+	}
+	w, err := mc.Put(key)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(body); err != nil {
+		_ = w.Close()
+		return err
+	}
+	return w.Close()
 }
