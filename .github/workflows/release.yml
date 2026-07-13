@@ -478,9 +478,32 @@ jobs:
       - name: Install the iOS platform for this Xcode
         # macos-26 ships Xcode 26 without the iOS platform support files, so
         # even a device build ('generic/platform=iOS') fails with
-        # "iOS 26.0 is not installed". Fetch it first (idempotent, cached image
-        # may already have it).
-        run: xcodebuild -downloadPlatform iOS || sudo xcodebuild -downloadPlatform iOS
+        # "iOS 26.0 is not installed". Fetch it first — but `-downloadPlatform iOS`
+        # flakes on the fresh image with "Unable to connect to simulator" (exit 70),
+        # so skip when the SDK is already present, prime the toolchain, and retry.
+        run: |
+          set +e
+          # The build targets iOS 26 specifically, so a stray 'iphoneos' line is
+          # not enough — require the iOS 26 device SDK.
+          have_ios() { xcodebuild -showsdks 2>/dev/null | grep -qiE 'iphoneos26'; }
+          echo "== SDKs before =="; xcodebuild -showsdks 2>/dev/null | grep -i iphone || true
+          if have_ios; then echo "iOS 26 SDK present — skipping download."; exit 0; fi
+          # -downloadPlatform iOS flakes on the fresh macos-26 image with "Unable to
+          # connect to simulator" (exit 70). Prime the toolchain, and bounce the
+          # CoreSimulator service before each retry so the download can reach it.
+          sudo xcodebuild -runFirstLaunch || true
+          for i in 1 2 3 4 5 6; do
+            sudo launchctl stop com.apple.CoreSimulator.CoreSimulatorService 2>/dev/null
+            sudo pkill -9 -f CoreSimulator 2>/dev/null
+            xcrun simctl list >/dev/null 2>&1
+            xcodebuild -downloadPlatform iOS && have_ios && break
+            sudo xcodebuild -downloadPlatform iOS && have_ios && break
+            echo "attempt $i: iOS 26 platform not ready; retrying in $((i*15))s"
+            sleep $((i*15))
+          done
+          echo "== SDKs after =="; xcodebuild -showsdks 2>/dev/null | grep -i iphone || true
+          if ! have_ios; then echo "::error::iOS 26 SDK unavailable after retries"; exit 1; fi
+          echo "iOS 26 SDK available."
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
