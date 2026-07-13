@@ -1,0 +1,44 @@
+name: ios-probe
+
+# Temporary diagnostic: determine whether the iOS 26 device *platform support*
+# can be installed on the macos-26 runner (the SDK ships, but device builds need
+# the platform, which -downloadPlatform must fetch). Dispatch-only; delete once
+# the release iOS job is sorted.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: macos-26
+    steps:
+      - name: Select Xcode 26
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.0"
+      - name: Probe iOS platform installation strategies
+        run: |
+          set +e
+          XC=$(xcode-select -p)
+          echo "===== xcodebuild -version ====="; xcodebuild -version
+          echo "===== showsdks (iphone) ====="; xcodebuild -showsdks 2>/dev/null | grep -i iphone
+          echo "===== Platforms dir ====="; ls -la "$XC/Platforms/" 2>/dev/null
+          echo "===== iPhoneOS DeviceSupport before ====="; ls "$XC/Platforms/iPhoneOS.platform/DeviceSupport/" 2>/dev/null || echo "(none)"
+
+          echo "===== STRATEGY A: runFirstLaunch + bounce CoreSimulator + downloadPlatform x3 ====="
+          sudo xcodebuild -runFirstLaunch; echo "runFirstLaunch exit=$?"
+          for i in 1 2 3; do
+            echo "--- attempt $i ---"
+            sudo launchctl stop com.apple.CoreSimulator.CoreSimulatorService 2>/dev/null
+            sudo pkill -9 -f CoreSimulator 2>/dev/null
+            xcrun simctl list >/dev/null 2>&1; echo "simctl warm exit=$?"
+            xcodebuild -downloadPlatform iOS; echo "downloadPlatform exit=$?"
+            sleep 8
+          done
+
+          echo "===== STRATEGY B: downloadAllPlatforms ====="
+          xcodebuild -downloadAllPlatforms; echo "downloadAllPlatforms exit=$?"
+
+          echo "===== showsdks after ====="; xcodebuild -showsdks 2>/dev/null | grep -i iphone
+          echo "===== iPhoneOS DeviceSupport after (populated == device builds work) ====="
+          ls "$XC/Platforms/iPhoneOS.platform/DeviceSupport/" 2>/dev/null || echo "(none)"
+          echo "===== simctl runtimes ====="; xcrun simctl list runtimes 2>/dev/null | grep -i ios
