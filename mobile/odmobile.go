@@ -276,7 +276,6 @@ func takePendingMeta(id string) (mediacache.StreamMeta, bool) {
 
 // ---- lifecycle ----
 
-// Init logs in with the ARL and starts the engine. Returns true on success.
 // SetDataDir points the engine's config + on-disk caches at dir — an app-private
 // directory the host guarantees is writable and persists across reboots (on
 // Android: context.getFilesDir(); on iOS: Application Support). os.UserConfigDir
@@ -290,6 +289,7 @@ func SetDataDir(dir string) {
 	}
 }
 
+// Init logs in with the ARL and starts the engine. Returns true on success.
 func Init(arl string) bool {
 	mu.Lock()
 	debug.SetGCPercent(400)
