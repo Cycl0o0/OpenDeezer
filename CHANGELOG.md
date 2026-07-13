@@ -4,6 +4,15 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1]
+
+### Fixed
+- **Windows build.** The new queue controls referenced a color type without its
+  full namespace, which broke the WinUI compile; fixed.
+- Made two environment-sensitive tests (LAN discovery rebind, the mobile
+  control-server token check) robust so CI is reliable, and cleaned up a lint
+  check on a test file.
+
 ## [3.0.0]
 
 ### Added

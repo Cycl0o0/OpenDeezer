@@ -197,20 +197,37 @@ func TestB20RebindFailureRetried(t *testing.T) {
 		_ = blockConn.Close()
 	}
 
-	time.Sleep(100 * time.Millisecond)
-
-	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: Port})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	_, _ = conn.Write([]byte(probeMagic))
-	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	// The supervisor must rebind onto the freed port. Poll for it — send a probe
+	// and briefly wait for a reply, retrying until the responder answers or a
+	// generous deadline passes. This absorbs scheduling jitter on a loaded CI
+	// runner (the freed port + rebind race); only a genuine never-rebinds
+	// regression leaves this failing for the whole window.
 	buf := make([]byte, maxPacket)
-	n, err := conn.Read(buf)
-	if err != nil {
-		t.Fatalf("Supervisor failed to recover and rebind successfully: %v", err)
+	var n int
+	var lastErr error
+	gotReply := false
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, derr := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: Port})
+		if derr != nil {
+			lastErr = derr
+			time.Sleep(25 * time.Millisecond)
+			continue
+		}
+		_, _ = conn.Write([]byte(probeMagic))
+		_ = conn.SetReadDeadline(time.Now().Add(150 * time.Millisecond))
+		var rerr error
+		n, rerr = conn.Read(buf)
+		_ = conn.Close()
+		if rerr == nil {
+			gotReply = true
+			break
+		}
+		lastErr = rerr
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !gotReply {
+		t.Fatalf("Supervisor failed to recover and rebind successfully: %v", lastErr)
 	}
 	var rep reply
 	if err := json.Unmarshal(buf[:n], &rep); err != nil {

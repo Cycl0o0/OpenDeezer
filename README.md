@@ -36,12 +36,19 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
 - Liked songs, your playlists, and full **search** — tracks, artists, albums, playlists.
 - **Charts** — global top tracks, albums, artists and playlists.
 - **Artist pages** — top tracks, discography and related artists.
-- **Synced lyrics** — karaoke-style, line-by-line; plain-text fallback.
+- **Synced lyrics** — karaoke-style, line-by-line, kept in step with the audio
+  (the reported position is compensated for your output device's buffered
+  latency, so lines no longer lead the sound); plain-text fallback.
 - **Deezer Flow** — your personalized, endless track stream.
-- **Podcasts** — search shows, browse episodes, play.
+- **Podcasts** — search shows, browse episodes, play. A multi-hour episode
+  streams through a bounded, disk-backed buffer instead of holding the whole
+  thing in RAM, and your listening history keeps podcasts out of the music
+  top-tracks/artists stats.
 
 **Library editing**
 - **Like / unlike** tracks; **add to playlist**; **create / rename / delete** playlists.
+- **Accurate likes everywhere** — every client seeds your liked-track ids from
+  the engine, so the heart on each track shows the real state instead of resetting.
 
 **Playback**
 - **Quality tiers** — Normal (MP3 128), High (MP3 320), **HiFi (FLAC lossless)**.
@@ -52,7 +59,17 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
   such — but that's the exception, not the rule.)
 - **Download tracks** — save the current or selected track to disk (decrypted
   MP3/FLAC), on every client. Downloads need a paid Deezer plan; the folder is
-  configurable and shared across clients.
+  configurable and shared across clients. Whole-album and playlist downloads run
+  with bounded concurrency, **resume mid-file over HTTP Range** if a connection
+  drops, refresh expired URLs, and verify the final byte count before finishing.
+- **Offline playback** — **Download for offline** pulls a track into the
+  encrypted on-disk cache; cached tracks then play with **zero network** — no
+  token or media round-trip — and a genuine offline miss fails cleanly instead of
+  hanging. A **downloaded badge** marks what's saved, on every client.
+- **Up Next** — a real queue editor on every client: see what's queued, jump to a
+  track, remove, drag to reorder, **Play next** / **Add to queue** from any track,
+  and **Clear**. It surfaces as sheets on macOS/iOS, a dock on KDE, a sidebar on
+  GNOME, a flyout on Windows, phone/TV screens on Android, and the TUI queue view.
 - **Gapless** transitions, **crossfade**, **ReplayGain** loudness normalization.
 - **Sleep timer** — pause after 15/30/45/60 min or at the end of the current
   track, with a smooth fade-out (on every client + the web remote).
@@ -62,7 +79,19 @@ Prebuilt binaries for everything are on the [Releases](../../releases) page.
 - Shuffle, repeat (off/all/one), seek, volume; **resume** the last track on launch.
 - Shows the **actual output format** that's playing (e.g. "FLAC · lossless").
 - **OS media controls + now-playing** — MPRIS on Linux (GNOME/KDE/TUI media keys
-  + overlays), Now Playing + media keys on macOS, SMTC on Windows.
+  + overlays), Now Playing + media keys on macOS, SMTC on Windows, and
+  lock-screen / MediaSession controls on Android and iOS — now with shuffle,
+  repeat and skip (plus lock-screen artwork on Android and a buffering state on
+  iOS).
+
+**Cast & remote (OpenDeezer Connect)**
+- **Cast between your devices** — hand playback to another OpenDeezer device on
+  your LAN and drive it from any client. **Repeat and shuffle work in both
+  directions** now, each client mirrors the **host's real** playback modes while
+  casting, and you can push your **whole queue** to the host in one go.
+- A **"Playing on `<device>`"** chip (with one-click **Play here**) shows where the
+  sound is coming from, and remote controllers advance the **instant** a track
+  ends — the host emits an explicit "finished" event over SSE, so no polling lag.
 
 **Accounts & UX**
 - **One-click login** — sign in via the embedded Deezer web view; the ARL is
@@ -106,7 +135,7 @@ next time. No token to paste.
 **Terminal (TUI)** — build it and provide your ARL:
 
 ```sh
-make build          # -> ./opendeezer   (or: go build -o opendeezer ./cmd/opendeezer)
+make build          # -> ./opendeezer + ./opendeezer-mcp   (or: go build -o opendeezer ./cmd/opendeezer)
 ./opendeezer -save-arl <your-arl>   # writes ~/.config/opendeezer/arl.txt (0600)
 ./opendeezer
 ```
@@ -357,7 +386,7 @@ first, then the native app.
 cgo on every platform; Linux also needs `libasound2-dev`, Windows needs
 MinGW-w64):
 ```sh
-CGO_ENABLED=1 go build -o opendeezer ./cmd/opendeezer      # or: make build
+CGO_ENABLED=1 go build -o opendeezer ./cmd/opendeezer      # or: make build (also builds opendeezer-mcp)
 ```
 
 **macOS app** — macOS 26 (Tahoe) + Xcode 26, Go:

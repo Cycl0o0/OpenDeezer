@@ -838,6 +838,16 @@ func TestMobileStartServerKeepsToken(t *testing.T) {
 	t.Cleanup(srv.Close)
 	base := "http://" + srv.Addr()
 
+	// Wait until the server is actually serving before probing auth, so a request
+	// can't race Start() (net.Listen's accept queue completes the handshake before
+	// the Serve goroutine registers, which can otherwise skew the first response).
+	for i := 0; i < 200; i++ {
+		if _, err := control.NewClient(base, "s3cr3t", "").Status(); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
 	// No token -> rejected (the rebind must not downgrade to token-less auth).
 	if _, err := control.NewClient(base, "", "").Status(); err == nil {
 		t.Fatal("token-less request accepted: LAN rebind downgraded auth (B9 regression)")
@@ -864,7 +874,7 @@ func TestStartControlServerNoDeadPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("occupy port: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	occupied := ln.Addr().String()
 
 	mu.Lock()
