@@ -72,6 +72,7 @@ type Responder struct {
 	controlPort int
 	done        chan struct{}
 	wg          sync.WaitGroup
+	baseIPs     []string // IP baseline captured in Advertise (before the supervisor goroutine starts)
 }
 
 // Advertise starts the discovery responder on UDP :Port (reuse-port so multiple
@@ -87,6 +88,12 @@ func Advertise(info func() Info, controlPort int) (*Responder, error) {
 	if err := r.rebind(); err != nil {
 		return nil, err
 	}
+	// Capture the IP baseline synchronously, before launching the supervisor.
+	// Reading it inside the goroutine instead would race goroutine scheduling: on
+	// a loaded host the supervisor can be scheduled after the local IPs have
+	// already changed, capture the post-change set as its baseline, and never
+	// detect the change (so it never rebinds).
+	r.baseIPs = getLocalIPsList()
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
@@ -150,7 +157,7 @@ func (r *Responder) supervisor() {
 	ticker := time.NewTicker(supervisorInterval)
 	defer ticker.Stop()
 
-	lastIPs := getLocalIPsList()
+	lastIPs := r.baseIPs // baseline captured in Advertise (avoids the scheduling race)
 	for {
 		select {
 		case <-ticker.C:

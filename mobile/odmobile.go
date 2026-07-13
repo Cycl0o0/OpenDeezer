@@ -894,7 +894,8 @@ func DownloadForOffline(id string) string {
 	if plan.CDNURL == "" {
 		// meta hit from GetMetaForTrack: cache-only plan. If body already
 		// present we are done (clean no-net case).
-		if _, _, ok := mc.Get(key); ok {
+		if rc, _, ok := mc.Get(key); ok {
+			_ = rc.Close() // Get hands back an open file; close it or Windows can't unlink the cache dir
 			return jstr(map[string]any{"status": "already_cached", "key": key, "trackID": id}, nil)
 		}
 		// meta without body (uncommon): force a network resolve to obtain CDNURL
@@ -911,10 +912,10 @@ func DownloadForOffline(id string) string {
 		key = plan.TrackID + "." + plan.Format
 	}
 	// ensure body present (fetch raw ciphertext if missing)
-	if _, _, ok := mc.Get(key); !ok {
-		if ferr := fetchCipherToCache(mc, plan); ferr != nil {
-			return jstr(nil, ferr)
-		}
+	if rc, _, ok := mc.Get(key); ok {
+		_ = rc.Close() // Get hands back an open file; close it or Windows can't unlink the cache dir
+	} else if ferr := fetchCipherToCache(mc, plan); ferr != nil {
+		return jstr(nil, ferr)
 	}
 	// store/refresh meta so PrepareStreamCached hits even if this was a body-only populate
 	m := mediacache.StreamMeta{

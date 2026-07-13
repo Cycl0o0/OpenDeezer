@@ -55,7 +55,13 @@ func LoadControl() Control {
 	}
 	switch {
 	case v == "":
-		return c
+		// Control isn't explicitly enabled — leave Enabled=false, but still fall
+		// through to read a configured token below. Callers that always start a
+		// LAN server regardless of this flag (the phone remote / Connect host via
+		// mobileStartServer) must honor a configured token; returning here would
+		// hand them an empty token and silently downgrade them to same-account
+		// auth (B9). Enable-gated callers (desktop startServices, corelib) still
+		// key off c.Enabled, so this only populates a field they'd otherwise skip.
 	case v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true"):
 		c.Enabled = true
 	case v == "0" || strings.EqualFold(v, "off") || strings.EqualFold(v, "false") || strings.EqualFold(v, "no"):
