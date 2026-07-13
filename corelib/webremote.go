@@ -95,29 +95,42 @@ func DZSetControlConfig(enabled C.int, addr *C.char, token *C.char) {
 	mu.Lock()
 	old := ctrlSrv
 	ctrlSrv = nil
+	// Clear the tracked config/account alongside the server pointer: leaving them
+	// set while ctrlSrv is nil could let a later refreshControlServer rebuild from
+	// a config that no longer matches the live server. (B5)
+	ctrlCfg, ctrlSrvUserID = control.Config{}, ""
 	c := client
 	mu.Unlock()
 	if old != nil {
 		old.Close()
 	}
 	if !on {
+		refreshAdvertiser() // server gone: Close the LAN responder (no ghost port) (B10)
 		return
 	}
 	bind := resolveControlAddr(a)
 	id, dev := clientInfo()
-	srv := control.New(
-		control.Config{Addr: bind, Token: tok, SameAccountOnly: !config.IsLoopbackAddr(bind) && tok == ""},
-		engineState, engineAccount, engineCommands(), c,
-	)
+	ccfg := control.Config{Addr: bind, Token: tok, SameAccountOnly: !config.IsLoopbackAddr(bind) && tok == ""}
+	srv := control.New(ccfg, engineState, engineAccount, engineCommands(), c)
 	srv.SetVersion(coreVersion)
 	srv.SetClientInfo(id, dev)
 	srv.SetEQ(engineEQ())
 	if err := srv.Start(); err != nil {
 		return
 	}
+	// Publish the new server AND the config/account it was built from atomically,
+	// so a later account refresh (refreshControlServer) rebuilds from the current
+	// config instead of a stale one (which could resurrect an old token or drop
+	// auth). (B5)
 	mu.Lock()
 	ctrlSrv = srv
+	ctrlCfg = ccfg
+	ctrlSrvUserID = ""
+	if c != nil {
+		ctrlSrvUserID = c.Account().UserID
+	}
 	mu.Unlock()
+	refreshAdvertiser() // server rebuilt (possibly new port): re-point the responder (B10)
 }
 
 // DZWebRemoteSetEnabled enables (on!=0) or disables (on==0) the phone web
@@ -249,12 +262,12 @@ func ensureWebRemoteServer() {
 	// Dropping them would silently downgrade a token-protected control API to
 	// session-only auth and 401 every MCP/Connect request until restart.
 	cfg := config.LoadControl()
+	ccfg := control.Config{Token: cfg.Token, SameAccountOnly: cfg.SameAccount, WebRemote: true}
 
 	startNew := func(addr string) *control.Server {
-		s := control.New(
-			control.Config{Addr: addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount, WebRemote: true},
-			engineState, engineAccount, engineCommands(), c,
-		)
+		sc := ccfg
+		sc.Addr = addr
+		s := control.New(sc, engineState, engineAccount, engineCommands(), c)
 		s.SetVersion(coreVersion)
 		s.SetClientInfo(id, dev)
 		s.SetEQ(engineEQ())
@@ -264,10 +277,30 @@ func ensureWebRemoteServer() {
 		return s
 	}
 
+	// publish records the (re)built server AND the config/account it was built
+	// from atomically, so a later account refresh (refreshControlServer) rebuilds
+	// from the CURRENT config (WebRemote + token/account) rather than a stale one.
+	// (B5)
+	publish := func(s *control.Server) {
+		pc := ccfg
+		pc.Addr = s.Addr()
+		mu.Lock()
+		ctrlSrv = s
+		ctrlCfg = pc
+		ctrlSrvUserID = ""
+		if c != nil {
+			ctrlSrvUserID = c.Account().UserID
+		}
+		mu.Unlock()
+	}
+
 	if srv != nil {
 		if !config.IsLoopbackAddr(srv.Addr()) {
-			// Already LAN-reachable; just activate pairing.
+			// Already LAN-reachable; just activate pairing. Refresh the tracked
+			// config to WebRemote:true so a later rebuild keeps the web remote on.
+			publish(srv)
 			srv.EnablePairing()
+			refreshAdvertiser() // port unchanged, but keep the responder current (B10)
 			return
 		}
 		// Loopback-only: close it and rebind on all interfaces.
@@ -280,10 +313,9 @@ func ensureWebRemoteServer() {
 		if newSrv == nil {
 			return
 		}
-		mu.Lock()
-		ctrlSrv = newSrv
-		mu.Unlock()
+		publish(newSrv)
 		newSrv.EnablePairing()
+		refreshAdvertiser() // rebound on a LAN port: re-point the responder (B10)
 		return
 	}
 
@@ -295,8 +327,7 @@ func ensureWebRemoteServer() {
 	if newSrv == nil {
 		return
 	}
-	mu.Lock()
-	ctrlSrv = newSrv
-	mu.Unlock()
+	publish(newSrv)
 	newSrv.EnablePairing()
+	refreshAdvertiser() // fresh LAN server: advertise it (B10)
 }

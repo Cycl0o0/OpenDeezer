@@ -1,13 +1,20 @@
 BIN     := opendeezer
 PKG     := ./cmd/opendeezer
+MCPBIN  := opendeezer-mcp
+MCPPKG  := ./cmd/opendeezer-mcp
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 DIST    := dist
 
-.PHONY: build run test vet tidy clean cross
+.PHONY: build mcp run test vet tidy clean cross
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
+	go build -trimpath -ldflags "$(LDFLAGS)" -o $(MCPBIN) $(MCPPKG)
+
+# Build only the MCP server.
+mcp:
+	go build -trimpath -ldflags "$(LDFLAGS)" -o $(MCPBIN) $(MCPPKG)
 
 run: build
 	./$(BIN)
@@ -22,7 +29,7 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf $(BIN) $(DIST)
+	rm -rf $(BIN) $(MCPBIN) $(DIST)
 
 # Cross-compile. Only macOS is cgo-free (oto/purego backend); every other OS
 # uses malgo, which needs cgo — Windows cross-builds via mingw-w64

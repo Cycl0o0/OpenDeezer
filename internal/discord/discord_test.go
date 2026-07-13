@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestFrameRoundTrip(t *testing.T) {
@@ -82,4 +83,27 @@ func TestNewEmptyIsNoop(t *testing.T) {
 	p := New("")
 	p.Update(State{Status: "playing", Title: "x"})
 	p.Close()
+}
+
+func TestB19CloseBounded(t *testing.T) {
+	origTimeout := closeTimeout
+	closeTimeout = 10 * time.Millisecond
+	defer func() { closeTimeout = origTimeout }()
+
+	r := &richPresence{
+		wake: make(chan struct{}, 1),
+		done: make(chan struct{}),
+	}
+
+	start := time.Now()
+	r.Close()
+	elapsed := time.Since(start)
+
+	// Since r.done is never closed, Close must timeout on closeTimeout (10ms)
+	if elapsed < 10*time.Millisecond {
+		t.Errorf("Close returned too early: %v", elapsed)
+	}
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("Close took too long: %v, want close to %v", elapsed, closeTimeout)
+	}
 }

@@ -46,6 +46,7 @@ type output interface {
 	// themselves, e.g. oto).
 	setLostHandler(func(string))
 	close()
+	deviceDown() bool
 }
 
 // Device is an output device the user can pick (empty ID = system default).
@@ -144,13 +145,14 @@ type source struct {
 	rgFac  float64 // ReplayGain amplitude factor (immutable; read from RT callback)
 	// cache is the optional raw-stream cache handed down from the Player
 	// (nil = off). Immutable once download() starts.
-	cache  StreamCache
-	sb     *streamBuffer
-	ring   *pcmRing
-	eof    atomic.Bool  // decoder reached end and ring will not grow
-	seekTo atomic.Int64 // pending PCM-byte seek target, or -1
-	dead   atomic.Bool
-	errMsg atomic.Value // string: download/decode error, if any
+	cache   StreamCache
+	sb      *streamBuffer
+	ring    *pcmRing
+	eof     atomic.Bool  // decoder reached end and ring will not grow
+	seekTo  atomic.Int64 // pending PCM-byte seek target, or -1
+	dead    atomic.Bool
+	errMsg  atomic.Value // string: download/decode error, if any
+	decoded atomic.Int64 // PCM bytes successfully decoded and written to the ring
 
 	// xfadeConsumed counts bytes of this source's ring drained by the crossfade
 	// path while it is the incoming ("next") track, so the swap can resume it at
@@ -165,6 +167,10 @@ type source struct {
 	// ctx is cancelled by kill() to unblock a stalled Body.Read in download().
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+type finishCallback struct {
+	fn func()
 }
 
 func (s *source) setErr(err error) {
@@ -199,7 +205,7 @@ type Player struct {
 	crossfadeMS atomic.Int64
 	cbCount     atomic.Int64 // audio callbacks served (diagnostics)
 	cbUnderrun  atomic.Int64 // callbacks with a short read (ring starvation)
-	onFinish    func()
+	onFinish    atomic.Pointer[finishCallback]
 
 	// streamCache is the optional raw-stream cache (see SetStreamCache) handed
 	// to each new source. Set once at startup, before playback; read without
@@ -542,12 +548,18 @@ func (p *Player) AddVolume(delta float64) float64 {
 
 // ---- accessors ----
 
-func (p *Player) Format() string        { s, _ := p.format.Load().(string); return s }
-func (p *Player) SetOnFinish(fn func()) { p.onFinish = fn }
-func (p *Player) State() State          { return State(p.state.Load()) }
-func (p *Player) LastError() string     { s, _ := p.lastErr.Load().(string); return s }
-func (p *Player) PositionMS() int64     { return p.played.Load() * 1000 / bytesPerSec }
-func (p *Player) DurationMS() int64     { return p.totalMS.Load() }
+func (p *Player) Format() string { s, _ := p.format.Load().(string); return s }
+func (p *Player) SetOnFinish(fn func()) {
+	if fn == nil {
+		p.onFinish.Store(nil)
+	} else {
+		p.onFinish.Store(&finishCallback{fn: fn})
+	}
+}
+func (p *Player) State() State      { return State(p.state.Load()) }
+func (p *Player) LastError() string { s, _ := p.lastErr.Load().(string); return s }
+func (p *Player) PositionMS() int64 { return p.played.Load() * 1000 / bytesPerSec }
+func (p *Player) DurationMS() int64 { return p.totalMS.Load() }
 
 // IsPreview reports whether the current track is Deezer's 30-second preview
 // (the free-account fallback) rather than the full, entitled stream.
@@ -578,7 +590,7 @@ func (p *Player) fadeOutAndWait() {
 	// exactly the discontinuity this fade exists to prevent.
 	p.fadeOut.Store(fadeOutFrames)
 	p.fadeOutArmed.Store(true)
-	deadline := time.Now().Add(60 * time.Millisecond)
+	deadline := time.Now().Add(250 * time.Millisecond)
 	for p.fadeOut.Load() > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
@@ -592,6 +604,13 @@ func (p *Player) endFadeOut() {
 
 // Play starts a track immediately, replacing anything current.
 func (p *Player) Play(plan *deezer.StreamPlan, durationMS int64) error {
+	if p.out.deviceDown() {
+		if err := p.out.setDevice(p.out.currentDevice()); err != nil {
+			p.state.Store(int32(Errored))
+			p.lastErr.Store(err.Error())
+			return err
+		}
+	}
 	p.fadeOutAndWait() // ramp the outgoing track out before the swap (anti-click)
 	p.stopSources()
 	p.state.Store(int32(Loading))
@@ -711,6 +730,29 @@ func (p *Player) manage() {
 			// the guard a tick landing in that window would skip the track,
 			// discarding the seek.
 			if cur.eof.Load() && cur.ring.buffered() == 0 && cur.seekTo.Load() < 0 {
+				if cur.lastErr() != "" && cur.decoded.Load() == 0 {
+					p.lastErr.Store(cur.lastErr())
+					if next != nil {
+						if !p.next.CompareAndSwap(next, nil) {
+							continue
+						}
+					}
+					if !p.cur.CompareAndSwap(cur, nil) {
+						if next != nil {
+							next.kill()
+						}
+						continue
+					}
+					if next != nil {
+						next.kill()
+					}
+					cur.kill()
+					p.state.Store(int32(Errored))
+					if cb := p.onFinish.Load(); cb != nil && cb.fn != nil {
+						cb.fn()
+					}
+					continue
+				}
 				if e := cur.lastErr(); e != "" {
 					p.lastErr.Store(e)
 				}
@@ -718,11 +760,20 @@ func (p *Player) manage() {
 				// not advance (don't fire onFinish, so the engine won't auto-next).
 				if p.sleepArmed.Load() && p.sleepEOT.Load() {
 					if next != nil {
+						if !p.next.CompareAndSwap(next, nil) {
+							continue
+						}
+					}
+					if !p.cur.CompareAndSwap(cur, nil) {
+						if next != nil {
+							next.kill()
+						}
+						continue
+					}
+					if next != nil {
 						next.kill()
-						p.next.Store(nil)
 					}
 					cur.kill()
-					p.cur.Store(nil)
 					p.state.Store(int32(Stopped))
 					p.clearSleep()
 					continue
@@ -740,20 +791,23 @@ func (p *Player) manage() {
 						continue
 					}
 					cur.kill()
-					// Crossfade already played next.xfadeConsumed bytes at real time;
-					// resume from there (0 for a plain gapless transition).
-					p.played.Store(next.xfadeConsumed.Load())
-					p.totalMS.Store(next.durMS)
-					p.format.Store(next.format)
-					// Recompute the per-track ReplayGain for the swapped-in track;
-					// otherwise it would keep playing at the previous track's gain.
-					if p.rgOn.Load() && next.plan != nil {
-						p.gainFac.Store(math.Float64bits(dbToFactor(next.plan.GainDB)))
-					} else {
-						p.gainFac.Store(math.Float64bits(1))
-					}
-					if p.onFinish != nil {
-						p.onFinish()
+					// Re-verify p.cur == next before writing metadata and calling onFinish.
+					if p.cur.Load() == next {
+						// Crossfade already played next.xfadeConsumed bytes at real time;
+						// resume from there (0 for a plain gapless transition).
+						p.played.Store(next.xfadeConsumed.Load())
+						p.totalMS.Store(next.durMS)
+						p.format.Store(next.format)
+						// Recompute the per-track ReplayGain for the swapped-in track;
+						// otherwise it would keep playing at the previous track's gain.
+						if p.rgOn.Load() && next.plan != nil {
+							p.gainFac.Store(math.Float64bits(dbToFactor(next.plan.GainDB)))
+						} else {
+							p.gainFac.Store(math.Float64bits(1))
+						}
+						if cb := p.onFinish.Load(); cb != nil && cb.fn != nil {
+							cb.fn()
+						}
 					}
 				} else {
 					// No preload: finish. Guard against a concurrent Play/Stop that
@@ -763,8 +817,8 @@ func (p *Player) manage() {
 					}
 					cur.kill() // release the decode goroutine parked after EOF
 					p.state.Store(int32(Stopped))
-					if p.onFinish != nil {
-						p.onFinish()
+					if cb := p.onFinish.Load(); cb != nil && cb.fn != nil {
+						cb.fn()
 					}
 				}
 			}
@@ -810,7 +864,15 @@ func (p *Player) Pause() {
 	}
 }
 func (p *Player) Resume() {
-	if p.State() == Paused {
+	state := p.State()
+	if state == Paused || state == Errored {
+		if p.out.deviceDown() {
+			if err := p.out.setDevice(p.out.currentDevice()); err != nil {
+				p.state.Store(int32(Errored))
+				p.lastErr.Store(err.Error())
+				return
+			}
+		}
 		p.endFadeOut()
 		p.fadeLeft.Store(fadeInFrames) // anti-click ramp on resume
 		p.state.Store(int32(Playing))
@@ -1173,6 +1235,9 @@ func (s *source) pump(body io.Reader, buf []byte, out *[]byte, dec *deezer.Strip
 		}
 		if rerr != nil {
 			if rerr == io.EOF {
+				if s.sb.Total() > 0 && *consumed < s.sb.Total() {
+					return false, io.ErrUnexpectedEOF
+				}
 				return true, nil
 			}
 			return false, rerr
@@ -1380,6 +1445,7 @@ func (s *source) decode() {
 				seq = s.ring.seq()
 				continue
 			}
+			s.decoded.Add(int64(n))
 		}
 		if rerr != nil {
 			// Decoder EOF, but the source is still alive: the ring may hold several

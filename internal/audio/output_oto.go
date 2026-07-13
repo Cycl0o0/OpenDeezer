@@ -53,6 +53,7 @@ func (o *otoOutput) devices() ([]Device, error) {
 }
 func (o *otoOutput) setDevice(string) error { return nil }
 func (o *otoOutput) currentDevice() string  { return "" }
+func (o *otoOutput) deviceDown() bool       { return false }
 
 // suspend releases/restores the audio context (used on audio-focus loss, e.g.
 // iOS interruptions) without dropping the queued player.

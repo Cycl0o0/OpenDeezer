@@ -363,6 +363,45 @@ func TestSelectDevice(t *testing.T) {
 	}
 }
 
+// TestParseErrorRecovery verifies the read loop never dies on a bad input line:
+// a garbled (non-JSON) line and an oversized line (past maxLineBytes) each draw
+// a JSON-RPC -32700 parse error with a null id, and the server keeps serving —
+// the valid requests before and after both dispatch.
+func TestParseErrorRecovery(t *testing.T) {
+	base, r := startControl(t)
+	oversized := strings.Repeat("A", maxLineBytes+1024) // one line past the cap
+	resps := run(t, base,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"play_pause","arguments":{}}}`,
+		"this is not json at all", // garbled → -32700, loop continues
+		oversized,                 // over the line cap → -32700, loop continues
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"play_pause","arguments":{}}}`,
+	)
+	if len(resps) != 4 {
+		t.Fatalf("got %d responses, want 4 (2 ok + 2 parse errors)", len(resps))
+	}
+	// The two valid play_pause calls (first and last) must both have dispatched,
+	// proving the server survived both parse errors in between.
+	if r.played != 2 {
+		t.Fatalf("play_pause dispatched %d times, want 2 (server should survive parse errors)", r.played)
+	}
+	// The two middle responses are parse errors with a null id.
+	for i, resp := range resps {
+		wantErr := i == 1 || i == 2
+		gotErr := resp.Error != nil
+		if gotErr != wantErr {
+			t.Fatalf("response %d: error=%v, want error=%v (%+v)", i, gotErr, wantErr, resp)
+		}
+		if wantErr {
+			if resp.Error.Code != -32700 {
+				t.Errorf("response %d: code=%d, want -32700", i, resp.Error.Code)
+			}
+			if string(resp.ID) != "null" {
+				t.Errorf("response %d: id=%q, want null", i, string(resp.ID))
+			}
+		}
+	}
+}
+
 func contentText(t *testing.T, r rpcResp) string {
 	t.Helper()
 	res, ok := r.Result.(map[string]any)

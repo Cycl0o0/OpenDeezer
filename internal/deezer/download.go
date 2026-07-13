@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
 )
@@ -71,6 +72,11 @@ type trackDownloadFunc func(ctx context.Context, t Track, dir string, plan *Stre
 // planResolverFunc is the signature for the injectable plan getter used by
 // batch pre-checks for filename and preview decisions. Same package only.
 type planResolverFunc func(string) (*StreamPlan, error)
+
+// testCreateTemp is a test-only hook (same package) so B12 concurrency tests
+// can observe the distinct temp paths created by concurrent saveTrack calls.
+// Production always uses os.CreateTemp when this is nil.
+var testCreateTemp func(dir, pattern string) (*os.File, error)
 
 // downloadUserAgent matches the streaming user agent so the CDN treats download
 // and playback transfers identically.
@@ -213,14 +219,28 @@ func (c *Client) saveTrack(ctx context.Context, t Track, dir string, plan *Strea
 	}
 	path := filepath.Join(dir, name)
 
-	// Download to a temp name in the same directory and rename over the final
-	// path only after a fully successful write, so a failed or cancelled
-	// transfer never truncates a previously saved good file at path.
-	tmp := path + ".part"
-	f, err := os.Create(tmp)
+	// Use a unique temp (os.CreateTemp with O_EXCL) so that two concurrent
+	// downloads of the identical track cannot both write to the same .part and
+	// corrupt it. The temp lives in the target dir so the final rename is
+	// atomic on the same filesystem. On any error only this job's temp is
+	// removed. SkipExisting checks (by callers) continue to use the final name.
+	targetDir := dir
+	if targetDir == "" {
+		targetDir = "."
+	}
+	stem := strings.TrimSuffix(name, "."+ext)
+	pattern := stem + "-*.part"
+	var f *os.File
+	var err error
+	if testCreateTemp != nil {
+		f, err = testCreateTemp(targetDir, pattern)
+	} else {
+		f, err = os.CreateTemp(targetDir, pattern)
+	}
 	if err != nil {
 		return "", err
 	}
+	tmp := f.Name()
 	if err := DownloadTrackContext(ctx, plan, f); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
@@ -250,8 +270,41 @@ func (c *Client) saveTrack(ctx context.Context, t Track, dir string, plan *Strea
 // false-positive the SkipExisting check, and let a failed second transfer
 // truncate the first. Batch skip checks and saveTrack MUST use the same
 // formula so SkipExisting re-runs keep matching prior downloads.
+//
+// The [id] suffix is appended *after* truncating the title/artist portion (on
+// a rune boundary) so that the uniqueness marker is never stripped and the
+// resulting name is always valid UTF-8 even when the descriptive part is very
+// long or contains multi-byte runes.
 func trackFileName(t Track, ext string) string {
-	return sanitizeFilename(t.Name+" - "+t.ArtistLine()+" ["+t.ID+"]") + "." + ext
+	desc := t.Name + " - " + t.ArtistLine()
+	suffix := " [" + t.ID + "]"
+	room := 180 - len(suffix)
+	if room < 0 {
+		room = 0
+	}
+	desc = truncateSafe(desc, room)
+	cand := desc + suffix
+	return sanitizeFilename(cand) + "." + ext
+}
+
+// truncateSafe returns at most max bytes of s, stopping at a UTF-8 rune
+// boundary so the result is always valid UTF-8.
+func truncateSafe(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	// Walk runes so we never cut inside a multi-byte sequence.
+	var b strings.Builder
+	n := 0
+	for _, r := range s {
+		rl := utf8.RuneLen(r)
+		if n+rl > max {
+			break
+		}
+		b.WriteRune(r)
+		n += rl
+	}
+	return b.String()
 }
 
 // sanitizeFilename maps characters illegal on common filesystems (Windows is the
@@ -269,8 +322,10 @@ func sanitizeFilename(s string) string {
 		s = "track"
 	}
 	// Cap the base name so path length stays well under filesystem limits.
+	// Use rune-safe truncate (the caller of trackFileName already ensured the
+	// id suffix fits, but other callers of sanitize get the same protection).
 	if len(s) > 180 {
-		s = strings.TrimSpace(s[:180])
+		s = strings.TrimSpace(truncateSafe(s, 180))
 	}
 	return s
 }

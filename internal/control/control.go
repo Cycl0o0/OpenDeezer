@@ -27,7 +27,7 @@
 // The exception is requests that also carry a valid X-OpenDeezer-Session token:
 // those come from our own SPA (same origin in the browser), so they are allowed.
 // GET /whoami is unauthenticated so a controller can discover the account NAME
-// (not id) and auth mode of a server before connecting.
+// (not id), auth mode and supported command families before connecting.
 package control
 
 import (
@@ -215,17 +215,19 @@ type Account struct {
 	Offer  string
 }
 
-// Whoami is the unauthenticated identity returned by GET /whoami. It carries the
-// account display NAME (for the controller to recognise its own device) but never
-// the user id: in same-account mode that id IS the credential, so echoing it here
-// would let any bystander read and replay it.
+// Whoami is the unauthenticated identity and command-capability discovery
+// response returned by GET /whoami. It carries the account display NAME (for the
+// controller to recognise its own device) but never the user id: in same-account
+// mode that id IS the credential, so echoing it here would let any bystander read
+// and replay it.
 type Whoami struct {
-	Name    string `json:"name"`
-	Offer   string `json:"offer,omitempty"`
-	Auth    string `json:"auth"`              // token | account | session | none
-	Version string `json:"version,omitempty"` // OpenDeezer version
-	Client  string `json:"client,omitempty"`  // client/platform id (tui, macos, gnome…)
-	Device  string `json:"device,omitempty"`  // human device label ("OpenDeezer TUI")
+	Name     string   `json:"name"`
+	Offer    string   `json:"offer,omitempty"`
+	Auth     string   `json:"auth"`              // token | account | session | none
+	Version  string   `json:"version,omitempty"` // OpenDeezer version
+	Client   string   `json:"client,omitempty"`  // client/platform id (tui, macos, gnome…)
+	Device   string   `json:"device,omitempty"`  // human device label ("OpenDeezer TUI")
+	Commands []string `json:"commands"`          // supported route-level command families
 }
 
 // session holds metadata for a per-device authenticated session token.
@@ -479,7 +481,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Web remote: serve the SPA (no auth; gated by webRemote) and the pair endpoint.
 	mux.HandleFunc("/remote", s.handleRemote)
 	mux.HandleFunc("/pair", s.requireMethod(http.MethodPost, s.handlePair))
-	// GET, unauthenticated: identity/discovery (name + auth mode only).
+	// GET, unauthenticated: identity/discovery (name, auth mode + commands).
 	mux.HandleFunc("/whoami", s.get(s.handleWhoami, false))
 	// GET, authenticated: reads.
 	mux.HandleFunc("/status", s.get(s.handleStatus, true))
@@ -1025,8 +1027,79 @@ func (s *Server) authMode() string {
 	}
 }
 
+// commandCapabilities returns the stable, route-level command families exposed
+// by this server. Related callback variants are grouped so a controller need not
+// know how the host implements repeat, shuffle, mixes or sleep.
+func (s *Server) commandCapabilities() []string {
+	commands := make([]string, 0, 20)
+	if s.cmds.PlayPause != nil {
+		commands = append(commands, "playPause")
+	}
+	if s.cmds.Next != nil {
+		commands = append(commands, "next")
+	}
+	if s.cmds.Prev != nil {
+		commands = append(commands, "prev")
+	}
+	if s.cmds.Stop != nil {
+		commands = append(commands, "stop")
+	}
+	if s.cmds.Restart != nil {
+		commands = append(commands, "restart")
+	}
+	if s.cmds.CycleRepeat != nil || s.cmds.SetRepeat != nil {
+		commands = append(commands, "repeat")
+	}
+	if s.cmds.ToggleShuffle != nil || s.cmds.SetShuffle != nil {
+		commands = append(commands, "shuffle")
+	}
+	if s.cmds.Seek != nil {
+		commands = append(commands, "seek")
+	}
+	if s.cmds.SetVolume != nil {
+		commands = append(commands, "volume")
+	}
+	if s.cmds.PlayTrack != nil {
+		commands = append(commands, "playTrack")
+	}
+	if s.cmds.PlayPlaylist != nil {
+		commands = append(commands, "playPlaylist")
+	}
+	if s.cmds.QueueAdd != nil {
+		commands = append(commands, "queueAdd")
+	}
+	if s.cmds.QueueJump != nil {
+		commands = append(commands, "queueJump")
+	}
+	if s.cmds.QueueRemove != nil {
+		commands = append(commands, "queueRemove")
+	}
+	if s.cmds.QueueMove != nil {
+		commands = append(commands, "queueMove")
+	}
+	if s.cmds.PlayAlbum != nil {
+		commands = append(commands, "playAlbum")
+	}
+	if s.cmds.PlayMixTrack != nil || s.cmds.PlayMixArtist != nil {
+		commands = append(commands, "playMix")
+	}
+	if s.cmds.HistoryRecent != nil {
+		commands = append(commands, "history")
+	}
+	if s.cmds.SetSleepTimer != nil || s.cmds.CancelSleepTimer != nil {
+		commands = append(commands, "sleep")
+	}
+	if s.eq != nil {
+		commands = append(commands, "eq")
+	}
+	return commands
+}
+
 func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
-	who := Whoami{Auth: s.authMode(), Version: s.version, Client: s.clientID, Device: s.device}
+	who := Whoami{
+		Auth: s.authMode(), Version: s.version, Client: s.clientID, Device: s.device,
+		Commands: s.commandCapabilities(),
+	}
 	if s.account != nil {
 		a := s.account()
 		who.Name, who.Offer = a.Name, a.Offer // never the user id (it's the credential)
@@ -1278,7 +1351,7 @@ func (s *Server) handleHistoryRecent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQueueAdd(w http.ResponseWriter, r *http.Request) {
 	id, valid := strictPositiveID(r.URL.Query(), "id")
 	if !valid {
-		writeJSONError(w, http.StatusBadRequest, "id must be a positive decimal integer")
+		writeJSONError(w, http.StatusBadRequest, "id must be a non-zero decimal integer")
 		return
 	}
 	rawNext, present, valid := singleQueryValue(r.URL.Query(), "next")
@@ -1392,7 +1465,7 @@ func (s *Server) handlePlayMixArtist(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOptionalIDCommand(w http.ResponseWriter, r *http.Request, command func(string) error) {
 	id, valid := strictPositiveID(r.URL.Query(), "id")
 	if !valid {
-		writeJSONError(w, http.StatusBadRequest, "id must be a positive decimal integer")
+		writeJSONError(w, http.StatusBadRequest, "id must be a non-zero decimal integer")
 		return
 	}
 	if command == nil {
@@ -1458,8 +1531,9 @@ func (s *Server) handleSleep(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.status())
 }
 
-// handleRepeat handles POST /repeat. With ?mode=off|all|one it SETS repeat
-// (via SetRepeat); with no param it cycles via CycleRepeat (legacy behaviour).
+// handleRepeat handles POST /repeat. With ?mode=off|all|one it prefers the SET
+// callback; with no param it prefers the legacy cycle callback. Hosts that only
+// implement the other variant still receive a derived command.
 func (s *Server) handleRepeat(w http.ResponseWriter, r *http.Request) {
 	mode, present, valid := singleQueryValue(r.URL.Query(), "mode")
 	if present {
@@ -1469,15 +1543,68 @@ func (s *Server) handleRepeat(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.cmds.SetRepeat != nil {
 			s.cmds.SetRepeat(mode)
+		} else if s.cmds.CycleRepeat != nil {
+			cycles := repeatCyclesTo(s.status().Repeat, mode)
+			for range cycles {
+				s.cmds.CycleRepeat()
+			}
+		} else {
+			writeJSONError(w, http.StatusNotImplemented, "repeat not supported")
+			return
 		}
+	} else if s.cmds.CycleRepeat != nil {
+		s.cmds.CycleRepeat()
+	} else if s.cmds.SetRepeat != nil {
+		s.cmds.SetRepeat(nextRepeatMode(s.status().Repeat))
 	} else {
-		call(s.cmds.CycleRepeat)
+		writeJSONError(w, http.StatusNotImplemented, "repeat not supported")
+		return
 	}
 	writeJSON(w, s.status())
 }
 
-// handleShuffle handles POST /shuffle. With ?on=true|false it SETS shuffle
-// (via SetShuffle); with no param it toggles via ToggleShuffle (legacy behaviour).
+func nextRepeatMode(current string) string {
+	switch current {
+	case "all":
+		return "one"
+	case "one":
+		return "off"
+	default: // "off" and invalid zero-value snapshots both advance to "all".
+		return "all"
+	}
+}
+
+func repeatCyclesTo(current, target string) int {
+	var from int
+	switch current {
+	case "off":
+		from = 0
+	case "all":
+		from = 1
+	case "one":
+		from = 2
+	default:
+		// State promises a valid repeat value. If a host violates that contract,
+		// make one best-effort legacy cycle instead of silently dropping the set.
+		return 1
+	}
+	var to int
+	switch target {
+	case "off":
+		to = 0
+	case "all":
+		to = 1
+	case "one":
+		to = 2
+	default:
+		return 0
+	}
+	return (to - from + 3) % 3
+}
+
+// handleShuffle handles POST /shuffle. With ?on=true|false it prefers the SET
+// callback; with no param it prefers the legacy toggle callback. Hosts that only
+// implement the other variant still receive a derived command.
 func (s *Server) handleShuffle(w http.ResponseWriter, r *http.Request) {
 	raw, present, valid := singleQueryValue(r.URL.Query(), "on")
 	if present {
@@ -1492,9 +1619,21 @@ func (s *Server) handleShuffle(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.cmds.SetShuffle != nil {
 			s.cmds.SetShuffle(on)
+		} else if s.cmds.ToggleShuffle != nil {
+			if s.status().Shuffle != on {
+				s.cmds.ToggleShuffle()
+			}
+		} else {
+			writeJSONError(w, http.StatusNotImplemented, "shuffle not supported")
+			return
 		}
+	} else if s.cmds.ToggleShuffle != nil {
+		s.cmds.ToggleShuffle()
+	} else if s.cmds.SetShuffle != nil {
+		s.cmds.SetShuffle(!s.status().Shuffle)
 	} else {
-		call(s.cmds.ToggleShuffle)
+		writeJSONError(w, http.StatusNotImplemented, "shuffle not supported")
+		return
 	}
 	writeJSON(w, s.status())
 }
@@ -1529,24 +1668,33 @@ func strictNonNegativeInt(q url.Values, name string) (int, bool) {
 	return value, true
 }
 
+// strictPositiveID accepts Deezer's positive catalog IDs and negative IDs used
+// for user-uploaded tracks, while preserving the caller's exact decimal string.
 func strictPositiveID(q url.Values, name string) (string, bool) {
 	raw, present, valid := singleQueryValue(q, name)
 	if !present || !valid {
 		return "", false
 	}
-	nonZero := false
-	for i := 0; i < len(raw); i++ {
-		if raw[i] < '0' || raw[i] > '9' {
+	digits := raw
+	if raw[0] == '-' {
+		digits = raw[1:]
+		if digits == "" {
 			return "", false
 		}
-		if raw[i] != '0' {
+	}
+	nonZero := false
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return "", false
+		}
+		if digits[i] != '0' {
 			nonZero = true
 		}
 	}
 	if !nonZero {
 		return "", false
 	}
-	if _, err := strconv.ParseUint(raw, 10, 64); err != nil {
+	if _, err := strconv.ParseUint(digits, 10, 64); err != nil {
 		return "", false
 	}
 	return raw, true

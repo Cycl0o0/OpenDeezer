@@ -209,6 +209,15 @@ func Init(arl string) bool {
 			}
 		}
 		player.SetOnFinish(func() {
+			// An errored finish is NOT a natural end-of-track (B4): the audio layer
+			// stores the source's decode/stream error on the player (or flips to
+			// Errored on device loss) with essentially nothing played before firing
+			// onFinish. Don't record a phantom listen, advance the queue, or bump the
+			// finished counter — just refresh state so the UI leaves 'playing'.
+			if erroredFinish(curPlayer()) {
+				notifyControlState()
+				return
+			}
 			// The finished track was listened to its natural end — record it in the
 			// local history now (covers both a real finish and a gapless promote; a
 			// following Play sees the player Stopped/already-swapped and won't
@@ -219,6 +228,14 @@ func Init(arl string) bool {
 			// gaplessly promoted a preloaded next track. The finished counter still
 			// bumps in every case — the app drives its own advance off it (and must
 			// NOT re-Play after a promote: State() is still Playing then).
+			//
+			// B3: mobile's auto-advance is fully synchronous. onFinish does no
+			// network resolve/Play of its own — the app drives its next track off
+			// FinishedCount, and the engine command paths (engineNext/enginePrev/
+			// engineQueueJump) resolve + Play inline on the caller's goroutine. There
+			// is no late async resolve that could overwrite a newer user Play, so no
+			// playSeq generation guard is needed here (unlike corelib, whose onFinish
+			// resolves the next track on a fresh goroutine).
 			syncQueueOnGaplessPromote()
 			mu.Lock()
 			finished++
@@ -434,6 +451,29 @@ func Favorites() string {
 		ts, err := c.Favorites()
 		return map[string]any{"tracks": bridge.FromTracks(ts)}, err
 	})
+}
+
+// FavoriteIDsJSON returns the account's liked (favorite) track ids as a JSON
+// array of strings, e.g. ["123","456"]. It reuses the same c.Favorites() the
+// library view fetches, so the app can render truthful "liked" hearts across
+// lists without a per-track lookup. Returns "[]" when not logged in or on a
+// fetch error.
+func FavoriteIDsJSON() string {
+	c := curClient()
+	if c == nil {
+		return "[]"
+	}
+	ts, err := c.Favorites()
+	if err != nil {
+		return "[]"
+	}
+	ids := make([]string, 0, len(ts))
+	for _, t := range ts {
+		if t.ID != "" {
+			ids = append(ids, t.ID)
+		}
+	}
+	return jstr(ids, nil)
 }
 func Playlists() string {
 	return withClient(func(c *deezer.Client) (any, error) {
@@ -1112,6 +1152,37 @@ func engineSetShuffle(on bool) {
 	notifyControlState()
 }
 
+// engineCycleRepeat advances repeat off->all->one->off on the engine queue,
+// applying the same side effects as engineSetRepeat. Repeat is NOT forwarded to
+// a routed remote (B2): the controller keeps repeat local so the host's single-
+// track queue (we send it one track at a time) never loops the current track.
+func engineCycleRepeat() {
+	queueMu.Lock()
+	engineQ.CycleRepeat()
+	queueMu.Unlock()
+	// Repeat-one now replays the CURRENT track and a cleared cycle changes the
+	// upcoming one: a preload armed for the old linear next must not promote.
+	clearEnginePreload()
+	notifyControlState()
+}
+
+// engineToggleShuffle flips the engine queue's shuffle flag (applying
+// engineSetShuffle's side effects) and forwards the resulting value to a routed
+// remote. Unlike repeat, shuffle still forwards (B2): the remote's next-track
+// selection honors it.
+func engineToggleShuffle() {
+	queueMu.Lock()
+	on := engineQ.ToggleShuffle()
+	queueMu.Unlock()
+	clearEnginePreload()
+	notifyControlState()
+	if rc := routedRemote(); rc != nil {
+		if st, err := rc.SetShuffle(on); err == nil {
+			setRemoteState(st)
+		}
+	}
+}
+
 // ---- network helper (cover art) ----
 
 // Fetch downloads raw bytes (e.g. cover art) using a browser User-Agent.
@@ -1157,24 +1228,49 @@ func engineEQ() *control.EQ {
 
 func startServices(c *deezer.Client) {
 	servicesOnce.Do(func() {
-		if cfg := config.LoadControl(); cfg.Enabled {
-			ccfg := control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount}
-			ctrlSrv = control.New(ccfg, engineState, engineAccount, engineCommands(), c)
-			ctrlCfg, ctrlSrvClient = ccfg, c
-			ctrlSrv.SetVersion(Version)
-			ctrlSrv.SetClientInfo(clientID, deviceLabel)
-			ctrlSrv.SetEQ(engineEQ())
-			if err := ctrlSrv.Start(); err == nil {
-				if !config.IsLoopbackAddr(cfg.Addr) {
-					if _, port, e := net.SplitHostPort(ctrlSrv.Addr()); e == nil {
-						if p, e2 := strconv.Atoi(port); e2 == nil {
-							_, _ = discovery.Advertise(advertInfo, p)
-						}
-					}
-				}
+		cfg := config.LoadControl()
+		if !cfg.Enabled {
+			return
+		}
+		ccfg := control.Config{Addr: cfg.Addr, Token: cfg.Token, SameAccountOnly: cfg.SameAccount}
+		startControlServer(ccfg, c, !config.IsLoopbackAddr(cfg.Addr))
+	})
+}
+
+// startControlServer builds a control server for ccfg, starts it, and ONLY on a
+// successful Start publishes it (and, when advertise is set, a retained mDNS
+// advertiser) to the shared globals under mu. On a bind failure nothing is
+// published — ctrlSrv stays whatever it was (nil at first start), so a dead
+// listener is never handed out as live (B11). The discovery.Responder is kept in
+// hostAdv so it can be closed on logout / rebuild instead of leaking (B10).
+// Returns the started server, or nil on failure.
+func startControlServer(ccfg control.Config, c *deezer.Client, advertise bool) *control.Server {
+	s := control.New(ccfg, engineState, engineAccount, engineCommands(), c)
+	s.SetVersion(Version)
+	s.SetClientInfo(clientID, deviceLabel)
+	s.SetEQ(engineEQ())
+	if err := s.Start(); err != nil {
+		odlog.Warn("control api: %v", err)
+		return nil // do NOT publish a server with no listener (B11)
+	}
+	var adv *discovery.Responder
+	if advertise {
+		if _, port, e := net.SplitHostPort(s.Addr()); e == nil {
+			if p, e2 := strconv.Atoi(port); e2 == nil {
+				adv, _ = discovery.Advertise(advertInfo, p)
 			}
 		}
-	})
+	}
+	mu.Lock()
+	ctrlSrv, ctrlCfg, ctrlSrvClient = s, ccfg, c
+	if adv != nil {
+		if hostAdv != nil {
+			hostAdv.Close() // replace a stale advertiser rather than leak it (B10)
+		}
+		hostAdv = adv
+	}
+	mu.Unlock()
+	return s
 }
 
 // refreshControlServer rebuilds the control server around the current client
@@ -1365,14 +1461,13 @@ func engineCommands() control.Commands {
 		PlayPause: func() { withPlayerNotify(func(p *audio.Player) { p.TogglePause() }) },
 		Next:      engineNext,
 		Prev:      enginePrev,
-		SetRepeat: func(mode string) {
-			engineSetRepeat(mode)
-			if rc := routedRemote(); rc != nil {
-				if st, err := rc.SetRepeat(mode); err == nil {
-					setRemoteState(st)
-				}
-			}
-		},
+		// Both the cycle/toggle (legacy, no param) and set (explicit mode/on) verbs
+		// are wired so /repeat and /shuffle work either way. Repeat derives from the
+		// engine queue and is never forwarded to a routed remote (B2); shuffle
+		// forwards.
+		CycleRepeat:   engineCycleRepeat,
+		ToggleShuffle: engineToggleShuffle,
+		SetRepeat:     func(mode string) { engineSetRepeat(mode) },
 		SetShuffle: func(on bool) {
 			engineSetShuffle(on)
 			if rc := routedRemote(); rc != nil {
@@ -1820,16 +1915,45 @@ func recordTransition(state audio.State, positionMS int64) {
 // the player's onFinish callback (the manage goroutine): for a real finish the
 // player retains the end position; for a gapless/crossfade promote the player
 // is already Playing the NEXT track, so the outgoing one played its full
-// duration.
+// duration. An errored finish (B4) records nothing — it never played.
 func noteTrackFinished() {
+	p := curPlayer()
+	if erroredFinish(p) {
+		return
+	}
 	prev := currentTrack()
 	playedMS := prev.DurationMS
-	if p := curPlayer(); p != nil && p.State() != audio.Playing {
+	if p != nil && p.State() != audio.Playing {
 		if pos := p.PositionMS(); pos > 0 {
 			playedMS = pos
 		}
 	}
 	recordListen(prev, playedMS)
+}
+
+// erroredFinish reports whether the player's most recent finish was a failure
+// rather than a natural end. The audio layer flips to Errored on device loss and
+// stores the source's decode/stream error on LastError before firing onFinish;
+// in both cases essentially nothing played (a successful Play clears LastError
+// and the position, so a clean finish and a gapless promote both report an empty
+// LastError). Such a finish must not be recorded as a listen or advance the
+// queue (B4). A mid-track error that already played real audio (position past a
+// second) is still treated as a genuine listen.
+func erroredFinish(p *audio.Player) bool {
+	if p == nil {
+		return false
+	}
+	return isErroredFinish(p.State(), p.LastError(), p.PositionMS())
+}
+
+// isErroredFinish is erroredFinish's pure core, split out so tests can drive the
+// errored-vs-natural decision without a live audio device (a real player can't
+// be constructed headless). Both onFinish and noteTrackFinished gate on it.
+func isErroredFinish(state audio.State, lastErr string, positionMS int64) bool {
+	if state != audio.Errored && lastErr == "" {
+		return false // a clean finish / gapless promote clears LastError
+	}
+	return positionMS < 1000 // errored with ~0 played: not a real listen
 }
 
 // ---- OpenDeezer Connect (controller side) ----
@@ -1978,6 +2102,14 @@ func ConnectDevice(addr string) bool {
 	remoteSt = st
 	remoteAddr = hp
 	mu.Unlock()
+	// Normalize the host's repeat to off once (B2): we drive it a single track at
+	// a time, so a lingering repeat-all/one on the host would loop that one track
+	// forever. Repeat is kept local on this controller from here on (SetRepeat no
+	// longer forwards). setRemoteState only applies while remoteCli is set, so run
+	// it after publishing the connection above.
+	if strp, err := rc.SetRepeat("off"); err == nil {
+		setRemoteState(strp)
+	}
 	go remotePoller(rc, stop)
 	return true
 }
@@ -2001,9 +2133,11 @@ func DisconnectDevice() {
 }
 
 // SetRepeat sets the repeat mode (mode: 0=off, 1=all, 2=one). The mode is
-// always recorded on the engine-side queue — /status reports it and the engine
-// queue honors it when it advances — and it is forwarded to the connected
-// remote device when one is selected.
+// recorded on the engine-side queue — /status reports it and the engine queue
+// honors it when it advances. It is NOT forwarded to a connected remote device
+// (B2): while casting, the controller keeps repeat local so the host's single-
+// track queue never loops the current track. Read the host's own mode with
+// GetRepeat.
 func SetRepeat(mode int) {
 	m := "off"
 	switch mode {
@@ -2013,11 +2147,33 @@ func SetRepeat(mode int) {
 		m = "one"
 	}
 	engineSetRepeat(m)
-	if rc := routedRemote(); rc != nil {
-		if st, err := rc.SetRepeat(m); err == nil {
-			setRemoteState(st)
+}
+
+// GetRepeat returns the current repeat mode ("off"|"all"|"one"). When routed to
+// a Connect device it returns the remote host's mode (the routed snapshot), so
+// the app renders the host's real mode while casting; otherwise it returns the
+// engine queue's mode.
+func GetRepeat() string {
+	if routedRemote() != nil {
+		if r := remoteSnapshot().Repeat; r != "" {
+			return r
 		}
 	}
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return engineQ.Repeat().String()
+}
+
+// GetShuffle reports whether shuffle is on. When routed to a Connect device it
+// returns the remote host's flag (the routed snapshot), so the app renders the
+// host's real mode while casting; otherwise the engine queue's flag.
+func GetShuffle() bool {
+	if routedRemote() != nil {
+		return remoteSnapshot().Shuffle
+	}
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return engineQ.Shuffle()
 }
 
 // SetShuffle sets shuffle on (non-zero) or off (0). The flag is always recorded
@@ -2152,7 +2308,11 @@ func mobileEnsureWebRemoteServer() {
 // the browser phone remote can still pair on top (a valid pairing session is
 // checked before same-account auth). Returns nil on bind failure.
 func mobileStartServer(addr string) *control.Server {
-	cfg := control.Config{Addr: addr, SameAccountOnly: true}
+	// Carry the configured control token into the LAN rebind (B9): without it a
+	// token-protected control API would be silently downgraded to token-less
+	// (same-account only) auth when the phone remote / Connect host rebinds it onto
+	// all interfaces. SameAccountOnly stays on so same-account devices still pair.
+	cfg := control.Config{Addr: addr, Token: config.LoadControl().Token, SameAccountOnly: true}
 	c := curClient()
 	s := control.New(cfg, engineState, engineAccount, engineCommands(), c)
 	s.SetVersion(Version)
@@ -2177,17 +2337,33 @@ func mobileEnsureLANServer() *control.Server {
 	srv := ctrlSrv
 	mu.Unlock()
 
-	if srv != nil && !mobileIsLoopback(srv.Addr()) {
+	// Reuse an existing non-loopback server only when it is genuinely listening
+	// (B11): a published-but-dead handle (its listener was closed, or an earlier
+	// Start left a non-nil global with no listener) must be rebuilt, not handed
+	// back as if live.
+	if srv != nil && !mobileIsLoopback(srv.Addr()) && mobileServerListening(srv) {
 		return srv
 	}
 
 	port := "7654"
 	if srv != nil {
-		if _, p, err := net.SplitHostPort(srv.Addr()); err == nil {
+		if _, p, err := net.SplitHostPort(srv.Addr()); err == nil && p != "0" {
 			port = p
 		}
 		srv.Close()
 	}
+	// The old server (and any port advertised for it) is gone: drop a stale
+	// Connect-host advertiser so we never announce a dead port (B10). Re-advertise
+	// on the fresh port below if it was active.
+	mu.Lock()
+	staleAdv := hostAdv
+	hostAdv = nil
+	mu.Unlock()
+	wasAdvertising := staleAdv != nil
+	if staleAdv != nil {
+		staleAdv.Close()
+	}
+
 	newSrv := mobileStartServer("0.0.0.0:" + port)
 	if newSrv == nil {
 		newSrv = mobileStartServer("0.0.0.0:0")
@@ -2198,7 +2374,35 @@ func mobileEnsureLANServer() *control.Server {
 	mu.Lock()
 	ctrlSrv = newSrv
 	mu.Unlock()
+	if wasAdvertising {
+		if a, err := discovery.Advertise(advertInfo, mobileSrvPort(newSrv)); err == nil {
+			mu.Lock()
+			hostAdv = a
+			mu.Unlock()
+		}
+	}
 	return newSrv
+}
+
+// mobileServerListening reports whether srv has a live TCP listener by dialing
+// its bound port on loopback (mobileStartServer binds 0.0.0.0, reachable there).
+// A published-but-dead server — Start failed, or its listener was closed — fails
+// the dial, so mobileEnsureLANServer rebuilds instead of trusting a non-nil
+// handle (B11).
+func mobileServerListening(srv *control.Server) bool {
+	if srv == nil {
+		return false
+	}
+	_, port, err := net.SplitHostPort(srv.Addr())
+	if err != nil || port == "" || port == "0" {
+		return false
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 // ---- OpenDeezer Connect host (make this device controllable) ----
@@ -2384,6 +2588,11 @@ func SetEQJSON(js string) bool {
 // same-account auth), stops Connect-host advertising, and forgets the Deezer
 // client. A later Init starts services fresh for the new account.
 func Logout() {
+	// Clear ALL remote-routing state first (B8): remoteCli/remoteSt/remoteAddr/
+	// remoteStop must not survive the session wipe, or commands would keep routing
+	// to the old device under the next account. DisconnectDevice also halts the
+	// remote device (it shouldn't keep playing unattended after logout).
+	DisconnectDevice()
 	if p := curPlayer(); p != nil {
 		p.Stop()
 	}

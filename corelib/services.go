@@ -47,6 +47,14 @@ var (
 	ctrlCfg       control.Config
 	ctrlSrvUserID string
 
+	// advertiser is the LAN discovery responder for OpenDeezer Connect (nil when
+	// the control server is loopback-only or disabled). It advertises the control
+	// port so other devices can find us; it is retained here — not discarded — so
+	// it can be Closed + re-pointed whenever the control server is rebuilt on a
+	// new port or torn down, instead of leaving a ghost advertising a dead port.
+	// Guarded by mu (mirrors the TUI's model.advertiser). (B10)
+	advertiser *discovery.Responder
+
 	curMu    sync.Mutex
 	curTrack deezer.Track
 
@@ -211,22 +219,62 @@ func startServices(c *deezer.Client) {
 				ctrlCfg, ctrlSrvUserID = ccfg, c.Account().UserID
 				mu.Unlock()
 				odlog.Info("control api on %s", addr)
-				// Advertise on the LAN (OpenDeezer Connect) only when bound to a
-				// reachable (non-loopback) address.
-				if !config.IsLoopbackAddr(cfg.Addr) {
-					if _, port, err := net.SplitHostPort(addr); err == nil {
-						if p, e := strconv.Atoi(port); e == nil {
-							if _, e := discovery.Advertise(advertInfo, p); e == nil {
-								odlog.Info("discovery advertising control port %d", p)
-							}
-						}
-					}
-				}
+				// Advertise on the LAN (OpenDeezer Connect) when bound to a
+				// reachable (non-loopback) address, retaining the responder so a
+				// later rebuild/disable can Close + re-point it. (B10)
+				refreshAdvertiser()
 			}
 		}
 
 		go serviceTicker()
 	})
+}
+
+// refreshAdvertiser Closes any existing LAN discovery responder and, when the
+// control server is currently bound to a reachable (non-loopback) address,
+// starts a fresh one advertising its port. Call it whenever the control server
+// is (re)built on a possibly-different port or torn down, so a ghost responder
+// never keeps advertising a dead port. Must be called WITHOUT mu held. (B10)
+func refreshAdvertiser() {
+	mu.Lock()
+	srv := ctrlSrv
+	old := advertiser
+	advertiser = nil
+	mu.Unlock()
+	if old != nil {
+		old.Close()
+	}
+	if srv == nil {
+		return
+	}
+	addr := srv.Addr()
+	if config.IsLoopbackAddr(addr) {
+		return // loopback-only: not LAN-discoverable, nothing to advertise
+	}
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return
+	}
+	p, err := strconv.Atoi(portStr)
+	if err != nil {
+		return
+	}
+	resp, err := discovery.Advertise(advertInfo, p)
+	if err != nil {
+		return
+	}
+	mu.Lock()
+	// A concurrent teardown may have cleared/replaced ctrlSrv while we were
+	// binding; only publish if this server is still current, else Close the
+	// responder we just started so it doesn't advertise a stale port.
+	if ctrlSrv == srv {
+		advertiser = resp
+		mu.Unlock()
+		odlog.Info("discovery advertising control port %d", p)
+	} else {
+		mu.Unlock()
+		resp.Close()
+	}
 }
 
 // refreshControlServer rebuilds the control server around the current client
@@ -575,11 +623,31 @@ func engineCommands() control.Commands {
 		SetVolume:    func(v float64) { withPlayerNotify(func(p *audio.Player) { p.SetVolume(v) }) },
 		PlayTrack:    enginePlayTrack,
 		PlayPlaylist: enginePlayPlaylist,
+		// CycleRepeat / SetRepeat: record the mode locally only. Repeat is NOT
+		// forwarded to a routed remote — this instance owns the queue and streams
+		// the host one track at a time, so a Repeat-All forwarded to the host would
+		// trap it looping its single-item queue. The engine's own auto-advance
+		// honors repeat when it drives the remote. (B2)
+		CycleRepeat: func() {
+			queueMu.Lock()
+			next := ((engineQ.Repeat() + 1) % 3).String()
+			queueMu.Unlock()
+			engineSetRepeat(next)
+		},
 		SetRepeat: func(mode string) {
 			engineSetRepeat(mode)
+		},
+		// CycleShuffle equivalents: shuffle IS forwarded (the host has no queue of
+		// its own, but a controller's shuffle intent is harmless there and keeps
+		// /status consistent).
+		ToggleShuffle: func() {
+			queueMu.Lock()
+			on := !engineQ.Shuffle()
+			queueMu.Unlock()
+			engineSetShuffle(on)
 			if rc := routedRemote(); rc != nil {
-				if st, err := rc.SetRepeat(mode); err == nil {
-					setRemoteState(st)
+				if st, err := rc.SetShuffle(on); err == nil {
+					setRemoteState(rc, st)
 				}
 			}
 		},
@@ -587,7 +655,7 @@ func engineCommands() control.Commands {
 			engineSetShuffle(on)
 			if rc := routedRemote(); rc != nil {
 				if st, err := rc.SetShuffle(on); err == nil {
-					setRemoteState(st)
+					setRemoteState(rc, st)
 				}
 			}
 		},
@@ -625,6 +693,15 @@ func fetchEpisodeMeta(c *deezer.Client, id string) {
 	}
 }
 
+// nextPlaySeq claims a fresh play-sequence token (see playSeq). Every launch of
+// an async auto-advance resolve claims one; a subsequent user play bumps past
+// it so the resolve drops its stale result. (B3)
+func nextPlaySeq() uint64 { return playSeq.Add(1) }
+
+// playSuperseded reports whether a newer play has been issued since seq was
+// claimed, i.e. an in-flight auto-advance resolve should drop its result. (B3)
+func playSuperseded(seq uint64) bool { return playSeq.Load() != seq }
+
 // enginePlayResolved resolves a stream for t and starts it on the player,
 // recording it as the current track. Blocking (network round-trip); callers must
 // be off the realtime audio path.
@@ -632,6 +709,29 @@ func enginePlayResolved(c *deezer.Client, p *audio.Player, t deezer.Track) bool 
 	plan, err := c.PrepareStream(t.ID)
 	if err != nil {
 		return false
+	}
+	noteTrackTransition(p) // record the outgoing listen before the swap
+	if p.Play(plan, t.DurationMS) != nil {
+		return false
+	}
+	clearPreloadedTrack() // p.Play discarded any pending preload; drop its stash too
+	setCurrentTrack(t)
+	return true
+}
+
+// enginePlayResolvedGuarded is enginePlayResolved for the ASYNC auto-advance
+// path: it resolves the stream (a network round-trip) and then, just before
+// starting playback, drops the result if a newer play (a user DZPlay /
+// DZPlayEpisode, or a later auto-advance) bumped playSeq past the value captured
+// at launch. Without the guard a slow auto-advance resolve could clobber the
+// track the user started while it was resolving. (B3)
+func enginePlayResolvedGuarded(c *deezer.Client, p *audio.Player, t deezer.Track, seq uint64) bool {
+	plan, err := c.PrepareStream(t.ID)
+	if err != nil {
+		return false
+	}
+	if playSuperseded(seq) {
+		return false // superseded by a newer play while we were resolving
 	}
 	noteTrackTransition(p) // record the outgoing listen before the swap
 	if p.Play(plan, t.DurationMS) != nil {
@@ -721,12 +821,16 @@ func engineAdvanceOnFinish() bool {
 	if !ok {
 		return false
 	}
+	// Claim a seq for this auto-advance launch; a user DZPlay that races the
+	// async resolve below bumps past it, so the resolver drops the stale result
+	// instead of clobbering the user's track. (B3)
+	seq := nextPlaySeq()
 	go func() {
 		c, p := curClient(), curPlayer()
 		if c == nil || p == nil {
 			return
 		}
-		enginePlayResolved(c, p, next)
+		enginePlayResolvedGuarded(c, p, next, seq)
 	}()
 	return true
 }
@@ -778,7 +882,7 @@ func engineSyncOnGaplessPromote() bool {
 func engineNext() {
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.Next(); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return
 	}
@@ -797,7 +901,7 @@ func engineNext() {
 func enginePrev() {
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.Prev(); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return
 	}
@@ -843,7 +947,7 @@ func engineQueueAdd(id string, next bool) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.QueueAdd(id, next)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -882,7 +986,7 @@ func engineQueueJump(index int) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.QueueJump(index)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -907,7 +1011,7 @@ func engineQueueRemove(index int) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.QueueRemove(index)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -934,7 +1038,7 @@ func engineQueueMove(from, to int) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.QueueMove(from, to)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -977,7 +1081,7 @@ func enginePlayAlbum(id string) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.PlayAlbum(id)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -995,7 +1099,7 @@ func enginePlayMixTrack(id string) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.PlayMixTrack(id)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -1012,7 +1116,7 @@ func enginePlayMixArtist(id string) error {
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.PlayMixArtist(id)
 		if err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return err
 	}
@@ -1182,18 +1286,68 @@ func recordTransition(state audio.State, positionMS int64) {
 	}
 }
 
+// erroredFinishMaxMS bounds how much audio can have played for a finish to be
+// treated as an error (CDN/decode failure) rather than a listen. A track that
+// dies near its start played ~0; a failure well into the track is a real
+// (partial) listen and is recorded normally.
+const erroredFinishMaxMS = 1000
+
+// isErroredFinish is the pure predicate behind erroredFinish (testable without
+// a live audio device): the just-finished track carried an error (the player is
+// Errored, or LastError is non-empty because internal/audio stored the source's
+// download/decode error) AND almost no audio played. (B4)
+//
+// A still-Playing state is never an errored finish: that is a gapless/crossfade
+// promote (the next track is already playing successfully). manage() copies the
+// OUTGOING track's error into LastError even on a promote, so without this guard
+// a promote following an early-errored track would be misclassified and its
+// now-playing/queue bookkeeping skipped.
+func isErroredFinish(state audio.State, lastErr string, positionMS int64) bool {
+	if state == audio.Playing {
+		return false
+	}
+	errored := state == audio.Errored || lastErr != ""
+	return errored && positionMS < erroredFinishMaxMS
+}
+
+// erroredFinish reports whether the finish now firing is a CDN/decode failure
+// rather than a natural end, reading the live player. False when no player. (B4)
+func erroredFinish() bool {
+	p := curPlayer()
+	if p == nil {
+		return false
+	}
+	return isErroredFinish(p.State(), p.LastError(), p.PositionMS())
+}
+
 // noteTrackFinished records the track that just ended naturally. It runs from
 // the player's onFinish callback (the manage goroutine): for a real finish the
 // player retains the end position; for a gapless/crossfade promote the player
 // is already Playing the NEXT track, so the outgoing one played its full
 // duration.
 func noteTrackFinished() {
-	prev := currentTrack()
+	var state audio.State
+	var lastErr string
+	var posMS int64
+	havePlayer := false
+	if p := curPlayer(); p != nil {
+		state, lastErr, posMS, havePlayer = p.State(), p.LastError(), p.PositionMS(), true
+	}
+	recordFinished(currentTrack(), state, lastErr, posMS, havePlayer)
+}
+
+// recordFinished is noteTrackFinished's pure core (testable without a live audio
+// device). It drops an errored finish (a CDN/decode failure with ~0 played is
+// not a real listen, B4) and otherwise records the outgoing listen using the
+// track duration — or the player's actual end position when it retained one (a
+// real finish, not a gapless promote where the player is already Playing next).
+func recordFinished(prev deezer.Track, state audio.State, lastErr string, positionMS int64, havePlayer bool) {
+	if havePlayer && isErroredFinish(state, lastErr, positionMS) {
+		return
+	}
 	playedMS := prev.DurationMS
-	if p := curPlayer(); p != nil && p.State() != audio.Playing {
-		if pos := p.PositionMS(); pos > 0 {
-			playedMS = pos
-		}
+	if havePlayer && state != audio.Playing && positionMS > 0 {
+		playedMS = positionMS
 	}
 	recordListen(prev, playedMS)
 }

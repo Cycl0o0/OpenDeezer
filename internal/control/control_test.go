@@ -244,6 +244,42 @@ func TestWhoamiIsUnauthenticated(t *testing.T) {
 	if who.Auth != "token" || who.Version != "1.2.3" {
 		t.Fatalf("whoami = %+v", who)
 	}
+	if who.Commands == nil || len(who.Commands) != 0 {
+		t.Fatalf("whoami commands = %#v, want present empty array", who.Commands)
+	}
+}
+
+func TestWhoamiAdvertisesCommandCapabilities(t *testing.T) {
+	cmds := Commands{
+		CycleRepeat:      func() {},
+		SetShuffle:       func(bool) {},
+		Seek:             func(int64) {},
+		SetVolume:        func(float64) {},
+		QueueAdd:         func(string, bool) error { return nil },
+		PlayAlbum:        func(string) error { return nil },
+		PlayMixArtist:    func(string) error { return nil },
+		HistoryRecent:    func(int) (json.RawMessage, error) { return nil, nil },
+		CancelSleepTimer: func() {},
+	}
+	s := New(Config{}, func() State { return State{} }, nil, cmds, nil)
+	s.SetEQ(&EQ{})
+
+	rr := httptest.NewRecorder()
+	s.handleWhoami(rr, httptest.NewRequest(http.MethodGet, "/whoami", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("whoami status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var who Whoami
+	if err := json.NewDecoder(rr.Body).Decode(&who); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"repeat", "shuffle", "seek", "volume", "queueAdd", "playAlbum",
+		"playMix", "history", "sleep", "eq",
+	}
+	if strings.Join(who.Commands, ",") != strings.Join(want, ",") {
+		t.Fatalf("whoami commands = %#v, want %#v", who.Commands, want)
+	}
 }
 
 func nextSSEState(t *testing.T, scanner *bufio.Scanner) State {
@@ -741,7 +777,7 @@ func TestExtendedControlEndpoints(t *testing.T) {
 	}
 
 	const (
-		idError    = "id must be a positive decimal integer"
+		idError    = "id must be a non-zero decimal integer"
 		indexError = "i must be a non-negative integer"
 		moveError  = "from and to must be non-negative integers"
 		historyErr = "n must be an integer between 1 and 500"
@@ -754,7 +790,9 @@ func TestExtendedControlEndpoints(t *testing.T) {
 				{path: "/queue/add?next=1", message: idError},
 				{path: "/queue/add?id=abc&next=1", message: idError},
 				{path: "/queue/add?id=0&next=1", message: idError},
+				{path: "/queue/add?id=-0&next=1", message: idError},
 				{path: "/queue/add?id=18446744073709551616&next=1", message: idError},
+				{path: "/queue/add?id=-18446744073709551616&next=1", message: idError},
 				{path: "/queue/add?id=1&id=2&next=1", message: idError},
 				{path: "/queue/add?id=123", message: "next must be 0 or 1"},
 				{path: "/queue/add?id=123&next=true", message: "next must be 0 or 1"},
@@ -842,7 +880,7 @@ func TestExtendedControlEndpoints(t *testing.T) {
 			wantCall: extendedControlCall{id: "789"}, nilStatus: http.StatusNotImplemented,
 			invalid: []invalidControlRequest{
 				{path: "/play/mix/track", message: idError},
-				{path: "/play/mix/track?id=-1", message: idError},
+				{path: "/play/mix/track?id=-", message: idError},
 				{path: "/play/mix/track?id=7&id=8", message: idError},
 			},
 			install: func(cmds *Commands, got *extendedControlCall, calls *int, result error) {
@@ -978,6 +1016,74 @@ func TestExtendedControlEndpoints(t *testing.T) {
 			t.Fatalf("empty history response = %d %s", rr.Code, rr.Body.String())
 		}
 	})
+}
+
+func TestNegativeIDsAccepted(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		wantID  string
+		install func(*Commands, *string, *bool, *int)
+	}{
+		{
+			name: "queue add", path: "/queue/add?id=-101&next=1", wantID: "-101",
+			install: func(cmds *Commands, id *string, next *bool, calls *int) {
+				cmds.QueueAdd = func(gotID string, gotNext bool) error {
+					(*calls)++
+					*id, *next = gotID, gotNext
+					return nil
+				}
+			},
+		},
+		{
+			name: "play album", path: "/play/album?id=-202", wantID: "-202",
+			install: func(cmds *Commands, id *string, _ *bool, calls *int) {
+				cmds.PlayAlbum = func(gotID string) error {
+					(*calls)++
+					*id = gotID
+					return nil
+				}
+			},
+		},
+		{
+			name: "play track mix", path: "/play/mix/track?id=-303", wantID: "-303",
+			install: func(cmds *Commands, id *string, _ *bool, calls *int) {
+				cmds.PlayMixTrack = func(gotID string) error {
+					(*calls)++
+					*id = gotID
+					return nil
+				}
+			},
+		},
+		{
+			name: "play artist mix", path: "/play/mix/artist?id=-404", wantID: "-404",
+			install: func(cmds *Commands, id *string, _ *bool, calls *int) {
+				cmds.PlayMixArtist = func(gotID string) error {
+					(*calls)++
+					*id = gotID
+					return nil
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cmds Commands
+			var gotID string
+			gotNext := false
+			calls := 0
+			tt.install(&cmds, &gotID, &gotNext, &calls)
+			rr := serveControlRoute(t, cmds, http.MethodPost, tt.path)
+			assertMutationResponse(t, rr, http.StatusOK, "")
+			if calls != 1 || gotID != tt.wantID {
+				t.Fatalf("callback calls/id = %d/%q, want 1/%q", calls, gotID, tt.wantID)
+			}
+			if tt.name == "queue add" && !gotNext {
+				t.Fatal("queue add did not preserve next=1")
+			}
+		})
+	}
 }
 
 func TestExtendedControlClientRoundTrips(t *testing.T) {
@@ -1202,6 +1308,69 @@ func TestRepeatValidation(t *testing.T) {
 	}
 }
 
+func TestRepeatCallbackFallbacks(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		host         string
+		initial      string
+		wantStatus   int
+		wantSetMode  string
+		wantSetCalls int
+		wantCycles   int
+		wantRepeat   string
+		wantError    string
+	}{
+		{name: "only set explicit", path: "/repeat?mode=one", host: "set", initial: "off", wantStatus: http.StatusOK, wantSetMode: "one", wantSetCalls: 1, wantRepeat: "one"},
+		{name: "only set cycles off", path: "/repeat", host: "set", initial: "off", wantStatus: http.StatusOK, wantSetMode: "all", wantSetCalls: 1, wantRepeat: "all"},
+		{name: "only set cycles all", path: "/repeat", host: "set", initial: "all", wantStatus: http.StatusOK, wantSetMode: "one", wantSetCalls: 1, wantRepeat: "one"},
+		{name: "only set cycles one", path: "/repeat", host: "set", initial: "one", wantStatus: http.StatusOK, wantSetMode: "off", wantSetCalls: 1, wantRepeat: "off"},
+		{name: "only cycle explicit differs", path: "/repeat?mode=all", host: "cycle", initial: "off", wantStatus: http.StatusOK, wantCycles: 1, wantRepeat: "all"},
+		{name: "only cycle explicit two steps", path: "/repeat?mode=one", host: "cycle", initial: "off", wantStatus: http.StatusOK, wantCycles: 2, wantRepeat: "one"},
+		{name: "only cycle explicit matches", path: "/repeat?mode=one", host: "cycle", initial: "one", wantStatus: http.StatusOK, wantRepeat: "one"},
+		{name: "only cycle legacy", path: "/repeat", host: "cycle", initial: "all", wantStatus: http.StatusOK, wantCycles: 1, wantRepeat: "one"},
+		{name: "neither explicit", path: "/repeat?mode=all", initial: "off", wantStatus: http.StatusNotImplemented, wantRepeat: "off", wantError: "repeat not supported"},
+		{name: "neither legacy", path: "/repeat", initial: "off", wantStatus: http.StatusNotImplemented, wantRepeat: "off", wantError: "repeat not supported"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := State{State: "stopped", Repeat: tt.initial}
+			var setModes []string
+			cycles := 0
+			var cmds Commands
+			switch tt.host {
+			case "set":
+				cmds.SetRepeat = func(mode string) {
+					setModes = append(setModes, mode)
+					state.Repeat = mode
+				}
+			case "cycle":
+				cmds.CycleRepeat = func() {
+					cycles++
+					state.Repeat = nextRepeatMode(state.Repeat)
+				}
+			}
+			s := New(Config{}, func() State { return state }, nil, cmds, nil)
+			rr := httptest.NewRecorder()
+			s.handleRepeat(rr, httptest.NewRequest(http.MethodPost, tt.path, nil))
+			assertMutationResponse(t, rr, tt.wantStatus, tt.wantError)
+			if len(setModes) != tt.wantSetCalls {
+				t.Fatalf("SetRepeat calls = %d, want %d; modes=%#v", len(setModes), tt.wantSetCalls, setModes)
+			}
+			if tt.wantSetCalls == 1 && setModes[0] != tt.wantSetMode {
+				t.Fatalf("SetRepeat mode = %q, want %q", setModes[0], tt.wantSetMode)
+			}
+			if cycles != tt.wantCycles {
+				t.Fatalf("CycleRepeat calls = %d, want %d", cycles, tt.wantCycles)
+			}
+			if state.Repeat != tt.wantRepeat {
+				t.Fatalf("repeat after request = %q, want %q", state.Repeat, tt.wantRepeat)
+			}
+		})
+	}
+}
+
 func TestShuffleValidation(t *testing.T) {
 	const errMessage = "on must be one of true, false, 1, 0"
 	tests := []struct {
@@ -1248,6 +1417,67 @@ func TestShuffleValidation(t *testing.T) {
 				}
 			} else if len(values) != 0 || toggles != 0 {
 				t.Fatalf("shuffle callback ran for invalid input: values=%#v toggles=%d", values, toggles)
+			}
+		})
+	}
+}
+
+func TestShuffleCallbackFallbacks(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		host         string
+		initial      bool
+		wantStatus   int
+		wantSetValue bool
+		wantSetCalls int
+		wantToggles  int
+		wantShuffle  bool
+		wantError    string
+	}{
+		{name: "only set explicit", path: "/shuffle?on=true", host: "set", wantStatus: http.StatusOK, wantSetValue: true, wantSetCalls: 1, wantShuffle: true},
+		{name: "only set toggles on", path: "/shuffle", host: "set", wantStatus: http.StatusOK, wantSetValue: true, wantSetCalls: 1, wantShuffle: true},
+		{name: "only set toggles off", path: "/shuffle", host: "set", initial: true, wantStatus: http.StatusOK, wantSetCalls: 1},
+		{name: "only toggle explicit differs", path: "/shuffle?on=true", host: "toggle", wantStatus: http.StatusOK, wantToggles: 1, wantShuffle: true},
+		{name: "only toggle explicit matches", path: "/shuffle?on=true", host: "toggle", initial: true, wantStatus: http.StatusOK, wantShuffle: true},
+		{name: "only toggle legacy", path: "/shuffle", host: "toggle", initial: true, wantStatus: http.StatusOK, wantToggles: 1},
+		{name: "neither explicit", path: "/shuffle?on=true", wantStatus: http.StatusNotImplemented, wantError: "shuffle not supported"},
+		{name: "neither legacy", path: "/shuffle", wantStatus: http.StatusNotImplemented, wantError: "shuffle not supported"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := State{State: "stopped", Shuffle: tt.initial}
+			var setValues []bool
+			toggles := 0
+			var cmds Commands
+			switch tt.host {
+			case "set":
+				cmds.SetShuffle = func(on bool) {
+					setValues = append(setValues, on)
+					state.Shuffle = on
+				}
+			case "toggle":
+				cmds.ToggleShuffle = func() {
+					toggles++
+					state.Shuffle = !state.Shuffle
+				}
+			}
+			s := New(Config{}, func() State { return state }, nil, cmds, nil)
+			rr := httptest.NewRecorder()
+			s.handleShuffle(rr, httptest.NewRequest(http.MethodPost, tt.path, nil))
+			assertMutationResponse(t, rr, tt.wantStatus, tt.wantError)
+			if len(setValues) != tt.wantSetCalls {
+				t.Fatalf("SetShuffle calls = %d, want %d; values=%#v", len(setValues), tt.wantSetCalls, setValues)
+			}
+			if tt.wantSetCalls == 1 && setValues[0] != tt.wantSetValue {
+				t.Fatalf("SetShuffle value = %v, want %v", setValues[0], tt.wantSetValue)
+			}
+			if toggles != tt.wantToggles {
+				t.Fatalf("ToggleShuffle calls = %d, want %d", toggles, tt.wantToggles)
+			}
+			if state.Shuffle != tt.wantShuffle {
+				t.Fatalf("shuffle after request = %v, want %v", state.Shuffle, tt.wantShuffle)
 			}
 		})
 	}

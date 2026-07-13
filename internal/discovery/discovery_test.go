@@ -3,6 +3,7 @@ package discovery
 import (
 	"encoding/json"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -151,5 +152,71 @@ func TestIPsChanged(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("test %d: ipsChanged(%v, %v) = %v, want %v", i, tc.oldIPs, tc.newIPs, got, tc.want)
 		}
+	}
+}
+
+func TestB20RebindFailureRetried(t *testing.T) {
+	origInterval := supervisorInterval
+	origGetIPs := getLocalIPsList
+	supervisorInterval = 10 * time.Millisecond
+	defer func() {
+		supervisorInterval = origInterval
+		getLocalIPsList = origGetIPs
+	}()
+
+	var ips []string
+	var getIPsMutex sync.Mutex
+	getLocalIPsList = func() []string {
+		getIPsMutex.Lock()
+		defer getIPsMutex.Unlock()
+		return ips
+	}
+
+	ips = []string{"127.0.0.1"}
+
+	r, err := Advertise(func() Info { return Info{Name: "Retry Test", Client: "tui"} }, 7654)
+	if err != nil {
+		t.Skipf("cannot bind discovery port: %v", err)
+	}
+	defer r.Close()
+
+	_ = r.conn.Close()
+
+	blockConn, err := net.ListenPacket("udp4", ":7655")
+	if err != nil {
+		t.Fatalf("Failed to block port 7655: %v", err)
+	}
+
+	getIPsMutex.Lock()
+	ips = []string{"127.0.0.1", "192.168.1.100"}
+	getIPsMutex.Unlock()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if blockConn != nil {
+		_ = blockConn.Close()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: Port})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	_, _ = conn.Write([]byte(probeMagic))
+	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	buf := make([]byte, maxPacket)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("Supervisor failed to recover and rebind successfully: %v", err)
+	}
+	var rep reply
+	if err := json.Unmarshal(buf[:n], &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Name != "Retry Test" {
+		t.Errorf("expected responder name 'Retry Test', got %q", rep.Name)
 	}
 }

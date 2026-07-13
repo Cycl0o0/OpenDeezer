@@ -419,6 +419,14 @@ func buildTools(tgt *target) []tool {
 				if err != nil {
 					return "", err
 				}
+				// The whole Whoami struct is marshaled, so any capability array
+				// internal/control adds to /whoami (the "commands" list of
+				// supported actions) surfaces here automatically under "whoami".
+				// TODO(capabilities): once control.Whoami exposes a typed commands
+				// list, hoist it to a top-level "capabilities" field for
+				// discoverability and use it to filter toolSpecs in tools/list so
+				// the agent only sees actions the target actually supports. The
+				// control client does not expose it yet, so this is deferred.
 				b, _ := json.MarshalIndent(map[string]any{"target": tgt.current(), "whoami": w}, "", "  ")
 				return string(b), nil
 			}},

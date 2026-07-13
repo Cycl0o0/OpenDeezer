@@ -50,6 +50,13 @@ var (
 	finished int // bumped whenever a track ends naturally
 )
 
+// playSeq is bumped by every user-initiated play (DZPlay / DZPlayEpisode) and by
+// each engine auto-advance launch. The async auto-advance resolver captures the
+// current seq before its network resolve and, just before p.Play, drops the
+// result if a newer play has since bumped it — so a slow auto-advance resolve
+// can't clobber the track the user just started. (B3)
+var playSeq atomic.Uint64
+
 // lastLoginKind records why the most recent DZInit login attempt failed so the
 // native UIs can tell "no internet" apart from "expired ARL" (DZInit itself only
 // returns a bare 0/1). Read via DZLoginErrorKind. Atomic: DZInit's Login runs off
@@ -164,6 +171,16 @@ func DZInit(arl *C.char) C.int {
 			}
 		}
 		player.SetOnFinish(func() {
+			// A CDN/decode failure surfaces as a finish carrying an error with
+			// ~no audio played (internal/audio stores the source error into
+			// LastError and stops). That is NOT a real listen: don't record it in
+			// history and don't auto-advance (which would skip-cascade through a
+			// whole playlist of failing tracks). Just push a fresh state snapshot
+			// so the GUI sees the error/stopped state. (B4)
+			if erroredFinish() {
+				notifyControlState()
+				return
+			}
 			// The finished track was listened to its natural end — record it in the
 			// local history now (covers both a real finish and a gapless promote; a
 			// following Play sees the player Stopped/already-swapped and won't
@@ -316,6 +333,33 @@ func DZFavoritesJSON() *C.char {
 	return jsonStr(map[string]any{"tracks": bridge.FromTracks(ts)}, err)
 }
 
+// DZFavoriteIDsJSON returns the account's liked-track ids as a JSON array of
+// strings (e.g. ["123","456"]). It backs truthful heart/like state across the
+// desktop GUIs without shipping every track's full metadata. Derived from the
+// engine's existing favorites fetch. "[]" when there are none. Release with
+// DZFree.
+//
+//export DZFavoriteIDsJSON
+func DZFavoriteIDsJSON() *C.char {
+	mu.Lock()
+	c := client
+	mu.Unlock()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ts, err := c.Favorites()
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	ids := make([]string, 0, len(ts))
+	for _, t := range ts {
+		if t.ID != "" {
+			ids = append(ids, t.ID)
+		}
+	}
+	return jsonStr(ids, nil)
+}
+
 //export DZPlaylistsJSON
 func DZPlaylistsJSON() *C.char {
 	mu.Lock()
@@ -373,13 +417,15 @@ func DZSearchJSON(q *C.char) *C.char {
 //export DZPlay
 func DZPlay(trackID *C.char, durationMS C.longlong) C.int {
 	id := C.GoString(trackID)
+	// A fresh user play supersedes any in-flight async auto-advance resolve. (B3)
+	playSeq.Add(1)
 	// OpenDeezer Connect: when a device is selected, play there instead.
 	if rc := routedRemote(); rc != nil {
 		st, err := rc.PlayTrack(id)
 		if err != nil {
 			return 0
 		}
-		setRemoteState(st)
+		setRemoteState(rc, st)
 		return 1
 	}
 	mu.Lock()
@@ -413,7 +459,7 @@ func DZPause() {
 	if rc := routedRemote(); rc != nil {
 		if remoteSnapshot().State == "playing" {
 			if st, err := rc.PlayPause(); err == nil {
-				setRemoteState(st)
+				setRemoteState(rc, st)
 			}
 		}
 		return
@@ -426,7 +472,7 @@ func DZResume() {
 	if rc := routedRemote(); rc != nil {
 		if remoteSnapshot().State == "paused" {
 			if st, err := rc.PlayPause(); err == nil {
-				setRemoteState(st)
+				setRemoteState(rc, st)
 			}
 		}
 		return
@@ -438,7 +484,7 @@ func DZResume() {
 func DZTogglePause() {
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.PlayPause(); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return
 	}
@@ -449,7 +495,7 @@ func DZTogglePause() {
 func DZStop() {
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.Stop(); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return
 	}
@@ -462,7 +508,7 @@ func DZStop() {
 func DZSeek(ms C.longlong) {
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.Seek(int64(ms)); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return
 	}
@@ -471,8 +517,12 @@ func DZSeek(ms C.longlong) {
 
 // DZSetRepeat sets the repeat mode (mode: 0=off, 1=all, 2=one). The mode is
 // always recorded on the engine-side queue — /status reports it and the engine
-// queue honors it when it advances — and it is forwarded to the connected
-// remote device when one is selected.
+// queue honors it when it advances. It is deliberately NOT forwarded to a
+// connected remote device: this instance is the controller and owns the queue,
+// streaming the host one track at a time. Forwarding Repeat-All would make the
+// host loop its single-item queue forever and never accept the next track —
+// trapping playback. Repeat is applied locally so the engine's own auto-advance
+// (which drives the remote via /play) honors it. (B2)
 //
 //export DZSetRepeat
 func DZSetRepeat(mode C.int) {
@@ -484,11 +534,6 @@ func DZSetRepeat(mode C.int) {
 		m = "one"
 	}
 	engineSetRepeat(m)
-	if rc := routedRemote(); rc != nil {
-		if st, err := rc.SetRepeat(m); err == nil {
-			setRemoteState(st)
-		}
-	}
 }
 
 // DZSetShuffle sets shuffle on (1) or off (0). The flag is always recorded on
@@ -501,9 +546,54 @@ func DZSetShuffle(on C.int) {
 	engineSetShuffle(on != 0)
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.SetShuffle(on != 0); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 	}
+}
+
+// currentRepeatMode returns the effective repeat mode ("off"|"all"|"one"): the
+// routed device's snapshot when casting (so a host GUI reads the real mode),
+// else the engine queue's. Pure Go core of DZGetRepeat.
+func currentRepeatMode() string {
+	if routedRemote() != nil {
+		if r := remoteSnapshot().Repeat; r != "" {
+			return r
+		}
+		return "off"
+	}
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return engineQ.Repeat().String()
+}
+
+// currentShuffleOn returns the effective shuffle flag: routed snapshot when
+// casting, else the engine queue. Pure Go core of DZGetShuffle.
+func currentShuffleOn() bool {
+	if routedRemote() != nil {
+		return remoteSnapshot().Shuffle
+	}
+	queueMu.Lock()
+	defer queueMu.Unlock()
+	return engineQ.Shuffle()
+}
+
+// DZGetRepeat returns the current repeat mode as "off", "all" or "one". When
+// routed to a Connect device the routed snapshot's mode is returned (so a
+// casting host GUI reads the real mode); otherwise the engine queue's. The
+// result must be released with DZFree.
+//
+//export DZGetRepeat
+func DZGetRepeat() *C.char { return C.CString(currentRepeatMode()) }
+
+// DZGetShuffle returns 1 when shuffle is on, else 0. Routed to a Connect device
+// it reflects the routed snapshot; otherwise the engine queue.
+//
+//export DZGetShuffle
+func DZGetShuffle() C.int {
+	if currentShuffleOn() {
+		return 1
+	}
+	return 0
 }
 
 //export DZState
@@ -540,7 +630,7 @@ func DZDurationMS() C.longlong {
 func DZSetVolume(v C.double) {
 	if rc := routedRemote(); rc != nil {
 		if st, err := rc.SetVolume(float64(v)); err == nil {
-			setRemoteState(st)
+			setRemoteState(rc, st)
 		}
 		return
 	}
@@ -1248,6 +1338,8 @@ func DZPreload(trackID *C.char, durationMS C.longlong) {
 //
 //export DZPlayEpisode
 func DZPlayEpisode(episodeID *C.char, durationMS C.longlong) C.int {
+	// A fresh user play supersedes any in-flight async auto-advance resolve. (B3)
+	playSeq.Add(1)
 	mu.Lock()
 	c := client
 	p := player

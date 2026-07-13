@@ -15,6 +15,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,26 +95,61 @@ type server struct {
 	out    *bufio.Writer
 }
 
+// maxLineBytes caps a single JSON-RPC request line. A bufio.Scanner would hard
+// error (bufio.ErrTooLong) on a line past its token limit and end the loop; a
+// line longer than this instead draws a JSON-RPC parse error and the loop keeps
+// going, so one oversized message never takes the whole server down.
+const maxLineBytes = 8 << 20 // 8 MiB
+
 func (s *server) serve(in io.Reader, out io.Writer) {
 	s.out = bufio.NewWriter(out)
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
+	// A bufio.Reader (not a Scanner) lets us cap and *recover* from an oversized
+	// line rather than aborting: readLine drains the offending line and reports
+	// tooLong so we can answer -32700 and continue with the next request.
+	br := bufio.NewReaderSize(in, 64<<10)
+	for {
+		line, tooLong, err := readLine(br, maxLineBytes)
+		if tooLong {
+			logf("parse error: request line exceeds %d bytes", maxLineBytes)
+			s.replyErr(json.RawMessage("null"), -32700, "Parse error")
+		} else if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+			var req rpcReq
+			if uerr := json.Unmarshal(trimmed, &req); uerr != nil {
+				logf("parse error: %v", uerr)
+				s.replyErr(json.RawMessage("null"), -32700, "Parse error")
+			} else {
+				s.dispatch(req)
+			}
 		}
-		var req rpcReq
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			logf("parse error: %v", err)
-			s.replyErr(json.RawMessage("null"), -32700, "parse error")
-			continue
+		if err != nil {
+			if err != io.EOF {
+				logf("stdin: %v", err)
+				os.Exit(1)
+			}
+			return
 		}
-		s.dispatch(req)
 	}
-	if err := sc.Err(); err != nil {
-		logf("stdin: %v", err)
-		os.Exit(1)
+}
+
+// readLine reads one '\n'-terminated line from r and returns it (the trailing
+// newline is left on; callers trim). When appending the line would exceed max
+// bytes, readLine drains the rest of that line and returns tooLong=true with a
+// nil line, so the caller can answer a parse error and resume at the next line.
+// The final line need not end in '\n'; it is then returned with err==io.EOF.
+func readLine(r *bufio.Reader, max int) (line []byte, tooLong bool, err error) {
+	for {
+		frag, e := r.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(frag) > max {
+				tooLong, line = true, nil // over cap: drop and drain the remainder
+			} else {
+				line = append(line, frag...)
+			}
+		}
+		if e == bufio.ErrBufferFull {
+			continue // more of this line remains in the reader
+		}
+		return line, tooLong, e
 	}
 }
 

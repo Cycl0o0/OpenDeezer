@@ -80,7 +80,7 @@ func (c *Client) state(method, path string) (State, error) {
 	return st, nil
 }
 
-// Whoami fetches the server's identity (name + auth mode).
+// Whoami fetches the server's identity, auth mode and supported command families.
 func (c *Client) Whoami() (Whoami, error) {
 	b, err := c.raw(http.MethodGet, "/whoami")
 	if err != nil {

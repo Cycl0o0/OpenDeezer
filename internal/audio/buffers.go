@@ -82,6 +82,12 @@ func (b *streamBuffer) setContentLength(n int64) {
 	b.mu.Unlock()
 }
 
+func (b *streamBuffer) Total() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.total
+}
+
 // waitWatermark blocks until at least n bytes have been buffered, or the stream
 // has finished/closed (whichever comes first). It lets the decoder start on a
 // safe margin of encoded audio instead of the entire file — cutting time to

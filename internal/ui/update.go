@@ -617,6 +617,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.q.ToggleShuffle()
 			m.player.ClearPreload()
 			cmd = m.preloadNextCmd()
+		case "repeat-set":
+			// SET variant: absolute repeat mode from a GUI/web/SDK controller.
+			if m.remote != nil {
+				m.publishMedia()
+				m.publishControl()
+				return m, remoteSetRepeatCmd(m.remote, msg.mode)
+			}
+			m.q.SetRepeat(parseRepeatMode(msg.mode))
+			cmd = m.invalidatePreload() // upcoming track may differ under the new mode
+		case "shuffle-set":
+			// SET variant: absolute shuffle state from a GUI/web/SDK controller.
+			if m.remote != nil {
+				m.publishMedia()
+				m.publishControl()
+				return m, remoteSetShuffleCmd(m.remote, msg.on)
+			}
+			m.q.SetShuffle(msg.on)
+			cmd = m.invalidatePreload()
 		case "seek":
 			m.player.SeekMS(msg.ms)
 		case "volume":
@@ -899,6 +917,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.shutdown()
 		return m, tea.Quit
 	case " ":
+		// Driving a peer: transport keys target the peer, not the local player.
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.PlayPause)
+		}
 		m.player.TogglePause()
 		return m, nil
 	case "n":
@@ -909,6 +931,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.publishControl()
 			m.status = i18n.Tf("Playing next: %s", t.Name)
 			return m, m.invalidatePreload()
+		}
+		// Transport "next": drive the peer when connected (e.g. on the remote
+		// lyrics/now-playing screens), otherwise the local queue.
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.Next)
 		}
 		return m, m.next()
 	case "e":
@@ -921,6 +948,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "p":
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.Prev)
+		}
 		return m, m.prev()
 	case "m":
 		// Start radio: a mix seeded from the selected track/artist (browse lists,
@@ -958,25 +988,29 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
-		m.status = i18n.Tf("Repeat: %s", i18n.T(m.q.CycleRepeat().String()))
-		m.publishControl()
+		// Driving a peer: forward the repeat cycle and let the peer's reported
+		// state drive the display — do NOT mutate the local queue (it would drift
+		// from the peer). Mirrors controlCmdMsg's remote handling.
 		if m.remote != nil {
 			return m, remoteCmd(m.remote.CycleRepeat)
 		}
+		m.status = i18n.Tf("Repeat: %s", i18n.T(m.q.CycleRepeat().String()))
+		m.publishControl()
 		// The upcoming track may have changed; drop the stale linear preload and
 		// re-preload for the new mode (no-op preload when now non-deterministic).
 		m.player.ClearPreload()
 		return m, m.preloadNextCmd()
 	case "z":
+		// Driving a peer: forward the shuffle toggle without mutating local state.
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.ToggleShuffle)
+		}
 		if m.q.ToggleShuffle() {
 			m.status = i18n.T("Shuffle on")
 		} else {
 			m.status = i18n.T("Shuffle off")
 		}
 		m.publishControl()
-		if m.remote != nil {
-			return m, remoteCmd(m.remote.ToggleShuffle)
-		}
 		m.player.ClearPreload()
 		return m, m.preloadNextCmd()
 	case "g":
@@ -1115,15 +1149,29 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "+", "=":
+		// Driving a peer: adjust the peer's volume (from its reported state).
+		if m.remote != nil {
+			return m, remoteVolumeCmd(m.remote, m.remoteState.Volume+0.1)
+		}
 		m.status = volStatus(m.player.AddVolume(0.1))
 		return m, nil
 	case "-", "_":
+		if m.remote != nil {
+			return m, remoteVolumeCmd(m.remote, m.remoteState.Volume-0.1)
+		}
 		m.status = volStatus(m.player.AddVolume(-0.1))
 		return m, nil
 	case "left":
+		// Driving a peer: seek the peer relative to its reported position.
+		if m.remote != nil {
+			return m, remoteSeekCmd(m.remote, m.remoteState.PositionMS-10000)
+		}
 		m.player.SeekMS(m.player.PositionMS() - 10000)
 		return m, nil
 	case "right":
+		if m.remote != nil {
+			return m, remoteSeekCmd(m.remote, m.remoteState.PositionMS+10000)
+		}
 		m.player.SeekMS(m.player.PositionMS() + 10000)
 		return m, nil
 	case "h":
@@ -1178,6 +1226,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "s":
+		// Driving a peer: stop the peer's playback, not the local player.
+		if m.remote != nil {
+			return m, remoteCmd(m.remote.Stop)
+		}
 		m.histSyncPos() // sample the position before the player forgets it
 		m.player.Stop()
 		m.playing = false

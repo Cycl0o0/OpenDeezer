@@ -271,6 +271,8 @@ func (r *richPresence) drop() {
 	r.lastStart = 0
 }
 
+var closeTimeout = 6 * time.Second
+
 // Close clears the presence and shuts down the worker.
 func (r *richPresence) Close() {
 	r.mu.Lock()
@@ -281,7 +283,10 @@ func (r *richPresence) Close() {
 	r.closed = true
 	r.mu.Unlock()
 	r.signal()
-	<-r.done
+	select {
+	case <-r.done:
+	case <-time.After(closeTimeout):
+	}
 }
 
 // shutdown clears the presence and closes the socket; runs on the worker.

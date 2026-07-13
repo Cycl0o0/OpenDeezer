@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +14,16 @@ import (
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
 )
+
+// clearRoutedRemote resets the Connect routing globals so a test that installs a
+// fake remote can't leak it into another test's routedRemote() reads.
+func clearRoutedRemote() {
+	mu.Lock()
+	remoteCli = nil
+	remoteSt = control.State{}
+	remoteAddr = ""
+	mu.Unlock()
+}
 
 // waitServing blocks until the server at addr returns an HTTP response, which
 // proves http.Server.Serve has run past trackListener — so a subsequent Close
@@ -719,5 +730,212 @@ func TestStopRecordsOutgoingListenOnce(t *testing.T) {
 	recordTransition(audio.Stopped, 65000)
 	if got, _ := historyStore().Recent(10); len(got) != 1 {
 		t.Fatalf("second Stop double-recorded: history = %+v", got)
+	}
+}
+
+// TestGetRepeatShuffleLocalVsRouted proves the B1 getters read the engine queue
+// when playing locally and the routed device's snapshot when casting, so a
+// casting host GUI reads the real modes (empty remote repeat falls back to off).
+func TestGetRepeatShuffleLocalVsRouted(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	t.Cleanup(clearRoutedRemote)
+
+	// Local: reflects the engine queue.
+	engineSetRepeat("all")
+	engineSetShuffle(true)
+	if got := currentRepeatMode(); got != "all" {
+		t.Fatalf("local repeat = %q, want all", got)
+	}
+	if !currentShuffleOn() {
+		t.Fatal("local shuffle = false, want true")
+	}
+
+	// Routed: reflects the remote snapshot, NOT the engine queue.
+	rc := control.NewClient("http://127.0.0.1:1", "", "")
+	mu.Lock()
+	remoteCli = rc
+	remoteSt = control.State{Repeat: "one", Shuffle: false}
+	mu.Unlock()
+	if got := currentRepeatMode(); got != "one" {
+		t.Fatalf("routed repeat = %q, want the remote snapshot's one", got)
+	}
+	if currentShuffleOn() {
+		t.Fatal("routed shuffle = true, want the remote snapshot's false")
+	}
+
+	// An empty remote repeat mode falls back to off.
+	mu.Lock()
+	remoteSt = control.State{Repeat: ""}
+	mu.Unlock()
+	if got := currentRepeatMode(); got != "off" {
+		t.Fatalf("routed empty repeat = %q, want off fallback", got)
+	}
+}
+
+// TestRepeatNotForwardedToRoutedRemote proves B2: with a device connected,
+// setting/cycling repeat records locally but is NOT forwarded to the host (which
+// would trap it looping its single-item queue), while shuffle IS still forwarded.
+func TestRepeatNotForwardedToRoutedRemote(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	t.Cleanup(clearRoutedRemote)
+
+	var repeatCalls, shuffleCalls int32
+	host := control.New(
+		control.Config{Addr: "127.0.0.1:0"},
+		func() control.State { return control.State{} },
+		func() control.Account { return control.Account{} },
+		control.Commands{
+			SetRepeat:  func(string) { atomic.AddInt32(&repeatCalls, 1) },
+			SetShuffle: func(bool) { atomic.AddInt32(&shuffleCalls, 1) },
+		},
+		nil,
+	)
+	if err := host.Start(); err != nil {
+		t.Fatalf("start fake host: %v", err)
+	}
+	defer host.Close()
+	waitServing(t, host.Addr())
+
+	rc := control.NewClient("http://"+host.Addr(), "", "")
+	mu.Lock()
+	remoteCli = rc
+	remoteSt = control.State{}
+	mu.Unlock()
+
+	cmds := engineCommands()
+	cmds.SetRepeat("all") // records engineQ=all, must NOT forward (B2)
+	cmds.CycleRepeat()    // all -> one, must NOT forward (B2)
+	if n := atomic.LoadInt32(&repeatCalls); n != 0 {
+		t.Fatalf("repeat forwarded to the routed host %d times, want 0 (B2)", n)
+	}
+
+	// The mode is still recorded on the engine queue (drives the engine's own
+	// auto-advance, which honors repeat when it feeds the host).
+	queueMu.Lock()
+	local := engineQ.Repeat().String()
+	queueMu.Unlock()
+	if local != "one" {
+		t.Fatalf("engine repeat = %q, want one (off->all->one)", local)
+	}
+
+	// Shuffle is still forwarded to the host.
+	cmds.SetShuffle(true)
+	if n := atomic.LoadInt32(&shuffleCalls); n != 1 {
+		t.Fatalf("shuffle forwarded %d times, want 1", n)
+	}
+}
+
+// TestAutoAdvanceBumpsPlaySeqAndGuardDropsStale proves B3: engineAdvanceOnFinish
+// claims a play-seq for its async launch, and a later user play bumps past it so
+// the in-flight resolve is recognised as superseded (and dropped) instead of
+// clobbering the user's track.
+func TestAutoAdvanceBumpsPlaySeqAndGuardDropsStale(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	t.Cleanup(func() { setCurrentTrack(deezer.Track{}) })
+
+	queueMu.Lock()
+	engineQ.Set([]deezer.Track{{ID: "1"}, {ID: "2"}}, 0)
+	queueMu.Unlock()
+	setCurrentTrack(deezer.Track{ID: "1"})
+
+	before := playSeq.Load()
+	// No live client/player in tests: the async launch's goroutine no-ops, but
+	// engineAdvanceOnFinish still advances the queue and bumps playSeq.
+	if !engineAdvanceOnFinish() {
+		t.Fatal("auto-advance should own the finish of the queue's current track")
+	}
+	seqAtLaunch := playSeq.Load()
+	if seqAtLaunch == before {
+		t.Fatal("engineAdvanceOnFinish must bump playSeq for its async launch (B3)")
+	}
+	if playSuperseded(seqAtLaunch) {
+		t.Fatal("a resolve must not be superseded before any newer play")
+	}
+	// A user DZPlay/DZPlayEpisode bumps playSeq: the in-flight resolve is stale.
+	playSeq.Add(1)
+	if !playSuperseded(seqAtLaunch) {
+		t.Fatal("a newer play must supersede the stale auto-advance resolve (B3)")
+	}
+}
+
+// TestErroredFinishNotRecorded proves B4: a finish that carries a player error
+// with ~0 played (a CDN/decode failure) is neither logged as a listen nor
+// auto-advanced, while a clean finish (and an error deep into the track) records.
+func TestErroredFinishNotRecorded(t *testing.T) {
+	t.Cleanup(func() { setCurrentTrack(deezer.Track{}) })
+	setHistoryStore(history.New(filepath.Join(t.TempDir(), "history.jsonl")))
+
+	// The predicate: error + ~0 played => errored finish.
+	if !isErroredFinish(audio.Errored, "", 0) {
+		t.Fatal("Errored state with ~0 played is an errored finish")
+	}
+	if !isErroredFinish(audio.Stopped, "CDN 403", 0) {
+		t.Fatal("a non-empty LastError with ~0 played is an errored finish")
+	}
+	if isErroredFinish(audio.Stopped, "CDN 403", 120000) {
+		t.Fatal("an error deep into the track is a real partial listen, not an errored finish")
+	}
+	if isErroredFinish(audio.Playing, "", 0) {
+		t.Fatal("a Playing gapless promote is never an errored finish")
+	}
+	if isErroredFinish(audio.Stopped, "", 200000) {
+		t.Fatal("a clean finish (no error) is not an errored finish")
+	}
+
+	prev := deezer.Track{ID: "E", Name: "Failed", DurationMS: 200000}
+	setCurrentTrack(prev)
+
+	// An errored finish records nothing (recordFinished returns before spawning
+	// the async write, so an immediate read is authoritative).
+	recordFinished(prev, audio.Errored, "decode failed", 0, true)
+	if got, _ := historyStore().Recent(10); len(got) != 0 {
+		t.Fatalf("errored finish was recorded: %+v", got)
+	}
+
+	// A clean finish IS recorded.
+	recordFinished(prev, audio.Stopped, "", 0, true)
+	if entries := waitHistory(t, 1); entries[0].TrackID != "E" {
+		t.Fatalf("clean finish recorded %q, want E", entries[0].TrackID)
+	}
+}
+
+// TestSetRemoteStateIdentityChecked proves B7: setRemoteState applies only when
+// the passed client is still the CURRENT remote — a late in-flight response from
+// a device we've switched away from can neither overwrite state nor bump the
+// finished counter for the wrong device.
+func TestSetRemoteStateIdentityChecked(t *testing.T) {
+	t.Cleanup(clearRoutedRemote)
+
+	rcA := control.NewClient("http://127.0.0.1:1", "", "") // the OLD device
+	rcB := control.NewClient("http://127.0.0.1:2", "", "") // the CURRENT device
+	mu.Lock()
+	remoteCli = rcB
+	remoteSt = control.State{State: "playing", DurationMS: 1000, PositionMS: 900}
+	startFinished := finished
+	mu.Unlock()
+
+	// Late response from A (no longer current): ignored — state and the finished
+	// counter are unchanged.
+	setRemoteState(rcA, control.State{State: "stopped", DurationMS: 1000, PositionMS: 1000})
+	mu.Lock()
+	stA, finA := remoteSt, finished
+	mu.Unlock()
+	if stA.State != "playing" {
+		t.Fatalf("a late response from a non-current device overwrote B's state: %+v", stA)
+	}
+	if finA != startFinished {
+		t.Fatalf("a non-current device bumped finished: %d -> %d", startFinished, finA)
+	}
+
+	// Current device B applies, and its playing->stopped-near-end bumps finished.
+	setRemoteState(rcB, control.State{State: "stopped", DurationMS: 1000, PositionMS: 1000})
+	mu.Lock()
+	stB, finB := remoteSt, finished
+	mu.Unlock()
+	if stB.State != "stopped" {
+		t.Fatalf("current-device response not applied: %+v", stB)
+	}
+	if finB != startFinished+1 {
+		t.Fatalf("current device end-of-track did not bump finished: %d -> %d", startFinished, finB)
 	}
 }

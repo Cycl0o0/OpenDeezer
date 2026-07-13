@@ -71,6 +71,7 @@ type Responder struct {
 	info        func() Info
 	controlPort int
 	done        chan struct{}
+	wg          sync.WaitGroup
 }
 
 // Advertise starts the discovery responder on UDP :Port (reuse-port so multiple
@@ -86,7 +87,11 @@ func Advertise(info func() Info, controlPort int) (*Responder, error) {
 	if err := r.rebind(); err != nil {
 		return nil, err
 	}
-	go r.supervisor()
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		r.supervisor()
+	}()
 	return r, nil
 }
 
@@ -114,11 +119,13 @@ func (r *Responder) rebind() error {
 	}
 	r.conn = conn
 
+	r.wg.Add(1)
 	go r.serve(conn)
 	return nil
 }
 
 func (r *Responder) serve(conn *net.UDPConn) {
+	defer r.wg.Done()
 	buf := make([]byte, maxPacket)
 	for {
 		n, src, err := conn.ReadFromUDP(buf)
@@ -137,8 +144,10 @@ func (r *Responder) serve(conn *net.UDPConn) {
 	}
 }
 
+var supervisorInterval = 30 * time.Second
+
 func (r *Responder) supervisor() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(supervisorInterval)
 	defer ticker.Stop()
 
 	lastIPs := getLocalIPsList()
@@ -147,8 +156,9 @@ func (r *Responder) supervisor() {
 		case <-ticker.C:
 			currentIPs := getLocalIPsList()
 			if ipsChanged(lastIPs, currentIPs) {
-				_ = r.rebind()
-				lastIPs = currentIPs
+				if err := r.rebind(); err == nil {
+					lastIPs = currentIPs
+				}
 			}
 		case <-r.done:
 			return
@@ -159,9 +169,8 @@ func (r *Responder) supervisor() {
 // Close stops the responder.
 func (r *Responder) Close() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if r.closed {
+		r.mu.Unlock()
 		return
 	}
 	r.closed = true
@@ -169,6 +178,8 @@ func (r *Responder) Close() {
 	if r.conn != nil {
 		_ = r.conn.Close()
 	}
+	r.mu.Unlock()
+	r.wg.Wait()
 }
 
 // Discover multicasts a probe (with a broadcast fallback) and collects replies
@@ -276,7 +287,7 @@ func sendProbes(conn *net.UDPConn, probe []byte, group *net.UDPAddr, staticPeers
 	}
 }
 
-func getLocalIPsList() []string {
+var getLocalIPsList = func() []string {
 	var ips []string
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

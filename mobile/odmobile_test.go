@@ -2,11 +2,13 @@ package odmobile
 
 import (
 	"encoding/json"
+	"net"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
@@ -611,5 +613,281 @@ func TestStopRecordsOutgoingListenOnce(t *testing.T) {
 	recordTransition(audio.Stopped, 65000)
 	if got, _ := historyStore().Recent(10); len(got) != 1 {
 		t.Fatalf("second Stop double-recorded: history = %+v", got)
+	}
+}
+
+// ---- test helpers for the Phase-1 fixes ----
+
+// clearRemote resets the Connect (controller-side) routing globals so a routed
+// test can't leak remoteCli/remoteSt into the next test.
+func clearRemote() {
+	mu.Lock()
+	remoteCli = nil
+	remoteSt = control.State{}
+	remoteAddr = ""
+	if remoteStop != nil {
+		close(remoteStop)
+		remoteStop = nil
+	}
+	mu.Unlock()
+}
+
+// resetControlGlobals closes and clears the shared control-server globals so a
+// server a test published (or built) never leaks into another test.
+func resetControlGlobals() {
+	mu.Lock()
+	srv, adv := ctrlSrv, hostAdv
+	ctrlSrv, ctrlSrvClient, hostAdv = nil, nil, nil
+	ctrlCfg = control.Config{}
+	mu.Unlock()
+	if adv != nil {
+		adv.Close()
+	}
+	if srv != nil {
+		srv.Close()
+	}
+}
+
+// startTestControlServer starts a real control server on loopback (open auth,
+// nil client) so tests can exercise the Connect controller/host paths without a
+// live device. Registered for Close via t.Cleanup.
+func startTestControlServer(t *testing.T) *control.Server {
+	t.Helper()
+	s := control.New(control.Config{Addr: "127.0.0.1:0"}, engineState, engineAccount, engineCommands(), nil)
+	if err := s.Start(); err != nil {
+		t.Fatalf("start test control server: %v", err)
+	}
+	t.Cleanup(s.Close)
+	return s
+}
+
+// TestGetRepeatShuffleRoutedVsLocal proves the B1 getters: with no Connect
+// device they read the engine queue, and while routed they read the remote
+// host's snapshot (so the app renders the host's real modes while casting)
+// rather than the controller's local engine queue.
+func TestGetRepeatShuffleRoutedVsLocal(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	t.Cleanup(clearRemote)
+
+	// Local: getters reflect the engine queue.
+	SetRepeat(1) // all
+	SetShuffle(1)
+	if got := GetRepeat(); got != "all" {
+		t.Fatalf("local GetRepeat = %q, want all", got)
+	}
+	if !GetShuffle() {
+		t.Fatal("local GetShuffle = false, want true")
+	}
+
+	// Routed: getters reflect the remote host snapshot, NOT the local queue
+	// (local is all/true; the host reports one/false).
+	mu.Lock()
+	remoteCli = control.NewClient("http://127.0.0.1:1", "", "")
+	remoteSt = control.State{Repeat: "one", Shuffle: false}
+	mu.Unlock()
+
+	if got := GetRepeat(); got != "one" {
+		t.Fatalf("routed GetRepeat = %q, want the host snapshot \"one\" (not local \"all\")", got)
+	}
+	if GetShuffle() {
+		t.Fatal("routed GetShuffle = true, want the host snapshot false (not local true)")
+	}
+}
+
+// TestCycleRepeatAndToggleShuffleWired proves the B1 host-both wiring: the
+// engineCommands legacy verbs (CycleRepeat/ToggleShuffle) are wired alongside
+// the SET variants and drive the engine queue (off->all->one->off; shuffle
+// flip), visible through engineState.
+func TestCycleRepeatAndToggleShuffleWired(t *testing.T) {
+	t.Cleanup(resetEngineQueue)
+	resetEngineQueue()
+
+	cmds := engineCommands()
+	if cmds.CycleRepeat == nil || cmds.ToggleShuffle == nil {
+		t.Fatal("CycleRepeat/ToggleShuffle hooks must be wired (B1)")
+	}
+	if cmds.SetRepeat == nil || cmds.SetShuffle == nil {
+		t.Fatal("SetRepeat/SetShuffle hooks must stay wired")
+	}
+
+	if got := engineState().Repeat; got != "off" {
+		t.Fatalf("baseline repeat = %q, want off", got)
+	}
+	for _, want := range []string{"all", "one", "off"} {
+		cmds.CycleRepeat()
+		if got := engineState().Repeat; got != want {
+			t.Fatalf("after cycle repeat = %q, want %q", got, want)
+		}
+	}
+	cmds.ToggleShuffle()
+	if !engineState().Shuffle {
+		t.Fatal("ToggleShuffle must turn shuffle on")
+	}
+	cmds.ToggleShuffle()
+	if engineState().Shuffle {
+		t.Fatal("ToggleShuffle must turn shuffle back off")
+	}
+}
+
+// TestLogoutClearsRemoteRouting proves B8: Logout tears down the Connect
+// controller routing (remoteCli/remoteSt/remoteAddr/remoteStop) before wiping
+// the session, so commands can't keep routing to the old device under a new
+// account.
+func TestLogoutClearsRemoteRouting(t *testing.T) {
+	t.Cleanup(clearRemote)
+	t.Cleanup(resetControlGlobals)
+
+	srv := startTestControlServer(t)
+	rc := control.NewClient("http://"+srv.Addr(), "", "")
+
+	mu.Lock()
+	remoteCli = rc
+	remoteSt = control.State{State: "playing"}
+	remoteAddr = srv.Addr()
+	remoteStop = make(chan struct{})
+	mu.Unlock()
+
+	if routedRemote() == nil {
+		t.Fatal("precondition: a device must be routed")
+	}
+
+	Logout()
+
+	if routedRemote() != nil {
+		t.Fatal("Logout must clear remoteCli (else commands route to the stale device)")
+	}
+	if got := ConnectedDevice(); got != "" {
+		t.Fatalf("Logout must clear remoteAddr, got %q", got)
+	}
+	mu.Lock()
+	stopCleared := remoteStop == nil
+	stateCleared := remoteSt.State == ""
+	mu.Unlock()
+	if !stopCleared {
+		t.Fatal("Logout must clear remoteStop")
+	}
+	if !stateCleared {
+		t.Fatal("Logout must clear the cached remote state")
+	}
+}
+
+// TestMobileStartServerKeepsToken proves B9: the LAN control-server rebind
+// carries the configured token, so a token-protected control API is NOT
+// downgraded to token-less (same-account-only) auth when bound onto all
+// interfaces.
+func TestMobileStartServerKeepsToken(t *testing.T) {
+	t.Setenv("OPENDEEZER_CONTROL_TOKEN", "s3cr3t")
+	t.Cleanup(resetControlGlobals)
+
+	srv := mobileStartServer("127.0.0.1:0")
+	if srv == nil {
+		t.Fatal("mobileStartServer returned nil")
+	}
+	t.Cleanup(srv.Close)
+	base := "http://" + srv.Addr()
+
+	// No token -> rejected (the rebind must not downgrade to token-less auth).
+	if _, err := control.NewClient(base, "", "").Status(); err == nil {
+		t.Fatal("token-less request accepted: LAN rebind downgraded auth (B9 regression)")
+	}
+	// A same-account header alone must NOT unlock a token-protected server
+	// (token takes priority over same-account in the server's auth switch).
+	if _, err := control.NewClient(base, "", "someacct").Status(); err == nil {
+		t.Fatal("same-account request accepted despite a configured token (B9 regression)")
+	}
+	// The correct token is accepted.
+	if _, err := control.NewClient(base, "s3cr3t", "").Status(); err != nil {
+		t.Fatalf("correct-token request rejected: %v", err)
+	}
+}
+
+// TestStartControlServerNoDeadPublish proves B11: when Start fails (port already
+// bound) startControlServer returns nil and publishes nothing, so ctrlSrv never
+// holds a listener-less handle that mobileEnsureLANServer would treat as live.
+func TestStartControlServerNoDeadPublish(t *testing.T) {
+	t.Cleanup(resetControlGlobals)
+
+	// Occupy a loopback port so the control server's net.Listen fails.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occupy port: %v", err)
+	}
+	defer ln.Close()
+	occupied := ln.Addr().String()
+
+	mu.Lock()
+	ctrlSrv = nil
+	mu.Unlock()
+
+	if s := startControlServer(control.Config{Addr: occupied}, nil, false); s != nil {
+		t.Fatal("startControlServer must return nil when Start fails")
+	}
+	mu.Lock()
+	published := ctrlSrv
+	mu.Unlock()
+	if published != nil {
+		t.Fatal("a server that failed to Start must NOT be published to ctrlSrv (B11)")
+	}
+}
+
+// TestMobileServerListening proves the B11 liveness probe: a started server
+// reports listening; once closed it does not — so mobileEnsureLANServer rebuilds
+// a dead server instead of handing it back.
+func TestMobileServerListening(t *testing.T) {
+	if mobileServerListening(nil) {
+		t.Fatal("nil server must not report listening")
+	}
+	s := startTestControlServer(t)
+	if !mobileServerListening(s) {
+		t.Fatal("a started server must report listening")
+	}
+	s.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for mobileServerListening(s) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if mobileServerListening(s) {
+		t.Fatal("a closed server must not report listening (B11 dead-server guard)")
+	}
+}
+
+// TestIsErroredFinish proves the B4 gate used by BOTH the onFinish closure and
+// noteTrackFinished: an errored finish (Errored state, or a stored LastError)
+// with ~0 played is classified as "skip" (no history, no advance), while a clean
+// finish, a gapless promote (Playing, no error) and a mid-track error that
+// already played real audio are all classified as genuine finishes.
+func TestIsErroredFinish(t *testing.T) {
+	cases := []struct {
+		name    string
+		state   audio.State
+		lastErr string
+		posMS   int64
+		want    bool
+	}{
+		{"clean stopped finish", audio.Stopped, "", 0, false},
+		{"gapless promote (playing, no error)", audio.Playing, "", 0, false},
+		{"errored finish, nothing played", audio.Stopped, "decode failed", 0, true},
+		{"device-loss Errored, nothing played", audio.Errored, "device lost", 0, true},
+		{"errored state, nothing played, empty msg", audio.Errored, "", 0, true},
+		{"error after real playback", audio.Stopped, "late decode error", 65000, false},
+		{"errored state but played a lot", audio.Errored, "", 65000, false},
+	}
+	for _, c := range cases {
+		if got := isErroredFinish(c.state, c.lastErr, c.posMS); got != c.want {
+			t.Errorf("%s: isErroredFinish(%v,%q,%d) = %v, want %v",
+				c.name, c.state, c.lastErr, c.posMS, got, c.want)
+		}
+	}
+	// erroredFinish tolerates a nil player (pre-Init / tests): never errored.
+	if erroredFinish(nil) {
+		t.Fatal("erroredFinish(nil) must be false")
+	}
+}
+
+// TestFavoriteIDsJSONNoClient proves FavoriteIDsJSON degrades to a valid empty
+// JSON array (never null/error) when not logged in.
+func TestFavoriteIDsJSONNoClient(t *testing.T) {
+	if got := FavoriteIDsJSON(); got != "[]" {
+		t.Fatalf("FavoriteIDsJSON with no client = %q, want []", got)
 	}
 }

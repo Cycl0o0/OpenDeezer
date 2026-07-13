@@ -208,11 +208,27 @@ type remoteStateMsg struct {
 // controlCmdMsg is a command from the control API, delivered onto the update
 // loop so it runs single-threaded with the rest of the model.
 type controlCmdMsg struct {
-	kind string // playpause|next|prev|stop|restart|repeat|shuffle|seek|volume|playtrack|playplaylist|sleep|sleepcancel
+	kind string // playpause|next|prev|stop|restart|repeat|shuffle|repeat-set|shuffle-set|seek|volume|playtrack|playplaylist|sleep|sleepcancel
 	id   string // track/playlist id (playtrack/playplaylist)
 	ms   int64  // absolute position for seek; minutes for sleep
 	vol  float64
-	eot  bool // end-of-track mode for sleep
+	mode string // target repeat mode for repeat-set (off|all|one)
+	on   bool   // target shuffle state for shuffle-set
+	eot  bool   // end-of-track mode for sleep
+}
+
+// parseRepeatMode maps a control-API repeat mode string ("off"|"all"|"one") to a
+// queue.Repeat. The control server validates the mode before dispatching, so an
+// unknown value defaults to RepeatOff.
+func parseRepeatMode(mode string) queue.Repeat {
+	switch mode {
+	case "all":
+		return queue.RepeatAll
+	case "one":
+		return queue.RepeatOne
+	default:
+		return queue.RepeatOff
+	}
 }
 
 // playNowMsg replaces the queue with tracks and starts playing the first one.

@@ -350,3 +350,44 @@ func TestDownloadTrickleServerTerminates(t *testing.T) {
 		t.Fatalf("trickle server received %d requests, want at most %d", n, maxResumeAttempts+1)
 	}
 }
+
+// TestDownloadResumeShortEOF verifies that a server early EOF (short EOF)
+// where consumed < total is treated as a resumable shortfall.
+func TestDownloadResumeShortEOF(t *testing.T) {
+	body := make([]byte, 100000)
+	for i := range body {
+		body[i] = byte(i % 256)
+	}
+
+	var served int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rng := r.Header.Get("Range"); rng != "" {
+			start := parseRangeStart(t, rng)
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(body)-1, len(body)))
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)-start))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(body[start:])
+			return
+		}
+		if atomic.AddInt32(&served, 1) == 1 {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body[:50000])
+			return
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	s := newSource(&deezer.StreamPlan{CDNURL: srv.URL, TrackID: "short1", Format: "MP3", Encrypted: false}, 10000)
+	s.download()
+	got := drainStreamBuffer(s.sb)
+
+	if !bytes.Equal(got, body) {
+		t.Fatalf("short EOF resume mismatch: got %d bytes, want %d bytes", len(got), len(body))
+	}
+	if e := s.lastErr(); e != "" {
+		t.Fatalf("unexpected error: %s", e)
+	}
+}

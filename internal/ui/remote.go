@@ -134,15 +134,25 @@ func (m *Model) handleRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc", "backspace":
-		rc := m.remote
+		// Non-destructive detach: leaving the remote screen stops *driving* the
+		// peer, but must NOT stop its music (disconnect != stop). Crucially, no
+		// synchronous HTTP call here — an unreachable peer would otherwise freeze
+		// the update loop for the client's full timeout (B18). Use 'S' to stop the
+		// peer explicitly when leaving.
 		m.remote = nil
 		m.remoteState = control.State{}
 		m.screen = screenMenu
 		m.status = i18n.T("Disconnected from remote")
-		if rc != nil {
-			_, _ = rc.Stop() // halt the remote device; fire-and-forget
-		}
 		return m, nil
+	case "S":
+		// Stop the peer's playback AND detach. The Stop runs as a tea.Cmd (off the
+		// update loop) so an unreachable peer can't block; its result is discarded
+		// since we've already left the screen.
+		m.remote = nil
+		m.remoteState = control.State{}
+		m.screen = screenMenu
+		m.status = i18n.T("Stopped remote and disconnected")
+		return m, remoteStopDetachCmd(rc)
 	case "ctrl+c", "Q":
 		m.shutdown() // same cleanup + resume-save as the other quit paths
 		return m, tea.Quit
@@ -173,22 +183,53 @@ func (m *Model) handleRemoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "z":
 		return m, remoteCmd(rc.ToggleShuffle)
 	case "+", "=":
-		v := clamp01(m.remoteState.Volume + 0.1)
-		return m, remoteCmd(func() (control.State, error) { return rc.SetVolume(v) })
+		return m, remoteVolumeCmd(rc, m.remoteState.Volume+0.1)
 	case "-", "_":
-		v := clamp01(m.remoteState.Volume - 0.1)
-		return m, remoteCmd(func() (control.State, error) { return rc.SetVolume(v) })
+		return m, remoteVolumeCmd(rc, m.remoteState.Volume-0.1)
 	case "left":
-		ms := m.remoteState.PositionMS - 10000
-		if ms < 0 {
-			ms = 0
-		}
-		return m, remoteCmd(func() (control.State, error) { return rc.Seek(ms) })
+		return m, remoteSeekCmd(rc, m.remoteState.PositionMS-10000)
 	case "right":
-		ms := m.remoteState.PositionMS + 10000
-		return m, remoteCmd(func() (control.State, error) { return rc.Seek(ms) })
+		return m, remoteSeekCmd(rc, m.remoteState.PositionMS+10000)
 	}
 	return m, nil
+}
+
+// remoteVolumeCmd sets the peer's volume (clamped to [0,1]).
+func remoteVolumeCmd(rc *control.Client, v float64) tea.Cmd {
+	v = clamp01(v)
+	return remoteCmd(func() (control.State, error) { return rc.SetVolume(v) })
+}
+
+// remoteSeekCmd seeks the peer to ms (negative clamps to the start).
+func remoteSeekCmd(rc *control.Client, ms int64) tea.Cmd {
+	if ms < 0 {
+		ms = 0
+	}
+	return remoteCmd(func() (control.State, error) { return rc.Seek(ms) })
+}
+
+// remoteSetRepeatCmd forwards an absolute repeat mode (off|all|one) to the peer.
+func remoteSetRepeatCmd(rc *control.Client, mode string) tea.Cmd {
+	return remoteCmd(func() (control.State, error) { return rc.SetRepeat(mode) })
+}
+
+// remoteSetShuffleCmd forwards an absolute shuffle state to the peer.
+func remoteSetShuffleCmd(rc *control.Client, on bool) tea.Cmd {
+	return remoteCmd(func() (control.State, error) { return rc.SetShuffle(on) })
+}
+
+// remoteStopDetachCmd stops the peer's playback in the background after the user
+// has already left the remote screen (the 'S' key). Runs off the update loop so
+// an unreachable peer can't block it, and discards the result — we no longer
+// drive the peer.
+func remoteStopDetachCmd(rc *control.Client) tea.Cmd {
+	if rc == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		_, _ = rc.Stop()
+		return nil
+	}
 }
 
 func clamp01(v float64) float64 {
@@ -257,7 +298,7 @@ func (m *Model) remoteCtlView(rows int) string {
 			"   " + i18n.T("Repeat") + ": " + i18n.T(repeat) + "   " + i18n.T("Shuffle") + ": " + boolLabel(st.Shuffle),
 		"",
 		i18n.T("space play/pause · n next · p prev · s stop · ←/→ seek ±10s · +/- volume"),
-		i18n.T("r repeat · z shuffle · esc disconnect"),
+		i18n.T("r repeat · z shuffle · esc disconnect (peer keeps playing) · S stop & disconnect"),
 	}
 	if m.status != "" {
 		lines = append(lines, "", m.status)

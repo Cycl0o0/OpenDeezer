@@ -35,6 +35,14 @@ var ErrARLExpired = errors.New("ARL expired or invalid — re-login required")
 // unreachable Deezer yields ErrNoNetwork.
 var ErrNoNetwork = errors.New("no internet connection")
 
+// ErrNoFullMedia signals that resolveMediaURL obtained no full-length source
+// because the account is not entitled (Free tier, geo, licensing, etc.). It is
+// distinct from transient transport, 5xx, or rate-limit errors. PrepareStream
+// falls back to the 30 s preview ONLY on ErrNoFullMedia (wrapped); any other
+// error from resolve (after retries) is returned as-is so callers see the real
+// failure instead of a silent clip downgrade.
+var ErrNoFullMedia = errors.New("no full-length media available for this account")
+
 // classifyNet wraps err with ErrNoNetwork when it is a transport/reachability
 // failure (so errors.Is(err, ErrNoNetwork) holds), and returns err unchanged
 // otherwise. Every c.http.Do call site pipes its transport error through this so
@@ -95,6 +103,37 @@ func IsNoNetwork(err error) bool { return errors.Is(err, ErrNoNetwork) }
 
 // IsARLExpired reports whether err is an expired/invalid-ARL auth failure.
 func IsARLExpired(err error) bool { return errors.Is(err, ErrARLExpired) }
+
+// IsNoFullMedia reports whether err indicates an entitlement rejection
+// (no full track source) rather than a transient problem.
+func IsNoFullMedia(err error) bool { return errors.Is(err, ErrNoFullMedia) }
+
+// isTransientMediaProblem reports true for transport, timeout, 5xx and rate
+// limit cases that must be retried (inside resolve) and must NOT trigger a
+// preview fallback in PrepareStream. We treat HTTP 5xx and 429 as transient;
+// other HTTP 4xx and Deezer error payloads without those signals are treated
+// as entitlement rejections (so preview is appropriate for free/geo cases).
+func isTransientMediaProblem(err error, apiErr string) bool {
+	if err != nil {
+		if IsNoNetwork(err) || isNetworkErr(err) || errors.Is(err, context.DeadlineExceeded) {
+			return true
+		}
+		low := strings.ToLower(err.Error())
+		if strings.Contains(low, "timeout") || strings.Contains(low, "5") && strings.Contains(low, "http") {
+			return true
+		}
+	}
+	if apiErr != "" {
+		if strings.HasPrefix(apiErr, "HTTP 5") {
+			return true
+		}
+		low := strings.ToLower(apiErr)
+		if strings.Contains(low, "429") || strings.Contains(low, "rate") || strings.Contains(low, "too many requests") {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	gwURL    = "https://www.deezer.com/ajax/gw-light.php"
@@ -870,39 +909,49 @@ func (c *Client) Favorites() ([]Track, error) {
 	return c.gwTrackAll("favorite_song.getList", fmt.Sprintf(`"user_id":%s`, jsonEsc(c.uid())))
 }
 
-// Playlists lists the user's own playlists (gw pageProfile).
+// Playlists lists the user's own playlists (gw pageProfile). It paginates
+// using index/nb (mirrors the style of gw track pagination and AlbumTracks'
+// index/limit) until a short page. The previous single-request nb=100 silently
+// dropped playlists beyond the first page.
 func (c *Client) Playlists() ([]Playlist, error) {
-	body := fmt.Sprintf(`{"user_id":%s,"tab":"playlists","nb":100}`, jsonEsc(c.uid()))
-	b, err := c.gw("deezer.pageProfile", body)
-	if err != nil {
-		return nil, err
-	}
-	var r struct {
-		Results struct {
-			Tab struct {
-				Playlists struct {
-					Data []struct {
-						PlaylistID      json.Number `json:"PLAYLIST_ID"`
-						Title           string      `json:"TITLE"`
-						NbSong          json.Number `json:"NB_SONG"`
-						PlaylistPicture string      `json:"PLAYLIST_PICTURE"`
-					} `json:"data"`
-				} `json:"playlists"`
-			} `json:"TAB"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, err
-	}
 	var out []Playlist
-	for _, p := range r.Results.Tab.Playlists.Data {
-		n, _ := p.NbSong.Int64()
-		out = append(out, Playlist{
-			ID:         p.PlaylistID.String(),
-			Name:       p.Title,
-			TrackCount: int(n),
-			ArtworkURL: gwCover(p.PlaylistPicture),
-		})
+	const plPage = 100
+	for index := 0; index < maxTracks; index += plPage {
+		body := fmt.Sprintf(`{"user_id":%s,"tab":"playlists","nb":%d,"index":%d}`, jsonEsc(c.uid()), plPage, index)
+		b, err := c.gw("deezer.pageProfile", body)
+		if err != nil {
+			return nil, err
+		}
+		var r struct {
+			Results struct {
+				Tab struct {
+					Playlists struct {
+						Data []struct {
+							PlaylistID      json.Number `json:"PLAYLIST_ID"`
+							Title           string      `json:"TITLE"`
+							NbSong          json.Number `json:"NB_SONG"`
+							PlaylistPicture string      `json:"PLAYLIST_PICTURE"`
+						} `json:"data"`
+					} `json:"playlists"`
+				} `json:"TAB"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return nil, err
+		}
+		page := r.Results.Tab.Playlists.Data
+		for _, p := range page {
+			n, _ := p.NbSong.Int64()
+			out = append(out, Playlist{
+				ID:         p.PlaylistID.String(),
+				Name:       p.Title,
+				TrackCount: int(n),
+				ArtworkURL: gwCover(p.PlaylistPicture),
+			})
+		}
+		if len(page) < plPage {
+			break
+		}
 	}
 	return out, nil
 }
@@ -947,10 +996,13 @@ type StreamPlan struct {
 	Refresh func() (*StreamPlan, error) `json:"-"`
 }
 
-// resolveMediaURL turns a track token into an encrypted CDN URL. get_url can
-// reject with an error payload (e.g. an expired license token, which Deezer
-// rotates while the gw session stays valid), so on a rejection it re-logins
-// once to refresh the license token and retries, mirroring the gw() pattern.
+// resolveMediaURL turns a track token into an encrypted CDN URL. Transport,
+// 5xx and rate-limit problems are retried a couple of times with short backoff
+// before returning the error (no silent preview downgrade). Entitlement
+// rejections ("no media", not-entitled payloads, or the explicit no-source
+// case) are surfaced as ErrNoFullMedia so PrepareStream can choose the 30 s
+// preview fallback only for those. Re-login is attempted only for non-transient
+// rejections (license token rotation etc).
 func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err error) {
 	licenseToken := c.licTok()
 	if licenseToken == "" || trackToken == "" {
@@ -983,26 +1035,56 @@ func (c *Client) resolveMediaURL(trackToken string) (urlStr, format string, err 
 	order = append(order, f128, f64, fmisc)
 	formats := strings.Join(order, ",")
 
-	urlStr, format, apiErr, err := c.getMediaURL(licenseToken, trackToken, formats)
-	if err != nil {
-		return "", "", err
-	}
-	if urlStr == "" && apiErr != "" {
-		if err := c.Login(); err != nil {
-			return "", "", fmt.Errorf("get_url: %s (re-login: %w)", apiErr, err)
-		}
-		urlStr, format, apiErr, err = c.getMediaURL(c.licTok(), trackToken, formats)
+	const maxAttempts = 3 // initial + a couple of retries for transients
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		var apiErr string
+		urlStr, format, apiErr, err = c.getMediaURL(licenseToken, trackToken, formats)
 		if err != nil {
+			lastErr = err
+			if attempt < maxAttempts-1 && isTransientMediaProblem(err, "") {
+				time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+				continue
+			}
 			return "", "", err
 		}
-	}
-	if urlStr == "" {
-		if apiErr != "" {
-			return "", "", fmt.Errorf("get_url: %s", apiErr)
+		if urlStr == "" && apiErr != "" {
+			lastErr = fmt.Errorf("get_url: %s", apiErr)
+			if isTransientMediaProblem(nil, apiErr) {
+				if attempt < maxAttempts-1 {
+					time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+					continue
+				}
+				return "", "", lastErr
+			}
+			// non-transient rejection: try one re-login (license token rotate case)
+			if err := c.Login(); err != nil {
+				return "", "", fmt.Errorf("get_url: %s (re-login: %w)", apiErr, err)
+			}
+			urlStr, format, apiErr, err = c.getMediaURL(c.licTok(), trackToken, formats)
+			if err != nil {
+				return "", "", err
+			}
+			if urlStr == "" && apiErr != "" {
+				// after re-login still rejected: surface as entitlement
+				return "", "", fmt.Errorf("%s: %w", apiErr, ErrNoFullMedia)
+			}
 		}
-		return "", "", fmt.Errorf("no media source (track unavailable for this account)")
+		if urlStr == "" {
+			if apiErr != "" {
+				if isTransientMediaProblem(nil, apiErr) {
+					return "", "", fmt.Errorf("get_url: %s", apiErr)
+				}
+				return "", "", fmt.Errorf("%s: %w", apiErr, ErrNoFullMedia)
+			}
+			return "", "", ErrNoFullMedia
+		}
+		return urlStr, format, nil
 	}
-	return urlStr, format, nil
+	if lastErr != nil {
+		return "", "", lastErr
+	}
+	return "", "", ErrNoFullMedia
 }
 
 // getMediaURL performs one media get_url call. apiErr carries Deezer's own
@@ -1076,10 +1158,11 @@ func (c *Client) trackPreview(trackID string) (string, error) {
 
 // PrepareStream resolves a track id to a playable stream. It first tries the
 // full, entitled track (encrypted CDN URL). When full-track resolution is
-// refused — a Deezer Free account, or a track not available at full length for
-// this account — it falls back to Deezer's public 30-second preview (a plain
-// MP3, StreamPlan.Preview == true), so free accounts can still play. Premium
-// accounts are unaffected: they resolve the full track as before.
+// refused with an entitlement rejection (ErrNoFullMedia) it falls back to
+// Deezer's public 30-second preview (plain MP3, .Preview==true) so free
+// accounts can still play. Transient errors (5xx, transport, rate limits) from
+// resolveMediaURL are retried inside the resolver and, if still failing,
+// returned as-is — a premium user never gets a 30 s clip during a CDN hiccup.
 func (c *Client) PrepareStream(trackID string) (*StreamPlan, error) {
 	if !c.LoggedIn() {
 		return nil, fmt.Errorf("not logged in")
@@ -1097,7 +1180,12 @@ func (c *Client) PrepareStream(trackID string) (*StreamPlan, error) {
 				Refresh: func() (*StreamPlan, error) { return c.PrepareStream(trackID) },
 			}, nil
 		}
-		err = mErr // remember for the fallback failure message
+		if !errors.Is(mErr, ErrNoFullMedia) {
+			// Transient (post-retry) or other non-entitlement error: surface it
+			// instead of falling back to a preview clip.
+			return nil, mErr
+		}
+		err = mErr // entitlement rejection: allow preview fallback below
 	}
 	// Fallback: the public 30-second preview (unencrypted). Encrypted == false
 	// so the player and downloader stream it straight through, no Blowfish.

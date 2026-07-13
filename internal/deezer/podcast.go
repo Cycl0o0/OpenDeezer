@@ -38,32 +38,41 @@ func (c *Client) SearchPodcasts(query string) ([]Podcast, error) {
 	return out, nil
 }
 
-// PodcastEpisodes lists a show's episodes (public REST).
+// PodcastEpisodes lists a show's episodes (public REST). It pages with
+// index/limit (mirrors AlbumTracks) until a short page or absent "next",
+// bounded by maxTracks. Without pagination only the first 100 episodes would
+// be returned and the rest silently lost.
 func (c *Client) PodcastEpisodes(podcastID string) ([]Episode, error) {
-	b, err := c.restGet("/podcast/" + podcastID + "/episodes?limit=100")
-	if err != nil {
-		return nil, err
-	}
-	var r struct {
-		Data []struct {
-			ID            json.Number `json:"id"`
-			Title         string      `json:"title"`
-			Description   string      `json:"description"`
-			ReleaseDate   string      `json:"release_date"`
-			Duration      json.Number `json:"duration"`
-			PictureMedium string      `json:"picture_medium"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, err
-	}
-	out := make([]Episode, 0, len(r.Data))
-	for _, e := range r.Data {
-		dur, _ := e.Duration.Int64()
-		out = append(out, Episode{
-			ID: e.ID.String(), Title: e.Title, Description: e.Description,
-			ReleaseDate: e.ReleaseDate, DurationMS: dur * 1000, ArtworkURL: e.PictureMedium,
-		})
+	var out []Episode
+	for index := 0; index < maxTracks; index += albumPageSize {
+		b, err := c.restGet(fmt.Sprintf("/podcast/%s/episodes?limit=%d&index=%d", podcastID, albumPageSize, index))
+		if err != nil {
+			return nil, err
+		}
+		var r struct {
+			Data []struct {
+				ID            json.Number `json:"id"`
+				Title         string      `json:"title"`
+				Description   string      `json:"description"`
+				ReleaseDate   string      `json:"release_date"`
+				Duration      json.Number `json:"duration"`
+				PictureMedium string      `json:"picture_medium"`
+			} `json:"data"`
+			Next string `json:"next"`
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return nil, err
+		}
+		for _, e := range r.Data {
+			dur, _ := e.Duration.Int64()
+			out = append(out, Episode{
+				ID: e.ID.String(), Title: e.Title, Description: e.Description,
+				ReleaseDate: e.ReleaseDate, DurationMS: dur * 1000, ArtworkURL: e.PictureMedium,
+			})
+		}
+		if len(r.Data) < albumPageSize || r.Next == "" {
+			break
+		}
 	}
 	return out, nil
 }

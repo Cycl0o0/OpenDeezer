@@ -77,10 +77,15 @@ func buildControlCommands(send func(tea.Msg), client *deezer.Client, hist *histo
 		Restart:       func() { send(controlCmdMsg{kind: "restart"}) },
 		CycleRepeat:   func() { send(controlCmdMsg{kind: "repeat"}) },
 		ToggleShuffle: func() { send(controlCmdMsg{kind: "shuffle"}) },
-		Seek:          func(ms int64) { send(controlCmdMsg{kind: "seek", ms: ms}) },
-		SetVolume:     func(v float64) { send(controlCmdMsg{kind: "volume", vol: v}) },
-		PlayTrack:     func(id string) { send(controlCmdMsg{kind: "playtrack", id: id}) },
-		PlayPlaylist:  func(id string) { send(controlCmdMsg{kind: "playplaylist", id: id}) },
+		// SET variants: a GUI/web/SDK controller can command an absolute repeat
+		// mode / shuffle state (not just a cycle/toggle). Applied on the update
+		// loop like the Cycle/Toggle kinds so the TUI honors BOTH command forms.
+		SetRepeat:    func(mode string) { send(controlCmdMsg{kind: "repeat-set", mode: mode}) },
+		SetShuffle:   func(on bool) { send(controlCmdMsg{kind: "shuffle-set", on: on}) },
+		Seek:         func(ms int64) { send(controlCmdMsg{kind: "seek", ms: ms}) },
+		SetVolume:    func(v float64) { send(controlCmdMsg{kind: "volume", vol: v}) },
+		PlayTrack:    func(id string) { send(controlCmdMsg{kind: "playtrack", id: id}) },
+		PlayPlaylist: func(id string) { send(controlCmdMsg{kind: "playplaylist", id: id}) },
 		SetSleepTimer: func(minutes int, eot bool) {
 			send(controlCmdMsg{kind: "sleep", ms: int64(minutes), eot: eot})
 		},

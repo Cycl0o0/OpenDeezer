@@ -8,6 +8,13 @@ import (
 // Flow returns Deezer's personalized "Flow" radio: an endless, taste-based
 // track stream. Uses the gw radio.getUserRadio method (community convention);
 // needs live validation against a real account.
+//
+// Flow (and FlowMore) may be called repeatedly; each invocation performs a
+// fresh radio.getUserRadio call and returns a new batch. The engine side is
+// intentionally a finite batch fetch — the frontend is responsible for
+// re-calling when its local playback queue is running low (on queue-tail) to
+// "refill". No signature change; FlowMore is provided as a readable alias for
+// the refill use case.
 func (c *Client) Flow() ([]Track, error) {
 	if !c.LoggedIn() {
 		return nil, fmt.Errorf("not logged in")
@@ -33,6 +40,12 @@ func (c *Client) Flow() ([]Track, error) {
 	}
 	return nil, nil
 }
+
+// FlowMore is a semantic alias for Flow. It exists so calling code can
+// express "get the next batch for flow refill" without changing behavior or
+// Flow's signature. The frontend should invoke this (or Flow) when its queue
+// drains toward the tail.
+func (c *Client) FlowMore() ([]Track, error) { return c.Flow() }
 
 // gwTracksToTracks maps gw DTOs to Tracks.
 func gwTracksToTracks(in []gwTrackDTO) []Track {

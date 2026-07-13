@@ -216,13 +216,26 @@ func DZConnectDevice(addr *C.char) C.int {
 	// never the control token: a discovery reply is unauthenticated and spoofable,
 	// so sending the shared token would leak it to an attacker's fake device.
 	rc := control.NewClient("http://"+a, "", c.UserID())
-	if _, err := rc.Whoami(); err != nil {
+	// /whoami is served unauthenticated by design, so it can't prove the peer is
+	// controllable. Require an AUTHENTICATED /status to succeed BEFORE stopping
+	// local playback (mirrors mobile/odmobile.go): a token-protected or
+	// different-account peer would otherwise 401 every command, leaving the user
+	// with dead local audio and a "connected" UI that drives nothing. (B6)
+	st, err := rc.Status()
+	if err != nil {
 		odlog.Warn("connect %s: %v", a, err)
 		return 0
 	}
-	// Audio moves to the device: stop local playback.
+	// Normalize the host's repeat: this controller keeps repeat locally and never
+	// forwards it (a Repeat-All would trap the host looping the single-item queue
+	// we stream it). Send SetRepeat("off") once so a previously-set host repeat
+	// can't strand playback. Best-effort. (B2)
+	if _, e := rc.SetRepeat("off"); e != nil {
+		odlog.Debug("connect %s: normalize repeat: %v", a, e)
+	}
+	// Audio moves to the device: stop local playback (only now that the peer is
+	// proven controllable).
 	withPlayer(func(p *audio.Player) { p.Stop() })
-	st, _ := rc.Status()
 
 	// Sync the engine's current-track with what's actually playing on the remote,
 	// so now-playing / Discord RP / lyrics reflect the remote immediately.
@@ -235,6 +248,7 @@ func DZConnectDevice(addr *C.char) C.int {
 	}
 
 	mu.Lock()
+	oldRc := remoteCli // switching A->B: capture A's client to stop it below
 	if remoteStop != nil {
 		close(remoteStop)
 	}
@@ -244,6 +258,14 @@ func DZConnectDevice(addr *C.char) C.int {
 	remoteSt = st
 	remoteAddr = a
 	mu.Unlock()
+
+	// Switching devices A->B: stop the OLD device so it doesn't keep playing
+	// unattended. Fire-and-forget on its own goroutine (rc.Stop is a network
+	// round-trip bounded by the control client's own HTTP timeout) so the connect
+	// returns immediately. (B7)
+	if oldRc != nil && oldRc != rc {
+		go func() { _, _ = oldRc.Stop() }()
+	}
 
 	go remotePoller(rc, stop)
 	odlog.Info("connected to device %s", a)
@@ -323,12 +345,15 @@ func remotePoller(rc *control.Client, stop chan struct{}) {
 	}
 }
 
-// setRemoteState caches a status returned by a command (so the UI updates
-// without waiting for the next poll). No-op if we've since disconnected, so a
-// late command response can't resurrect stale remote state.
-func setRemoteState(st control.State) {
+// setRemoteState caches a status returned by a command issued to rc (so the UI
+// updates without waiting for the next poll). It applies ONLY when rc is still
+// the CURRENT remote client: a late in-flight response from a device we've
+// since disconnected from — or switched away from (A while B is now active) —
+// must not resurrect stale state or bump the finished counter for the wrong
+// device. (B7)
+func setRemoteState(rc *control.Client, st control.State) {
 	mu.Lock()
-	if remoteCli != nil {
+	if remoteCli != nil && remoteCli == rc {
 		// A command's status response can be the first observer of the remote's
 		// track end (playing -> stopped near the end), so detect it here too — not
 		// only in remotePoller — and bump finished to fire this device's
