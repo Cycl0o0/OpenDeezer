@@ -4,6 +4,30 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0]
+
+### Added
+- **The 3.x features are fully translated.** Up Next / queue editing, offline
+  downloads, listening history and radio are now localized in every supported
+  language — Arabic, Spanish, French, Hindi, Russian and Chinese — across the
+  macOS, Android, GNOME and KDE apps, instead of falling back to English. The
+  KDE and GNOME catalogs, which had drifted behind the code, are back in sync.
+
+### Changed
+- **Android release APKs are signed for Google's sideload developer-verification
+  policy.** The release build signs with the registered developer key using APK
+  Signature Scheme v2/v3, and the release pipeline verifies each APK's signing
+  certificate before publishing. Note: this changes the Android signing key, so
+  updating from an earlier build requires uninstalling first and reinstalling.
+
+### Fixed
+- **A configured control token is honored on the LAN control server.** A token
+  set via `OPENDEEZER_CONTROL_TOKEN` (or `control-token.txt`) is now applied by
+  the phone remote / Connect host even when the control API was not separately
+  enabled, instead of silently falling back to same-account authentication.
+- Made the LAN discovery rebind and the mobile control-server token check
+  environment-independent so the test suite is reliable everywhere.
+
 ## [3.0.1]
 
 ### Fixed

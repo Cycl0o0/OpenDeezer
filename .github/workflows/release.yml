@@ -400,7 +400,7 @@ jobs:
             "$APKSIGNER" verify --print-certs --verbose "$apk" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" \
               || { echo "::error::$apk is not signed with APK Signature Scheme v2"; exit 1; }
             local got
-            got=$("$APKSIGNER" verify --print-certs "$apk" | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr -d ' :' | tr 'a-f' 'A-F')
+            got=$("$APKSIGNER" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ' :' | tr 'a-f' 'A-F')
             echo "signing cert SHA-256: $got"
             if [ "$got" != "$WANT" ]; then
               echo "::error::$apk signing cert ($got) does not match the registered developer key ($WANT)"; exit 1
