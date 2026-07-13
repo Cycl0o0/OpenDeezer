@@ -989,14 +989,14 @@ msgid ""
 "reporting your plays, which denies artists their play count and breaks "
 "Deezer's terms of use. Use at your own risk."
 msgstr ""
-"يعتمد Deezer Free على الإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي — "
-"يمنح الفنانين حقوقهم ويموّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه "
-"يوقف أيضًا الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات التشغيل ويخالف "
-"شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة."
+"يعتمد Deezer Free على الإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي "
+"— يمنح الفنانين حقوقهم ويموّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه "
+"يوقف أيضًا الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات التشغيل "
+"ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة."
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
-msgstr ""
+msgstr "OpenDeezer"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:4
 msgid "Music Player"
@@ -1012,89 +1012,160 @@ msgstr "موسيقى;deezer;بث;مشغل;music;"
 
 #: src/main.c
 msgid "Start radio"
-msgstr ""
+msgstr "بدء الراديو"
 
 #: src/main.c
 msgid "Radio"
-msgstr ""
+msgstr "راديو"
 
 #: src/main.c
 msgid "Download album"
-msgstr ""
+msgstr "تنزيل الألبوم"
 
 #: src/main.c
 msgid "Download playlist"
-msgstr ""
+msgstr "تنزيل قائمة التشغيل"
 
 #: src/main.c
 msgid "Downloading album…"
-msgstr ""
+msgstr "جارٍ تنزيل الألبوم…"
 
 #: src/main.c
 msgid "Downloading playlist…"
-msgstr ""
+msgstr "جارٍ تنزيل قائمة التشغيل…"
 
 #: src/main.c
 msgid "no tracks were saved"
-msgstr ""
+msgstr "لم يُحفَظ أي مقطع"
 
 #: src/main.c
 msgid "Stream cache (MB)"
-msgstr ""
+msgstr "التخزين المؤقت للتدفق (ميغابايت)"
 
 #: src/main.c
-msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgid ""
+"Cache streams on disk to save data (0 = off). Takes effect at the next "
+"launch."
 msgstr ""
 
 #: src/main.c
 msgid "Recently played"
-msgstr ""
+msgstr "شُغّل مؤخرًا"
 
 #: src/main.c
 msgid "No listening history yet"
-msgstr ""
+msgstr "لا يوجد سجل استماع بعد"
 
 #: src/main.c
 msgid "Listening stats (last 30 days)"
-msgstr ""
+msgstr "إحصائيات الاستماع (آخر 30 يومًا)"
 
 #: src/main.c
 msgid "Total listening time"
-msgstr ""
+msgstr "إجمالي مدة الاستماع"
 
 #: src/main.c
 msgid "Top Artists"
-msgstr ""
+msgstr "أبرز الفنانين"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d tracks, %d failed"
-msgstr ""
+msgstr "تم حفظ %d مقطع، وفشل %d"
 
 #: src/main.c
 #, c-format
 msgid "%lld h %lld min"
-msgstr ""
+msgstr "%lld س %lld د"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d track to %s"
 msgid_plural "Saved %d tracks to %s"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
-msgstr[3] ""
-msgstr[4] ""
-msgstr[5] ""
+msgstr[0] "تم حفظ %d مقطع في %s"
+msgstr[1] "تم حفظ %d مقطع في %s"
+msgstr[2] "تم حفظ %d مقطعين في %s"
+msgstr[3] "تم حفظ %d مقاطع في %s"
+msgstr[4] "تم حفظ %d مقطعًا في %s"
+msgstr[5] "تم حفظ %d مقطع في %s"
 
 #: src/main.c
 #, c-format
 msgid "%lld play"
 msgid_plural "%lld plays"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
-msgstr[3] ""
-msgstr[4] ""
-msgstr[5] ""
+msgstr[0] "%lld مرة تشغيل"
+msgstr[1] "%lld مرة تشغيل"
+msgstr[2] "%lld مرتا تشغيل"
+msgstr[3] "%lld مرات تشغيل"
+msgstr[4] "%lld مرة تشغيل"
+msgstr[5] "%lld مرة تشغيل"
 
+#: src/main.c
+msgid "Up Next"
+msgstr "التالي"
+
+#: src/main.c
+msgid "Play next"
+msgstr "تشغيله تاليًا"
+
+#: src/main.c
+msgid "Playing next"
+msgstr "سيُشغَّل تاليًا"
+
+#: src/main.c
+msgid "Add to queue"
+msgstr "إضافة إلى قائمة الانتظار"
+
+#: src/main.c
+msgid "Added to queue"
+msgstr "أُضيف إلى قائمة الانتظار"
+
+#: src/main.c
+msgid "Clear"
+msgstr "مسح"
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr "قائمة الانتظار فارغة"
+
+#: src/main.c
+msgid "Move up"
+msgstr "تحريك لأعلى"
+
+#: src/main.c
+msgid "Move down"
+msgstr "تحريك لأسفل"
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr "إزالة من قائمة الانتظار"
+
+#: src/main.c
+msgid "Download for offline"
+msgstr "تنزيل للاستماع دون اتصال"
+
+#: src/main.c
+msgid "Available offline"
+msgstr "متوفّر دون اتصال"
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr "جارٍ الحفظ للاستماع دون اتصال…"
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr "محفوظ للاستماع دون اتصال"
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr "“%s” متوفّر دون اتصال"
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr "فشل التنزيل دون اتصال: %s"
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr "تعذّر حفظ هذا المقطع دون اتصال"

@@ -284,4 +284,8 @@
     <string name="offline_ready">%1$s متاح دون اتصال</string>
     <string name="offline_already">%1$s متاح بالفعل دون اتصال</string>
     <string name="offline_needs_cache">فعّل ذاكرة التخزين المؤقت للبث في الإعدادات للتنزيل دون اتصال</string>
+    <string name="device_self_phone">OpenDeezer (Android)</string>
+    <string name="device_self_tv">OpenDeezer (Android TV)</string>
+    <string name="settings_connect">OpenDeezer Connect</string>
+    <string name="update_notes_title">OpenDeezer %1$s</string>
 </resources>

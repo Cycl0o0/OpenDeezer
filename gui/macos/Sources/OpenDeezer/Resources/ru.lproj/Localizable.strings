@@ -216,3 +216,38 @@
 "Free account · standard quality (128 kbps)" = "Бесплатный аккаунт · стандартное качество (128 kbps)";
 "Disable ads" = "Отключить рекламу";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free поддерживается рекламой. Передача данных о прослушиваниях — как в официальном приложении — засчитывает их артистам и обеспечивает работу рекламы. Отключение убирает рекламу, но прекращает передачу данных о прослушиваниях, из-за чего артисты лишаются засчитанных прослушиваний, а также нарушаются условия использования Deezer. Используйте на свой страх и риск.";
+
+/* Up Next / offline downloads / history / radio (3.x) */
+"%@ Radio" = "Радио %@";
+"%d MB" = "%d МБ";
+"%d in queue" = "%d в очереди";
+"Add to queue" = "Добавить в очередь";
+"All" = "Все";
+"Available offline" = "Доступно офлайн";
+"Clear" = "Очистить";
+"Download album" = "Скачать альбом";
+"Download for offline" = "Скачать для офлайна";
+"Download playlist" = "Скачать плейлист";
+"History" = "История";
+"Last 30 days" = "Последние 30 дней";
+"No listening history yet" = "Истории прослушивания пока нет";
+"Nothing in the queue" = "В очереди ничего нет";
+"Offline download failed." = "Не удалось скачать для офлайна.";
+"On" = "Вкл.";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "Кэш на диске для потокового аудио (0 — выкл.). Применяется при следующем запуске.";
+"One" = "Один трек";
+"Play a track and it'll show up here." = "Включите трек, и он появится здесь.";
+"Play next" = "Воспроизвести следующим";
+"Play something and it'll show up here." = "Включите что-нибудь, и оно появится здесь.";
+"Playing on %@" = "Воспроизведение на %@";
+"Recently played" = "Недавно прослушанные";
+"Remove from queue" = "Удалить из очереди";
+"Repeat" = "Повтор";
+"Saved %1$d, %2$d failed" = "Сохранено %1$d, не удалось %2$d";
+"Saving “%@” for offline…" = "Сохранение «%@» для офлайна…";
+"Start radio" = "Запустить радио";
+"Stream cache" = "Кэш потока";
+"Total listening time" = "Общее время прослушивания";
+"Up Next" = "Далее";
+"“%@” available offline" = "«%@» доступно офлайн";
+"“%@” is available offline" = "«%@» доступно офлайн";

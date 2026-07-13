@@ -216,3 +216,38 @@
 "Free account · standard quality (128 kbps)" = "Cuenta gratuita · calidad estándar (128 kbps)";
 "Disable ads" = "Desactivar anuncios";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free se financia con anuncios. Informar de tus reproducciones —como hace la app oficial— acredita a los artistas e impulsa los anuncios. Desactivar esto elimina los anuncios, pero deja de informar de tus reproducciones, lo que priva a los artistas de su recuento de reproducciones e incumple las condiciones de uso de Deezer. Úsalo bajo tu propia responsabilidad.";
+
+/* Up Next / offline downloads / history / radio (3.x) */
+"%@ Radio" = "Radio de %@";
+"%d MB" = "%d MB";
+"%d in queue" = "%d en cola";
+"Add to queue" = "Añadir a la cola";
+"All" = "Todas";
+"Available offline" = "Disponible sin conexión";
+"Clear" = "Vaciar";
+"Download album" = "Descargar álbum";
+"Download for offline" = "Descargar sin conexión";
+"Download playlist" = "Descargar lista de reproducción";
+"History" = "Historial";
+"Last 30 days" = "Últimos 30 días";
+"No listening history yet" = "Aún no hay historial de escucha";
+"Nothing in the queue" = "No hay nada en la cola";
+"Offline download failed." = "Error en la descarga sin conexión.";
+"On" = "Activado";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "Caché en disco para el audio transmitido (0 = desactivado). Se aplica en el próximo inicio.";
+"One" = "Una";
+"Play a track and it'll show up here." = "Reproduce una pista y aparecerá aquí.";
+"Play next" = "Reproducir a continuación";
+"Play something and it'll show up here." = "Reproduce algo y aparecerá aquí.";
+"Playing on %@" = "Reproduciendo en %@";
+"Recently played" = "Reproducido recientemente";
+"Remove from queue" = "Quitar de la cola";
+"Repeat" = "Repetir";
+"Saved %1$d, %2$d failed" = "%1$d guardadas, %2$d fallidas";
+"Saving “%@” for offline…" = "Guardando “%@” sin conexión…";
+"Start radio" = "Iniciar radio";
+"Stream cache" = "Caché de transmisión";
+"Total listening time" = "Tiempo total de escucha";
+"Up Next" = "A continuación";
+"“%@” available offline" = "“%@” disponible sin conexión";
+"“%@” is available offline" = "“%@” está disponible sin conexión";

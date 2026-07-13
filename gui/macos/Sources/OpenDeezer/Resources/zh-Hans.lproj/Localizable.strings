@@ -216,3 +216,38 @@
 "Free account · standard quality (128 kbps)" = "免费账户 · 标准音质（128 kbps）";
 "Disable ads" = "关闭广告";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free 依靠广告支持。像官方应用一样上报你的播放记录，可为艺术家计入播放量并支撑广告投放。关闭此项会移除广告，但同时停止上报你的播放记录，从而使艺术家失去应得的播放量，并违反 Deezer 的使用条款。请自行承担风险。";
+
+/* Up Next / offline downloads / history / radio (3.x) */
+"%@ Radio" = "%@ 电台";
+"%d MB" = "%d MB";
+"%d in queue" = "队列中 %d 首";
+"Add to queue" = "添加到队列";
+"All" = "全部";
+"Available offline" = "可离线播放";
+"Clear" = "清空";
+"Download album" = "下载专辑";
+"Download for offline" = "下载以离线播放";
+"Download playlist" = "下载播放列表";
+"History" = "历史记录";
+"Last 30 days" = "最近 30 天";
+"No listening history yet" = "暂无收听历史";
+"Nothing in the queue" = "队列中没有内容";
+"Offline download failed." = "离线下载失败。";
+"On" = "开";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "用于流式音频的磁盘缓存（0 = 关闭）。将在下次启动时生效。";
+"One" = "单曲";
+"Play a track and it'll show up here." = "播放一首曲目，它就会显示在这里。";
+"Play next" = "下一首播放";
+"Play something and it'll show up here." = "播放一些内容，它就会显示在这里。";
+"Playing on %@" = "正在 %@ 上播放";
+"Recently played" = "最近播放";
+"Remove from queue" = "从队列中移除";
+"Repeat" = "循环播放";
+"Saved %1$d, %2$d failed" = "已保存 %1$d 首，%2$d 首失败";
+"Saving “%@” for offline…" = "正在保存“%@”以离线播放…";
+"Start radio" = "启动电台";
+"Stream cache" = "流媒体缓存";
+"Total listening time" = "总收听时长";
+"Up Next" = "接下来播放";
+"“%@” available offline" = "“%@”已可离线播放";
+"“%@” is available offline" = "“%@”已可离线播放";

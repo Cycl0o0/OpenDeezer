@@ -264,4 +264,8 @@
     <string name="offline_ready">%1$s 可离线播放</string>
     <string name="offline_already">%1$s 已离线</string>
     <string name="offline_needs_cache">在设置中启用流媒体缓存以下载离线内容</string>
+    <string name="device_self_phone">OpenDeezer (Android)</string>
+    <string name="device_self_tv">OpenDeezer (Android TV)</string>
+    <string name="settings_connect">OpenDeezer Connect</string>
+    <string name="update_notes_title">OpenDeezer %1$s</string>
 </resources>

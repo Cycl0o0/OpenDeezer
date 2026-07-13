@@ -273,4 +273,8 @@
     <string name="offline_ready">%1$s disponible hors ligne</string>
     <string name="offline_already">%1$s déjà hors ligne</string>
     <string name="offline_needs_cache">Activez le cache de flux dans les Réglages pour télécharger hors ligne</string>
+    <string name="device_self_phone">OpenDeezer (Android)</string>
+    <string name="device_self_tv">OpenDeezer (Android TV)</string>
+    <string name="settings_connect">OpenDeezer Connect</string>
+    <string name="update_notes_title">OpenDeezer %1$s</string>
 </resources>

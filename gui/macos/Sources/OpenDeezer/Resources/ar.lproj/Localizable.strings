@@ -216,3 +216,38 @@
 "Free account · standard quality (128 kbps)" = "حساب مجاني · جودة عادية (128 kbps)";
 "Disable ads" = "تعطيل الإعلانات";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "‏Deezer Free مدعوم بالإعلانات. الإبلاغ عن مرات تشغيلك — مثل التطبيق الرسمي — يمنح الفنانين حقهم ويُشغّل الإعلانات. تعطيل هذا الخيار يزيل الإعلانات لكنه يوقف الإبلاغ عن مرات تشغيلك، مما يحرم الفنانين من عدد مرات تشغيلهم ويخالف شروط استخدام Deezer. استخدمه على مسؤوليتك الخاصة.";
+
+/* Up Next / offline downloads / history / radio (3.x) */
+"%@ Radio" = "راديو %@";
+"%d MB" = "%d ميغابايت";
+"%d in queue" = "%d في قائمة الانتظار";
+"Add to queue" = "إضافة إلى قائمة الانتظار";
+"All" = "الكل";
+"Available offline" = "متوفّر دون اتصال";
+"Clear" = "مسح";
+"Download album" = "تنزيل الألبوم";
+"Download for offline" = "تنزيل للاستماع دون اتصال";
+"Download playlist" = "تنزيل قائمة التشغيل";
+"History" = "السجل";
+"Last 30 days" = "آخر 30 يومًا";
+"No listening history yet" = "لا يوجد سجل استماع بعد";
+"Nothing in the queue" = "لا شيء في قائمة الانتظار";
+"Offline download failed." = "فشل التنزيل دون اتصال.";
+"On" = "تشغيل";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "ذاكرة تخزين مؤقت على القرص للصوت المتدفق (0 = إيقاف). يسري عند التشغيل التالي.";
+"One" = "واحد";
+"Play a track and it'll show up here." = "شغّل مقطعًا وسيظهر هنا.";
+"Play next" = "تشغيله تاليًا";
+"Play something and it'll show up here." = "شغّل شيئًا وسيظهر هنا.";
+"Playing on %@" = "قيد التشغيل على %@";
+"Recently played" = "شُغّل مؤخرًا";
+"Remove from queue" = "إزالة من قائمة الانتظار";
+"Repeat" = "تكرار";
+"Saved %1$d, %2$d failed" = "تم حفظ %1$d، وفشل %2$d";
+"Saving “%@” for offline…" = "جارٍ حفظ “%@” للاستماع دون اتصال…";
+"Start radio" = "بدء الراديو";
+"Stream cache" = "التخزين المؤقت للتدفق";
+"Total listening time" = "إجمالي مدة الاستماع";
+"Up Next" = "التالي";
+"“%@” available offline" = "“%@” متوفّر دون اتصال";
+"“%@” is available offline" = "“%@” متوفّر دون اتصال";

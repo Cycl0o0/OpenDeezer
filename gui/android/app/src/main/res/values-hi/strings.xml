@@ -268,4 +268,8 @@
     <string name="offline_ready">%1$s ऑफ़लाइन उपलब्ध</string>
     <string name="offline_already">%1$s पहले से ऑफ़लाइन</string>
     <string name="offline_needs_cache">ऑफ़लाइन डाउनलोड के लिए सेटिंग में स्ट्रीम कैश सक्षम करें</string>
+    <string name="device_self_phone">OpenDeezer (Android)</string>
+    <string name="device_self_tv">OpenDeezer (Android TV)</string>
+    <string name="settings_connect">OpenDeezer Connect</string>
+    <string name="update_notes_title">OpenDeezer %1$s</string>
 </resources>

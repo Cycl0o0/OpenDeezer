@@ -216,3 +216,38 @@
 "Free account · standard quality (128 kbps)" = "Compte gratuit · qualité standard (128 kbps)";
 "Disable ads" = "Désactiver les publicités";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free est financé par la publicité. Signaler vos écoutes — comme l'app officielle — crédite les artistes et alimente les publicités. Désactiver cette option supprime les publicités mais cesse de signaler vos écoutes, ce qui prive les artistes de leur nombre d'écoutes et enfreint les conditions d'utilisation de Deezer. À utiliser à vos propres risques.";
+
+/* Up Next / offline downloads / history / radio (3.x) */
+"%@ Radio" = "Radio %@";
+"%d MB" = "%d Mo";
+"%d in queue" = "%d en file d'attente";
+"Add to queue" = "Ajouter à la file d'attente";
+"All" = "Tout";
+"Available offline" = "Disponible hors ligne";
+"Clear" = "Vider";
+"Download album" = "Télécharger l'album";
+"Download for offline" = "Télécharger pour l'écoute hors ligne";
+"Download playlist" = "Télécharger la playlist";
+"History" = "Historique";
+"Last 30 days" = "30 derniers jours";
+"No listening history yet" = "Aucun historique d'écoute pour le moment";
+"Nothing in the queue" = "Aucun titre dans la file d'attente";
+"Offline download failed." = "Échec du téléchargement hors ligne.";
+"On" = "Activé";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "Cache sur disque pour l'audio en streaming (0 = désactivé). Prend effet au prochain démarrage.";
+"One" = "Un";
+"Play a track and it'll show up here." = "Lancez un titre et il apparaîtra ici.";
+"Play next" = "Lire ensuite";
+"Play something and it'll show up here." = "Lancez une lecture et elle apparaîtra ici.";
+"Playing on %@" = "Lecture sur %@";
+"Recently played" = "Écoutés récemment";
+"Remove from queue" = "Retirer de la file d'attente";
+"Repeat" = "Répéter";
+"Saved %1$d, %2$d failed" = "%1$d enregistrés, %2$d échoués";
+"Saving “%@” for offline…" = "Enregistrement de « %@ » hors ligne…";
+"Start radio" = "Lancer la radio";
+"Stream cache" = "Cache de streaming";
+"Total listening time" = "Temps d'écoute total";
+"Up Next" = "À suivre";
+"“%@” available offline" = "« %@ » disponible hors ligne";
+"“%@” is available offline" = "« %@ » est disponible hors ligne";

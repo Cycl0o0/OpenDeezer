@@ -964,13 +964,13 @@ msgid ""
 "reporting your plays, which denies artists their play count and breaks "
 "Deezer's terms of use. Use at your own risk."
 msgstr ""
-"Deezer Free 依靠广告支持。像官方应用一样上报你的播放记录，可为艺人计入播放量并支"
-"撑广告收入。关闭此项会移除广告，但也会停止上报你的播放记录，这会使艺人无法获得"
-"应有的播放量，并违反 Deezer 的使用条款。使用风险自负。"
+"Deezer Free 依靠广告支持。像官方应用一样上报你的播放记录，可为艺人计入播放量"
+"并支撑广告收入。关闭此项会移除广告，但也会停止上报你的播放记录，这会使艺人无"
+"法获得应有的播放量，并违反 Deezer 的使用条款。使用风险自负。"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
-msgstr ""
+msgstr "OpenDeezer"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:4
 msgid "Music Player"
@@ -986,79 +986,150 @@ msgstr "音乐;deezer;流媒体;播放器;music;"
 
 #: src/main.c
 msgid "Start radio"
-msgstr ""
+msgstr "启动电台"
 
 #: src/main.c
 msgid "Radio"
-msgstr ""
+msgstr "电台"
 
 #: src/main.c
 msgid "Download album"
-msgstr ""
+msgstr "下载专辑"
 
 #: src/main.c
 msgid "Download playlist"
-msgstr ""
+msgstr "下载播放列表"
 
 #: src/main.c
 msgid "Downloading album…"
-msgstr ""
+msgstr "正在下载专辑…"
 
 #: src/main.c
 msgid "Downloading playlist…"
-msgstr ""
+msgstr "正在下载播放列表…"
 
 #: src/main.c
 msgid "no tracks were saved"
-msgstr ""
+msgstr "未保存任何曲目"
 
 #: src/main.c
 msgid "Stream cache (MB)"
-msgstr ""
+msgstr "流媒体缓存（MB）"
 
 #: src/main.c
-msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgid ""
+"Cache streams on disk to save data (0 = off). Takes effect at the next "
+"launch."
 msgstr ""
 
 #: src/main.c
 msgid "Recently played"
-msgstr ""
+msgstr "最近播放"
 
 #: src/main.c
 msgid "No listening history yet"
-msgstr ""
+msgstr "暂无收听历史"
 
 #: src/main.c
 msgid "Listening stats (last 30 days)"
-msgstr ""
+msgstr "收听统计（最近 30 天）"
 
 #: src/main.c
 msgid "Total listening time"
-msgstr ""
+msgstr "总收听时长"
 
 #: src/main.c
 msgid "Top Artists"
-msgstr ""
+msgstr "常听艺人"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d tracks, %d failed"
-msgstr ""
+msgstr "已保存 %d 首，%d 首失败"
 
 #: src/main.c
 #, c-format
 msgid "%lld h %lld min"
-msgstr ""
+msgstr "%lld 小时 %lld 分钟"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d track to %s"
 msgid_plural "Saved %d tracks to %s"
-msgstr[0] ""
+msgstr[0] "已保存 %d 首曲目到 %s"
 
 #: src/main.c
 #, c-format
 msgid "%lld play"
 msgid_plural "%lld plays"
-msgstr[0] ""
+msgstr[0] "%lld 次播放"
 
+#: src/main.c
+msgid "Up Next"
+msgstr "接下来播放"
+
+#: src/main.c
+msgid "Play next"
+msgstr "下一首播放"
+
+#: src/main.c
+msgid "Playing next"
+msgstr "即将播放"
+
+#: src/main.c
+msgid "Add to queue"
+msgstr "添加到队列"
+
+#: src/main.c
+msgid "Added to queue"
+msgstr "已添加到队列"
+
+#: src/main.c
+msgid "Clear"
+msgstr "清空"
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr "队列为空"
+
+#: src/main.c
+msgid "Move up"
+msgstr "上移"
+
+#: src/main.c
+msgid "Move down"
+msgstr "下移"
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr "从队列中移除"
+
+#: src/main.c
+msgid "Download for offline"
+msgstr "下载以离线播放"
+
+#: src/main.c
+msgid "Available offline"
+msgstr "可离线播放"
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr "正在保存以离线播放…"
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr "已保存以离线播放"
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr "“%s”已可离线播放"
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr "离线下载失败：%s"
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr "无法离线保存该曲目"

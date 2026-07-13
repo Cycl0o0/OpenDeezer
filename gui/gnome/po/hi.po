@@ -971,14 +971,14 @@ msgid ""
 "reporting your plays, which denies artists their play count and breaks "
 "Deezer's terms of use. Use at your own risk."
 msgstr ""
-"Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह आपके प्ले रिपोर्ट करने से "
-"कलाकारों को श्रेय मिलता है और विज्ञापन चलते हैं। इसे बंद करने पर विज्ञापन हट जाते हैं, "
-"लेकिन आपके प्ले रिपोर्ट होना भी रुक जाता है, जिससे कलाकारों को उनकी प्ले गिनती नहीं "
-"मिलती और Deezer की उपयोग की शर्तें टूटती हैं। अपने जोखिम पर उपयोग करें।"
+"Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह आपके प्ले रिपोर्ट करने से कलाकारों "
+"को श्रेय मिलता है और विज्ञापन चलते हैं। इसे बंद करने पर विज्ञापन हट जाते हैं, लेकिन आपके प्ले "
+"रिपोर्ट होना भी रुक जाता है, जिससे कलाकारों को उनकी प्ले गिनती नहीं मिलती और Deezer "
+"की उपयोग की शर्तें टूटती हैं। अपने जोखिम पर उपयोग करें।"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
-msgstr ""
+msgstr "OpenDeezer"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:4
 msgid "Music Player"
@@ -994,81 +994,152 @@ msgstr "संगीत;deezer;स्ट्रीमिंग;प्लेयर
 
 #: src/main.c
 msgid "Start radio"
-msgstr ""
+msgstr "रेडियो शुरू करें"
 
 #: src/main.c
 msgid "Radio"
-msgstr ""
+msgstr "रेडियो"
 
 #: src/main.c
 msgid "Download album"
-msgstr ""
+msgstr "एल्बम डाउनलोड करें"
 
 #: src/main.c
 msgid "Download playlist"
-msgstr ""
+msgstr "प्लेलिस्ट डाउनलोड करें"
 
 #: src/main.c
 msgid "Downloading album…"
-msgstr ""
+msgstr "एल्बम डाउनलोड हो रहा है…"
 
 #: src/main.c
 msgid "Downloading playlist…"
-msgstr ""
+msgstr "प्लेलिस्ट डाउनलोड हो रही है…"
 
 #: src/main.c
 msgid "no tracks were saved"
-msgstr ""
+msgstr "कोई ट्रैक सहेजा नहीं गया"
 
 #: src/main.c
 msgid "Stream cache (MB)"
-msgstr ""
+msgstr "स्ट्रीम कैश (MB)"
 
 #: src/main.c
-msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgid ""
+"Cache streams on disk to save data (0 = off). Takes effect at the next "
+"launch."
 msgstr ""
 
 #: src/main.c
 msgid "Recently played"
-msgstr ""
+msgstr "हाल ही में चलाए गए"
 
 #: src/main.c
 msgid "No listening history yet"
-msgstr ""
+msgstr "अभी कोई सुनने का इतिहास नहीं"
 
 #: src/main.c
 msgid "Listening stats (last 30 days)"
-msgstr ""
+msgstr "सुनने के आँकड़े (पिछले 30 दिन)"
 
 #: src/main.c
 msgid "Total listening time"
-msgstr ""
+msgstr "कुल सुनने का समय"
 
 #: src/main.c
 msgid "Top Artists"
-msgstr ""
+msgstr "शीर्ष कलाकार"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d tracks, %d failed"
-msgstr ""
+msgstr "%d ट्रैक सहेजे गए, %d विफल"
 
 #: src/main.c
 #, c-format
 msgid "%lld h %lld min"
-msgstr ""
+msgstr "%lld घं %lld मि"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d track to %s"
 msgid_plural "Saved %d tracks to %s"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "%2$s में %1$d ट्रैक सहेजा गया"
+msgstr[1] "%2$s में %1$d ट्रैक सहेजे गए"
 
 #: src/main.c
 #, c-format
 msgid "%lld play"
 msgid_plural "%lld plays"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "%lld प्ले"
+msgstr[1] "%lld प्ले"
 
+#: src/main.c
+msgid "Up Next"
+msgstr "अगला"
+
+#: src/main.c
+msgid "Play next"
+msgstr "आगे चलाएँ"
+
+#: src/main.c
+msgid "Playing next"
+msgstr "आगे चलेगा"
+
+#: src/main.c
+msgid "Add to queue"
+msgstr "कतार में जोड़ें"
+
+#: src/main.c
+msgid "Added to queue"
+msgstr "कतार में जोड़ा गया"
+
+#: src/main.c
+msgid "Clear"
+msgstr "साफ़ करें"
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr "कतार खाली है"
+
+#: src/main.c
+msgid "Move up"
+msgstr "ऊपर ले जाएँ"
+
+#: src/main.c
+msgid "Move down"
+msgstr "नीचे ले जाएँ"
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr "कतार से हटाएँ"
+
+#: src/main.c
+msgid "Download for offline"
+msgstr "ऑफ़लाइन के लिए डाउनलोड करें"
+
+#: src/main.c
+msgid "Available offline"
+msgstr "ऑफ़लाइन उपलब्ध"
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr "ऑफ़लाइन के लिए सहेजा जा रहा है…"
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr "ऑफ़लाइन के लिए सहेजा गया"
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr "“%s” ऑफ़लाइन उपलब्ध है"
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr "ऑफ़लाइन डाउनलोड विफल: %s"
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr "उस ट्रैक को ऑफ़लाइन सहेजा नहीं जा सका"

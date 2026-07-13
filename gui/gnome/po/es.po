@@ -981,7 +981,7 @@ msgstr ""
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
-msgstr ""
+msgstr "OpenDeezer"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:4
 msgid "Music Player"
@@ -997,81 +997,152 @@ msgstr "música;deezer;streaming;reproductor;music;"
 
 #: src/main.c
 msgid "Start radio"
-msgstr ""
+msgstr "Iniciar radio"
 
 #: src/main.c
 msgid "Radio"
-msgstr ""
+msgstr "Radio"
 
 #: src/main.c
 msgid "Download album"
-msgstr ""
+msgstr "Descargar álbum"
 
 #: src/main.c
 msgid "Download playlist"
-msgstr ""
+msgstr "Descargar lista de reproducción"
 
 #: src/main.c
 msgid "Downloading album…"
-msgstr ""
+msgstr "Descargando álbum…"
 
 #: src/main.c
 msgid "Downloading playlist…"
-msgstr ""
+msgstr "Descargando lista de reproducción…"
 
 #: src/main.c
 msgid "no tracks were saved"
-msgstr ""
+msgstr "no se guardó ninguna pista"
 
 #: src/main.c
 msgid "Stream cache (MB)"
-msgstr ""
+msgstr "Caché de transmisión (MB)"
 
 #: src/main.c
-msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgid ""
+"Cache streams on disk to save data (0 = off). Takes effect at the next "
+"launch."
 msgstr ""
 
 #: src/main.c
 msgid "Recently played"
-msgstr ""
+msgstr "Reproducido recientemente"
 
 #: src/main.c
 msgid "No listening history yet"
-msgstr ""
+msgstr "Aún no hay historial de escucha"
 
 #: src/main.c
 msgid "Listening stats (last 30 days)"
-msgstr ""
+msgstr "Estadísticas de escucha (últimos 30 días)"
 
 #: src/main.c
 msgid "Total listening time"
-msgstr ""
+msgstr "Tiempo total de escucha"
 
 #: src/main.c
 msgid "Top Artists"
-msgstr ""
+msgstr "Artistas principales"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d tracks, %d failed"
-msgstr ""
+msgstr "%d pistas guardadas, %d fallidas"
 
 #: src/main.c
 #, c-format
 msgid "%lld h %lld min"
-msgstr ""
+msgstr "%lld h %lld min"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d track to %s"
 msgid_plural "Saved %d tracks to %s"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "%d pista guardada en %s"
+msgstr[1] "%d pistas guardadas en %s"
 
 #: src/main.c
 #, c-format
 msgid "%lld play"
 msgid_plural "%lld plays"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "%lld reproducción"
+msgstr[1] "%lld reproducciones"
 
+#: src/main.c
+msgid "Up Next"
+msgstr "A continuación"
+
+#: src/main.c
+msgid "Play next"
+msgstr "Reproducir a continuación"
+
+#: src/main.c
+msgid "Playing next"
+msgstr "A continuación"
+
+#: src/main.c
+msgid "Add to queue"
+msgstr "Añadir a la cola"
+
+#: src/main.c
+msgid "Added to queue"
+msgstr "Añadido a la cola"
+
+#: src/main.c
+msgid "Clear"
+msgstr "Vaciar"
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr "La cola está vacía"
+
+#: src/main.c
+msgid "Move up"
+msgstr "Subir"
+
+#: src/main.c
+msgid "Move down"
+msgstr "Bajar"
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr "Quitar de la cola"
+
+#: src/main.c
+msgid "Download for offline"
+msgstr "Descargar sin conexión"
+
+#: src/main.c
+msgid "Available offline"
+msgstr "Disponible sin conexión"
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr "Guardando sin conexión…"
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr "Guardada sin conexión"
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr "“%s” está disponible sin conexión"
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr "Error en la descarga sin conexión: %s"
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr "No se pudo guardar esa pista sin conexión"

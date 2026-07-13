@@ -216,3 +216,38 @@
 "Free account · standard quality (128 kbps)" = "निःशुल्क खाता · मानक गुणवत्ता (128 kbps)";
 "Disable ads" = "विज्ञापन बंद करें";
 "Deezer Free is ad-supported. Reporting your plays — like the official app — credits artists and drives the ads. Disabling this removes ads but stops reporting your plays, which denies artists their play count and breaks Deezer's terms of use. Use at your own risk." = "Deezer Free विज्ञापन-समर्थित है। आधिकारिक ऐप की तरह आपके प्ले की रिपोर्टिंग कलाकारों को श्रेय देती है और विज्ञापनों को सक्षम बनाती है। इसे बंद करने पर विज्ञापन हट जाते हैं, लेकिन आपके प्ले की रिपोर्टिंग भी रुक जाती है, जिससे कलाकारों को उनकी प्ले गिनती नहीं मिलती और Deezer की उपयोग शर्तों का उल्लंघन होता है। इसका उपयोग अपने जोखिम पर करें।";
+
+/* Up Next / offline downloads / history / radio (3.x) */
+"%@ Radio" = "%@ रेडियो";
+"%d MB" = "%d MB";
+"%d in queue" = "कतार में %d";
+"Add to queue" = "कतार में जोड़ें";
+"All" = "सभी";
+"Available offline" = "ऑफ़लाइन उपलब्ध";
+"Clear" = "साफ़ करें";
+"Download album" = "एल्बम डाउनलोड करें";
+"Download for offline" = "ऑफ़लाइन के लिए डाउनलोड करें";
+"Download playlist" = "प्लेलिस्ट डाउनलोड करें";
+"History" = "इतिहास";
+"Last 30 days" = "पिछले 30 दिन";
+"No listening history yet" = "अभी कोई सुनने का इतिहास नहीं";
+"Nothing in the queue" = "कतार में कुछ नहीं";
+"Offline download failed." = "ऑफ़लाइन डाउनलोड विफल।";
+"On" = "चालू";
+"On-disk cache for streamed audio (0 = off). Applies at next launch." = "स्ट्रीम किए गए ऑडियो के लिए डिस्क कैश (0 = बंद)। अगली बार शुरू करने पर लागू होगा।";
+"One" = "एक";
+"Play a track and it'll show up here." = "कोई ट्रैक चलाएँ और यह यहाँ दिखाई देगा।";
+"Play next" = "आगे चलाएँ";
+"Play something and it'll show up here." = "कुछ चलाएँ और यह यहाँ दिखाई देगा।";
+"Playing on %@" = "%@ पर चल रहा है";
+"Recently played" = "हाल ही में चलाए गए";
+"Remove from queue" = "कतार से हटाएँ";
+"Repeat" = "दोहराएँ";
+"Saved %1$d, %2$d failed" = "%1$d सहेजे गए, %2$d विफल";
+"Saving “%@” for offline…" = "“%@” को ऑफ़लाइन के लिए सहेजा जा रहा है…";
+"Start radio" = "रेडियो शुरू करें";
+"Stream cache" = "स्ट्रीम कैश";
+"Total listening time" = "कुल सुनने का समय";
+"Up Next" = "अगला";
+"“%@” available offline" = "“%@” ऑफ़लाइन उपलब्ध";
+"“%@” is available offline" = "“%@” ऑफ़लाइन उपलब्ध है";

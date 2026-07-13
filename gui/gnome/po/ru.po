@@ -985,7 +985,7 @@ msgstr ""
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:3
 msgid "OpenDeezer"
-msgstr ""
+msgstr "OpenDeezer"
 
 #: data/org.opendeezer.OpenDeezer.desktop.in:4
 msgid "Music Player"
@@ -1001,83 +1001,154 @@ msgstr "музыка;deezer;стриминг;плеер;music;"
 
 #: src/main.c
 msgid "Start radio"
-msgstr ""
+msgstr "Запустить радио"
 
 #: src/main.c
 msgid "Radio"
-msgstr ""
+msgstr "Радио"
 
 #: src/main.c
 msgid "Download album"
-msgstr ""
+msgstr "Скачать альбом"
 
 #: src/main.c
 msgid "Download playlist"
-msgstr ""
+msgstr "Скачать плейлист"
 
 #: src/main.c
 msgid "Downloading album…"
-msgstr ""
+msgstr "Загрузка альбома…"
 
 #: src/main.c
 msgid "Downloading playlist…"
-msgstr ""
+msgstr "Загрузка плейлиста…"
 
 #: src/main.c
 msgid "no tracks were saved"
-msgstr ""
+msgstr "ни один трек не сохранён"
 
 #: src/main.c
 msgid "Stream cache (MB)"
-msgstr ""
+msgstr "Кэш потока (МБ)"
 
 #: src/main.c
-msgid "Cache streams on disk to save data (0 = off). Takes effect at the next launch."
+msgid ""
+"Cache streams on disk to save data (0 = off). Takes effect at the next "
+"launch."
 msgstr ""
 
 #: src/main.c
 msgid "Recently played"
-msgstr ""
+msgstr "Недавно прослушанные"
 
 #: src/main.c
 msgid "No listening history yet"
-msgstr ""
+msgstr "Истории прослушивания пока нет"
 
 #: src/main.c
 msgid "Listening stats (last 30 days)"
-msgstr ""
+msgstr "Статистика прослушивания (за последние 30 дней)"
 
 #: src/main.c
 msgid "Total listening time"
-msgstr ""
+msgstr "Общее время прослушивания"
 
 #: src/main.c
 msgid "Top Artists"
-msgstr ""
+msgstr "Топ исполнителей"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d tracks, %d failed"
-msgstr ""
+msgstr "Сохранено %d треков, не удалось %d"
 
 #: src/main.c
 #, c-format
 msgid "%lld h %lld min"
-msgstr ""
+msgstr "%lld ч %lld мин"
 
 #: src/main.c
 #, c-format
 msgid "Saved %d track to %s"
 msgid_plural "Saved %d tracks to %s"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Сохранено %d трек в %s"
+msgstr[1] "Сохранено %d трека в %s"
+msgstr[2] "Сохранено %d треков в %s"
 
 #: src/main.c
 #, c-format
 msgid "%lld play"
 msgid_plural "%lld plays"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "%lld воспроизведение"
+msgstr[1] "%lld воспроизведения"
+msgstr[2] "%lld воспроизведений"
 
+#: src/main.c
+msgid "Up Next"
+msgstr "Далее"
+
+#: src/main.c
+msgid "Play next"
+msgstr "Воспроизвести следующим"
+
+#: src/main.c
+msgid "Playing next"
+msgstr "Следующий трек"
+
+#: src/main.c
+msgid "Add to queue"
+msgstr "Добавить в очередь"
+
+#: src/main.c
+msgid "Added to queue"
+msgstr "Добавлено в очередь"
+
+#: src/main.c
+msgid "Clear"
+msgstr "Очистить"
+
+#: src/main.c
+msgid "The queue is empty"
+msgstr "Очередь пуста"
+
+#: src/main.c
+msgid "Move up"
+msgstr "Переместить вверх"
+
+#: src/main.c
+msgid "Move down"
+msgstr "Переместить вниз"
+
+#: src/main.c
+msgid "Remove from queue"
+msgstr "Удалить из очереди"
+
+#: src/main.c
+msgid "Download for offline"
+msgstr "Скачать для офлайна"
+
+#: src/main.c
+msgid "Available offline"
+msgstr "Доступно офлайн"
+
+#: src/main.c
+msgid "Saving for offline…"
+msgstr "Сохранение для офлайна…"
+
+#: src/main.c
+msgid "Saved for offline"
+msgstr "Сохранено для офлайна"
+
+#: src/main.c
+#, c-format
+msgid "“%s” is available offline"
+msgstr "«%s» доступно офлайн"
+
+#: src/main.c
+#, c-format
+msgid "Offline download failed: %s"
+msgstr "Не удалось скачать для офлайна: %s"
+
+#: src/main.c
+msgid "Couldn't save that track offline"
+msgstr "Не удалось сохранить трек офлайн"

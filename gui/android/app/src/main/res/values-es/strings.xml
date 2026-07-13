@@ -272,4 +272,8 @@
     <string name="offline_ready">%1$s disponible sin conexión</string>
     <string name="offline_already">%1$s ya sin conexión</string>
     <string name="offline_needs_cache">Activa la caché de streaming en Ajustes para descargar sin conexión</string>
+    <string name="device_self_phone">OpenDeezer (Android)</string>
+    <string name="device_self_tv">OpenDeezer (Android TV)</string>
+    <string name="settings_connect">OpenDeezer Connect</string>
+    <string name="update_notes_title">OpenDeezer %1$s</string>
 </resources>

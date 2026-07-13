@@ -276,4 +276,8 @@
     <string name="offline_ready">%1$s доступно офлайн</string>
     <string name="offline_already">%1$s уже офлайн</string>
     <string name="offline_needs_cache">Включите кэш потока в настройках, чтобы скачивать офлайн</string>
+    <string name="device_self_phone">OpenDeezer (Android)</string>
+    <string name="device_self_tv">OpenDeezer (Android TV)</string>
+    <string name="settings_connect">OpenDeezer Connect</string>
+    <string name="update_notes_title">OpenDeezer %1$s</string>
 </resources>
