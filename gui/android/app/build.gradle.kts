@@ -29,6 +29,13 @@ android {
                 storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("ANDROID_KEY_ALIAS")
                 keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                // Sign with every scheme explicitly. Google's sideload developer
+                // verification checks the APK Signature Scheme v2/v3 certificate
+                // against the registered developer key, so v2/v3 must be present;
+                // v1 stays on for install compatibility on pre-Android-7 devices.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
