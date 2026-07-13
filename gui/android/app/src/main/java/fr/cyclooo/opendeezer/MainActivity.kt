@@ -11,10 +11,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.ui.LocalFoldState
 import fr.cyclooo.opendeezer.ui.rememberFoldState
+import fr.cyclooo.opendeezer.ui.theme.LocalMaterialYou
+import fr.cyclooo.opendeezer.ui.theme.MaterialYouState
 import fr.cyclooo.opendeezer.ui.theme.OpenDeezerTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +35,11 @@ class MainActivity : ComponentActivity() {
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
-            OpenDeezerTheme {
+            val prefs = remember { Prefs(this@MainActivity) }
+            // Opt-in Material You: read the saved choice, and let the Settings
+            // switch flip it live (updates the pref + this state → theme recomposes).
+            var dynamicColor by remember { mutableStateOf(prefs.materialYou) }
+            OpenDeezerTheme(dynamicColor = dynamicColor) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -36,7 +47,13 @@ class MainActivity : ComponentActivity() {
                     val vm: AppViewModel = viewModel()
                     // Foldable posture (tabletop/book) drives the optional split
                     // layouts; flat devices keep the classic single-pane UI.
-                    CompositionLocalProvider(LocalFoldState provides rememberFoldState(this)) {
+                    CompositionLocalProvider(
+                        LocalFoldState provides rememberFoldState(this),
+                        LocalMaterialYou provides MaterialYouState(enabled = dynamicColor) { v ->
+                            prefs.materialYou = v
+                            dynamicColor = v
+                        },
+                    ) {
                         OpenDeezerApp(vm)
                     }
                 }

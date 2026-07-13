@@ -87,12 +87,22 @@ class Prefs(context: Context) {
             }.apply()
         }
 
+    /**
+     * Whether Material You dynamic color (Android 12+) is used instead of the
+     * built-in Deezer-purple palette. Opt-in: off by default so the app keeps its
+     * own identity unless the user asks it to match the system theme.
+     */
+    var materialYou: Boolean
+        get() = sp.getBoolean(KEY_MATERIAL_YOU, false)
+        set(value) { sp.edit().putBoolean(KEY_MATERIAL_YOU, value).apply() }
+
     fun clear() {
         sp.edit().remove(KEY_ARL).apply()
     }
 
     companion object {
         private const val KEY_ARL = "arl"
+        private const val KEY_MATERIAL_YOU = "material_you"
         private const val KEY_CONNECT_HOST = "connect_host_enabled"
         private const val KEY_PHONE_REMOTE = "phone_remote_enabled"
         private const val KEY_QUALITY = "audio_quality"

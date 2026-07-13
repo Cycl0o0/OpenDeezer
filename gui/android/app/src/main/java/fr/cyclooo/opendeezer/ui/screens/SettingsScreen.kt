@@ -66,6 +66,8 @@ import fr.cyclooo.opendeezer.engine.ConnectHostInfo
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.engine.WebRemoteInfo
+import fr.cyclooo.opendeezer.ui.theme.LocalMaterialYou
+import fr.cyclooo.opendeezer.ui.theme.materialYouSupported
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -275,6 +277,24 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            // Material You (dynamic color) — opt-in, Android 12+ only. Flips the app
+            // theme live via the provided setter (also persisted in Prefs).
+            if (materialYouSupported) {
+                HorizontalDivider()
+                val materialYou = LocalMaterialYou.current
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_material_you), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.settings_material_you_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = materialYou.enabled, onCheckedChange = { materialYou.set(it) })
+                }
             }
 
             HorizontalDivider()

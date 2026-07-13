@@ -272,4 +272,6 @@
     <string name="device_self_tv">OpenDeezer (Android TV)</string>
     <string name="settings_connect">OpenDeezer Connect</string>
     <string name="update_notes_title">OpenDeezer %1$s</string>
+    <string name="settings_material_you">Material You</string>
+    <string name="settings_material_you_hint">अपने सिस्टम के रंगों से मिलाएँ</string>
 </resources>

@@ -277,6 +277,19 @@ func takePendingMeta(id string) (mediacache.StreamMeta, bool) {
 // ---- lifecycle ----
 
 // Init logs in with the ARL and starts the engine. Returns true on success.
+// SetDataDir points the engine's config + on-disk caches at dir — an app-private
+// directory the host guarantees is writable and persists across reboots (on
+// Android: context.getFilesDir(); on iOS: Application Support). os.UserConfigDir
+// is not such a path on mobile, so the host MUST call this once at startup,
+// before Init — otherwise media.json (the stream-cache setting) and the
+// mediacache/ directory are written somewhere that isn't there next launch, so
+// the cache neither persists nor reads back correctly in Settings.
+func SetDataDir(dir string) {
+	if dir != "" {
+		config.SetBaseDir(filepath.Join(dir, "opendeezer"))
+	}
+}
+
 func Init(arl string) bool {
 	mu.Lock()
 	debug.SetGCPercent(400)

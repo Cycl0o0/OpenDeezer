@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.engine.Engine
+import fr.cyclooo.opendeezer.engine.LyricLine
 import fr.cyclooo.opendeezer.engine.Lyrics
 import fr.cyclooo.opendeezer.player.PlayerController
 import androidx.compose.runtime.collectAsState
@@ -77,13 +78,19 @@ fun LyricsContent(player: PlayerController, modifier: Modifier = Modifier) {
         lyrics = if (trackId.isNullOrBlank()) Lyrics("", emptyList()) else Engine.lyrics(trackId)
     }
 
+    // Deezer's synced array carries timed blank/separator entries (instrumental
+    // breaks, noise). Drop them so the active line is always a real lyric — the
+    // other platforms filter these; not doing so here highlighted a blank line as
+    // the "current" lyric.
+    val syncedLines = remember(lyrics) { lyrics?.lines?.filter { it.text.isNotBlank() }.orEmpty() }
+
     Box(modifier) {
         val lyr = lyrics
         when {
             lyr == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            lyr.isSynced -> SyncedLyrics(lyr, position)
+            syncedLines.isNotEmpty() -> SyncedLyrics(syncedLines, position)
             lyr.plain.isNotBlank() -> Text(
                 lyr.plain,
                 modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -97,25 +104,25 @@ fun LyricsContent(player: PlayerController, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SyncedLyrics(lyrics: Lyrics, positionMs: Long) {
+private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long) {
     // The active line is the last one whose timestamp is <= current position.
-    val activeIndex = remember(positionMs, lyrics) {
-        lyrics.lines.indexOfLast { it.timeMs <= positionMs }.coerceAtLeast(0)
+    val activeIndex = remember(positionMs, lines) {
+        lines.indexOfLast { it.timeMs <= positionMs }.coerceAtLeast(0)
     }
     val listState = rememberLazyListState()
     LaunchedEffect(activeIndex) {
-        if (activeIndex >= 0 && lyrics.lines.isNotEmpty()) {
-            listState.animateScrollToItem(activeIndex.coerceIn(0, lyrics.lines.lastIndex))
+        if (activeIndex >= 0 && lines.isNotEmpty()) {
+            listState.animateScrollToItem(activeIndex.coerceIn(0, lines.lastIndex))
         }
     }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        itemsIndexed(lyrics.lines, key = { i, _ -> i }) { index, line ->
+        itemsIndexed(lines, key = { i, _ -> i }) { index, line ->
             val active = index == activeIndex
             Text(
-                line.text.ifBlank { "♪" },
+                line.text,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,

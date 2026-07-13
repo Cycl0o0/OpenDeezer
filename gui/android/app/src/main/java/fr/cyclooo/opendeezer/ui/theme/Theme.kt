@@ -1,10 +1,14 @@
 package fr.cyclooo.opendeezer.ui.theme
 
+import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 // Deezer brand purple.
 val DeezerPurple = Color(0xFFA238FF)
@@ -25,11 +29,34 @@ private val DarkColors = darkColorScheme(
     primaryContainer = PurpleDark,
 )
 
+/** Whether Material You dynamic color is even possible on this device (API 31+). */
+val materialYouSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+/**
+ * Material You availability + current toggle, provided from the Activity so a
+ * Settings switch can flip the theme live. [enabled] has no effect when
+ * [materialYouSupported] is false.
+ */
+data class MaterialYouState(
+    val enabled: Boolean = false,
+    val set: (Boolean) -> Unit = {},
+)
+
+val LocalMaterialYou = staticCompositionLocalOf { MaterialYouState() }
+
 @Composable
-fun OpenDeezerTheme(content: @Composable () -> Unit) {
-    // OpenDeezer's identity is dark-first, so the app theme is always dark.
+fun OpenDeezerTheme(dynamicColor: Boolean = false, content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    // Dynamic color (Monet) needs Android 12+. Use the DARK dynamic scheme so the
+    // app keeps its dark-first identity while adopting the user's system accent —
+    // opt-in only, so the branded palette stays the default.
+    val colorScheme = if (dynamicColor && materialYouSupported) {
+        dynamicDarkColorScheme(context)
+    } else {
+        DarkColors
+    }
     MaterialTheme(
-        colorScheme = DarkColors,
+        colorScheme = colorScheme,
         typography = Typography(),
         content = content,
     )

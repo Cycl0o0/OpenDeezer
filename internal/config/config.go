@@ -9,10 +9,33 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+var (
+	baseDirMu       sync.RWMutex
+	baseDirOverride string
+)
+
+// SetBaseDir overrides the directory Dir returns. Hosts whose platform
+// os.UserConfigDir is not a writable, persistent path — Android and iOS, where
+// it resolves outside the app sandbox — must call this once at startup with an
+// app-private directory, otherwise settings (media.json, tokens) and on-disk
+// caches can't be saved or don't survive a relaunch. "" restores the default.
+func SetBaseDir(dir string) {
+	baseDirMu.Lock()
+	baseDirOverride = strings.TrimSpace(dir)
+	baseDirMu.Unlock()
+}
 
 // Dir is ~/.config/opendeezer (platform UserConfigDir + "opendeezer").
 func Dir() (string, error) {
+	baseDirMu.RLock()
+	override := baseDirOverride
+	baseDirMu.RUnlock()
+	if override != "" {
+		return override, nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err

@@ -5,6 +5,7 @@ import fr.cyclooo.opendeezer.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import odmobile.Odmobile
 
 /**
  * Owns the single [PlayerController] on an application-lifetime scope.
@@ -24,4 +25,14 @@ class OpenDeezerApplication : Application() {
     private val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val player: PlayerController by lazy { PlayerController(appScope) }
+
+    override fun onCreate() {
+        super.onCreate()
+        // Point the Go engine at this app's writable, persistent private directory
+        // BEFORE any engine call (Init reads media.json + attaches the on-disk
+        // stream cache from here). Without it those land outside the sandbox and
+        // don't survive a relaunch, so the stream cache neither persists across
+        // reboots nor reads back into Settings.
+        runCatching { Odmobile.setDataDir(filesDir.absolutePath) }
+    }
 }

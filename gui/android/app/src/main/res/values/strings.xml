@@ -306,4 +306,6 @@
     <string name="offline_ready">%1$s available offline</string>
     <string name="offline_already">%1$s already offline</string>
     <string name="offline_needs_cache">Enable the stream cache in Settings to download for offline</string>
+    <string name="settings_material_you">Material You</string>
+    <string name="settings_material_you_hint">Match your system colors</string>
 </resources>
