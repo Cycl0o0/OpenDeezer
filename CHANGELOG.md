@@ -4,6 +4,23 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3]
+
+### Fixed
+- **Android: the stream cache survives reboots** and shows its saved size when you
+  return to Settings. The engine's on-disk cache and its setting were being
+  written to a location that didn't persist on Android; they now live in the
+  app's private storage, so the cache and the Settings value stick across
+  relaunches.
+- **Android: synced lyrics highlight the correct line.** Deezer's timed blank /
+  separator entries are now skipped, so the current line is always a real lyric
+  instead of landing on an empty one.
+
+### Added
+- **Android: Material You (opt-in).** A Settings switch on Android 12+ tints the
+  app with your system colors. It's off by default, so the app keeps its own
+  Deezer-purple look unless you turn it on.
+
 ## [3.1.0]
 
 ### Added

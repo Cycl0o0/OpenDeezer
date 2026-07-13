@@ -6,7 +6,7 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: opendeezer-gnome 3.1.0\n"
+"Project-Id-Version: opendeezer-gnome 3.1.3\n"
 "Report-Msgid-Bugs-To: https://github.com/Cycl0o0/OpenDeezer/issues\n"
 "POT-Creation-Date: 2026-07-03 09:29+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
