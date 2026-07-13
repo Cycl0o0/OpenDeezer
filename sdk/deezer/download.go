@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	internaldeezer "github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	internaldeezer "github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 // ---- download errors ----

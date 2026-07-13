@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 // Resolver looks imported rows up on Deezer. Narrow so tests use a fake.

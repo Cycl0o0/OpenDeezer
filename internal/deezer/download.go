@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
 )
 
 // ErrPremiumRequired is returned by SaveTrack when the logged-in account is not

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 func TestGoldenWireCompatibility(t *testing.T) {

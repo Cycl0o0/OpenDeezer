@@ -1,4 +1,4 @@
-module github.com/Cycl0o0/OpenDeezer/v2
+module github.com/Cycl0o0/OpenDeezer/v3
 
 go 1.25.12
 

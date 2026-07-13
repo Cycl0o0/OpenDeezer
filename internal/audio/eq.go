@@ -14,7 +14,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/config"
 )
 
 const (

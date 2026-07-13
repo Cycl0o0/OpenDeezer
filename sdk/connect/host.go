@@ -6,8 +6,8 @@ import (
 	"net"
 	"strconv"
 
-	sdkcontrol "github.com/Cycl0o0/OpenDeezer/v2/sdk/control"
-	sdkdeezer "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+	sdkcontrol "github.com/Cycl0o0/OpenDeezer/v3/sdk/control"
+	sdkdeezer "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 )
 
 // ErrAdvertise is wrapped into the error returned by [Host.Start] when the

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+	dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 )
 
 func main() {

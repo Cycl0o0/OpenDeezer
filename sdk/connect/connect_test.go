@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/sdk/connect"
+	"github.com/Cycl0o0/OpenDeezer/v3/sdk/connect"
 )
 
 func TestNewRemoteClient(t *testing.T) {

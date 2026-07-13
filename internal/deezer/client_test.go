@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/mediacache"
 )
 
 func TestTrackIDOf(t *testing.T) {

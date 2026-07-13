@@ -21,8 +21,8 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
 )
 
 // DZControlConfigJSON returns the current remote-control settings for the

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/version"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/version"
 
 	"github.com/charmbracelet/lipgloss"
 )

@@ -19,8 +19,8 @@ import (
 	"os"
 	"time"
 
-	dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/sdk/player"
+	dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/sdk/player"
 )
 
 // preloadWindowMS is how close to the end of the current track the next one is

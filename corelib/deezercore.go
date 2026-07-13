@@ -31,13 +31,13 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/bridge"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/update"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/bridge"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/mediacache"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/update"
 )
 
 func main() {} // required for buildmode=c-archive

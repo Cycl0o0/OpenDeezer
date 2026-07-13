@@ -6,19 +6,19 @@ and streaming, LAN device discovery (OpenDeezer Connect), and the remote
 control API.
 
 ```
-go get github.com/Cycl0o0/OpenDeezer/v2
+go get github.com/Cycl0o0/OpenDeezer/v3
 ```
 
 Import paths:
 
 | Package | Purpose |
 |---|---|
-| `github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer` | Deezer API client + decode |
-| `github.com/Cycl0o0/OpenDeezer/v2/sdk/connect` | OpenDeezer Connect (LAN discovery + remote) |
-| `github.com/Cycl0o0/OpenDeezer/v2/sdk/control` | Control server + client (HTTP/JSON API) |
-| `github.com/Cycl0o0/OpenDeezer/v2/sdk/player` | In-process audio playback (cgo) |
+| `github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer` | Deezer API client + decode |
+| `github.com/Cycl0o0/OpenDeezer/v3/sdk/connect` | OpenDeezer Connect (LAN discovery + remote) |
+| `github.com/Cycl0o0/OpenDeezer/v3/sdk/control` | Control server + client (HTTP/JSON API) |
+| `github.com/Cycl0o0/OpenDeezer/v3/sdk/player` | In-process audio playback (cgo) |
 
-Go docs: https://pkg.go.dev/github.com/Cycl0o0/OpenDeezer/v2/sdk
+Go docs: https://pkg.go.dev/github.com/Cycl0o0/OpenDeezer/v3/sdk
 
 ### Control works both ways (in + out)
 
@@ -65,7 +65,7 @@ The ARL never leaves your machine beyond the HTTPS requests made to deezer.com
 and media.deezer.com.
 
 ```go
-import dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+import dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 
 client := dz.New(os.Getenv("DEEZER_ARL"))
 if err := client.Login(); err != nil {
@@ -118,7 +118,7 @@ fetches, decrypts (BF_CBC_STRIPE), and writes the audio bytes to any
 ```go
 import (
     "os"
-    dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+    dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 )
 
 client.SetQuality(dz.QualityHigh) // prefer MP3 320; falls back if not entitled
@@ -167,7 +167,7 @@ OpenDeezer Connect is **symmetric** — the SDK exposes both directions:
 ### Out — discover and drive a device
 
 ```go
-import "github.com/Cycl0o0/OpenDeezer/v2/sdk/connect"
+import "github.com/Cycl0o0/OpenDeezer/v3/sdk/connect"
 
 // Find devices (2-second probe window).
 devices, _ := connect.Discover(2*time.Second, 0)
@@ -243,7 +243,7 @@ Host a controllable endpoint that phones, AI agents, or other OpenDeezer
 clients can drive.
 
 ```go
-import "github.com/Cycl0o0/OpenDeezer/v2/sdk/control"
+import "github.com/Cycl0o0/OpenDeezer/v3/sdk/control"
 
 srv := control.NewServer(
     control.Config{
@@ -357,8 +357,8 @@ API access, search, or download/decrypt.
 
 ```go
 import (
-    "github.com/Cycl0o0/OpenDeezer/v2/sdk/player"
-    dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+    "github.com/Cycl0o0/OpenDeezer/v3/sdk/player"
+    dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 )
 
 p, _ := player.NewPlayer()

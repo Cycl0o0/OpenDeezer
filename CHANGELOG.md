@@ -4,6 +4,65 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0]
+
+### Added
+- **OpenDeezer Connect, done right.** Repeat and shuffle now work in both
+  directions between any host and controller (the command was silently dropped
+  before, depending on which client you used), and every client shows the host's
+  real modes while casting. A controller can push its whole queue to the host,
+  and hosts emit an explicit "finished" event over Server-Sent Events so remote
+  controllers advance instantly instead of polling. A "Playing on &lt;device&gt;"
+  chip with one-click "Play here" appears on every client.
+- **Up Next — a real queue editor on all seven clients.** See the play queue,
+  jump to a track, remove, drag/move to reorder, Play-next / Add-to-queue from
+  any track, and Clear — as sheets (macOS/iOS), a dock (KDE, Ctrl+U), a sidebar
+  view (GNOME), a flyout (Windows), and phone/TV screens (Android) with
+  drag-reorder and swipe-to-remove.
+- **Offline playback.** "Download for offline" fetches a track into the encrypted
+  on-disk cache; cached tracks then play with zero network — no token or media
+  round-trip — and a genuine offline miss fails cleanly instead of hanging.
+  Available on every client with a downloaded badge.
+- **Truthful likes everywhere.** Every client seeds liked-track ids from the
+  engine and shows the accurate heart on each track, instead of resetting it.
+- **Robust downloads.** Album/playlist downloads run with bounded concurrency and
+  resume mid-file over HTTP Range, refresh expired URLs, and verify the byte
+  count before finishing. Podcast episodes and long playlists now paginate fully.
+- **System media surface.** Android and iOS lock-screen / MediaSession controls
+  gain shuffle, repeat and skip; iOS shows a buffering state; Android gets
+  lock-screen artwork.
+
+### Changed
+- **Playback trust.** Premium playback no longer silently downgrades to a
+  30-second preview on a transient CDN hiccup (only genuine entitlement errors
+  fall back). A failed track is no longer counted as a full listen or silently
+  skipped. Synced lyrics no longer lead the audio — the reported position is
+  compensated for the output device's buffered latency.
+- **Podcasts** use a windowed, disk-backed buffer, so a multi-hour episode uses a
+  bounded amount of memory instead of holding the whole stream in RAM; listening
+  history distinguishes episodes from songs and keeps podcasts out of the music
+  top-tracks/artists stats.
+- **Android reliability:** manual next/previous honor shuffle and repeat; the app
+  adopts the engine queue when it changes; swipe-from-recents no longer leaves
+  zombie playback; audio resumes after a transient focus loss.
+- **The Go module path is now `/v3`** (`go get github.com/Cycl0o0/OpenDeezer/v3`)
+  and `make` also builds `opendeezer-mcp`.
+
+### Fixed
+- **Connect security &amp; lifecycle:** a token-protected LAN control server can no
+  longer silently become open access on re-login or LAN rebind; connecting is
+  gated on an authenticated check before local audio is stopped; switching
+  devices stops the old one; logging out drops the previous account's remote
+  route; the discovery responder no longer leaks or advertises a dead port.
+- Repeat-All is no longer forwarded to a routed host in a way that trapped
+  playback on a single track. The control API rejects malformed volume/seek/
+  repeat/shuffle/sleep values and accepts negative user-upload track ids.
+- **Engine:** concurrent downloads no longer share one temp file; short-EOF is
+  treated as a resumable tear; several playback races (sleep end-of-track,
+  gapless swap, device re-init after loss) are closed; the anti-click fade
+  actually renders; the MCP server survives oversized/garbled input; LAN
+  discovery retries a failed rebind and Discord shutdown is bounded.
+
 ## [2.2.3]
 
 ### Fixed

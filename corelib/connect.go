@@ -16,12 +16,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/discovery"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
 )
 
 // selfControlPort is this instance's control API port (0 if disabled), used to

@@ -14,7 +14,7 @@ import (
 	"github.com/go-flac/flacvorbis"
 	flac "github.com/go-flac/go-flac"
 
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
 )
 
 // ArtworkFetcher fetches bytes for a Deezer artwork URL (or upgraded size).

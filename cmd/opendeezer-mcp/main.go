@@ -22,7 +22,7 @@ import (
 	"os"
 	"strings"
 
-	version_ "github.com/Cycl0o0/OpenDeezer/v2/internal/version"
+	version_ "github.com/Cycl0o0/OpenDeezer/v3/internal/version"
 )
 
 var version = version_.Number

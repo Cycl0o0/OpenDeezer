@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/history"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )

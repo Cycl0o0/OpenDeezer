@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/history"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/i18n"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )

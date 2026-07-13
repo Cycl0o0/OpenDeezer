@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/sdk/control"
-	sdkdeezer "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/sdk/control"
+	sdkdeezer "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 )
 
 func TestNewClient(t *testing.T) {

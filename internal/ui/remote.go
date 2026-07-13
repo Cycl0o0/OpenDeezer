@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/i18n"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/i18n"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

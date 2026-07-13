@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/mediacache"
 )
 
 // ErrARLExpired is returned by Login when the ARL cookie is missing/expired or

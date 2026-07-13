@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/history"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

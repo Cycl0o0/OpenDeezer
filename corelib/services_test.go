@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/history"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/mediacache"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/queue"
 )
 
 // clearRoutedRemote resets the Connect routing globals so a test that installs a

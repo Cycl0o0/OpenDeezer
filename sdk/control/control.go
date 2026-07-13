@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/url"
 
-	internalcontrol "github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	sdkdeezer "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+	internalcontrol "github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	sdkdeezer "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 )
 
 // ---- type aliases ----

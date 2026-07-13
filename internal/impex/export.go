@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 // csvHeader matches Exportify's column names for the fields this app has.

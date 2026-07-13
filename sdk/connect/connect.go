@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"time"
 
-	internalcontrol "github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	internaldiscovery "github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
+	internalcontrol "github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	internaldiscovery "github.com/Cycl0o0/OpenDeezer/v3/internal/discovery"
 )
 
 // ---- discovery ----

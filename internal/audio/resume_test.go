@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 // flakyServer serves body once with the connection torn mid-transfer (the client

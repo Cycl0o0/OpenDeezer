@@ -26,18 +26,18 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/audio"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/bridge"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/config"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/discovery"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/history"
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/queue"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/update"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/version"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/audio"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/bridge"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/config"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/discovery"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/history"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/mediacache"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/queue"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/update"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/version"
 )
 
 // Version is the engine/app version (single source: internal/version).

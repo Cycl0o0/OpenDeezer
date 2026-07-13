@@ -172,11 +172,11 @@ The engine is also a public Go SDK, so you can build your own tools on top of it
 the Deezer API, track decode/download, OpenDeezer Connect, and the remote control.
 
 ```sh
-go get github.com/Cycl0o0/OpenDeezer/v2
+go get github.com/Cycl0o0/OpenDeezer/v3
 ```
 
 ```go
-import dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+import dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 
 client := dz.New(os.Getenv("DEEZER_ARL"))
 client.Login()

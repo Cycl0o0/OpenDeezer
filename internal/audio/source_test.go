@@ -3,7 +3,7 @@ package audio
 import (
 	"testing"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 // A source parked after decoder EOF must wake and report a pending seek when one

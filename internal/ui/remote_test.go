@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

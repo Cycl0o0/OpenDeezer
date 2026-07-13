@@ -11,12 +11,12 @@
 //
 // # Install
 //
-//	go get github.com/Cycl0o0/OpenDeezer/v2
+//	go get github.com/Cycl0o0/OpenDeezer/v3
 //
 // # Quick start
 //
 //	import (
-//	    dz "github.com/Cycl0o0/OpenDeezer/v2/sdk/deezer"
+//	    dz "github.com/Cycl0o0/OpenDeezer/v3/sdk/deezer"
 //	)
 //
 //	client := dz.New(os.Getenv("DEEZER_ARL"))

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/control"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/control"
 )
 
 // rec records the commands the fake control server received.

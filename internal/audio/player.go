@@ -26,8 +26,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
 )
 
 // output is the platform audio sink. start() begins pulling PCM via read, which

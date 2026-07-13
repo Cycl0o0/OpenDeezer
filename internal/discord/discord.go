@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	odlog "github.com/Cycl0o0/OpenDeezer/v2/internal/log"
+	odlog "github.com/Cycl0o0/OpenDeezer/v3/internal/log"
 )
 
 // State is a now-playing snapshot pushed by the UI.

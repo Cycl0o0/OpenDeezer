@@ -50,8 +50,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/bridge"
-	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/bridge"
+	"github.com/Cycl0o0/OpenDeezer/v3/internal/deezer"
 )
 
 // Track is a now-playing / queue entry in the API.
