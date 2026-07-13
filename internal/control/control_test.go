@@ -244,8 +244,8 @@ func TestWhoamiIsUnauthenticated(t *testing.T) {
 	if who.Auth != "token" || who.Version != "1.2.3" {
 		t.Fatalf("whoami = %+v", who)
 	}
-	if who.Commands == nil || len(who.Commands) != 0 {
-		t.Fatalf("whoami commands = %#v, want present empty array", who.Commands)
+	if len(who.Commands) != 1 || who.Commands[0] != "finished" {
+		t.Fatalf("whoami commands = %#v, want [finished]", who.Commands)
 	}
 }
 
@@ -256,6 +256,7 @@ func TestWhoamiAdvertisesCommandCapabilities(t *testing.T) {
 		Seek:             func(int64) {},
 		SetVolume:        func(float64) {},
 		QueueAdd:         func(string, bool) error { return nil },
+		SetQueue:         func(string, int) error { return nil },
 		PlayAlbum:        func(string) error { return nil },
 		PlayMixArtist:    func(string) error { return nil },
 		HistoryRecent:    func(int) (json.RawMessage, error) { return nil, nil },
@@ -274,31 +275,32 @@ func TestWhoamiAdvertisesCommandCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"repeat", "shuffle", "seek", "volume", "queueAdd", "playAlbum",
-		"playMix", "history", "sleep", "eq",
+		"repeat", "shuffle", "seek", "volume", "queueAdd", "queueSet",
+		"playAlbum", "playMix", "history", "sleep", "eq", "finished",
 	}
 	if strings.Join(who.Commands, ",") != strings.Join(want, ",") {
 		t.Fatalf("whoami commands = %#v, want %#v", who.Commands, want)
 	}
 }
 
-func nextSSEState(t *testing.T, scanner *bufio.Scanner) State {
+type sseFrame struct {
+	event string
+	data  string
+}
+
+func nextSSEFrame(t *testing.T, scanner *bufio.Scanner) sseFrame {
 	t.Helper()
 	event := ""
 	var data strings.Builder
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
-			if event != "state" || data.Len() == 0 {
+			if event == "" || data.Len() == 0 {
 				event = ""
 				data.Reset()
 				continue
 			}
-			var state State
-			if err := json.Unmarshal([]byte(data.String()), &state); err != nil {
-				t.Fatalf("decode SSE state %q: %v", data.String(), err)
-			}
-			return state
+			return sseFrame{event: event, data: data.String()}
 		}
 		switch {
 		case strings.HasPrefix(line, "event:"):
@@ -310,8 +312,23 @@ func nextSSEState(t *testing.T, scanner *bufio.Scanner) State {
 			data.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
 		}
 	}
-	t.Fatalf("SSE stream ended before a state event: %v", scanner.Err())
-	return State{}
+	t.Fatalf("SSE stream ended before an event: %v", scanner.Err())
+	return sseFrame{}
+}
+
+func nextSSEState(t *testing.T, scanner *bufio.Scanner) State {
+	t.Helper()
+	for {
+		frame := nextSSEFrame(t, scanner)
+		if frame.event != "state" {
+			continue
+		}
+		var state State
+		if err := json.Unmarshal([]byte(frame.data), &state); err != nil {
+			t.Fatalf("decode SSE state %q: %v", frame.data, err)
+		}
+		return state
+	}
 }
 
 func openEventStream(t *testing.T, ctx context.Context, url string, headers map[string]string) (*http.Response, *bufio.Scanner) {
@@ -385,6 +402,33 @@ func TestEventsInitialSnapshotAndNotify(t *testing.T) {
 	changed := nextSSEState(t, scanner)
 	if changed.State != "playing" || changed.PositionMS != 1234 {
 		t.Fatalf("notified SSE state = %+v", changed)
+	}
+}
+
+func TestEventsFinishedNotify(t *testing.T) {
+	s, base := newTestServer(t, Config{}, func() State {
+		return State{State: "playing", Track: &Track{ID: "old"}}
+	}, Commands{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, scanner := openEventStream(t, ctx, base+"/events", nil)
+	defer resp.Body.Close()
+	_ = nextSSEState(t, scanner)
+	waitForEventSubscriberCount(t, s, 1)
+
+	want := `42"\\edge`
+	s.NotifyFinished(want)
+	frame := nextSSEFrame(t, scanner)
+	if frame.event != "finished" {
+		t.Fatalf("SSE event = %q, want finished", frame.event)
+	}
+	var finished FinishedEvent
+	if err := json.Unmarshal([]byte(frame.data), &finished); err != nil {
+		t.Fatalf("decode finished SSE %q: %v", frame.data, err)
+	}
+	if finished.TrackID != want {
+		t.Fatalf("finished trackId = %q, want %q", finished.TrackID, want)
 	}
 }
 
@@ -498,7 +542,7 @@ func TestEventsSlowSubscriberDoesNotBlockAnother(t *testing.T) {
 	fast := s.subscribeEvents()
 	defer s.unsubscribeEvents(slow)
 	defer s.unsubscribeEvents(fast)
-	slow <- struct{}{} // occupy the slow subscriber's only buffer slot
+	slow.state <- struct{}{} // occupy the slow subscriber's state buffer slot
 
 	stateMu.Lock()
 	state.State = "playing"
@@ -507,13 +551,13 @@ func TestEventsSlowSubscriberDoesNotBlockAnother(t *testing.T) {
 	s.NotifyStateChanged()
 
 	select {
-	case <-fast:
+	case <-fast.state:
 	case <-time.After(time.Second):
 		t.Fatal("fast subscriber was blocked by a full slow subscriber")
 	}
 
 	select {
-	case <-slow:
+	case <-slow.state:
 		// A notification is only a prompt to take a fresh snapshot, so the
 		// already-buffered signal naturally coalesces to the newest state.
 		payload, err := s.stateEventPayload()
@@ -529,6 +573,43 @@ func TestEventsSlowSubscriberDoesNotBlockAnother(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("slow subscriber lost its coalesced notification")
+	}
+}
+
+func TestFinishedSlowSubscriberDoesNotBlockAnother(t *testing.T) {
+	s := New(Config{}, func() State { return State{} }, nil, Commands{}, nil)
+	slow := s.subscribeEvents()
+	fast := s.subscribeEvents()
+	defer s.unsubscribeEvents(slow)
+	defer s.unsubscribeEvents(fast)
+	for range finishedSubscriberBuffer {
+		slow.finished <- FinishedEvent{TrackID: "old"}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.NotifyFinished("new")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("NotifyFinished blocked on a full slow subscriber")
+	}
+	select {
+	case got := <-fast.finished:
+		if got.TrackID != "new" {
+			t.Fatalf("fast subscriber finished = %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fast subscriber did not receive finished event")
+	}
+	var newest FinishedEvent
+	for range finishedSubscriberBuffer {
+		newest = <-slow.finished
+	}
+	if newest.TrackID != "new" {
+		t.Fatalf("slow subscriber newest finished = %+v, want track new", newest)
 	}
 }
 
@@ -569,6 +650,7 @@ func TestClientEventsReceivesStatesAndUsesAuth(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, ": keepalive\n\nevent: ignored\ndata: {}\n\nevent: state\ndata: not-json\n\n")
 		writeClientStateEvent(t, w, initial, true)
+		writeClientFinishedEvent(t, w, FinishedEvent{TrackID: "ignored-by-legacy"}, true)
 		w.(http.Flusher).Flush()
 
 		select {
@@ -610,6 +692,53 @@ func TestClientEventsReceivesStatesAndUsesAuth(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("event channel did not close after context cancellation")
+	}
+}
+
+func TestClientEventsTypedDeliversFinished(t *testing.T) {
+	initial := State{State: "playing", PositionMS: 10, Repeat: "off"}
+	changed := State{State: "stopped", PositionMS: 20, Repeat: "off"}
+	finished := FinishedEvent{TrackID: `7"\\done`}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeClientStateEvent(t, w, initial, true)
+		_, _ = fmt.Fprint(w, "event: finished\ndata: not-json\n\nevent: ignored\ndata: {}\n\n")
+		writeClientFinishedEvent(t, w, finished, true)
+		writeClientStateEvent(t, w, changed, false)
+	}))
+	defer server.Close()
+
+	events, err := NewClient(server.URL, "", "").EventsTyped(context.Background())
+	if err != nil {
+		t.Fatalf("EventsTyped: %v", err)
+	}
+	first := receiveClientEvent(t, events)
+	if first.Type != EventTypeState || first.State == nil || first.Finished != nil {
+		t.Fatalf("first typed event = %+v, want state-only", first)
+	}
+	assertClientState(t, *first.State, initial)
+
+	second := receiveClientEvent(t, events)
+	if second.Type != EventTypeFinished || second.State != nil || second.Finished == nil {
+		t.Fatalf("second typed event = %+v, want finished-only", second)
+	}
+	if second.Finished.TrackID != finished.TrackID {
+		t.Fatalf("finished payload = %+v, want %+v", *second.Finished, finished)
+	}
+
+	third := receiveClientEvent(t, events)
+	if third.Type != EventTypeState || third.State == nil || third.Finished != nil {
+		t.Fatalf("third typed event = %+v, want state-only", third)
+	}
+	assertClientState(t, *third.State, changed)
+	select {
+	case _, ok := <-events:
+		if ok {
+			t.Fatal("typed event channel remained open after disconnect")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("typed event channel did not close after disconnect")
 	}
 }
 
@@ -665,6 +794,32 @@ func writeClientStateEvent(t *testing.T, w http.ResponseWriter, state State, ter
 	_, _ = fmt.Fprintf(w, "event: state\ndata: %s\n", b)
 	if terminate {
 		_, _ = fmt.Fprint(w, "\n")
+	}
+}
+
+func writeClientFinishedEvent(t *testing.T, w http.ResponseWriter, finished FinishedEvent, terminate bool) {
+	t.Helper()
+	b, err := json.Marshal(finished)
+	if err != nil {
+		t.Fatalf("marshal FinishedEvent: %v", err)
+	}
+	_, _ = fmt.Fprintf(w, "event: finished\ndata: %s\n", b)
+	if terminate {
+		_, _ = fmt.Fprint(w, "\n")
+	}
+}
+
+func receiveClientEvent(t *testing.T, events <-chan Event) Event {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if !ok {
+			t.Fatal("event channel closed before event arrived")
+		}
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for typed event")
+		return Event{}
 	}
 }
 
@@ -756,12 +911,135 @@ type invalidControlRequest struct {
 
 func serveControlRoute(t *testing.T, cmds Commands, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	return serveControlRouteBody(t, cmds, method, path, "")
+}
+
+func serveControlRouteBody(t *testing.T, cmds Commands, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	s := newMutationTestServer(cmds)
 	mux := http.NewServeMux()
 	s.routes(mux)
 	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, httptest.NewRequest(method, path, nil))
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	mux.ServeHTTP(rr, req)
 	return rr
+}
+
+func TestQueueSetEndpoint(t *testing.T) {
+	validTracks := `[{"id":"a","name":"Alpha","durationMs":1234},{"id":"b","artists":[{"id":"9","name":"Artist"}]}]`
+
+	t.Run("valid", func(t *testing.T) {
+		calls := 0
+		gotTracks := ""
+		gotIndex := -1
+		cmds := Commands{SetQueue: func(tracksJSON string, index int) error {
+			calls++
+			gotTracks, gotIndex = tracksJSON, index
+			return nil
+		}}
+		body := `{"tracks":` + validTracks + `,"index":1}`
+		rr := serveControlRouteBody(t, cmds, http.MethodPost, "/queue/set", body)
+		assertMutationResponse(t, rr, http.StatusOK, "")
+		if calls != 1 || gotIndex != 1 {
+			t.Fatalf("SetQueue calls/index = %d/%d, want 1/1", calls, gotIndex)
+		}
+		var got, want []map[string]any
+		if err := json.Unmarshal([]byte(gotTracks), &got); err != nil {
+			t.Fatalf("callback tracks JSON: %v", err)
+		}
+		if err := json.Unmarshal([]byte(validTracks), &want); err != nil {
+			t.Fatal(err)
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("callback tracks = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("clear", func(t *testing.T) {
+		gotTracks := ""
+		gotIndex := 0
+		cmds := Commands{SetQueue: func(tracksJSON string, index int) error {
+			gotTracks, gotIndex = tracksJSON, index
+			return nil
+		}}
+		rr := serveControlRouteBody(t, cmds, http.MethodPost, "/queue/set", `{"tracks":[],"index":-1}`)
+		assertMutationResponse(t, rr, http.StatusOK, "")
+		if gotTracks != "[]" || gotIndex != -1 {
+			t.Fatalf("clear callback = %q/%d, want []/-1", gotTracks, gotIndex)
+		}
+	})
+
+	invalid := []struct {
+		name    string
+		body    string
+		status  int
+		message string
+	}{
+		{name: "empty body", body: "", status: http.StatusBadRequest, message: "body must contain tracks and index"},
+		{name: "malformed", body: `{"tracks":[`, status: http.StatusBadRequest, message: "body must contain tracks and index"},
+		{name: "missing tracks", body: `{"index":0}`, status: http.StatusBadRequest, message: "tracks must be a JSON array"},
+		{name: "null tracks", body: `{"tracks":null,"index":0}`, status: http.StatusBadRequest, message: "tracks must be a JSON array"},
+		{name: "object tracks", body: `{"tracks":{},"index":0}`, status: http.StatusBadRequest, message: "tracks must be a JSON array"},
+		{name: "invalid track shape", body: `{"tracks":[{"id":1}],"index":0}`, status: http.StatusBadRequest, message: "tracks must be a valid bridge.Track array"},
+		{name: "missing track id", body: `{"tracks":[{"name":"no id"}],"index":0}`, status: http.StatusBadRequest, message: "every track must have a non-empty id"},
+		{name: "blank track id", body: `{"tracks":[{"id":"  "}],"index":0}`, status: http.StatusBadRequest, message: "every track must have a non-empty id"},
+		{name: "negative duration", body: `{"tracks":[{"id":"1","durationMs":-1}],"index":0}`, status: http.StatusBadRequest, message: "track durationMs must be non-negative"},
+		{name: "missing index", body: `{"tracks":[{"id":"1"}]}`, status: http.StatusBadRequest, message: "index is required"},
+		{name: "null index", body: `{"tracks":[{"id":"1"}],"index":null}`, status: http.StatusBadRequest, message: "index is required"},
+		{name: "fractional index", body: `{"tracks":[{"id":"1"}],"index":0.5}`, status: http.StatusBadRequest, message: "body must contain tracks and index"},
+		{name: "negative nonempty index", body: `{"tracks":[{"id":"1"}],"index":-1}`, status: http.StatusBadRequest, message: "index must identify a track, or be -1 for an empty queue"},
+		{name: "out of range", body: `{"tracks":[{"id":"1"}],"index":1}`, status: http.StatusBadRequest, message: "index must identify a track, or be -1 for an empty queue"},
+		{name: "empty queue nonempty index", body: `{"tracks":[],"index":0}`, status: http.StatusBadRequest, message: "index must identify a track, or be -1 for an empty queue"},
+		{name: "unknown field", body: `{"tracks":[],"index":-1,"extra":true}`, status: http.StatusBadRequest, message: "body must contain tracks and index"},
+		{name: "duplicate tracks", body: `{"tracks":[],"tracks":[],"index":-1}`, status: http.StatusBadRequest, message: "body must contain tracks and index"},
+		{name: "duplicate index", body: `{"tracks":[],"index":-1,"index":-1}`, status: http.StatusBadRequest, message: "body must contain tracks and index"},
+		{name: "trailing document", body: `{"tracks":[],"index":-1}{}`, status: http.StatusBadRequest, message: "body must contain exactly one JSON object"},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			cmds := Commands{SetQueue: func(string, int) error { calls++; return nil }}
+			rr := serveControlRouteBody(t, cmds, http.MethodPost, "/queue/set", tt.body)
+			assertMutationResponse(t, rr, tt.status, tt.message)
+			if calls != 0 {
+				t.Fatalf("SetQueue called %d times for invalid body", calls)
+			}
+		})
+	}
+
+	t.Run("oversized", func(t *testing.T) {
+		calls := 0
+		cmds := Commands{SetQueue: func(string, int) error { calls++; return nil }}
+		body := `{"tracks":[],"index":-1}` + strings.Repeat(" ", maxQueueSetRequestBytes+1)
+		rr := serveControlRouteBody(t, cmds, http.MethodPost, "/queue/set", body)
+		assertMutationResponse(t, rr, http.StatusRequestEntityTooLarge, "request body too large")
+		if calls != 0 {
+			t.Fatalf("SetQueue called %d times for oversized body", calls)
+		}
+	})
+
+	t.Run("unsupported", func(t *testing.T) {
+		body := `{"tracks":[{"id":"1"}],"index":0}`
+		rr := serveControlRouteBody(t, Commands{}, http.MethodPost, "/queue/set", body)
+		assertMutationResponse(t, rr, http.StatusNotImplemented, "not available")
+	})
+
+	t.Run("callback conflict", func(t *testing.T) {
+		cmds := Commands{SetQueue: func(string, int) error { return errors.New("cannot set queue") }}
+		body := `{"tracks":[{"id":"1"}],"index":0}`
+		rr := serveControlRouteBody(t, cmds, http.MethodPost, "/queue/set", body)
+		assertMutationResponse(t, rr, http.StatusConflict, "cannot set queue")
+	})
+
+	t.Run("requires post", func(t *testing.T) {
+		rr := serveControlRouteBody(t, Commands{SetQueue: func(string, int) error { return nil }}, http.MethodGet, "/queue/set", "")
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("GET /queue/set status = %d, want 405; body=%s", rr.Code, rr.Body.String())
+		}
+	})
 }
 
 func TestExtendedControlEndpoints(t *testing.T) {
@@ -1141,6 +1419,59 @@ func TestExtendedControlClientRoundTrips(t *testing.T) {
 				t.Fatalf("request = %+v, want method=%s uri=%s token/account", got, tt.method, tt.uri)
 			}
 		})
+	}
+}
+
+func TestClientSetQueue(t *testing.T) {
+	type observed struct {
+		method, path, token, account, contentType string
+		body                                      []byte
+	}
+	seen := make(chan observed, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seen <- observed{
+			method: r.Method, path: r.URL.RequestURI(), token: r.Header.Get("X-OpenDeezer-Token"),
+			account: r.Header.Get("X-OpenDeezer-Account"), contentType: r.Header.Get("Content-Type"), body: body,
+		}
+		writeJSON(w, State{State: "playing", PositionMS: 55})
+	}))
+	defer server.Close()
+
+	tracks := `[{"id":"1","name":"One"},{"id":"2"}]`
+	state, err := NewClient(server.URL, "secret", "42").SetQueue(tracks, 1)
+	if err != nil {
+		t.Fatalf("SetQueue: %v", err)
+	}
+	if state.State != "playing" || state.PositionMS != 55 {
+		t.Fatalf("SetQueue state = %+v", state)
+	}
+	got := <-seen
+	if got.method != http.MethodPost || got.path != "/queue/set" || got.token != "secret" || got.account != "42" {
+		t.Fatalf("SetQueue request = %+v", got)
+	}
+	if got.contentType != "application/json" {
+		t.Fatalf("SetQueue Content-Type = %q", got.contentType)
+	}
+	var body struct {
+		Tracks json.RawMessage `json:"tracks"`
+		Index  int             `json:"index"`
+	}
+	if err := json.Unmarshal(got.body, &body); err != nil {
+		t.Fatalf("SetQueue body = %s: %v", got.body, err)
+	}
+	if body.Index != 1 || string(body.Tracks) != tracks {
+		t.Fatalf("SetQueue body tracks/index = %s/%d, want %s/1", body.Tracks, body.Index, tracks)
+	}
+
+	requests := 0
+	badServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer badServer.Close()
+	if _, err := NewClient(badServer.URL, "", "").SetQueue(`[`, 0); err == nil {
+		t.Fatal("SetQueue accepted malformed tracks JSON")
+	}
+	if requests != 0 {
+		t.Fatalf("malformed SetQueue issued %d requests", requests)
 	}
 }
 

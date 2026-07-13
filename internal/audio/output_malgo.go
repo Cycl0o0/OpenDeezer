@@ -232,6 +232,10 @@ func (o *malgoOutput) currentDevice() string {
 	return o.selectedID.String()
 }
 
+func (o *malgoOutput) latencyFrames() int {
+	return 4 * (200 * sampleRate / 1000)
+}
+
 func (o *malgoOutput) close() {
 	o.mu.Lock()
 	o.closed = true

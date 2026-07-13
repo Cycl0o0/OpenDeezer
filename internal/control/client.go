@@ -2,6 +2,7 @@ package control
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,22 @@ import (
 )
 
 const maxControlResponseBytes = 8 << 20
+
+// EventType identifies a named control SSE event.
+type EventType string
+
+const (
+	EventTypeState    EventType = "state"
+	EventTypeFinished EventType = "finished"
+)
+
+// Event is a tagged item from EventsTyped. Exactly one payload pointer is set
+// for the event types currently defined by the control protocol.
+type Event struct {
+	Type     EventType
+	State    *State
+	Finished *FinishedEvent
+}
 
 // Client talks to a control Server over HTTP. It is the shared driver for the
 // MCP server and the TUI's remote-play feature: both point it at another
@@ -35,7 +52,11 @@ func NewClient(base, token, account string) *Client {
 }
 
 func (c *Client) req(method, path string) (*http.Request, error) {
-	r, err := http.NewRequest(method, c.base+path, nil)
+	return c.reqBody(method, path, nil)
+}
+
+func (c *Client) reqBody(method, path string, body io.Reader) (*http.Request, error) {
+	r, err := http.NewRequest(method, c.base+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -48,12 +69,8 @@ func (c *Client) req(method, path string) (*http.Request, error) {
 	return r, nil
 }
 
-// raw issues a request and returns the response body, erroring on non-2xx.
-func (c *Client) raw(method, path string) ([]byte, error) {
-	req, err := c.req(method, path)
-	if err != nil {
-		return nil, err
-	}
+// rawRequest issues req and returns the response body, erroring on non-2xx.
+func (c *Client) rawRequest(req *http.Request) ([]byte, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -62,14 +79,22 @@ func (c *Client) raw(method, path string) ([]byte, error) {
 	// Cap the response so a malicious/compromised peer can't exhaust memory.
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, maxControlResponseBytes))
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("control %s %s: %s: %s", method, path, resp.Status, string(b))
+		return nil, fmt.Errorf("control %s %s: %s: %s", req.Method, req.URL.RequestURI(), resp.Status, string(b))
 	}
 	return b, nil
 }
 
-// state issues a request whose response is a State (status + all command endpoints).
-func (c *Client) state(method, path string) (State, error) {
-	b, err := c.raw(method, path)
+// raw issues a request and returns the response body, erroring on non-2xx.
+func (c *Client) raw(method, path string) ([]byte, error) {
+	req, err := c.req(method, path)
+	if err != nil {
+		return nil, err
+	}
+	return c.rawRequest(req)
+}
+
+func (c *Client) stateRequest(req *http.Request) (State, error) {
+	b, err := c.rawRequest(req)
 	if err != nil {
 		return State{}, err
 	}
@@ -78,6 +103,15 @@ func (c *Client) state(method, path string) (State, error) {
 		return State{}, err
 	}
 	return st, nil
+}
+
+// state issues a request whose response is a State (status + all command endpoints).
+func (c *Client) state(method, path string) (State, error) {
+	req, err := c.req(method, path)
+	if err != nil {
+		return State{}, err
+	}
+	return c.stateRequest(req)
 }
 
 // Whoami fetches the server's identity, auth mode and supported command families.
@@ -93,11 +127,11 @@ func (c *Client) Whoami() (Whoami, error) {
 // Status returns the current playback snapshot.
 func (c *Client) Status() (State, error) { return c.state(http.MethodGet, "/status") }
 
-// Events subscribes to playback state changes from the peer. The returned
-// channel is closed when ctx is cancelled or the event stream disconnects.
-// State snapshots are buffered; if a caller falls behind, stale snapshots may
-// be discarded in favour of the newest one.
-func (c *Client) Events(ctx context.Context) (<-chan State, error) {
+// EventsTyped subscribes to all recognized peer events. Events retain stream
+// order and include both complete State snapshots and natural-finish edges.
+// Callers should drain the channel promptly; backpressure affects only this
+// connection. The channel closes when ctx is cancelled or the peer disconnects.
+func (c *Client) EventsTyped(ctx context.Context) (<-chan Event, error) {
 	req, err := c.req(http.MethodGet, "/events")
 	if err != nil {
 		return nil, err
@@ -123,13 +157,35 @@ func (c *Client) Events(ctx context.Context) (<-chan State, error) {
 		return nil, fmt.Errorf("control %s %s: %s: %s", http.MethodGet, "/events", resp.Status, string(b))
 	}
 
+	events := make(chan Event, 16)
+	go readEvents(ctx, resp.Body, events)
+	return events, nil
+}
+
+// Events is the backward-compatible state-only view of EventsTyped. Finished
+// events are ignored; state snapshots retain the historical latest-wins
+// buffering behaviour for slow callers.
+func (c *Client) Events(ctx context.Context) (<-chan State, error) {
+	events, err := c.EventsTyped(ctx)
+	if err != nil {
+		return nil, err
+	}
 	states := make(chan State, 16)
-	go readStateEvents(ctx, resp.Body, states)
+	go func() {
+		defer close(states)
+		for event := range events {
+			if event.Type == EventTypeState && event.State != nil {
+				if !offerLatestState(ctx, states, *event.State) {
+					return
+				}
+			}
+		}
+	}()
 	return states, nil
 }
 
-func readStateEvents(ctx context.Context, body io.ReadCloser, states chan State) {
-	defer close(states)
+func readEvents(ctx context.Context, body io.ReadCloser, events chan Event) {
+	defer close(events)
 	defer body.Close()
 
 	// Closing the body unblocks Scanner even for a stream that has gone quiet.
@@ -159,15 +215,33 @@ func readStateEvents(ctx context.Context, body io.ReadCloser, states chan State)
 			hasData = false
 			discardEvent = false
 		}()
-		if discardEvent || event != "state" || !hasData {
+		if discardEvent || !hasData {
 			return true
 		}
 
-		var state State
-		if err := json.Unmarshal([]byte(data.String()), &state); err != nil {
+		var parsed Event
+		switch EventType(event) {
+		case EventTypeState:
+			var state State
+			if err := json.Unmarshal([]byte(data.String()), &state); err != nil {
+				return true
+			}
+			parsed = Event{Type: EventTypeState, State: &state}
+		case EventTypeFinished:
+			var finished FinishedEvent
+			if err := json.Unmarshal([]byte(data.String()), &finished); err != nil {
+				return true
+			}
+			parsed = Event{Type: EventTypeFinished, Finished: &finished}
+		default:
 			return true
 		}
-		return offerLatestState(ctx, states, state)
+		select {
+		case events <- parsed:
+			return true
+		case <-ctx.Done():
+			return false
+		}
 	}
 
 	for scanner.Scan() {
@@ -302,6 +376,25 @@ func (c *Client) QueueAdd(id string, next bool) (State, error) {
 		n = "1"
 	}
 	return c.state(http.MethodPost, "/queue/add?id="+url.QueryEscape(id)+"&next="+n)
+}
+
+// SetQueue atomically replaces the peer's host-owned queue. tracksJSON must be
+// a bridge.Track JSON array. index identifies its current row, or is -1 when
+// clearing the queue with an empty array.
+func (c *Client) SetQueue(tracksJSON string, index int) (State, error) {
+	body, err := json.Marshal(struct {
+		Tracks json.RawMessage `json:"tracks"`
+		Index  int             `json:"index"`
+	}{Tracks: json.RawMessage(tracksJSON), Index: index})
+	if err != nil {
+		return State{}, fmt.Errorf("encode queue: %w", err)
+	}
+	req, err := c.reqBody(http.MethodPost, "/queue/set", bytes.NewReader(body))
+	if err != nil {
+		return State{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.stateRequest(req)
 }
 
 func (c *Client) QueueJump(index int) (State, error) {

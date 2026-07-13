@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -52,6 +54,11 @@ type DownloadOptions struct {
 	Progress func(DownloadProgress)
 	// ArtworkFetcher overrides cover art retrieval (for tests; nil = default Deezer CDN).
 	ArtworkFetcher ArtworkFetcher
+
+	// Concurrency is the maximum number of tracks to download in parallel
+	// inside SaveAlbum/SavePlaylist (bounded worker pool). <=0 selects the
+	// default (3). Adding the field keeps all prior call sites compatible.
+	Concurrency int
 
 	// trackSaver is internal hook for tests (same package) to inject a fake
 	// downloader. Zero means use the real client-backed implementation.
@@ -103,6 +110,15 @@ var downloadClient = &http.Client{
 	},
 }
 
+// Resume tuning for resilient CDN downloads (mirrors audio/player.go values
+// so behavior is consistent between streaming and Save* paths).
+const (
+	maxResumeAttempts  = 3
+	maxRefreshAttempts = 2
+	resumeBackoff      = 300 * time.Millisecond
+	minResumeProgress  = 64 * 1024
+)
+
 // DownloadTrack fetches and decrypts a Deezer stream to w. plan must come from
 // [Client.PrepareStream] (tracks) or [Client.PodcastEpisodeStream] (episodes,
 // which are unencrypted). The bytes written form a valid MP3 or FLAC file.
@@ -112,58 +128,277 @@ func DownloadTrack(plan *StreamPlan, w io.Writer) error {
 
 // DownloadTrackContext is [DownloadTrack] with cancellation. Cancelling ctx
 // aborts the in-flight CDN read and unblocks the copy.
+//
+// The implementation is resilient: it performs HTTP Range resume (with
+// If-Range validator) on mid-body connection drops, a few retries + backoff,
+// calls plan.Refresh on 403/410 to obtain a fresh URL (validating that the
+// refreshed plan describes the identical stream), and verifies that the final
+// received byte count matches the declared Content-Length (rejecting short
+// files so callers can redownload).
 func DownloadTrackContext(ctx context.Context, plan *StreamPlan, w io.Writer) error {
+	_, _, err := downloadToWriter(ctx, plan, w)
+	return err
+}
+
+// downloadToWriter is the resilient fetcher used by Download* and by the
+// Save* paths (via saveTrack). It returns bytes written to w, the last-seen
+// content length (for the short-file check), and error.
+func downloadToWriter(ctx context.Context, plan *StreamPlan, w io.Writer) (written, contentLen int64, err error) {
 	if plan == nil || plan.CDNURL == "" {
-		return fmt.Errorf("download: empty stream plan")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, plan.CDNURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", downloadUserAgent)
-	resp, err := downloadClient.Do(req)
-	if err != nil {
-		return classifyNet(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("CDN returned %s", resp.Status)
+		return 0, 0, fmt.Errorf("download: empty stream plan")
 	}
 
-	// Unencrypted streams (podcast episodes, 30-second previews) pass straight
-	// through with no decryption.
-	if !plan.Encrypted {
-		_, err = io.Copy(w, resp.Body)
-		return err
+	var dec *StripeDecryptor
+	if plan.Encrypted {
+		var derr error
+		dec, derr = NewStripeDecryptor(plan.TrackID)
+		if derr != nil {
+			return 0, 0, derr
+		}
 	}
 
-	// Encrypted tracks use BF_CBC_STRIPE: every third 2048-byte chunk is
-	// Blowfish-decrypted with a per-track key; the rest are plaintext.
-	dec, err := NewStripeDecryptor(plan.TrackID)
-	if err != nil {
-		return err
-	}
+	url := plan.CDNURL
 	buf := make([]byte, 64*1024)
 	var plain []byte
+	consumed := int64(0) // raw ciphertext/plain bytes read from CDN
+	attempts := 0
+	refreshes := 0
+	validator := ""
+	validatorSet := false
+	var lastCL int64
+
 	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			plain = dec.Feed(buf[:n], plain[:0])
-			if _, werr := w.Write(plain); werr != nil {
-				return werr
+		if cerr := ctx.Err(); cerr != nil {
+			return consumed, lastCL, cerr
+		}
+		startOff := consumed
+		resp, oerr := openDownloadStream(ctx, url, consumed, validator)
+		if oerr != nil {
+			attempts++
+			if attempts > maxResumeAttempts {
+				return consumed, lastCL, classifyNet(oerr)
+			}
+			backoffDownload(ctx, attempts)
+			continue
+		}
+
+		switch {
+		case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusGone:
+			resp.Body.Close()
+			if u2 := refreshPlanURL(plan, &refreshes); u2 != "" {
+				url = u2
+				continue
+			}
+			e := fmt.Errorf("CDN returned %s", resp.Status)
+			resp.Body.Close()
+			return consumed, lastCL, e
+		case resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent:
+			e := fmt.Errorf("CDN returned %s", resp.Status)
+			resp.Body.Close()
+			return consumed, lastCL, e
+		}
+
+		// Resume position sanity for 206.
+		if resp.StatusCode == http.StatusPartialContent && consumed > 0 {
+			if start := contentRangeStart(resp); start != consumed {
+				resp.Body.Close()
+				attempts++
+				if attempts > maxResumeAttempts {
+					e := fmt.Errorf("CDN resume at %d answered Content-Range start %d", consumed, start)
+					return consumed, lastCL, e
+				}
+				backoffDownload(ctx, attempts)
+				continue
 			}
 		}
-		if rerr == io.EOF {
-			plain = dec.Finish(plain[:0])
-			if len(plain) > 0 {
-				_, err = w.Write(plain)
-			}
-			return err
+
+		if cl := totalLength(resp); cl > 0 {
+			lastCL = cl
 		}
-		if rerr != nil {
-			return rerr
+		if !validatorSet {
+			validator = responseValidator(resp)
+			validatorSet = true
+		}
+
+		// Server ignored our Range (200 instead of 206): skip prefix bytes
+		// only if entity validator still matches.
+		var skip int64
+		if consumed > 0 && resp.StatusCode == http.StatusOK {
+			if validator != "" && responseValidator(resp) != validator {
+				resp.Body.Close()
+				e := fmt.Errorf("stream entity changed during resume (validator mismatch)")
+				return consumed, lastCL, e
+			}
+			skip = consumed
+		}
+
+		completed, rerr := pumpDownloadBody(resp.Body, buf, &plain, dec, w, &consumed, skip)
+		resp.Body.Close()
+
+		if lastCL > 0 && consumed < lastCL {
+			if rerr == io.EOF || rerr == io.ErrUnexpectedEOF || completed {
+				// Server ended the body (EOF or short-CL) under the declared length:
+				// treat as final short file (reject before rename), not a retryable drop.
+				return consumed, lastCL, fmt.Errorf("download: short file (got %d, declared %d)", consumed, lastCL)
+			}
+			// else: transport/read error while still under length -- retry resume
+		}
+		if completed || rerr == io.EOF {
+			return consumed, lastCL, nil
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return consumed, lastCL, cerr
+		}
+
+		// Torn mid-body: allow retry budget reset only on meaningful progress.
+		if consumed-startOff >= minResumeProgress {
+			attempts = 0
+		}
+		attempts++
+		if attempts > maxResumeAttempts {
+			if rerr != nil {
+				return consumed, lastCL, rerr
+			}
+			return consumed, lastCL, io.ErrUnexpectedEOF
+		}
+		backoffDownload(ctx, attempts)
+	}
+}
+
+// openDownloadStream issues the (possibly ranged) CDN GET. Mirrors the
+// Range + If-Range logic from the audio player.
+func openDownloadStream(ctx context.Context, url string, offset int64, validator string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", downloadUserAgent)
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+		if validator != "" {
+			req.Header.Set("If-Range", validator)
 		}
 	}
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// pumpDownloadBody feeds one response body (after skip) into w, advancing the
+// decryptor (if any) and consumed count. On clean EOF it flushes Finish for
+// encrypted streams. Returns completed=true only for io.EOF.
+func pumpDownloadBody(body io.Reader, buf []byte, plain *[]byte, dec *StripeDecryptor, w io.Writer, consumed *int64, skip int64) (completed bool, err error) {
+	for {
+		n, rerr := body.Read(buf)
+		if n > 0 {
+			b := buf[:n]
+			if skip > 0 {
+				d := skip
+				if d > int64(len(b)) {
+					d = int64(len(b))
+				}
+				b = b[d:]
+				skip -= d
+			}
+			if len(b) > 0 {
+				if dec != nil {
+					*plain = dec.Feed(b, (*plain)[:0])
+					if _, werr := w.Write(*plain); werr != nil {
+						return false, werr
+					}
+					*consumed = dec.Consumed()
+				} else {
+					if _, werr := w.Write(b); werr != nil {
+						return false, werr
+					}
+					*consumed += int64(len(b))
+				}
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				if dec != nil {
+					*plain = dec.Finish((*plain)[:0])
+					if len(*plain) > 0 {
+						if _, werr := w.Write(*plain); werr != nil {
+							return false, werr
+						}
+					}
+				}
+				return true, nil
+			}
+			return false, rerr
+		}
+	}
+}
+
+// refreshPlanURL re-resolves via plan.Refresh (if present) on 403/410, but
+// only accepts a plan describing the identical stream (same Format/Encrypted/Preview).
+// A changed plan would corrupt the decryptor state or the output file.
+func refreshPlanURL(plan *StreamPlan, count *int) string {
+	if plan.Refresh == nil || *count >= maxRefreshAttempts {
+		return ""
+	}
+	*count++
+	np, err := plan.Refresh()
+	if err != nil || np == nil || np.CDNURL == "" ||
+		np.Format != plan.Format || np.Encrypted != plan.Encrypted || np.Preview != plan.Preview {
+		return ""
+	}
+	return np.CDNURL
+}
+
+// backoffDownload sleeps with attempt-scaled backoff or until ctx done.
+func backoffDownload(ctx context.Context, attempt int) {
+	t := time.NewTimer(resumeBackoff * time.Duration(attempt))
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
+// totalLength returns the full entity size (from Content-Range on 206, else
+// Content-Length).
+func totalLength(resp *http.Response) int64 {
+	if resp.StatusCode == http.StatusPartialContent {
+		cr := resp.Header.Get("Content-Range")
+		if i := strings.LastIndex(cr, "/"); i >= 0 {
+			if v, err := strconv.ParseInt(strings.TrimSpace(cr[i+1:]), 10, 64); err == nil && v > 0 {
+				return v
+			}
+		}
+		return 0
+	}
+	if resp.ContentLength > 0 {
+		return resp.ContentLength
+	}
+	return 0
+}
+
+// contentRangeStart parses start of "bytes N-M/T" or returns -1.
+func contentRangeStart(resp *http.Response) int64 {
+	cr := strings.TrimSpace(resp.Header.Get("Content-Range"))
+	cr = strings.TrimSpace(strings.TrimPrefix(cr, "bytes"))
+	dash := strings.IndexByte(cr, '-')
+	if dash < 0 {
+		return -1
+	}
+	v, err := strconv.ParseInt(strings.TrimSpace(cr[:dash]), 10, 64)
+	if err != nil || v < 0 {
+		return -1
+	}
+	return v
+}
+
+// responseValidator returns ETag or Last-Modified (for If-Range).
+func responseValidator(resp *http.Response) string {
+	if et := resp.Header.Get("ETag"); et != "" {
+		return et
+	}
+	return resp.Header.Get("Last-Modified")
 }
 
 // SaveTrack downloads trackID to a file inside dir, choosing the filename from
@@ -241,15 +476,27 @@ func (c *Client) saveTrack(ctx context.Context, t Track, dir string, plan *Strea
 		return "", err
 	}
 	tmp := f.Name()
-	if err := DownloadTrackContext(ctx, plan, f); err != nil {
+	written, cl, derr := downloadToWriter(ctx, plan, f)
+	if derr != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
-		return "", err
+		return "", derr
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)
 		return "", err
 	}
+
+	// Verify received bytes against declared Content-Length before the
+	// final rename. Reject short files so the caller (batch or single) can
+	// treat it as a failure and redownload.
+	if cl > 0 {
+		if fi, serr := os.Stat(tmp); serr == nil && fi.Size() != cl {
+			_ = os.Remove(tmp)
+			return "", fmt.Errorf("download: short file (got %d, declared %d)", fi.Size(), cl)
+		}
+	}
+	_ = written // (== cl on success; size-preserving for both encrypted and plain)
 
 	// Best-effort tagging, applied to the temp file before it becomes visible
 	// under the final name. Never fails the download.
@@ -394,89 +641,147 @@ func (c *Client) saveBatch(ctx context.Context, tracks []Track, dir string, opts
 		getPlan = c.PrepareStream
 	}
 
-	var saved []string
-	var hadErr bool
-	var firstErr error
+	conc := opts.Concurrency
+	if conc <= 0 {
+		conc = 3
+	}
+	n := len(tracks)
+	if conc > n {
+		conc = n
+	}
+	if conc < 1 {
+		conc = 1
+	}
 
+	// Work queue (sends in order; workers may complete out of order).
+	type job struct {
+		idx int
+		tr  Track
+	}
+	jobs := make(chan job, n)
 	for i, tr := range tracks {
-		// Surface cancellation to the caller: silently returning the partial
-		// path list with a nil error would report a truncated batch as success.
-		if cerr := ctx.Err(); cerr != nil {
-			return saved, cerr
-		}
+		jobs <- job{idx: i, tr: tr}
+	}
+	close(jobs)
 
-		prog := DownloadProgress{
-			Index:   i + 1,
-			Total:   len(tracks),
-			TrackID: tr.ID,
-			Title:   tr.Name,
-		}
+	var (
+		mu       sync.Mutex
+		saved    []string
+		hadErr   bool
+		firstErr error
+	)
 
-		// Prepare plan here so we can compute filename for skip check.
-		plan, perr := getPlan(tr.ID)
-		if perr != nil {
-			prog.Err = perr
-			if firstErr == nil {
-				firstErr = perr
-			}
-			hadErr = true
-			if opts.Progress != nil {
-				opts.Progress(prog)
-			}
-			continue
-		}
-		if plan.Preview {
-			prog.Err = ErrPreviewOnly
-			if firstErr == nil {
-				firstErr = ErrPreviewOnly
-			}
-			hadErr = true
-			if opts.Progress != nil {
-				opts.Progress(prog)
-			}
-			continue
-		}
+	var wg sync.WaitGroup
+	for w := 0; w < conc; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				// Pre-check cancellation (between "tracks").
+				if cerr := ctx.Err(); cerr != nil {
+					prog := DownloadProgress{
+						Index:   j.idx + 1,
+						Total:   n,
+						TrackID: j.tr.ID,
+						Title:   j.tr.Name,
+						Err:     cerr,
+					}
+					if opts.Progress != nil {
+						opts.Progress(prog)
+					}
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = cerr
+					}
+					hadErr = true
+					mu.Unlock()
+					continue
+				}
 
-		ext := "mp3"
-		if strings.Contains(strings.ToUpper(plan.Format), "FLAC") {
-			ext = "flac"
-		}
-		// Must match saveTrack's naming exactly so SkipExisting stays
-		// consistent across runs.
-		name := trackFileName(tr, ext)
-		path := filepath.Join(dir, name)
+				prog := DownloadProgress{
+					Index:   j.idx + 1,
+					Total:   n,
+					TrackID: j.tr.ID,
+					Title:   j.tr.Name,
+				}
 
-		if opts.SkipExisting {
-			if _, err := os.Stat(path); err == nil {
-				saved = append(saved, path)
+				plan, perr := getPlan(j.tr.ID)
+				if perr != nil {
+					prog.Err = perr
+					if opts.Progress != nil {
+						opts.Progress(prog)
+					}
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = perr
+					}
+					hadErr = true
+					mu.Unlock()
+					continue
+				}
+				if plan.Preview {
+					prog.Err = ErrPreviewOnly
+					if opts.Progress != nil {
+						opts.Progress(prog)
+					}
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = ErrPreviewOnly
+					}
+					hadErr = true
+					mu.Unlock()
+					continue
+				}
+
+				ext := "mp3"
+				if strings.Contains(strings.ToUpper(plan.Format), "FLAC") {
+					ext = "flac"
+				}
+				name := trackFileName(j.tr, ext)
+				path := filepath.Join(dir, name)
+
+				if opts.SkipExisting {
+					if _, err := os.Stat(path); err == nil {
+						mu.Lock()
+						saved = append(saved, path)
+						mu.Unlock()
+						if opts.Progress != nil {
+							opts.Progress(prog)
+						}
+						continue
+					}
+				}
+
+				pth, derr := saver(ctx, j.tr, dir, plan, fetch)
+				if derr != nil {
+					prog.Err = derr
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = derr
+					}
+					hadErr = true
+					mu.Unlock()
+				} else {
+					mu.Lock()
+					saved = append(saved, pth)
+					mu.Unlock()
+				}
 				if opts.Progress != nil {
 					opts.Progress(prog)
 				}
-				continue
 			}
-		}
-
-		// Thread the plan we already resolved for the skip check into the
-		// saver so each track costs exactly one PrepareStream.
-		pth, derr := saver(ctx, tr, dir, plan, fetch)
-		if derr != nil {
-			prog.Err = derr
-			if firstErr == nil {
-				firstErr = derr
-			}
-			hadErr = true
-		} else {
-			saved = append(saved, pth)
-		}
-		if opts.Progress != nil {
-			opts.Progress(prog)
-		}
+		}()
 	}
+	wg.Wait()
 
+	// Cancellation takes precedence (mirrors sequential pre-check behavior).
+	if cerr := ctx.Err(); cerr != nil {
+		return saved, cerr
+	}
 	if hadErr {
 		// Double-wrap so callers can match BOTH the ErrPartialDownload
 		// sentinel and the concrete first failure via errors.Is/As.
-		return saved, fmt.Errorf("%w: %w (%d failed, %d saved)", ErrPartialDownload, firstErr, len(tracks)-len(saved), len(saved))
+		return saved, fmt.Errorf("%w: %w (%d failed, %d saved)", ErrPartialDownload, firstErr, n-len(saved), len(saved))
 	}
 	return saved, nil
 }

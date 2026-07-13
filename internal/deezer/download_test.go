@@ -290,6 +290,7 @@ func TestSaveBatch_SkipExistingAndProgress(t *testing.T) {
 
 	var progs []DownloadProgress
 	opts := DownloadOptions{
+		Concurrency:  1, // preserve delivery order for the index checks below
 		SkipExisting: true,
 		Progress:     func(p DownloadProgress) { progs = append(progs, p) },
 		trackSaver: func(ctx context.Context, tt Track, d string, plan *StreamPlan, f ArtworkFetcher) (string, error) {
@@ -335,6 +336,7 @@ func TestSaveBatch_ErrorCollectionAndContinue(t *testing.T) {
 	}
 	calls := 0
 	opts := DownloadOptions{
+		Concurrency: 1, // serial so call count and continue-on-error timing are deterministic
 		trackSaver: func(ctx context.Context, tt Track, d string, plan *StreamPlan, f ArtworkFetcher) (string, error) {
 			calls++
 			if tt.ID == "bad" {
@@ -376,6 +378,7 @@ func TestSaveBatch_CtxCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	opts := DownloadOptions{
+		Concurrency: 1, // force serial to preserve original cancel-between-tracks timing
 		trackSaver: func(ctx context.Context, tt Track, d string, plan *StreamPlan, f ArtworkFetcher) (string, error) {
 			if tt.ID == "2" {
 				cancel()

@@ -1,10 +1,13 @@
 package deezer
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
 )
 
 func TestTrackIDOf(t *testing.T) {
@@ -166,4 +169,56 @@ func TestClientSearch(t *testing.T) {
 			}
 		}
 	})
+}
+
+// --- Phase 3: PrepareStreamCached from meta (zero network) ---
+
+func TestPrepareStreamCached_FromMeta_NoHTTP(t *testing.T) {
+	dir := t.TempDir()
+	mc, err := mediacache.New(dir, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = mc.PutMeta("cached42.MP3_320", mediacache.StreamMeta{
+		Format:    "MP3_320",
+		Encrypted: true,
+		GainDB:    -7.5,
+		Preview:   false,
+	})
+
+	c := New("dummy") // not logged in; cached path must still succeed
+	// Install a transport that would blow up on any real Prepare work.
+	c.http = &http.Client{Transport: rtFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, errors.New("HTTP must not be used by PrepareStreamCached hit path")
+	})}
+
+	plan, err := c.PrepareStreamCached("cached42", mc)
+	if err != nil {
+		t.Fatalf("PrepareStreamCached from meta: %v", err)
+	}
+	if plan.CDNURL != "" {
+		t.Errorf("cached plan must have empty CDNURL, got %q", plan.CDNURL)
+	}
+	if plan.TrackID != "cached42" || plan.Format != "MP3_320" || !plan.Encrypted || plan.GainDB != -7.5 || plan.Preview {
+		t.Errorf("plan fields wrong: %+v", plan)
+	}
+	if plan.Refresh != nil {
+		t.Error("cached plan must have nil Refresh")
+	}
+
+	// Fallback path still works (and would hit the bad transport if no meta).
+	// We don't exercise fallback here to avoid login setup; the hit path above proves no HTTP.
+}
+
+func TestPrepareStreamCached_MissFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	mc, _ := mediacache.New(dir, 1<<20)
+	// no meta for this id
+
+	c := New("dummy")
+	// even without login we expect the fallback to reach "not logged in"
+	_, err := c.PrepareStreamCached("nope123", mc)
+	if err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("miss should fall to PrepareStream and require login: %v", err)
+	}
 }

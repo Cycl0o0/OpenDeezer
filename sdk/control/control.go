@@ -47,6 +47,9 @@ type Whoami = internalcontrol.Whoami
 // active preset and the preset/band lists.
 type EQState = internalcontrol.EQState
 
+// Event is a typed control event (a "state" snapshot or a "finished" event).
+type Event = internalcontrol.Event
+
 // EQ is the equalizer bridge a [Server] serves at /eq. Wire the functions to
 // your audio engine (each may be nil individually) and pass it to
 // [Server.SetEQ] before Start; without a bridge the /eq endpoints are 404.
@@ -269,3 +272,18 @@ func (c *Client) Playlists() (json.RawMessage, error) { return c.c.Playlists() }
 // most recent first (GET /history/recent). n caps the number of entries
 // (1..500). Errors when the server exposes no history.
 func (c *Client) HistoryRecent(n int) (json.RawMessage, error) { return c.c.HistoryRecent(n) }
+
+// SetQueue pushes a whole queue to the host (POST /queue/set): tracksJSON is the
+// bridge.Track JSON array and index is the cursor (-1 for an empty queue). It is
+// the groundwork for host-owned casting. Errors when the host exposes no SetQueue.
+func (c *Client) SetQueue(tracksJSON string, index int) (State, error) {
+	return c.c.SetQueue(tracksJSON, index)
+}
+
+// EventsTyped subscribes to the server's typed event stream (GET /events): both
+// "state" snapshots and explicit "finished" events, so a controller learns a
+// natural track end instantly instead of inferring it from a state diff. The
+// channel closes on ctx cancel or when the stream drops (no auto-reconnect).
+func (c *Client) EventsTyped(ctx context.Context) (<-chan Event, error) {
+	return c.c.EventsTyped(ctx)
+}

@@ -71,6 +71,10 @@ func (o *otoOutput) suspend(on bool) error {
 // nothing for the player to recover from here.
 func (o *otoOutput) setLostHandler(func(string)) {}
 
+func (o *otoOutput) latencyFrames() int {
+	return sampleRate / 2
+}
+
 func (o *otoOutput) close() {
 	if o.player != nil {
 		_ = o.player.Close()

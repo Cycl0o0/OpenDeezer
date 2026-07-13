@@ -135,6 +135,7 @@ type Cache struct {
 	nextSeq uint64
 	fileSeq uint64              // monotonic; makes every committed file name unique
 	writing map[string]struct{} // keys with active Put writers (protect from eviction)
+	metas   map[string]StreamMeta
 }
 
 type entry struct {
@@ -147,12 +148,24 @@ type indexData struct {
 	Entries map[string]indexEntry `json:"entries"`
 	NextSeq uint64                `json:"nextSeq"`
 	FileSeq uint64                `json:"fileSeq"`
+	Metas   map[string]StreamMeta `json:"metas,omitempty"`
 }
 
 type indexEntry struct {
 	File      string `json:"file"` // on-disk basename (unique per commit)
 	Size      int64  `json:"size"`
 	AccessSeq uint64 `json:"accessSeq"`
+}
+
+// StreamMeta is the minimal subset of StreamPlan fields persisted per cache
+// key so that a cached ciphertext can yield a fully playable plan with no
+// PrepareStream / token / get_url network round-trips.
+type StreamMeta struct {
+	Format     string
+	Encrypted  bool
+	GainDB     float64
+	Preview    bool
+	DurationMS int64 // milliseconds; 0 if unknown (playback callers often supply separately)
 }
 
 // New creates or opens the cache in dir. maxBytes is the soft limit (entries
@@ -173,6 +186,7 @@ func New(dir string, maxBytes int64) (*Cache, error) {
 		max:     maxBytes,
 		entries: make(map[string]entry),
 		writing: make(map[string]struct{}),
+		metas:   make(map[string]StreamMeta),
 	}
 	c.recover()
 	return c, nil
@@ -184,7 +198,7 @@ func (c *Cache) recover() {
 
 	c.cleanTempsLocked()
 
-	if ents, seq, fseq, ok := c.loadIndexLocked(); ok && len(ents) > 0 {
+	if ents, ms, seq, fseq, ok := c.loadIndexLocked(); ok && len(ents) > 0 {
 		c.entries = ents
 		c.total = 0
 		for _, e := range ents {
@@ -192,6 +206,9 @@ func (c *Cache) recover() {
 		}
 		c.nextSeq = seq
 		c.fileSeq = fseq
+		if ms != nil {
+			c.metas = ms
+		}
 	} else {
 		// Fallback: rebuild from filesystem using mtimes for initial recency
 		// order (index.json missing or corrupt).
@@ -260,20 +277,27 @@ func (c *Cache) cleanTempsLocked() {
 	}
 }
 
-func (c *Cache) loadIndexLocked() (ents map[string]entry, nextSeq, fileSeq uint64, ok bool) {
+func (c *Cache) loadIndexLocked() (ents map[string]entry, metas map[string]StreamMeta, nextSeq, fileSeq uint64, ok bool) {
 	p := filepath.Join(c.dir, "index.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return nil, 0, 0, false
+		return nil, nil, 0, 0, false
 	}
-	var d indexData
-	if json.Unmarshal(b, &d) != nil || d.Entries == nil {
-		return nil, 0, 0, false
+	// Use raw for metas so a corrupt meta entry (bad type or value) does not
+	// nuke the entire index; we drop only the bad meta(s).
+	var raw struct {
+		Entries map[string]indexEntry      `json:"entries"`
+		NextSeq uint64                     `json:"nextSeq"`
+		FileSeq uint64                     `json:"fileSeq"`
+		Metas   map[string]json.RawMessage `json:"metas"`
+	}
+	if json.Unmarshal(b, &raw) != nil || raw.Entries == nil {
+		return nil, nil, 0, 0, false
 	}
 	valid := make(map[string]entry)
-	maxSeq := d.NextSeq
-	maxFileSeq := d.FileSeq
-	for k, ie := range d.Entries {
+	maxSeq := raw.NextSeq
+	maxFileSeq := raw.FileSeq
+	for k, ie := range raw.Entries {
 		if k == "" || ie.File == "" {
 			continue
 		}
@@ -293,11 +317,20 @@ func (c *Cache) loadIndexLocked() (ents map[string]entry, nextSeq, fileSeq uint6
 			maxFileSeq = seq
 		}
 	}
-	return valid, maxSeq + 1, maxFileSeq, true
+	validMetas := make(map[string]StreamMeta)
+	for k, rm := range raw.Metas {
+		var m StreamMeta
+		if json.Unmarshal(rm, &m) == nil {
+			validMetas[k] = m
+		}
+		// corrupt meta for this k is dropped; body (if any) remains usable
+	}
+	return valid, validMetas, maxSeq + 1, maxFileSeq, true
 }
 
 func (c *Cache) rebuildFromFSLocked() {
 	c.entries = make(map[string]entry)
+	c.metas = make(map[string]StreamMeta)
 	c.total = 0
 	c.nextSeq = 1
 	c.fileSeq = 0
@@ -369,9 +402,13 @@ func (c *Cache) saveIndexLocked() {
 		Entries: make(map[string]indexEntry, len(c.entries)),
 		NextSeq: c.nextSeq,
 		FileSeq: c.fileSeq,
+		Metas:   make(map[string]StreamMeta, len(c.metas)),
 	}
 	for k, e := range c.entries {
 		d.Entries[k] = indexEntry{File: filepath.Base(e.path), Size: e.size, AccessSeq: e.accessSeq}
+	}
+	for k, m := range c.metas {
+		d.Metas[k] = m
 	}
 	b, err := json.Marshal(d)
 	if err != nil {
@@ -627,6 +664,7 @@ func (c *Cache) evictIfNeeded() {
 		}
 		c.total -= e.size
 		delete(c.entries, victim)
+		delete(c.metas, victim)
 	}
 	// caller will saveIndex after unlock in the commit path
 }
@@ -647,6 +685,7 @@ func (c *Cache) Clear() error {
 		paths = append(paths, e.path)
 	}
 	c.entries = make(map[string]entry)
+	c.metas = make(map[string]StreamMeta)
 	c.total = 0
 	c.nextSeq = 1
 	// also nuke any stray data files (temps cleaned separately)
@@ -671,6 +710,53 @@ func (c *Cache) Clear() error {
 	c.saveIndexLocked()
 	c.mu.Unlock()
 	return nil
+}
+
+// PutMeta stores (or overwrites) the minimal stream metadata for a cache key.
+// It is persisted in index.json immediately. Safe with or without a body entry
+// for the same key. Callers should store the meta that was current when the
+// body was (or will be) cached.
+func (c *Cache) PutMeta(key string, m StreamMeta) error {
+	if key == "" {
+		return errors.New("mediacache: empty key")
+	}
+	c.mu.Lock()
+	if c.metas == nil {
+		c.metas = make(map[string]StreamMeta)
+	}
+	c.metas[key] = m
+	c.saveIndexLocked()
+	c.mu.Unlock()
+	return nil
+}
+
+// GetMeta returns stored metadata for the key and whether it was present.
+func (c *Cache) GetMeta(key string) (StreamMeta, bool) {
+	if key == "" {
+		return StreamMeta{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m, ok := c.metas[key]
+	return m, ok
+}
+
+// GetMetaForTrack returns metadata for the first key with the prefix
+// "<trackID>." (so callers do not need to know the exact format under which a
+// track was cached). Returns ok=false when absent.
+func (c *Cache) GetMetaForTrack(trackID string) (StreamMeta, bool) {
+	if trackID == "" {
+		return StreamMeta{}, false
+	}
+	pref := trackID + "."
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k, m := range c.metas {
+		if strings.HasPrefix(k, pref) {
+			return m, true
+		}
+	}
+	return StreamMeta{}, false
 }
 
 // -----------------------------------------------------------------------------
@@ -719,12 +805,32 @@ func (c *Cache) Clear() error {
 //    metadata (format, Encrypted flag, GainDB) that was used when the entry was
 //    originally cached. The stream cache itself only stores the body bytes.
 //
+//    As of the mediacache meta support: call PutMeta after (or alongside) a
+//    successful cache fill with the plan fields used. Later use
+//    client.PrepareStreamCached(trackID, mc) which returns a plan (CDNURL="")
+//    sourced purely from GetMetaForTrack when present, falling back to the
+//    real PrepareStream only on miss. See PrepareStreamCached doc for the
+//    exact contract.
+//
 // 4. Other notes
 //    - Do not feed decrypted bytes to the cache.
 //    - The existing SaveTrack/SaveAlbum paths (internal/deezer/download.go) write
 //      final tagged audio files; they are orthogonal to this raw-stream cache.
 //    - Default OFF. Only instantiate when the user has opted in via config.
 //    - The package has no dependency on audio or deezer; it is a pure cache.
+//
+//    Audio download path (player.go etc) should consult the cached plan first:
+//      plan, _ := deezerClient.PrepareStreamCached(trackID, mc)
+//      key := plan.TrackID + "." + plan.Format
+//      if rc, sz, hit := mc.Get(key); hit {
+//          // serve entirely from rc (ciphertext); no HTTP, no Prepare net
+//          ...
+//      } else if plan.CDNURL == "" {
+//          // meta said cached but body missing (rare): fall back or error
+//      } else {
+//          // normal HTTP + optional TeeReader( key, body )
+//      }
+//    This yields zero-network playback for a cached track (no token/get_url).
 //
 // This design lets the other agent keep the playback pipeline unchanged while
 // the cache is integrated in a follow-up step.

@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/mediacache"
 )
 
 // ErrARLExpired is returned by Login when the ARL cookie is missing/expired or
@@ -1196,6 +1198,44 @@ func (c *Client) PrepareStream(trackID string) (*StreamPlan, error) {
 		return nil, err
 	}
 	return nil, fmt.Errorf("no media source (track unavailable for this account)")
+}
+
+// PrepareStreamCached returns a playable *StreamPlan sourced from cached
+// metadata (mediacache.PutMeta/GetMeta/GetMetaForTrack) when available for
+// the track. This lets callers (playback, future offline UI) obtain the
+// necessary fields (format, Encrypted, GainDB, Preview) with zero network
+// calls — no token or get_url round-trip.
+//
+// If cache is non-nil and a meta entry exists for any format under the track
+// ID, the returned plan has CDNURL=="" (body bytes must be served from the
+// cache by the caller) and Refresh==nil. Otherwise it falls back to
+// PrepareStream (which requires login and performs the network work).
+//
+// The audio layer (when wired) should prefer this helper when a cache is
+// attached:
+//
+//	plan, err := c.PrepareStreamCached(id, mc)
+//	key := plan.TrackID + "." + plan.Format
+//	if rc, sz, hit := mc.Get(key); hit { ... use cached ciphertext ... }
+//
+// Duration is intentionally not part of StreamPlan (passed separately to
+// Player.Play today) but can be carried in the meta for future use.
+func (c *Client) PrepareStreamCached(trackID string, cache *mediacache.Cache) (*StreamPlan, error) {
+	if cache != nil {
+		if m, ok := cache.GetMetaForTrack(trackID); ok {
+			return &StreamPlan{
+				CDNURL:    "", // signals cache-sourced; audio path uses mc.Get to obtain body
+				TrackID:   trackID,
+				Format:    m.Format,
+				GainDB:    m.GainDB,
+				Encrypted: m.Encrypted,
+				Preview:   m.Preview,
+				// Refresh remains nil for cached plans.
+			}, nil
+		}
+	}
+	// Miss or no cache: normal path (requires login).
+	return c.PrepareStream(trackID)
 }
 
 // TrackIDOf extracts a numeric id from "deezer:track:123", a URL, or "123".

@@ -2,6 +2,7 @@ package audio
 
 import (
 	"io"
+	"os"
 	"sync"
 )
 
@@ -14,7 +15,7 @@ type streamBuffer struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
 	buf    []byte
-	pos    int
+	pos    int64
 	done   bool
 	err    error
 	closed bool
@@ -23,6 +24,12 @@ type streamBuffer struct {
 	// waiting for the whole download and lets preallocate size the backing array
 	// up front (avoiding the append-doubling reallocation ladder on big FLACs).
 	total int64
+
+	// Bounded-memory disk spill fields
+	useDiskSpill bool
+	file         *os.File
+	writePos     int64 // total bytes appended/written to disk
+	inMemOffset  int64 // start offset in stream for b.buf
 }
 
 func newStreamBuffer() *streamBuffer {
@@ -31,11 +38,43 @@ func newStreamBuffer() *streamBuffer {
 	return b
 }
 
+func (b *streamBuffer) enableDiskSpill() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.useDiskSpill = true
+	f, err := os.CreateTemp("", "opdeezer-podcast-*.tmp")
+	if err != nil {
+		return err
+	}
+	b.file = f
+	return nil
+}
+
 func (b *streamBuffer) append(p []byte) {
 	b.mu.Lock()
-	b.buf = append(b.buf, p...)
+	defer b.mu.Unlock()
+	if b.useDiskSpill {
+		if b.file != nil {
+			if _, err := b.file.Write(p); err != nil {
+				b.err = err
+			}
+		}
+		b.writePos += int64(len(p))
+		b.buf = append(b.buf, p...)
+
+		// Cap the resident memory (in b.buf) to a window size of 16MB.
+		const maxInMemory = 16 * 1024 * 1024
+		if len(b.buf) > maxInMemory {
+			discard := len(b.buf) - maxInMemory
+			newBuf := make([]byte, maxInMemory)
+			copy(newBuf, b.buf[discard:])
+			b.buf = newBuf
+			b.inMemOffset += int64(discard)
+		}
+	} else {
+		b.buf = append(b.buf, p...)
+	}
 	b.cond.Broadcast()
-	b.mu.Unlock()
 }
 
 // preallocate grows the backing array to hold n bytes up front so a large
@@ -43,7 +82,9 @@ func (b *streamBuffer) append(p []byte) {
 // append growth ladder. It never shrinks or discards buffered data.
 func (b *streamBuffer) preallocate(n int) {
 	b.mu.Lock()
-	b.preallocLocked(n)
+	if !b.useDiskSpill {
+		b.preallocLocked(n)
+	}
 	b.mu.Unlock()
 }
 
@@ -74,11 +115,13 @@ func (b *streamBuffer) setContentLength(n int64) {
 	}
 	b.mu.Lock()
 	b.total = n
-	pre := n
-	if pre > maxPrealloc {
-		pre = maxPrealloc
+	if !b.useDiskSpill {
+		pre := n
+		if pre > maxPrealloc {
+			pre = maxPrealloc
+		}
+		b.preallocLocked(int(pre))
 	}
-	b.preallocLocked(int(pre))
 	b.mu.Unlock()
 }
 
@@ -95,8 +138,14 @@ func (b *streamBuffer) Total() int64 {
 // rest arrives.
 func (b *streamBuffer) waitWatermark(n int) {
 	b.mu.Lock()
-	for len(b.buf) < n && !b.done && !b.closed {
-		b.cond.Wait()
+	if b.useDiskSpill {
+		for b.writePos < int64(n) && !b.done && !b.closed {
+			b.cond.Wait()
+		}
+	} else {
+		for len(b.buf) < n && !b.done && !b.closed {
+			b.cond.Wait()
+		}
 	}
 	b.mu.Unlock()
 }
@@ -114,6 +163,12 @@ func (b *streamBuffer) close() {
 	b.mu.Lock()
 	b.closed = true
 	b.cond.Broadcast()
+	if b.useDiskSpill && b.file != nil {
+		name := b.file.Name()
+		_ = b.file.Close()
+		_ = os.Remove(name)
+		b.file = nil
+	}
 	b.mu.Unlock()
 }
 
@@ -134,21 +189,52 @@ func (b *streamBuffer) waitDone() {
 func (b *streamBuffer) Read(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for b.pos >= len(b.buf) && !b.done && !b.closed {
-		b.cond.Wait()
-	}
-	if b.closed {
-		return 0, io.EOF
-	}
-	if b.pos >= len(b.buf) {
-		if b.err != nil {
-			return 0, b.err
+	if b.useDiskSpill {
+		for b.pos >= b.writePos && !b.done && !b.closed {
+			b.cond.Wait()
 		}
-		return 0, io.EOF
+		if b.closed {
+			return 0, io.EOF
+		}
+		if b.pos >= b.writePos {
+			if b.err != nil {
+				return 0, b.err
+			}
+			return 0, io.EOF
+		}
+		if b.pos >= b.inMemOffset && b.pos < b.inMemOffset+int64(len(b.buf)) {
+			offset := b.pos - b.inMemOffset
+			n := copy(p, b.buf[offset:])
+			b.pos += int64(n)
+			return n, nil
+		}
+		if b.file == nil {
+			return 0, io.ErrUnexpectedEOF
+		}
+		_, err := b.file.Seek(b.pos, io.SeekStart)
+		if err != nil {
+			return 0, err
+		}
+		n, err := b.file.Read(p)
+		b.pos += int64(n)
+		return n, err
+	} else {
+		for int(b.pos) >= len(b.buf) && !b.done && !b.closed {
+			b.cond.Wait()
+		}
+		if b.closed {
+			return 0, io.EOF
+		}
+		if int(b.pos) >= len(b.buf) {
+			if b.err != nil {
+				return 0, b.err
+			}
+			return 0, io.EOF
+		}
+		n := copy(p, b.buf[int(b.pos):])
+		b.pos += int64(n)
+		return n, nil
 	}
-	n := copy(p, b.buf[b.pos:])
-	b.pos += n
-	return n, nil
 }
 
 func (b *streamBuffer) Seek(off int64, whence int) (int64, error) {
@@ -159,31 +245,43 @@ func (b *streamBuffer) Seek(off int64, whence int) (int64, error) {
 	case io.SeekStart:
 		abs = off
 	case io.SeekCurrent:
-		abs = int64(b.pos) + off
+		abs = b.pos + off
 	case io.SeekEnd:
-		// Relative to the end. If the total length is known from the HTTP headers
-		// we can resolve it without waiting for the whole download; otherwise fall
-		// back to waiting for completion so len(buf) is the true end.
 		if b.total > 0 {
 			abs = b.total + off
 		} else {
-			for !b.done && !b.closed {
-				b.cond.Wait()
+			if b.useDiskSpill {
+				for !b.done && !b.closed {
+					b.cond.Wait()
+				}
+				abs = b.writePos + off
+			} else {
+				for !b.done && !b.closed {
+					b.cond.Wait()
+				}
+				abs = int64(len(b.buf)) + off
 			}
-			abs = int64(len(b.buf)) + off
 		}
 	}
 	if abs < 0 {
 		abs = 0
 	}
-	// Block until the target byte has been downloaded (or the stream ends).
-	for int64(len(b.buf)) < abs && !b.done && !b.closed {
-		b.cond.Wait()
+	if b.useDiskSpill {
+		for b.writePos < abs && !b.done && !b.closed {
+			b.cond.Wait()
+		}
+		if abs > b.writePos {
+			abs = b.writePos
+		}
+	} else {
+		for int64(len(b.buf)) < abs && !b.done && !b.closed {
+			b.cond.Wait()
+		}
+		if abs > int64(len(b.buf)) {
+			abs = int64(len(b.buf))
+		}
 	}
-	if abs > int64(len(b.buf)) {
-		abs = int64(len(b.buf))
-	}
-	b.pos = int(abs)
+	b.pos = abs
 	return abs, nil
 }
 

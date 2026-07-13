@@ -47,6 +47,7 @@ type output interface {
 	setLostHandler(func(string))
 	close()
 	deviceDown() bool
+	latencyFrames() int
 }
 
 // Device is an output device the user can pick (empty ID = system default).
@@ -558,7 +559,18 @@ func (p *Player) SetOnFinish(fn func()) {
 }
 func (p *Player) State() State      { return State(p.state.Load()) }
 func (p *Player) LastError() string { s, _ := p.lastErr.Load().(string); return s }
-func (p *Player) PositionMS() int64 { return p.played.Load() * 1000 / bytesPerSec }
+func (p *Player) PositionMS() int64 {
+	played := p.played.Load()
+	var latencyBytes int64
+	if p.out != nil {
+		latencyBytes = int64(p.out.latencyFrames() * frameBytes)
+	}
+	bytes := played - latencyBytes
+	if bytes < 0 {
+		bytes = 0
+	}
+	return bytes * 1000 / bytesPerSec
+}
 func (p *Player) DurationMS() int64 { return p.totalMS.Load() }
 
 // IsPreview reports whether the current track is Deezer's 30-second preview
@@ -942,6 +954,11 @@ func newSource(plan *deezer.StreamPlan, durMS int64) *source {
 		rgFac:  dbToFactor(plan.GainDB),
 		sb:     newStreamBuffer(),
 		ring:   newPCMRing(ringMax),
+	}
+	if !plan.Encrypted {
+		if err := s.sb.enableDiskSpill(); err != nil {
+			odlog.Error("failed to enable disk spill for plain stream: %v", err)
+		}
 	}
 	s.cond = sync.NewCond(&s.mu)
 	s.ctx, s.cancel = context.WithCancel(context.Background())

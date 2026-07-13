@@ -87,6 +87,9 @@ type Account = internalcontrol.Account
 // [RemoteClient.SetEQ]. It is the same type as control.EQState.
 type EQState = internalcontrol.EQState
 
+// Event is a typed control event (a "state" snapshot or a "finished" event).
+type Event = internalcontrol.Event
+
 // EQ is the equalizer bridge a [Host] can serve at /eq — wire it via
 // Host.Server().SetEQ before Start (see control.PlayerEQ for building one from
 // a player). It is the same type as control.EQ.
@@ -254,4 +257,18 @@ func (rc *RemoteClient) Playlists() (json.RawMessage, error) { return rc.c.Playl
 // (1..500). Errors when the device exposes no history.
 func (rc *RemoteClient) HistoryRecent(n int) (json.RawMessage, error) {
 	return rc.c.HistoryRecent(n)
+}
+
+// SetQueue pushes a whole queue to the device (POST /queue/set): tracksJSON is
+// the bridge.Track JSON array and index the cursor (-1 for empty). Groundwork
+// for host-owned casting. Errors when the device exposes no SetQueue.
+func (rc *RemoteClient) SetQueue(tracksJSON string, index int) (State, error) {
+	return rc.c.SetQueue(tracksJSON, index)
+}
+
+// EventsTyped subscribes to the device's typed event stream (GET /events):
+// "state" snapshots plus explicit "finished" events. The channel closes on ctx
+// cancel or when the stream drops (no auto-reconnect).
+func (rc *RemoteClient) EventsTyped(ctx context.Context) (<-chan Event, error) {
+	return rc.c.EventsTyped(ctx)
 }

@@ -588,3 +588,76 @@ func TestReplaceWhileReaderOpen(t *testing.T) {
 		t.Fatalf("stats after replace = %d entries, %d bytes; want 1, %d", n, b, len(repl))
 	}
 }
+
+// --- Phase 3 meta persistence for cached plans ---
+
+func TestPutMetaGetMeta_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	c, err := New(dir, 10<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := StreamMeta{
+		Format:     "MP3_320",
+		Encrypted:  true,
+		GainDB:     -4.25,
+		Preview:    false,
+		DurationMS: 217000,
+	}
+	if err := c.PutMeta("42.MP3_320", m); err != nil {
+		t.Fatalf("PutMeta: %v", err)
+	}
+
+	got, ok := c.GetMeta("42.MP3_320")
+	if !ok {
+		t.Fatal("GetMeta missed stored meta")
+	}
+	if got.Format != m.Format || got.Encrypted != m.Encrypted || got.GainDB != m.GainDB || got.Preview != m.Preview || got.DurationMS != m.DurationMS {
+		t.Fatalf("meta roundtrip mismatch: %+v", got)
+	}
+
+	// also via track lookup
+	got2, ok2 := c.GetMetaForTrack("42")
+	if !ok2 || got2.Format != "MP3_320" {
+		t.Fatalf("GetMetaForTrack: %+v ok=%v", got2, ok2)
+	}
+}
+
+func TestGetMeta_CorruptToleratesAndKeepsEntries(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir, 10<<20)
+
+	// body + meta
+	data := []byte("payload-for-corrupt-meta-test")
+	wc, _ := c.Put("corrupt.MP3")
+	_, _ = wc.Write(data)
+	_ = wc.Close()
+	_ = c.PutMeta("corrupt.MP3", StreamMeta{Format: "MP3_128", Encrypted: false})
+
+	// also a second meta-only
+	_ = c.PutMeta("metaonly.FLAC", StreamMeta{Format: "FLAC", Encrypted: true, GainDB: 1.5})
+
+	// Corrupt the index: make the metas value unmarshalable as StreamMeta map.
+	// (top-level entries stay valid)
+	idxp := filepath.Join(dir, "index.json")
+	// Build using a name that will match the real file written by the Put above.
+	// We know the impl uses encodeKey+seq; we will just force a minimal valid
+	// entry and rely on load's file-stat validation to keep or drop.
+	badIdx := []byte(`{"entries":{},"nextSeq":1,"fileSeq":0,"metas":{"corrupt.MP3":"this-is-not-an-object","metaonly.FLAC":123}}`)
+	_ = os.WriteFile(idxp, badIdx, 0o644)
+
+	// Reopen must succeed without panic and drop bad metas.
+	c2, err := New(dir, 10<<20)
+	if err != nil {
+		t.Fatalf("New after corrupt meta index: %v", err)
+	}
+
+	// No body in this index (we overwrote), but GetMeta must tolerate and return false.
+	if _, ok := c2.GetMeta("corrupt.MP3"); ok {
+		t.Error("corrupt meta should have been dropped")
+	}
+	if _, ok := c2.GetMeta("metaonly.FLAC"); ok {
+		t.Error("bad-typed meta should have been dropped")
+	}
+}

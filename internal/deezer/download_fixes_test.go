@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-flac/flacvorbis"
@@ -300,6 +301,7 @@ func TestSavePlaylist_FailsOnMidFetchPageError(t *testing.T) {
 	// Strict download listing: the same failure must surface.
 	saverCalls := 0
 	opts := DownloadOptions{
+		Concurrency: 1,
 		trackSaver: func(ctx context.Context, tt Track, d string, plan *StreamPlan, f ArtworkFetcher) (string, error) {
 			saverCalls++
 			return filepath.Join(d, tt.ID+".mp3"), nil
@@ -368,6 +370,7 @@ func TestSaveBatch_PartialErrorMatchesBothSentinels(t *testing.T) {
 
 	trs := []Track{{ID: "ok", Name: "OK"}, {ID: "bad", Name: "BAD"}}
 	opts := DownloadOptions{
+		Concurrency: 1,
 		trackSaver: func(ctx context.Context, tt Track, d string, plan *StreamPlan, f ArtworkFetcher) (string, error) {
 			if tt.ID == "bad" {
 				return "", boom
@@ -402,6 +405,7 @@ func TestSaveBatch_ResolvesPlanOncePerTrack(t *testing.T) {
 	resolved := map[string]*StreamPlan{}
 	resolves := 0
 	opts := DownloadOptions{
+		Concurrency: 1, // serial to keep map access in test hook race-free and preserve resolve-once count
 		planResolver: func(id string) (*StreamPlan, error) {
 			resolves++
 			p := &StreamPlan{TrackID: id, Format: "MP3_320"}
@@ -839,4 +843,182 @@ func TestPrepareStream_Entitlement_NoMedia_GivesPreview(t *testing.T) {
 
 func loginResponseForTest() *http.Response {
 	return jsonResponse([]byte(`{"error":{},"results":{"checkForm":"api-t","USER":{"USER_ID":"1","BLOG_NAME":"t","OPTIONS":{"license_token":"lic-1","web_hq":true,"web_lossless":false,"mobile_hq":true,"mobile_lossless":false}},"OFFERS":[{"title":"P"}]}}`))
+}
+
+// --- Phase 3: robust download resume, short-file reject, bounded-concurrency batch ---
+
+func TestDownloadTrackContext_ResumesOnMidBodyDrop(t *testing.T) {
+	// Server serves partial on first GET (no Range), then full suffix on
+	// Range resume. Uses plain (unencrypted) stream for simplicity.
+	var (
+		mu        sync.Mutex
+		gets      int
+		rangeReqs int
+	)
+	full := []byte(strings.Repeat("X", 256))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gets++
+		mu.Unlock()
+
+		off := int64(0)
+		if rg := r.Header.Get("Range"); rg != "" {
+			mu.Lock()
+			rangeReqs++
+			mu.Unlock()
+			if _, err := fmt.Sscanf(rg, "bytes=%d-", &off); err != nil {
+				off = 0
+			}
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		if off > 0 {
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", off, len(full)-1, len(full)))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(full[off:])
+			return
+		}
+		// First attempt: deliver prefix + flush, then hijack-close to force a non-EOF read err on client.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(full[:64])
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, herr := hj.Hijack(); herr == nil {
+				_ = conn.Close()
+				return
+			}
+		}
+		// If hijack unavailable, just stop; client may see EOF but test will still exercise path.
+	}))
+	defer ts.Close()
+
+	plan := &StreamPlan{
+		CDNURL:    ts.URL + "/audio",
+		TrackID:   "r42",
+		Format:    "MP3_128",
+		Encrypted: false,
+	}
+
+	var buf bytes.Buffer
+	err := DownloadTrackContext(context.Background(), plan, &buf)
+	if err != nil {
+		t.Fatalf("DownloadTrackContext with resume: %v", err)
+	}
+	if !bytes.Equal(buf.Bytes(), full) {
+		t.Fatalf("resume produced wrong data len=%d", buf.Len())
+	}
+	mu.Lock()
+	g := gets
+	rr := rangeReqs
+	mu.Unlock()
+	if g < 2 {
+		t.Errorf("expected >=2 GETs for resume, got %d", g)
+	}
+	if rr < 1 {
+		t.Errorf("expected at least one Range request on resume, got %d", rr)
+	}
+}
+
+func TestSaveTrack_RejectsShortFile(t *testing.T) {
+	tmp := t.TempDir()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "200")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(bytes.Repeat([]byte{0xAB}, 50)) // short body vs CL
+	}))
+	defer ts.Close()
+
+	c := &Client{}
+	tr := Track{ID: "short1", Name: "Shorty", Artists: []Artist{{Name: "T"}}}
+	plan := &StreamPlan{CDNURL: ts.URL + "/s", TrackID: "short1", Format: "MP3_128", Encrypted: false}
+
+	_, err := c.saveTrack(context.Background(), tr, tmp, plan, nil)
+	if err == nil || !strings.Contains(err.Error(), "short file") {
+		t.Fatalf("expected short-file rejection, got err=%v", err)
+	}
+	// No final file should have been left behind.
+	name := trackFileName(tr, "mp3")
+	if _, statErr := os.Stat(filepath.Join(tmp, name)); statErr == nil {
+		t.Error("short file should not have been renamed into place")
+	}
+}
+
+func TestSaveBatch_BoundedConcurrency_WorkerCountHonored_AllSaved_Progress(t *testing.T) {
+	tmp := t.TempDir()
+	c := &Client{}
+
+	N := 6
+	trs := make([]Track, N)
+	for i := 0; i < N; i++ {
+		trs[i] = Track{ID: fmt.Sprintf("%d", i), Name: fmt.Sprintf("T%d", i), Artists: []Artist{{Name: "A"}}}
+	}
+
+	var (
+		mu        sync.Mutex
+		active    int
+		maxActive int
+		calls     int
+		progCount int
+		progErrs  int
+	)
+	opts := DownloadOptions{
+		Concurrency: 2,
+		Progress: func(p DownloadProgress) {
+			mu.Lock()
+			progCount++
+			if p.Err != nil {
+				progErrs++
+			}
+			mu.Unlock()
+		},
+		planResolver: func(string) (*StreamPlan, error) {
+			return &StreamPlan{Format: "MP3_128", Preview: false}, nil
+		},
+		trackSaver: func(ctx context.Context, tt Track, d string, plan *StreamPlan, f ArtworkFetcher) (string, error) {
+			mu.Lock()
+			active++
+			if active > maxActive {
+				maxActive = active
+			}
+			calls++
+			mu.Unlock()
+
+			time.Sleep(15 * time.Millisecond) // yield for overlap
+
+			mu.Lock()
+			active--
+			mu.Unlock()
+
+			p := filepath.Join(d, tt.ID+".mp3")
+			_ = os.WriteFile(p, []byte("DATA"), 0o644)
+			return p, nil
+		},
+	}
+
+	saved, err := c.saveBatch(context.Background(), trs, tmp, opts)
+	if err != nil {
+		t.Fatalf("saveBatch: %v", err)
+	}
+	if len(saved) != N {
+		t.Errorf("saved %d, want %d", len(saved), N)
+	}
+	mu.Lock()
+	ma := maxActive
+	cc := calls
+	pc := progCount
+	pe := progErrs
+	mu.Unlock()
+	if ma > 2 {
+		t.Errorf("max concurrency observed %d, want <=2 (opts.Concurrency)", ma)
+	}
+	if cc != N {
+		t.Errorf("saver called %d times, want %d", cc, N)
+	}
+	if pc != N {
+		t.Errorf("progress fired %d times, want %d", pc, N)
+	}
+	if pe != 0 {
+		t.Errorf("unexpected progress errs: %d", pe)
+	}
 }

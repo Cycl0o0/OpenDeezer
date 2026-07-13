@@ -31,6 +31,7 @@
 package control
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
@@ -49,6 +50,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Cycl0o0/OpenDeezer/v2/internal/bridge"
 	"github.com/Cycl0o0/OpenDeezer/v2/internal/deezer"
 )
 
@@ -82,6 +84,13 @@ type State struct {
 	SleepRemainingMS int64 `json:"sleepRemainingMs,omitempty"`
 }
 
+// FinishedEvent is the payload of an SSE "finished" event. Hosts emit it for
+// natural end-of-track only; decode/stream failures and explicit stops are not
+// finishes.
+type FinishedEvent struct {
+	TrackID string `json:"trackId"`
+}
+
 // Commands are the control callbacks a controller exposes (each may be nil).
 type Commands struct {
 	PlayPause     func()
@@ -102,6 +111,7 @@ type Commands struct {
 	// request that cannot be applied to the current queue/player state. The HTTP
 	// handlers expose those failures as 409 Conflict; nil means unsupported.
 	QueueAdd      func(id string, next bool) error
+	SetQueue      func(tracksJSON string, index int) error
 	QueueJump     func(index int) error
 	QueueRemove   func(index int) error
 	QueueMove     func(from, to int) error
@@ -227,7 +237,7 @@ type Whoami struct {
 	Version  string   `json:"version,omitempty"` // OpenDeezer version
 	Client   string   `json:"client,omitempty"`  // client/platform id (tui, macos, gnome…)
 	Device   string   `json:"device,omitempty"`  // human device label ("OpenDeezer TUI")
-	Commands []string `json:"commands"`          // supported route-level command families
+	Commands []string `json:"commands"`          // supported command and event capabilities
 }
 
 // session holds metadata for a per-device authenticated session token.
@@ -246,10 +256,12 @@ const (
 	defaultHistoryRecent = 50
 	maxHistoryRecent     = 500
 
-	eventFallbackInterval  = time.Second
-	eventKeepaliveInterval = 25 * time.Second
-	eventWriteTimeout      = 5 * time.Second
-	eventSubscriberBuffer  = 1
+	eventFallbackInterval    = time.Second
+	eventKeepaliveInterval   = 25 * time.Second
+	eventWriteTimeout        = 5 * time.Second
+	eventSubscriberBuffer    = 1
+	finishedSubscriberBuffer = 16
+	maxQueueSetRequestBytes  = 8 << 20
 
 	pairSourceAttemptLimit = 5
 	pairSourceLockout      = 15 * time.Minute
@@ -257,6 +269,73 @@ const (
 	pairGlobalWindow       = time.Minute
 	pairGlobalLockout      = time.Minute
 )
+
+type eventSubscriber struct {
+	// State notifications are level-triggered prompts and may be coalesced.
+	state chan struct{}
+	// Finished notifications are edge-triggered and therefore have a separate
+	// bounded queue. On pathological overflow it retains the newest edges; a
+	// slow peer may fall back to state diffing, but can never block the host's
+	// audio callback or another subscriber.
+	finished chan FinishedEvent
+}
+
+type queueSetRequest struct {
+	Tracks json.RawMessage
+	Index  *int
+}
+
+// UnmarshalJSON rejects duplicate and unknown envelope fields. Track entries
+// themselves remain forward-compatible: json.Unmarshal below validates the
+// known bridge.Track fields while ignoring fields added by a newer peer.
+func (request *queueSetRequest) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return errors.New("queue set body must be an object")
+	}
+	*request = queueSetRequest{}
+	seen := make(map[string]bool, 2)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := token.(string)
+		if !ok {
+			return errors.New("queue set field name must be a string")
+		}
+		if seen[name] {
+			return fmt.Errorf("duplicate queue set field %q", name)
+		}
+		seen[name] = true
+		switch name {
+		case "tracks":
+			if err := decoder.Decode(&request.Tracks); err != nil {
+				return err
+			}
+		case "index":
+			var raw json.RawMessage
+			if err := decoder.Decode(&raw); err != nil {
+				return err
+			}
+			if !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				var index int
+				if err := json.Unmarshal(raw, &index); err != nil {
+					return err
+				}
+				request.Index = &index
+			}
+		default:
+			return fmt.Errorf("unknown queue set field %q", name)
+		}
+	}
+	_, err = decoder.Token()
+	return err
+}
 
 // Server serves the control API.
 type Server struct {
@@ -278,7 +357,7 @@ type Server struct {
 	// background loop serializes non-blocking change prompts; each handler takes
 	// and diffs its own fresh snapshots so subscribers cannot observe stale data.
 	eventsMu         sync.Mutex
-	eventSubscribers map[chan struct{}]struct{}
+	eventSubscribers map[*eventSubscriber]struct{}
 	eventNotify      chan struct{}
 	eventStop        chan struct{}
 	eventDone        chan struct{}
@@ -320,7 +399,7 @@ func New(cfg Config, status func() State, account func() Account, cmds Commands,
 		sessions:         make(map[string]session),
 		pairAttemptsByIP: make(map[string]pairAttemptState),
 		mintPairCode:     mintCode,
-		eventSubscribers: make(map[chan struct{}]struct{}),
+		eventSubscribers: make(map[*eventSubscriber]struct{}),
 		eventNotify:      make(chan struct{}, 1),
 	}
 }
@@ -502,6 +581,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/seek", s.post(s.handleSeek))
 	mux.HandleFunc("/volume", s.post(s.handleVolume))
 	mux.HandleFunc("/queue/add", s.post(s.handleQueueAdd))
+	mux.HandleFunc("/queue/set", s.post(s.handleQueueSet))
 	mux.HandleFunc("/queue/jump", s.post(s.handleQueueJump))
 	mux.HandleFunc("/queue/remove", s.post(s.handleQueueRemove))
 	mux.HandleFunc("/queue/move", s.post(s.handleQueueMove))
@@ -569,6 +649,34 @@ func (s *Server) NotifyStateChanged() {
 	}
 }
 
+// NotifyFinished publishes a natural end-of-track edge to current /events
+// subscribers. It is non-blocking so it is safe to call directly from a
+// player's onFinish callback. Hosts that do not wire this method retain the
+// previous behaviour: controllers can infer finishes from State transitions.
+func (s *Server) NotifyFinished(trackID string) {
+	finished := FinishedEvent{TrackID: trackID}
+	s.eventsMu.Lock()
+	defer s.eventsMu.Unlock()
+	for subscriber := range s.eventSubscribers {
+		select {
+		case subscriber.finished <- finished:
+			continue
+		default:
+		}
+		// Retain the newest edge when this peer is pathologically slow. Finished
+		// events are not coalesced during normal operation; this only bounds a
+		// stalled subscriber without blocking the host callback.
+		select {
+		case <-subscriber.finished:
+		default:
+		}
+		select {
+		case subscriber.finished <- finished:
+		default:
+		}
+	}
+}
+
 func (s *Server) startEventLoop() {
 	s.eventsMu.Lock()
 	if s.eventLoopStarted {
@@ -632,21 +740,24 @@ func (s *Server) signalEventSubscribers() {
 	defer s.eventsMu.Unlock()
 	for subscriber := range s.eventSubscribers {
 		select {
-		case subscriber <- struct{}{}:
+		case subscriber.state <- struct{}{}:
 		default:
 		}
 	}
 }
 
-func (s *Server) subscribeEvents() chan struct{} {
-	subscriber := make(chan struct{}, eventSubscriberBuffer)
+func (s *Server) subscribeEvents() *eventSubscriber {
+	subscriber := &eventSubscriber{
+		state:    make(chan struct{}, eventSubscriberBuffer),
+		finished: make(chan FinishedEvent, finishedSubscriberBuffer),
+	}
 	s.eventsMu.Lock()
 	s.eventSubscribers[subscriber] = struct{}{}
 	s.eventsMu.Unlock()
 	return subscriber
 }
 
-func (s *Server) unsubscribeEvents(subscriber chan struct{}) {
+func (s *Server) unsubscribeEvents(subscriber *eventSubscriber) {
 	s.eventsMu.Lock()
 	delete(s.eventSubscribers, subscriber)
 	s.eventsMu.Unlock()
@@ -1027,11 +1138,11 @@ func (s *Server) authMode() string {
 	}
 }
 
-// commandCapabilities returns the stable, route-level command families exposed
-// by this server. Related callback variants are grouped so a controller need not
-// know how the host implements repeat, shuffle, mixes or sleep.
+// commandCapabilities returns the stable command and event capabilities exposed
+// by this server. Related callback variants are grouped so a controller need
+// not know how the host implements repeat, shuffle, mixes or sleep.
 func (s *Server) commandCapabilities() []string {
-	commands := make([]string, 0, 20)
+	commands := make([]string, 0, 22)
 	if s.cmds.PlayPause != nil {
 		commands = append(commands, "playPause")
 	}
@@ -1068,6 +1179,9 @@ func (s *Server) commandCapabilities() []string {
 	if s.cmds.QueueAdd != nil {
 		commands = append(commands, "queueAdd")
 	}
+	if s.cmds.SetQueue != nil {
+		commands = append(commands, "queueSet")
+	}
 	if s.cmds.QueueJump != nil {
 		commands = append(commands, "queueJump")
 	}
@@ -1092,6 +1206,10 @@ func (s *Server) commandCapabilities() []string {
 	if s.eq != nil {
 		commands = append(commands, "eq")
 	}
+	// Unlike command callbacks, finished-event emission is intrinsic to Server.
+	// A host may choose not to call NotifyFinished; controllers must then retain
+	// their state-transition fallback, exactly as with an older peer.
+	commands = append(commands, "finished")
 	return commands
 }
 
@@ -1122,10 +1240,11 @@ func (s *Server) act(fn func()) http.HandlerFunc {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.status()) }
 
-// handleEvents streams State snapshots as named SSE events. Every connection
-// receives an initial snapshot, then only wire-visible changes. Subscriber
-// notifications are buffered and coalesced non-blockingly, so a slow
-// network client can only stall its own handler goroutine.
+// handleEvents streams State snapshots and natural-finish edges as named SSE
+// events. Every connection receives an initial state snapshot, then only
+// wire-visible state changes plus every buffered finished edge. State prompts
+// are coalesced; finished edges use a separate queue so state churn cannot
+// suppress them.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	subscriber := s.subscribeEvents()
 	defer s.unsubscribeEvents(subscriber)
@@ -1148,14 +1267,51 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lastSent := initial
+	writeFinished := func(finished FinishedEvent) error {
+		payload, err := json.Marshal(finished)
+		if err != nil {
+			return err
+		}
+		return writeSSEChunk(controller, w, "event: finished\ndata: "+string(payload)+"\n\n")
+	}
 
 	keepalive := time.NewTicker(eventKeepaliveInterval)
 	defer keepalive.Stop()
 	for {
+		// A host normally calls NotifyFinished before its state notification.
+		// Prefer an already-queued edge so controllers advance the just-finished
+		// track before applying the following stopped/new-track snapshot.
+		select {
+		case finished := <-subscriber.finished:
+			if err := writeFinished(finished); err != nil {
+				return
+			}
+			continue
+		default:
+		}
 		select {
 		case <-r.Context().Done():
 			return
-		case <-subscriber:
+		case finished := <-subscriber.finished:
+			if err := writeFinished(finished); err != nil {
+				return
+			}
+		case <-subscriber.state:
+			// select may choose state when both channels become ready together.
+			// Give a queued edge one final priority check and restore the coalesced
+			// state prompt for the next iteration.
+			select {
+			case finished := <-subscriber.finished:
+				select {
+				case subscriber.state <- struct{}{}:
+				default:
+				}
+				if err := writeFinished(finished); err != nil {
+					return
+				}
+				continue
+			default:
+			}
 			payload, err := s.stateEventPayload()
 			if err != nil {
 				continue
@@ -1364,6 +1520,73 @@ func (s *Server) handleQueueAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.cmds.QueueAdd(id, rawNext == "1"); err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+	s.NotifyStateChanged()
+	writeJSON(w, s.status())
+}
+
+// handleQueueSet handles an atomic host-owned queue replacement. The request
+// body is {"tracks":[bridge.Track...],"index":N}; an empty queue uses index
+// -1. Only a non-empty track id is required, matching the native queue bridge.
+func (s *Server) handleQueueSet(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxQueueSetRequestBytes)
+	var request queueSetRequest
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&request); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
+		writeJSONError(w, http.StatusBadRequest, "body must contain tracks and index")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
+		writeJSONError(w, http.StatusBadRequest, "body must contain exactly one JSON object")
+		return
+	}
+
+	rawTracks := bytes.TrimSpace(request.Tracks)
+	if len(rawTracks) == 0 || bytes.Equal(rawTracks, []byte("null")) || rawTracks[0] != '[' {
+		writeJSONError(w, http.StatusBadRequest, "tracks must be a JSON array")
+		return
+	}
+	var tracks []bridge.Track
+	if err := json.Unmarshal(rawTracks, &tracks); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "tracks must be a valid bridge.Track array")
+		return
+	}
+	for _, track := range tracks {
+		if strings.TrimSpace(track.ID) == "" {
+			writeJSONError(w, http.StatusBadRequest, "every track must have a non-empty id")
+			return
+		}
+		if track.DurationMS < 0 {
+			writeJSONError(w, http.StatusBadRequest, "track durationMs must be non-negative")
+			return
+		}
+	}
+	if request.Index == nil {
+		writeJSONError(w, http.StatusBadRequest, "index is required")
+		return
+	}
+	index := *request.Index
+	if (len(tracks) == 0 && index != -1) || (len(tracks) > 0 && (index < 0 || index >= len(tracks))) {
+		writeJSONError(w, http.StatusBadRequest, "index must identify a track, or be -1 for an empty queue")
+		return
+	}
+	if s.cmds.SetQueue == nil {
+		writeJSONError(w, http.StatusNotImplemented, "not available")
+		return
+	}
+	if err := s.cmds.SetQueue(string(rawTracks), index); err != nil {
 		writeJSONError(w, http.StatusConflict, err.Error())
 		return
 	}

@@ -21,6 +21,7 @@ func (m *mockOutput) suspend(on bool) error                 { return nil }
 func (m *mockOutput) setLostHandler(fn func(string))        { m.lostHandler = fn }
 func (m *mockOutput) close()                                {}
 func (m *mockOutput) deviceDown() bool                      { return false }
+func (m *mockOutput) latencyFrames() int                    { return 0 }
 
 func TestB4ErroredFinish(t *testing.T) {
 	out := &mockOutput{}
