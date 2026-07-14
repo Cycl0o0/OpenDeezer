@@ -22,7 +22,9 @@ Repo: https://github.com/Cycl0o0/OpenDeezer.git
 Builds:
   - versionName: 3.1.4
     versionCode: 26
-    commit: v3.1.4
+    # This post-tag commit only updates release packaging and adds the store
+    # screenshots; the Android and Go sources still match v3.1.4.
+    commit: 23798367807ad55bb997f674ea2a27b431c1e9b2
     subdir: gui/android
     sudo:
       - apt-get update
