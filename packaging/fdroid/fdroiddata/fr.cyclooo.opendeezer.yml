@@ -37,6 +37,9 @@ Builds:
     rm:
       - gui/macos/Clib/libdeezercore-amd64.a
       - gui/macos/Clib/libdeezercore-arm64.a
+    # gomobile needs the minimum API platform as well as the platform and build
+    # tools used by the Android application module.
+    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34' 'build-tools;34.0.0'
     build:
       # Build the exact Go release requested by go.mod. The Debian Go package is
       # used only as its bootstrap compiler.
