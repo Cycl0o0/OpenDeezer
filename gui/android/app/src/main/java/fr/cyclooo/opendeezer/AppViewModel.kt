@@ -14,6 +14,7 @@ import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.player.PlaybackService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -216,25 +217,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         stage = AuthStage.LOADING
         viewModelScope.launch {
             try {
-                // Keep durable credential deletion off Compose's main thread and
-                // complete it before exposing the login screen again.
-                withContext(Dispatchers.IO) { prefs.clear() }
-                Engine.disconnectDevice()
-                // Tear the engine session down too — without this the Go core keeps
-                // the old account's client (and its ARL) alive in memory.
-                Engine.logout()
-            } finally {
-                try {
+                // Logout is a security boundary: cancellation or a storage
+                // failure must not skip the remaining cleanup steps.
+                withContext(NonCancellable) {
+                    // Keep durable credential deletion off Compose's main thread.
+                    withContext(Dispatchers.IO) { runCatching { prefs.clear() } }
+                    Engine.disconnectDevice()
+                    // Tear the engine session down too — without this the Go core
+                    // keeps the old account's client (and its ARL) alive in memory.
+                    Engine.logout()
                     // CookieManager clears asynchronously. Await its callback
                     // before exposing the WebView or it can re-capture the
-                    // signed-out ARL. Attempt this even if another cleanup fails.
+                    // signed-out ARL.
                     clearWebLoginData()
-                } finally {
-                    // The engine wrappers are best-effort, but never strand the UI
-                    // if credential storage or coroutine cancellation still fails.
-                    busy = false
-                    stage = AuthStage.NEEDS_LOGIN
                 }
+            } finally {
+                // Never strand the UI even if an unexpected cleanup error escapes.
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
             }
         }
         account = null
