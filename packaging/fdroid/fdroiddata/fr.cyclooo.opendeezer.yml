@@ -30,6 +30,11 @@ Builds:
       - apt-get install -y -t trixie-backports golang-go
     srclibs:
       - go@go1.25.12
+    # These prebuilt macOS archives are unrelated to the Android build and are
+    # removed so F-Droid's source scanner never has to trust them.
+    rm:
+      - gui/macos/Clib/libdeezercore-amd64.a
+      - gui/macos/Clib/libdeezercore-arm64.a
     build:
       # Build the exact Go release requested by go.mod. The Debian Go package is
       # used only as its bootstrap compiler.
