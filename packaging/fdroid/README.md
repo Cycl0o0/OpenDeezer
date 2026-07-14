@@ -21,9 +21,10 @@ submission after the phone recipe is proven on the official build infrastructure
 
 ## Before submitting
 
-1. Tag a release containing the deterministic toolchain and credential-storage
-   fixes, then update the recipe's version, version code and commit. The recipe
-   can lag the application until the automated post-release manifest PR lands.
+1. Publish the `v3.1.4` tag targeted by the candidate recipe (or update its
+   version, version code and commit to a newer qualifying release). Never submit
+   a recipe for `v3.1.3`, which predates the credential-storage and F-Droid
+   updater gates.
 2. Add an icon and real phone screenshots under
    `fastlane/metadata/android/en-US/images/`.
 3. Confirm that the OpenDeezer name and artwork do not infringe Deezer's
@@ -34,7 +35,7 @@ submission after the phone recipe is proven on the official build infrastructure
    cp packaging/fdroid/fdroiddata/fr.cyclooo.opendeezer.yml \
      /path/to/fdroiddata/metadata/
    fdroid lint fr.cyclooo.opendeezer
-   fdroid build --test fr.cyclooo.opendeezer:25
+   fdroid build --test fr.cyclooo.opendeezer:26
    ```
 
 5. Test login, streaming, foreground playback, downloads and logout on a clean

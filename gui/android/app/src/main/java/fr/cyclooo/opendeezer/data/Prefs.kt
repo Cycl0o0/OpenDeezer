@@ -56,7 +56,8 @@ class Prefs(context: Context) {
                 resetEncryptionState()
             } else {
                 // Preserve ciphertext and alias on transient Keystore/provider
-                // failures so a later launch can retry instead of forcing login.
+                // failures so a later launch can retry instead of losing the
+                // credential permanently.
                 return@synchronized null
             }
         }
@@ -64,6 +65,8 @@ class Prefs(context: Context) {
         // One-time migration from releases that stored the ARL as plaintext.
         val legacyArl = legacy.getString(KEY_ARL_LEGACY, null)?.takeIf { it.isNotBlank() }
             ?: return@synchronized null
+        // Fail closed: do not authenticate from plaintext once secure storage
+        // is required. Leave it in place so a later launch can retry migration.
         legacyArl.takeIf { saveArlLocked(it) }
     }
 

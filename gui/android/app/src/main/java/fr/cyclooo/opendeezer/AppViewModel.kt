@@ -211,15 +211,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         busy = true
         stage = AuthStage.LOADING
         viewModelScope.launch {
-            // Keep durable credential deletion off Compose's main thread and
-            // complete it before exposing the login screen again.
-            withContext(Dispatchers.IO) { prefs.clear() }
-            Engine.disconnectDevice()
-            // Tear the engine session down too — without this the Go core keeps
-            // the old account's client (and its ARL) alive in memory.
-            Engine.logout()
-            busy = false
-            stage = AuthStage.NEEDS_LOGIN
+            try {
+                // Keep durable credential deletion off Compose's main thread and
+                // complete it before exposing the login screen again.
+                withContext(Dispatchers.IO) { prefs.clear() }
+                Engine.disconnectDevice()
+                // Tear the engine session down too — without this the Go core keeps
+                // the old account's client (and its ARL) alive in memory.
+                Engine.logout()
+            } finally {
+                // The engine wrappers are best-effort, but never strand the UI if
+                // credential storage or coroutine cancellation still fails.
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+            }
         }
         // Drop the WebView session too, or web sign-in silently re-captures the
         // old account's arl cookie and undoes the sign-out.

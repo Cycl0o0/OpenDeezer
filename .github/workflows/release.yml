@@ -529,6 +529,8 @@ jobs:
           files: OpenDeezer-ios-unsigned.ipa
 
   # ---- Checksums: gather every released asset and publish SHA256SUMS.txt ----
+  # macOS and iOS are intentionally best-effort (`continue-on-error` above), so
+  # their assets are hashed when present but do not block checksums/manifests.
   checksums:
     needs: [detect, tui, macos-app, gnome, kde, linux-unified, windows-gui, android, ios]
     if: >-
