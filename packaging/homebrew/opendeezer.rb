@@ -10,8 +10,6 @@ class Opendeezer < Formula
   version "3.1.3"
   license "AGPL-3.0-only"
 
-  depends_on "alsa-lib" => :linux
-
   on_macos do
     on_arm do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-darwin-arm64"
@@ -24,6 +22,8 @@ class Opendeezer < Formula
   end
 
   on_linux do
+    depends_on "alsa-lib"
+
     on_arm do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-linux-arm64"
       sha256 "fc243d1fcc9bf167399608fa6010f44383f380a6afa2b63e46b0372dd7377e74"
