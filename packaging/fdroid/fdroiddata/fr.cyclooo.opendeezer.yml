@@ -22,7 +22,9 @@ Repo: https://github.com/Cycl0o0/OpenDeezer.git
 Builds:
   - versionName: 3.1.4
     versionCode: 26
-    commit: v3.1.4
+    # This post-tag commit updates release/F-Droid metadata and adds the store
+    # screenshots; the Android and Go sources still match v3.1.4.
+    commit: b2a149c03c5125a01cc3bd29f8c019c2c611f718
     subdir: gui/android
     sudo:
       - apt-get update
@@ -30,6 +32,14 @@ Builds:
       - apt-get install -y -t trixie-backports golang-go
     srclibs:
       - go@go1.25.12
+    # These prebuilt macOS archives are unrelated to the Android build and are
+    # removed so F-Droid's source scanner never has to trust them.
+    rm:
+      - gui/macos/Clib/libdeezercore-amd64.a
+      - gui/macos/Clib/libdeezercore-arm64.a
+    # gomobile needs the minimum API platform as well as the platform and build
+    # tools used by the Android application module.
+    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34' 'build-tools;34.0.0'
     build:
       # Build the exact Go release requested by go.mod. The Debian Go package is
       # used only as its bootstrap compiler.
@@ -52,6 +62,9 @@ Builds:
     ndk: r26d
     gradle:
       - mobile
+    # The Android project keeps its application module under app/, outside the
+    # output locations fdroidserver discovers automatically from this subdir.
+    output: app/build/outputs/apk/mobile/release/app-mobile-release-unsigned.apk
     # F-Droid owns update discovery and delivery for this build. This removes
     # both the launch check and the Settings update action.
     gradleprops:

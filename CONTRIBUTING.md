@@ -59,6 +59,7 @@ verify each one.
 
 ## Scope & legality
 
-OpenDeezer is a **Premium-only streaming client** — no downloads, no piracy. It
-does not bypass Deezer's DRM beyond what an authenticated client already streams,
-and is not affiliated with Deezer. Please keep contributions within that scope.
+OpenDeezer is an authenticated Deezer client. Playback quality and downloads are
+limited to the signed-in account's Deezer entitlements. It is not affiliated with
+Deezer; contributions must not circumvent account access controls or enable
+access to media that is unavailable to that account.
