@@ -639,6 +639,10 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          # create-pull-request configures its own token. Keeping checkout's
+          # credential too sends duplicate Authorization headers on git fetch.
+          persist-credentials: false
       - name: Download SHA256SUMS.txt from release
         env:
           GH_TOKEN: ${{ github.token }}
