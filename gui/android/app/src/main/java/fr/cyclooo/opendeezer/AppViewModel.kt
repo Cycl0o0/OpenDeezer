@@ -121,9 +121,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
                 // Kind 1 is the engine's definitive expired/invalid signal.
-                // Preserve the credential for kind 3 (other/transient) so a
-                // service or parser failure cannot force an unnecessary login.
-                if (failureKind == 1) withContext(Dispatchers.IO) { prefs.clear() }
+                // persist=false is used only for the saved-token launch/retry
+                // path: clear that rejected saved value, but never let a bad
+                // manually entered token erase a different retained credential.
+                if (failureKind == 1 && !persist) withContext(Dispatchers.IO) { prefs.clear() }
                 clearWebLoginData()
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
