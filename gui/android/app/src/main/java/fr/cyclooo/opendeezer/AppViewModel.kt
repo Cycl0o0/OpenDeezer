@@ -15,7 +15,9 @@ import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.player.PlaybackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 enum class AuthStage { LOADING, NEEDS_LOGIN, NO_INTERNET, READY }
 
@@ -106,35 +108,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = Engine.init(arl)
             if (!ok) {
-                busy = false
                 val failureKind = Engine.loginErrorKind()
                 // Tell "offline" apart from "bad/expired ARL": when the engine
                 // reports no internet (kind 2), keep the saved credentials and
                 // show the No-Internet screen (with Retry) instead of wiping
                 // prefs and bouncing the user back to sign-in.
                 if (failureKind == 2) {
+                    busy = false
                     stage = AuthStage.NO_INTERNET
                     return@launch
                 }
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
-                stage = AuthStage.NEEDS_LOGIN
                 // Kind 1 is the engine's definitive expired/invalid signal.
                 // Preserve the credential for kind 3 (other/transient) so a
                 // service or parser failure cannot force an unnecessary login.
                 if (failureKind == 1) withContext(Dispatchers.IO) { prefs.clear() }
                 clearWebLoginData()
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
                 return@launch
             }
             val acct = Engine.account()
             if (acct == null || !acct.loggedIn) {
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_account)
-                busy = false
-                stage = AuthStage.NEEDS_LOGIN
                 // Engine.init succeeded, so account parsing failure is not proof
                 // that the stored credential is invalid. Preserve it for retry.
                 clearWebLoginData()
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
                 return@launch
             }
             if (persist && !withContext(Dispatchers.IO) { prefs.saveArl(arl) }) {
@@ -142,15 +145,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 account = null
                 lastFailedArl = null
                 loginError = getApplication<Application>().getString(R.string.login_error_secure_storage)
+                clearWebLoginData()
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
-                clearWebLoginData()
                 return@launch
             }
             account = acct
-            busy = false
             lastFailedArl = null
             clearWebLoginData()
+            busy = false
             // Free and premium accounts both reach the app — a Free account
             // streams full tracks at 128 kbps (not 30s previews). Only the
             // per-track Download action is premium-only, so record premium
@@ -220,23 +223,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // the old account's client (and its ARL) alive in memory.
                 Engine.logout()
             } finally {
-                // The engine wrappers are best-effort, but never strand the UI if
-                // credential storage or coroutine cancellation still fails.
-                busy = false
-                stage = AuthStage.NEEDS_LOGIN
+                try {
+                    // CookieManager clears asynchronously. Await its callback
+                    // before exposing the WebView or it can re-capture the
+                    // signed-out ARL. Attempt this even if another cleanup fails.
+                    clearWebLoginData()
+                } finally {
+                    // The engine wrappers are best-effort, but never strand the UI
+                    // if credential storage or coroutine cancellation still fails.
+                    busy = false
+                    stage = AuthStage.NEEDS_LOGIN
+                }
             }
         }
-        // Drop the WebView session too, or web sign-in silently re-captures the
-        // old account's arl cookie and undoes the sign-out.
-        clearWebLoginData()
         account = null
     }
 
-    private fun clearWebLoginData() {
-        runCatching {
-            val cookies = CookieManager.getInstance()
-            cookies.removeAllCookies { cookies.flush() }
-            WebStorage.getInstance().deleteAllData()
+    private suspend fun clearWebLoginData() {
+        // A non-null CookieManager callback is delivered through the calling
+        // thread's Looper. Pin the bridge to Main so future call-site changes
+        // cannot accidentally suspend forever on a dispatcher without one.
+        withContext(Dispatchers.Main.immediate) {
+            val cookies = runCatching { CookieManager.getInstance() }.getOrNull()
+            if (cookies != null) {
+                suspendCancellableCoroutine { continuation ->
+                    runCatching {
+                        cookies.removeAllCookies {
+                            runCatching { cookies.flush() }
+                            if (continuation.isActive) continuation.resume(Unit)
+                        }
+                    }.onFailure {
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
+                }
+            }
+            runCatching { WebStorage.getInstance().deleteAllData() }
         }
     }
 }
