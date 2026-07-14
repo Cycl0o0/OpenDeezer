@@ -26,7 +26,8 @@ Builds:
     subdir: gui/android
     sudo:
       - apt-get update
-      - apt-get install -y -t bookworm-backports golang-go gcc libc6-dev
+      - apt-get install -y gcc libc6-dev
+      - apt-get install -y -t trixie-backports golang-go
     srclibs:
       - go@go1.25.12
     build:

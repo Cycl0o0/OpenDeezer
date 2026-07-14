@@ -39,6 +39,7 @@
     <string name="login_error_failed">فشل تسجيل الدخول — تحقق من ARL والاتصال.</string>
     <string name="login_error_account">تعذّر تحميل الحساب.</string>
     <string name="login_error_secure_storage">تعذّر حفظ تسجيل دخولك بأمان. تحقّق من إعدادات أمان الجهاز وحاول مرة أخرى.</string>
+    <string name="login_error_secure_clear">تعذّر حذف بيانات تسجيل الدخول المحفوظة. لمنع تسجيل الدخول تلقائيًا بعد إعادة التشغيل، امسح بيانات تخزين OpenDeezer من إعدادات Android.</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">لا يوجد اتصال بالإنترنت</string>

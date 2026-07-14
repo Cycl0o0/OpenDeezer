@@ -39,6 +39,7 @@
     <string name="login_error_failed">लॉगिन विफल — अपना ARL और कनेक्शन जाँचें।</string>
     <string name="login_error_account">खाता लोड नहीं हो सका।</string>
     <string name="login_error_secure_storage">आपका लॉगिन सुरक्षित रूप से सेव नहीं किया जा सका। डिवाइस की सुरक्षा सेटिंग जाँचें और फिर कोशिश करें।</string>
+    <string name="login_error_secure_clear">सेव किया गया लॉगिन हटाया नहीं जा सका। रीस्टार्ट के बाद अपने-आप लॉगिन होने से रोकने के लिए Android सेटिंग में OpenDeezer का स्टोरेज साफ़ करें।</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">इंटरनेट कनेक्शन नहीं है</string>

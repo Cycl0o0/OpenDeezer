@@ -104,10 +104,16 @@ grep -Fq "version \"$VERSION\"" "$FORMULA"
 for sha in "$DARWIN_ARM64" "$DARWIN_AMD64" "$LINUX_ARM64" "$LINUX_AMD64"; do
   grep -Fq "sha256 \"$sha\"" "$FORMULA"
 done
-grep -Fq "PackageVersion: $VERSION" "$INSTALLER"
+for manifest in "$ROOT"/packaging/winget/Cycl0o0.OpenDeezer*.yaml; do
+  grep -Fq "PackageVersion: $VERSION" "$manifest"
+done
+grep -Fq "releases/download/v$VERSION/opendeezer-tui-windows-amd64.exe" "$INSTALLER"
 grep -Fq "InstallerSha256: $WINDOWS_AMD64" "$INSTALLER"
 grep -Fq "pkgver=$VERSION" "$PKGBUILD"
 grep -Fq "sha256sums=('$SOURCE_SHA')" "$PKGBUILD"
+grep -Fq "pkgver = $VERSION" "$SRCINFO"
+grep -Fq "source = opendeezer-$VERSION.tar.gz::https://github.com/Cycl0o0/OpenDeezer/archive/refs/tags/v$VERSION.tar.gz" "$SRCINFO"
+grep -Fq "sha256sums = $SOURCE_SHA" "$SRCINFO"
 
 SCOOP="$ROOT/packaging/scoop/opendeezer.json"
 if [[ -f "$SCOOP" ]]; then
@@ -116,6 +122,7 @@ if [[ -f "$SCOOP" ]]; then
   sed -i.bak "s/^            \"hash\": \"[0-9a-f]*\"/            \"hash\": \"$WINDOWS_AMD64\"/" "$SCOOP"
   rm -f "$SCOOP.bak"
   grep -Fq "\"version\": \"$VERSION\"" "$SCOOP"
+  grep -Fq "releases/download/v$VERSION/opendeezer-tui-windows-amd64.exe" "$SCOOP"
   grep -Fq "\"hash\": \"$WINDOWS_AMD64\"" "$SCOOP"
 fi
 
@@ -133,6 +140,9 @@ if [[ -f "$FDROID" ]]; then
   sed -i.bak "s/^CurrentVersion: .*/CurrentVersion: $VERSION/" "$FDROID"
   sed -i.bak "s/^CurrentVersionCode: .*/CurrentVersionCode: $VERSION_CODE/" "$FDROID"
   rm -f "$FDROID.bak"
+  grep -Fq "  - versionName: $VERSION" "$FDROID"
+  grep -Fq "    versionCode: $VERSION_CODE" "$FDROID"
+  grep -Fq "    commit: v$VERSION" "$FDROID"
   grep -Fq "CurrentVersion: $VERSION" "$FDROID"
   grep -Fq "CurrentVersionCode: $VERSION_CODE" "$FDROID"
 fi

@@ -255,9 +255,22 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_MATERIAL_YOU, false)
         set(value) { sp.edit().putBoolean(KEY_MATERIAL_YOU, value).apply() }
 
-    fun clear() = synchronized(CREDENTIAL_LOCK) {
-        secrets.edit().remove(KEY_ARL_ENCRYPTED).commit()
-        legacy.edit().remove(KEY_ARL_LEGACY).commit()
+    fun clear(): Boolean = synchronized(CREDENTIAL_LOCK) {
+        var secretsCleared = false
+        var legacyCleared = false
+        repeat(2) {
+            if (!secretsCleared) {
+                secretsCleared = runCatching {
+                    secrets.edit().remove(KEY_ARL_ENCRYPTED).commit()
+                }.getOrDefault(false)
+            }
+            if (!legacyCleared) {
+                legacyCleared = runCatching {
+                    legacy.edit().remove(KEY_ARL_LEGACY).commit()
+                }.getOrDefault(false)
+            }
+        }
+        secretsCleared && legacyCleared
     }
 
     private fun encryptionKey(): SecretKey {

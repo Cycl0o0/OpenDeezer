@@ -39,6 +39,7 @@
     <string name="login_error_failed">Ошибка входа — проверьте ARL и подключение.</string>
     <string name="login_error_account">Не удалось загрузить аккаунт.</string>
     <string name="login_error_secure_storage">Не удалось безопасно сохранить данные для входа. Проверьте настройки безопасности устройства и повторите попытку.</string>
+    <string name="login_error_secure_clear">Не удалось удалить сохранённые данные для входа. Чтобы предотвратить автоматический вход после перезапуска, очистите хранилище OpenDeezer в настройках Android.</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">Нет подключения к Интернету</string>

@@ -336,11 +336,11 @@ jobs:
       - uses: actions/checkout@v6
       - name: Validate Android release version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Android releases require a stable semver tag (vX.Y.Z)"
             exit 1
           fi
+          VERSION="${GITHUB_REF_NAME#v}"
           GRADLE_VERSION=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' gui/android/app/build.gradle.kts | head -1)
           if [ "$GRADLE_VERSION" != "$VERSION" ]; then
             echo "::error::Tag version $VERSION does not match Android versionName $GRADLE_VERSION"

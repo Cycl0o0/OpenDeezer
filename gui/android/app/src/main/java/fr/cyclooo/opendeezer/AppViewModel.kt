@@ -125,7 +125,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // persist=false is used only for the saved-token launch/retry
                 // path: clear that rejected saved value, but never let a bad
                 // manually entered token erase a different retained credential.
-                if (failureKind == 1 && !persist) withContext(Dispatchers.IO) { prefs.clear() }
+                if (failureKind == 1 && !persist && !clearStoredArl()) {
+                    loginError = getApplication<Application>().getString(R.string.login_error_secure_clear)
+                }
                 clearWebLoginData()
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
@@ -221,12 +223,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         busy = true
         stage = AuthStage.LOADING
         viewModelScope.launch {
+            var credentialCleared = false
             try {
                 // Logout is a security boundary: cancellation or a storage
                 // failure must not skip the remaining cleanup steps.
                 withContext(NonCancellable) {
                     // Keep durable credential deletion off Compose's main thread.
-                    withContext(Dispatchers.IO) { runCatching { prefs.clear() } }
+                    credentialCleared = clearStoredArl()
                     Engine.disconnectDevice()
                     // Tear the engine session down too — without this the Go core
                     // keeps the old account's client (and its ARL) alive in memory.
@@ -238,11 +241,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } finally {
                 // Never strand the UI even if an unexpected cleanup error escapes.
+                loginError = if (credentialCleared) {
+                    null
+                } else {
+                    getApplication<Application>().getString(R.string.login_error_secure_clear)
+                }
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
             }
         }
         account = null
+    }
+
+    /** Removes both current and legacy persisted credentials off the main thread. */
+    private suspend fun clearStoredArl(): Boolean = withContext(Dispatchers.IO) {
+        prefs.clear()
     }
 
     private suspend fun clearWebLoginData() {

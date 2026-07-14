@@ -81,7 +81,7 @@ command -v jq >/dev/null || {
   exit 1
 }
 DEVICE_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opendeezer-devices.XXXXXX")"
-trap 'rm -rf "$DEVICE_TMP_DIR"' EXIT
+trap 'rm -rf "$DEVICE_TMP_DIR" "$TOOLS_DIR"' EXIT
 DEVICE_JSON="$DEVICE_TMP_DIR/devices.json"
 xcrun devicectl list devices --quiet --json-output "$DEVICE_JSON"
 UDID="$(jq -r '
