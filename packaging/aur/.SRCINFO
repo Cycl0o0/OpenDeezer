@@ -1,6 +1,6 @@
 pkgbase = opendeezer
 	pkgdesc = Native terminal client for browsing and streaming a Deezer library
-	pkgver = 3.1.3
+	pkgver = 3.1.4
 	pkgrel = 1
 	url = https://github.com/Cycl0o0/OpenDeezer
 	arch = x86_64
@@ -9,7 +9,7 @@ pkgbase = opendeezer
 	makedepends = go
 	makedepends = git
 	depends = alsa-lib
-	source = opendeezer-3.1.3.tar.gz::https://github.com/Cycl0o0/OpenDeezer/archive/refs/tags/v3.1.3.tar.gz
-	sha256sums = eb493ad18a6f810463267da3279351ba98dbc84719db469f5985733f327c5688
+	source = opendeezer-3.1.4.tar.gz::https://github.com/Cycl0o0/OpenDeezer/archive/refs/tags/v3.1.4.tar.gz
+	sha256sums = ab74d97aea73c48046518b480f8ab223ade69bf3d776995dc5cf411054094db6
 
 pkgname = opendeezer

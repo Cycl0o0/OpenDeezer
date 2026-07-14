@@ -7,17 +7,17 @@
 class Opendeezer < Formula
   desc "Native terminal client for browsing and streaming a Deezer library"
   homepage "https://github.com/Cycl0o0/OpenDeezer"
-  version "3.1.3"
+  version "3.1.4"
   license "AGPL-3.0-only"
 
   on_macos do
     on_arm do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-darwin-arm64"
-      sha256 "cb720573ecbae2169fc0df44fc7033d2ec91a8ef9c567d8ac4c4cee5a37860b9"
+      sha256 "3a6ac99c330f92dbf575996fb2a252795f5758a49352f5e278e7093a1f24f7ac"
     end
     on_intel do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-darwin-amd64"
-      sha256 "b6512c0e5a1a25d7fb21b101f0a04f3989db75c07c7e2248bac8d9f0966428ab"
+      sha256 "749227757523f62d9efcd32c6abd2b8fe69d2c3909bc9ef194f7d41d12a32dea"
     end
   end
 
@@ -26,11 +26,11 @@ class Opendeezer < Formula
 
     on_arm do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-linux-arm64"
-      sha256 "fc243d1fcc9bf167399608fa6010f44383f380a6afa2b63e46b0372dd7377e74"
+      sha256 "7ce9629fa7ed000f76a3563fd2aa0e6a53afdcaba5450937996b9a61e7eea227"
     end
     on_intel do
       url "https://github.com/Cycl0o0/OpenDeezer/releases/download/v#{version}/opendeezer-tui-linux-amd64"
-      sha256 "0e12afce9760fb8d5ec74d2e67c226533d4c4d2d376904851f68176990037f31"
+      sha256 "4701e62b75af845c82b071ced6fffe521cd32e3f3e211e33837e696e46bf89d0"
     end
   end
 

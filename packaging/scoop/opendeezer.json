@@ -1,5 +1,5 @@
 {
-    "version": "3.1.3",
+    "version": "3.1.4",
     "description": "Terminal Deezer client with local playback, library browsing, search, lyrics, and downloads",
     "homepage": "https://github.com/Cycl0o0/OpenDeezer",
     "license": {
@@ -8,8 +8,8 @@
     },
     "architecture": {
         "64bit": {
-            "url": "https://github.com/Cycl0o0/OpenDeezer/releases/download/v3.1.3/opendeezer-tui-windows-amd64.exe#/opendeezer.exe",
-            "hash": "676e66ef3282803716eb0c97cf541dd4ce822669c0cac48ff562209f4ca83246"
+            "url": "https://github.com/Cycl0o0/OpenDeezer/releases/download/v3.1.4/opendeezer-tui-windows-amd64.exe#/opendeezer.exe",
+            "hash": "57aca3445af9516a9c4be3aee22974e6b18bac64ec714c40ab7eaca3cb5cd4b9"
         }
     },
     "bin": "opendeezer.exe",
