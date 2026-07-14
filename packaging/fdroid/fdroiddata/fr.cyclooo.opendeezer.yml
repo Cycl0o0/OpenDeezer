@@ -57,6 +57,9 @@ Builds:
     ndk: r26d
     gradle:
       - mobile
+    # The Android project keeps its application module under app/, outside the
+    # output locations fdroidserver discovers automatically from this subdir.
+    output: app/build/outputs/apk/mobile/release/app-mobile-release-unsigned.apk
     # F-Droid owns update discovery and delivery for this build. This removes
     # both the launch check and the Settings update action.
     gradleprops:
