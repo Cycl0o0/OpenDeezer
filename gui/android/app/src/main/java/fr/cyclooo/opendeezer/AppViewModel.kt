@@ -107,20 +107,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val ok = Engine.init(arl)
             if (!ok) {
                 busy = false
+                val failureKind = Engine.loginErrorKind()
                 // Tell "offline" apart from "bad/expired ARL": when the engine
                 // reports no internet (kind 2), keep the saved credentials and
                 // show the No-Internet screen (with Retry) instead of wiping
                 // prefs and bouncing the user back to sign-in.
-                if (Engine.loginErrorKind() == 2) {
+                if (failureKind == 2) {
                     stage = AuthStage.NO_INTERNET
                     return@launch
                 }
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
                 stage = AuthStage.NEEDS_LOGIN
-                // Only offline failures retain a saved credential. An invalid
-                // ARL must not be retried on every subsequent launch.
-                withContext(Dispatchers.IO) { prefs.clear() }
+                // Kind 1 is the engine's definitive expired/invalid signal.
+                // Preserve the credential for kind 3 (other/transient) so a
+                // service or parser failure cannot force an unnecessary login.
+                if (failureKind == 1) withContext(Dispatchers.IO) { prefs.clear() }
                 clearWebLoginData()
                 return@launch
             }
@@ -130,7 +132,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 loginError = getApplication<Application>().getString(R.string.login_error_account)
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
-                withContext(Dispatchers.IO) { prefs.clear() }
+                // Engine.init succeeded, so account parsing failure is not proof
+                // that the stored credential is invalid. Preserve it for retry.
                 clearWebLoginData()
                 return@launch
             }

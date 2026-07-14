@@ -606,9 +606,9 @@ jobs:
           if [ "$HAS_WINDOWS" = true ]; then
             required+=(OpenDeezer-windows-x64.zip)
           fi
-          for required in "${required[@]}"; do
-            test -f "dist/$required" || {
-              echo "::error::Required release asset is missing: $required"
+          for asset in "${required[@]}"; do
+            test -f "dist/$asset" || {
+              echo "::error::Required release asset is missing: $asset"
               exit 1
             }
           done

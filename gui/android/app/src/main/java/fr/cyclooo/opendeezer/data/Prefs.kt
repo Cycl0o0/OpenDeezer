@@ -3,9 +3,11 @@ package fr.cyclooo.opendeezer.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -39,8 +41,9 @@ class Prefs(context: Context) {
     fun loadArl(): String? = synchronized(CREDENTIAL_LOCK) {
         val encoded = secrets.getString(KEY_ARL_ENCRYPTED, null)
         if (encoded != null) {
-            val decrypted = runCatching { decryptArl(encoded) }.getOrNull()
-            if (!decrypted.isNullOrBlank()) {
+            val decryptResult = runCatching { decryptArl(encoded) }
+            val decrypted = decryptResult.getOrNull()
+            if (decrypted != null && decrypted.isNotBlank()) {
                 // A process kill may have interrupted an older migration
                 // after the encrypted commit but before plaintext cleanup.
                 // Cleanup failure does not invalidate a working ciphertext;
@@ -48,7 +51,14 @@ class Prefs(context: Context) {
                 removeLegacyArlBestEffort()
                 return@synchronized decrypted
             }
-            resetEncryptionState()
+            val failure = decryptResult.exceptionOrNull()
+            if (decrypted != null || failure?.isPermanentDecryptFailure() == true) {
+                resetEncryptionState()
+            } else {
+                // Preserve ciphertext and alias on transient Keystore/provider
+                // failures so a later launch can retry instead of forcing login.
+                return@synchronized null
+            }
         }
 
         // One-time migration from releases that stored the ARL as plaintext.
@@ -73,14 +83,18 @@ class Prefs(context: Context) {
             // invalid. Preserve the existing alias/ciphertext instead of turning
             // a transient storage error into destructive credential loss.
             PersistResult.STORAGE_FAILURE -> false
-            PersistResult.CRYPTO_FAILURE -> {
+            // Likewise, a transient Keystore/provider failure must leave a
+            // previously valid key and ciphertext intact for a later retry.
+            PersistResult.TRANSIENT_CRYPTO_FAILURE -> false
+            PersistResult.PERMANENT_CRYPTO_FAILURE -> {
                 // A restored or invalidated key cannot encrypt new payloads
                 // reliably. Delete the unusable alias once and retry fresh.
                 resetEncryptionState()
                 when (persistArl(value)) {
                     PersistResult.SUCCESS -> true
                     PersistResult.STORAGE_FAILURE -> false
-                    PersistResult.CRYPTO_FAILURE -> {
+                    PersistResult.TRANSIENT_CRYPTO_FAILURE -> false
+                    PersistResult.PERMANENT_CRYPTO_FAILURE -> {
                         resetEncryptionState()
                         false
                     }
@@ -91,7 +105,13 @@ class Prefs(context: Context) {
 
     private fun persistArl(value: String): PersistResult {
         val encrypted = runCatching { encryptArl(value) }
-            .getOrElse { return PersistResult.CRYPTO_FAILURE }
+            .getOrElse {
+                return if (it.hasPermanentlyInvalidatedKey()) {
+                    PersistResult.PERMANENT_CRYPTO_FAILURE
+                } else {
+                    PersistResult.TRANSIENT_CRYPTO_FAILURE
+                }
+            }
         if (!secrets.edit().putString(KEY_ARL_ENCRYPTED, encrypted).commit()) {
             return PersistResult.STORAGE_FAILURE
         }
@@ -100,6 +120,17 @@ class Prefs(context: Context) {
         removeLegacyArlBestEffort()
         return PersistResult.SUCCESS
     }
+
+    private fun Throwable.isPermanentDecryptFailure(): Boolean =
+        generateSequence(this) { it.cause }.any {
+            it is AEADBadTagException ||
+                it is KeyPermanentlyInvalidatedException ||
+                it is IllegalArgumentException
+        }
+
+    private fun Throwable.hasPermanentlyInvalidatedKey(): Boolean =
+        generateSequence(this) { it.cause }
+            .any { it is KeyPermanentlyInvalidatedException }
 
     private fun removeLegacyArlBestEffort() {
         if (legacy.contains(KEY_ARL_LEGACY)) {
@@ -291,6 +322,7 @@ class Prefs(context: Context) {
     private enum class PersistResult {
         SUCCESS,
         STORAGE_FAILURE,
-        CRYPTO_FAILURE,
+        TRANSIENT_CRYPTO_FAILURE,
+        PERMANENT_CRYPTO_FAILURE,
     }
 }
