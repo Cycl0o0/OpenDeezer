@@ -48,7 +48,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Advertise this client to OpenDeezer Connect peers.
         Engine.setClientInfo("android", "OpenDeezer (Android)")
         viewModelScope.launch {
-            val saved = withContext(Dispatchers.IO) { prefs.arl }
+            val saved = withContext(Dispatchers.IO) { prefs.loadArl() }
             if (saved.isNullOrBlank()) {
                 stage = AuthStage.NEEDS_LOGIN
             } else {
@@ -118,7 +118,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
                 stage = AuthStage.NEEDS_LOGIN
-                if (persist) prefs.clear()
+                // Only offline failures retain a saved credential. An invalid
+                // ARL must not be retried on every subsequent launch.
+                withContext(Dispatchers.IO) { prefs.clear() }
                 clearWebLoginData()
                 return@launch
             }
@@ -128,7 +130,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 loginError = getApplication<Application>().getString(R.string.login_error_account)
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
-                if (persist) prefs.clear()
+                withContext(Dispatchers.IO) { prefs.clear() }
                 clearWebLoginData()
                 return@launch
             }
@@ -167,7 +169,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         busy = true
         stage = AuthStage.LOADING
         viewModelScope.launch {
-            val saved = withContext(Dispatchers.IO) { prefs.arl }
+            val saved = withContext(Dispatchers.IO) { prefs.loadArl() }
             if (saved.isNullOrBlank()) {
                 busy = false
                 stage = AuthStage.NEEDS_LOGIN
@@ -197,24 +199,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun logout() {
-        prefs.clear()
         player.stop()
         player.stopPlayback()
         // Stop serving/advertising for the signed-out account: the Connect host
         // and web remote would otherwise keep accepting commands with its ARL.
         Engine.setConnectHostEnabled(false)
         Engine.setWebRemoteEnabled(false)
+        busy = true
+        stage = AuthStage.LOADING
         viewModelScope.launch {
+            // Keep durable credential deletion off Compose's main thread and
+            // complete it before exposing the login screen again.
+            withContext(Dispatchers.IO) { prefs.clear() }
             Engine.disconnectDevice()
             // Tear the engine session down too — without this the Go core keeps
             // the old account's client (and its ARL) alive in memory.
             Engine.logout()
+            busy = false
+            stage = AuthStage.NEEDS_LOGIN
         }
         // Drop the WebView session too, or web sign-in silently re-captures the
         // old account's arl cookie and undoes the sign-out.
         clearWebLoginData()
         account = null
-        stage = AuthStage.NEEDS_LOGIN
     }
 
     private fun clearWebLoginData() {

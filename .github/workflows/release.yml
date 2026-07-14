@@ -530,10 +530,15 @@ jobs:
 
   # ---- Checksums: gather every released asset and publish SHA256SUMS.txt ----
   checksums:
-    needs: [tui, macos-app, gnome, kde, linux-unified, windows-gui, android, ios]
+    needs: [detect, tui, macos-app, gnome, kde, linux-unified, windows-gui, android, ios]
     if: >-
       startsWith(github.ref, 'refs/tags/') && always() &&
-      needs.tui.result == 'success' && needs.android.result == 'success'
+      needs.detect.result == 'success' &&
+      needs.tui.result == 'success' && needs.android.result == 'success' &&
+      (needs.detect.outputs.gnome != 'true' || needs.gnome.result == 'success') &&
+      (needs.detect.outputs.kde != 'true' || needs.kde.result == 'success') &&
+      (needs.detect.outputs.linux != 'true' || needs['linux-unified'].result == 'success') &&
+      (needs.detect.outputs.windows != 'true' || needs['windows-gui'].result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -563,18 +568,45 @@ jobs:
           echo "=== RELEASE NOTES ==="
           cat RELEASE_NOTES.md
       - name: Generate SHA256SUMS
+        env:
+          HAS_GNOME: ${{ needs.detect.outputs.gnome }}
+          HAS_KDE: ${{ needs.detect.outputs.kde }}
+          HAS_LINUX: ${{ needs.detect.outputs.linux }}
+          HAS_WINDOWS: ${{ needs.detect.outputs.windows }}
         run: |
           # On re-runs the download above includes the previously published
           # SHA256SUMS.txt — drop it so the sums file never references itself.
           rm -f dist/SHA256SUMS.txt
-          for required in \
+          required=( \
             opendeezer-tui-darwin-arm64 \
             opendeezer-tui-darwin-amd64 \
             opendeezer-tui-linux-arm64 \
             opendeezer-tui-linux-amd64 \
             opendeezer-tui-windows-amd64.exe \
             OpenDeezer-android.apk \
-            OpenDeezer-androidtv.apk; do
+            OpenDeezer-androidtv.apk \
+            OpenDeezer-android-armeabi-v7a.apk \
+            OpenDeezer-android-arm64-v8a.apk \
+            OpenDeezer-android-x86.apk \
+            OpenDeezer-android-x86_64.apk \
+            OpenDeezer-androidtv-armeabi-v7a.apk \
+            OpenDeezer-androidtv-arm64-v8a.apk \
+            OpenDeezer-androidtv-x86.apk \
+            OpenDeezer-androidtv-x86_64.apk \
+          )
+          if [ "$HAS_GNOME" = true ]; then
+            required+=(OpenDeezer-gnome-x86_64 OpenDeezer-gnome-aarch64)
+          fi
+          if [ "$HAS_KDE" = true ]; then
+            required+=(OpenDeezer-kde-x86_64 OpenDeezer-kde-aarch64)
+          fi
+          if [ "$HAS_LINUX" = true ]; then
+            required+=(OpenDeezer-linux-x86_64.tar.gz OpenDeezer-linux-aarch64.tar.gz)
+          fi
+          if [ "$HAS_WINDOWS" = true ]; then
+            required+=(OpenDeezer-windows-x64.zip)
+          fi
+          for required in "${required[@]}"; do
             test -f "dist/$required" || {
               echo "::error::Required release asset is missing: $required"
               exit 1

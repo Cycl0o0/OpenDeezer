@@ -30,52 +30,82 @@ class Prefs(context: Context) {
         migrateLegacySettings()
     }
 
-    val arl: String?
-        get() {
-            val encoded = secrets.getString(KEY_ARL_ENCRYPTED, null)
-            if (encoded != null) {
-                val decrypted = runCatching { decryptArl(encoded) }.getOrNull()
-                if (!decrypted.isNullOrBlank()) {
-                    // A process kill may have interrupted an older migration
-                    // after the encrypted commit but before plaintext cleanup.
-                    if (!legacy.edit().remove(KEY_ARL_LEGACY).commit()) return null
-                    return decrypted
-                }
-                resetEncryptionState()
+    /**
+     * Loads the encrypted ARL, migrating the legacy plaintext value when needed.
+     * Credential operations share one process-wide lock because several screens
+     * create their own [Prefs] instance while all instances use the same
+    * SharedPreferences files and Android Keystore alias.
+     */
+    fun loadArl(): String? = synchronized(CREDENTIAL_LOCK) {
+        val encoded = secrets.getString(KEY_ARL_ENCRYPTED, null)
+        if (encoded != null) {
+            val decrypted = runCatching { decryptArl(encoded) }.getOrNull()
+            if (!decrypted.isNullOrBlank()) {
+                // A process kill may have interrupted an older migration
+                // after the encrypted commit but before plaintext cleanup.
+                // Cleanup failure does not invalidate a working ciphertext;
+                // leave the legacy value in place and retry on the next load.
+                removeLegacyArlBestEffort()
+                return@synchronized decrypted
             }
-
-            // One-time migration from releases that stored the ARL as plaintext.
-            val legacyArl = legacy.getString(KEY_ARL_LEGACY, null)?.takeIf { it.isNotBlank() }
-                ?: return null
-            return legacyArl.takeIf { saveArl(it) }
+            resetEncryptionState()
         }
+
+        // One-time migration from releases that stored the ARL as plaintext.
+        val legacyArl = legacy.getString(KEY_ARL_LEGACY, null)?.takeIf { it.isNotBlank() }
+            ?: return@synchronized null
+        legacyArl.takeIf { saveArlLocked(it) }
+    }
 
     /**
      * Encrypts and durably stores an ARL. Returns false instead of crashing if
      * Android Keystore is unavailable or rejects the existing key.
      */
-    fun saveArl(value: String): Boolean {
-        if (value.isBlank()) return false
-        if (persistArl(value)) return true
-        // A restored or invalidated key cannot decrypt new payloads reliably.
-        // Delete the unusable alias once and retry with a fresh key.
-        resetEncryptionState()
-        if (persistArl(value)) return true
-        resetEncryptionState()
-        return false
+    fun saveArl(value: String): Boolean = synchronized(CREDENTIAL_LOCK) {
+        saveArlLocked(value)
     }
 
-    private fun persistArl(value: String): Boolean =
-        runCatching {
-            val encrypted = encryptArl(value)
-            if (!secrets.edit().putString(KEY_ARL_ENCRYPTED, encrypted).commit()) {
-                return@runCatching false
+    private fun saveArlLocked(value: String): Boolean {
+        if (value.isBlank()) return false
+        return when (persistArl(value)) {
+            PersistResult.SUCCESS -> true
+            // A SharedPreferences disk failure is not evidence that the key is
+            // invalid. Preserve the existing alias/ciphertext instead of turning
+            // a transient storage error into destructive credential loss.
+            PersistResult.STORAGE_FAILURE -> false
+            PersistResult.CRYPTO_FAILURE -> {
+                // A restored or invalidated key cannot encrypt new payloads
+                // reliably. Delete the unusable alias once and retry fresh.
+                resetEncryptionState()
+                when (persistArl(value)) {
+                    PersistResult.SUCCESS -> true
+                    PersistResult.STORAGE_FAILURE -> false
+                    PersistResult.CRYPTO_FAILURE -> {
+                        resetEncryptionState()
+                        false
+                    }
+                }
             }
-            if (!legacy.edit().remove(KEY_ARL_LEGACY).commit()) {
-                return@runCatching false
-            }
-            true
-        }.getOrDefault(false)
+        }
+    }
+
+    private fun persistArl(value: String): PersistResult {
+        val encrypted = runCatching { encryptArl(value) }
+            .getOrElse { return PersistResult.CRYPTO_FAILURE }
+        if (!secrets.edit().putString(KEY_ARL_ENCRYPTED, encrypted).commit()) {
+            return PersistResult.STORAGE_FAILURE
+        }
+        // The encrypted commit is the security boundary. A failed legacy-file
+        // cleanup is retried by loadArl() and must not delete the usable key/blob.
+        removeLegacyArlBestEffort()
+        return PersistResult.SUCCESS
+    }
+
+    private fun removeLegacyArlBestEffort() {
+        if (legacy.contains(KEY_ARL_LEGACY)) {
+            legacy.edit().remove(KEY_ARL_LEGACY).commit()
+        }
+    }
 
     private fun resetEncryptionState() {
         secrets.edit().remove(KEY_ARL_ENCRYPTED).commit()
@@ -191,7 +221,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_MATERIAL_YOU, false)
         set(value) { sp.edit().putBoolean(KEY_MATERIAL_YOU, value).apply() }
 
-    fun clear() {
+    fun clear() = synchronized(CREDENTIAL_LOCK) {
         secrets.edit().remove(KEY_ARL_ENCRYPTED).commit()
         legacy.edit().remove(KEY_ARL_LEGACY).commit()
     }
@@ -236,6 +266,7 @@ class Prefs(context: Context) {
     }
 
     companion object {
+        private val CREDENTIAL_LOCK = Any()
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEYSTORE_ALIAS = "opendeezer.arl"
         private const val CIPHER_TRANSFORMATION = "AES/GCM/NoPadding"
@@ -255,5 +286,11 @@ class Prefs(context: Context) {
         private const val KEY_CROSSFADE = "audio_crossfade_ms"
         private const val KEY_MEDIA_CACHE = "media_cache_mb"
         private const val KEY_DOWNLOAD_FOLDER = "download_folder"
+    }
+
+    private enum class PersistResult {
+        SUCCESS,
+        STORAGE_FAILURE,
+        CRYPTO_FAILURE,
     }
 }
