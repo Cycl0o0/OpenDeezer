@@ -133,6 +133,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             val acct = Engine.account()
             if (acct == null || !acct.loggedIn) {
+                // Engine.init succeeded, so explicitly drop its in-memory client
+                // before returning to sign-in even though the saved credential is
+                // retained for a later retry.
+                Engine.logout()
+                account = null
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_account)
                 // Engine.init succeeded, so account parsing failure is not proof
