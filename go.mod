@@ -54,4 +54,7 @@ require (
 	golang.org/x/tools v0.46.0 // indirect
 )
 
-tool golang.org/x/mobile/cmd/gobind
+tool (
+	golang.org/x/mobile/cmd/gobind
+	golang.org/x/mobile/cmd/gomobile
+)

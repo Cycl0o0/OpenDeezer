@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val upstreamUpdatesEnabled = providers.gradleProperty("upstreamUpdates")
+    .orNull
+    ?.toBooleanStrictOrNull()
+    ?: true
+
 android {
     namespace = "fr.cyclooo.opendeezer"
     compileSdk = 34
@@ -12,14 +17,16 @@ android {
         applicationId = "fr.cyclooo.opendeezer"
         minSdk = 24
         targetSdk = 34
-        versionCode = 25
-        versionName = "3.1.3"
+        versionCode = 26
+        versionName = "3.1.4"
+        buildConfigField("boolean", "ENABLE_UPSTREAM_UPDATES", upstreamUpdatesEnabled.toString())
     }
 
     // Release signing is driven by env vars set by CI from repo secrets (see
     // .github/workflows/release.yml + docs/ANDROID_SIGNING.md). The keystore is
-    // PKCS12; its single password is used for both store and key. Absent locally,
-    // so a plain `assembleRelease` on a dev machine just produces an unsigned APK.
+    // PKCS12; its single password is used for both store and key. CI verifies all
+    // inputs before Gradle starts. When absent locally, a plain release build is
+    // unsigned so developers can still compile without access to the project key.
     signingConfigs {
         create("release") {
             val ksPath = System.getenv("ANDROID_KEYSTORE_FILE")
@@ -55,6 +62,19 @@ android {
         }
     }
 
+    // Store/release builds can emit one APK per ABI so F-Droid-compatible
+    // repositories do not have to mirror the much larger four-ABI universal
+    // package. Local and pull-request builds keep their single-APK behavior
+    // unless -PabiSplits=true is supplied explicitly.
+    splits {
+        abi {
+            isEnable = providers.gradleProperty("abiSplits").orNull == "true"
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     // Two form factors from one engine: the touch phone/tablet app and a
     // D-pad-driven Android TV app. Shared code lives in src/main; each flavor
     // supplies its own launcher activity + manifest (src/mobile, src/tv).
@@ -80,6 +100,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

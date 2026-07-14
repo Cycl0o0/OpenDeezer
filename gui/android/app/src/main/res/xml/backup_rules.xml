@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Contains only the Android-Keystore encrypted ARL. Keystore keys are not
+         portable, so restoring this file would produce an unusable credential.
+         Ordinary settings remain eligible for backup. -->
+    <exclude domain="sharedpref" path="opendeezer_secrets.xml" />
+    <!-- Older releases mixed a plaintext ARL with settings in this file. The app
+         migrates the settings to opendeezer_settings.xml on first launch. -->
+    <exclude domain="sharedpref" path="opendeezer.xml" />
+    <!-- WebView's cookie database also contains the ARL during browser login. -->
+    <exclude domain="root" path="app_webview/" />
+</full-backup-content>

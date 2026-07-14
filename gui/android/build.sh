@@ -13,17 +13,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-echo "==> Installing gomobile/gobind (if missing)"
-go install golang.org/x/mobile/cmd/gomobile@latest
-go install golang.org/x/mobile/cmd/gobind@latest
-export PATH="$PATH:$(go env GOPATH)/bin"
-
-echo "==> gomobile init"
-gomobile init
+TOOLS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opendeezer-mobile-tools.XXXXXX")"
+trap 'rm -rf "$TOOLS_DIR"' EXIT
+"$REPO_ROOT/scripts/build-mobile-tools.sh" "$TOOLS_DIR"
+export PATH="$TOOLS_DIR:$PATH"
 
 echo "==> Binding ./mobile -> app/libs/odmobile.aar"
 mkdir -p "$SCRIPT_DIR/app/libs"
-( cd "$REPO_ROOT" && gomobile bind -target=android -androidapi 24 \
+( cd "$REPO_ROOT" && gomobile bind -trimpath -target=android -androidapi 24 \
     -o gui/android/app/libs/odmobile.aar ./mobile )
 
 echo "==> Assembling debug APKs (phone + Android TV flavors)"

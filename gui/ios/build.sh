@@ -9,7 +9,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IOS_DIR="$ROOT/gui/ios"
-export PATH="$PATH:$(go env GOPATH)/bin"
 
 SKIP_BIND=0
 SKIP_GEN=0
@@ -23,9 +22,10 @@ done
 if [[ "$SKIP_BIND" -eq 0 ]]; then
   echo "==> binding Go engine -> Odmobile.xcframework"
   cd "$ROOT"
-  command -v gomobile >/dev/null || go install golang.org/x/mobile/cmd/gomobile@latest
-  command -v gobind >/dev/null || go install golang.org/x/mobile/cmd/gobind@latest
-  gomobile init
+  TOOLS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opendeezer-mobile-tools.XXXXXX")"
+  trap 'rm -rf "$TOOLS_DIR"' EXIT
+  "$ROOT/scripts/build-mobile-tools.sh" "$TOOLS_DIR"
+  export PATH="$TOOLS_DIR:$PATH"
   # Some engine doc comments contain "/*" (e.g. control-API route globs like
   # "/play/mix/*"). gomobile embeds Go doc comments verbatim into the generated
   # ObjC header's block comments, so a nested "/*" trips clang's -Wcomment; and
@@ -43,7 +43,7 @@ if [[ "$SKIP_BIND" -eq 0 ]]; then
     fi
   done
   rm -rf "$IOS_DIR/Odmobile.xcframework"
-  gomobile bind -target=ios -o "$IOS_DIR/Odmobile.xcframework" ./mobile
+  gomobile bind -trimpath -target=ios -o "$IOS_DIR/Odmobile.xcframework" ./mobile
 fi
 
 if [[ "$SKIP_GEN" -eq 0 ]]; then

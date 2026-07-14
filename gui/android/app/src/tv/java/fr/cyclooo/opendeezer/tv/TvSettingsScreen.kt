@@ -50,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.BuildConfig
 import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
@@ -368,16 +369,18 @@ fun TvSettingsScreen(account: Account?, onLogout: () -> Unit) {
         }
 
         // ---- About ----
-        item { TvSectionTitle(stringResource(R.string.settings_about)) }
-        item {
-            TvActionRow(stringResource(R.string.update_check_title), updateText.ifBlank { stringResource(R.string.update_check_sub) }) {
-                updateText = context.getString(R.string.update_checking)
-                scope.launch {
-                    val info = Engine.checkUpdate()
-                    updateText = when {
-                        info == null -> context.getString(R.string.tv_update_failed)
-                        info.hasUpdate -> context.getString(R.string.tv_update_available, info.latest)
-                        else -> context.getString(R.string.tv_up_to_date, info.current)
+        if (BuildConfig.ENABLE_UPSTREAM_UPDATES) {
+            item { TvSectionTitle(stringResource(R.string.settings_about)) }
+            item {
+                TvActionRow(stringResource(R.string.update_check_title), updateText.ifBlank { stringResource(R.string.update_check_sub) }) {
+                    updateText = context.getString(R.string.update_checking)
+                    scope.launch {
+                        val info = Engine.checkUpdate()
+                        updateText = when {
+                            info == null -> context.getString(R.string.tv_update_failed)
+                            info.hasUpdate -> context.getString(R.string.tv_update_available, info.latest)
+                            else -> context.getString(R.string.tv_up_to_date, info.current)
+                        }
                     }
                 }
             }

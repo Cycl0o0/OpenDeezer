@@ -1,0 +1,63 @@
+AntiFeatures:
+  NonFreeNet:
+    en-US: The app depends on Deezer, a proprietary network service.
+  TetheredNet:
+    en-US: A Deezer account is required and the service endpoint is not configurable.
+  Tracking:
+    en-US: Playback events are reported to Deezer for listening and free-tier accounting.
+Categories:
+  - Multimedia
+License: AGPL-3.0-only
+AuthorName: Cycl0o0
+WebSite: https://github.com/Cycl0o0/OpenDeezer
+SourceCode: https://github.com/Cycl0o0/OpenDeezer
+IssueTracker: https://github.com/Cycl0o0/OpenDeezer/issues
+Changelog: https://github.com/Cycl0o0/OpenDeezer/releases
+
+AutoName: OpenDeezer
+
+RepoType: git
+Repo: https://github.com/Cycl0o0/OpenDeezer.git
+
+Builds:
+  - versionName: 3.1.4
+    versionCode: 26
+    commit: v3.1.4
+    subdir: gui/android
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc6-dev
+      - apt-get install -y -t trixie-backports golang-go
+    srclibs:
+      - go@go1.25.12
+    build:
+      # Build the exact Go release requested by go.mod. The Debian Go package is
+      # used only as its bootstrap compiler.
+      - pushd $$go$$/src
+      - ./make.bash
+      - popd
+      - export GOROOT=$$go$$
+      - export GOPATH=$(pwd)/.fdroid-gopath
+      - export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
+      - cd ../..
+      - GOMOBILE_VERSION=$(go list -m -f '{{.Version}}' golang.org/x/mobile)
+      - GOBIN="$GOPATH/bin" go install "golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION"
+      - GOBIN="$GOPATH/bin" go install "golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION"
+      - gomobile init
+      # gomobile's C toolchain otherwise embeds the checkout path in libgojni.so.
+      - export CGO_CFLAGS="-ffile-prefix-map=$(pwd)=."
+      - export CGO_CPPFLAGS="-ffile-prefix-map=$(pwd)=."
+      - export CGO_CXXFLAGS="-ffile-prefix-map=$(pwd)=."
+      - gomobile bind -trimpath -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
+    ndk: r26d
+    gradle:
+      - mobile
+    # F-Droid owns update discovery and delivery for this build. This removes
+    # both the launch check and the Settings update action.
+    gradleprops:
+      - upstreamUpdates=false
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
+CurrentVersion: 3.1.4
+CurrentVersionCode: 26

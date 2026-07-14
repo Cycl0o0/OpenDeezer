@@ -13,7 +13,12 @@ import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.player.PlaybackService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 enum class AuthStage { LOADING, NEEDS_LOGIN, NO_INTERNET, READY }
 
@@ -45,14 +50,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // Advertise this client to OpenDeezer Connect peers.
         Engine.setClientInfo("android", "OpenDeezer (Android)")
-        val saved = prefs.arl
-        if (saved.isNullOrBlank()) {
-            stage = AuthStage.NEEDS_LOGIN
-        } else {
-            login(saved, persist = false)
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { prefs.loadArl() }
+            if (saved.isNullOrBlank()) {
+                stage = AuthStage.NEEDS_LOGIN
+            } else {
+                login(saved, persist = false)
+            }
         }
-        // Non-intrusive: one background check per launch, never blocks startup.
-        checkForUpdate()
+        // F-Droid builds disable every upstream update path and rely on the
+        // repository client. GitHub builds keep one non-blocking launch check.
+        if (BuildConfig.ENABLE_UPSTREAM_UPDATES) checkForUpdate()
 
         // Foreground playback service: runs while a track is loaded so audio
         // survives backgrounding and lock-screen controls are available.
@@ -101,43 +109,68 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = Engine.init(arl)
             if (!ok) {
-                busy = false
+                val failureKind = Engine.loginErrorKind()
                 // Tell "offline" apart from "bad/expired ARL": when the engine
                 // reports no internet (kind 2), keep the saved credentials and
                 // show the No-Internet screen (with Retry) instead of wiping
                 // prefs and bouncing the user back to sign-in.
-                if (Engine.loginErrorKind() == 2) {
+                if (failureKind == 2) {
+                    busy = false
                     stage = AuthStage.NO_INTERNET
                     return@launch
                 }
                 lastFailedArl = arl
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
+                // Kind 1 is the engine's definitive expired/invalid signal.
+                // persist=false is used only for the saved-token launch/retry
+                // path: clear that rejected saved value, but never let a bad
+                // manually entered token erase a different retained credential.
+                if (failureKind == 1 && !persist && !clearStoredArl()) {
+                    loginError = getApplication<Application>().getString(R.string.login_error_secure_clear)
+                }
+                clearWebLoginData()
+                busy = false
                 stage = AuthStage.NEEDS_LOGIN
-                if (persist) prefs.clear()
                 return@launch
             }
-            if (persist) prefs.arl = arl
             val acct = Engine.account()
-            account = acct
-            busy = false
-            when {
-                acct == null || !acct.loggedIn -> {
-                    lastFailedArl = arl
-                    loginError = getApplication<Application>().getString(R.string.login_error_account)
-                    stage = AuthStage.NEEDS_LOGIN
-                }
-                else -> {
-                    lastFailedArl = null
-                    // Free and premium accounts both reach the app — a Free account
-                    // streams full tracks at 128 kbps (not 30s previews). Only the
-                    // per-track Download action is premium-only, so record premium
-                    // before READY so every screen's TrackRow reads a stable value.
-                    player.premium = acct.premium
-                    stage = AuthStage.READY
-                    player.start()
-                    applyRemoteHosts()
-                }
+            if (acct == null || !acct.loggedIn) {
+                // Engine.init succeeded, so explicitly drop its in-memory client
+                // before returning to sign-in even though the saved credential is
+                // retained for a later retry.
+                Engine.logout()
+                account = null
+                lastFailedArl = arl
+                loginError = getApplication<Application>().getString(R.string.login_error_account)
+                // Engine.init succeeded, so account parsing failure is not proof
+                // that the stored credential is invalid. Preserve it for retry.
+                clearWebLoginData()
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+                return@launch
             }
+            if (persist && !withContext(Dispatchers.IO) { prefs.saveArl(arl) }) {
+                Engine.logout()
+                account = null
+                lastFailedArl = null
+                loginError = getApplication<Application>().getString(R.string.login_error_secure_storage)
+                clearWebLoginData()
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+                return@launch
+            }
+            account = acct
+            lastFailedArl = null
+            clearWebLoginData()
+            busy = false
+            // Free and premium accounts both reach the app — a Free account
+            // streams full tracks at 128 kbps (not 30s previews). Only the
+            // per-track Download action is premium-only, so record premium
+            // before READY so every screen's TrackRow reads a stable value.
+            player.premium = acct.premium
+            stage = AuthStage.READY
+            player.start()
+            applyRemoteHosts()
         }
     }
 
@@ -148,11 +181,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * expired ARL falls through to NEEDS_LOGIN.
      */
     fun retry() {
-        val saved = prefs.arl
-        if (saved.isNullOrBlank()) {
-            stage = AuthStage.NEEDS_LOGIN
-        } else {
-            login(saved, persist = false)
+        busy = true
+        stage = AuthStage.LOADING
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { prefs.loadArl() }
+            if (saved.isNullOrBlank()) {
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+            } else {
+                login(saved, persist = false)
+            }
         }
     }
 
@@ -176,27 +214,69 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun logout() {
-        prefs.clear()
         player.stop()
         player.stopPlayback()
         // Stop serving/advertising for the signed-out account: the Connect host
         // and web remote would otherwise keep accepting commands with its ARL.
         Engine.setConnectHostEnabled(false)
         Engine.setWebRemoteEnabled(false)
+        busy = true
+        stage = AuthStage.LOADING
         viewModelScope.launch {
-            Engine.disconnectDevice()
-            // Tear the engine session down too — without this the Go core keeps
-            // the old account's client (and its ARL) alive in memory.
-            Engine.logout()
-        }
-        // Drop the WebView session too, or web sign-in silently re-captures the
-        // old account's arl cookie and undoes the sign-out.
-        runCatching {
-            CookieManager.getInstance().removeAllCookies(null)
-            CookieManager.getInstance().flush()
-            WebStorage.getInstance().deleteAllData()
+            var credentialCleared = false
+            try {
+                // Logout is a security boundary: cancellation or a storage
+                // failure must not skip the remaining cleanup steps.
+                withContext(NonCancellable) {
+                    // Keep durable credential deletion off Compose's main thread.
+                    credentialCleared = clearStoredArl()
+                    Engine.disconnectDevice()
+                    // Tear the engine session down too — without this the Go core
+                    // keeps the old account's client (and its ARL) alive in memory.
+                    Engine.logout()
+                    // CookieManager clears asynchronously. Await its callback
+                    // before exposing the WebView or it can re-capture the
+                    // signed-out ARL.
+                    clearWebLoginData()
+                }
+            } finally {
+                // Never strand the UI even if an unexpected cleanup error escapes.
+                loginError = if (credentialCleared) {
+                    null
+                } else {
+                    getApplication<Application>().getString(R.string.login_error_secure_clear)
+                }
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+            }
         }
         account = null
-        stage = AuthStage.NEEDS_LOGIN
+    }
+
+    /** Removes both current and legacy persisted credentials off the main thread. */
+    private suspend fun clearStoredArl(): Boolean = withContext(Dispatchers.IO) {
+        prefs.clear()
+    }
+
+    private suspend fun clearWebLoginData() {
+        // A non-null CookieManager callback is delivered through the calling
+        // thread's Looper. Pin the bridge to Main so future call-site changes
+        // cannot accidentally suspend forever on a dispatcher without one.
+        withContext(Dispatchers.Main.immediate) {
+            val cookies = runCatching { CookieManager.getInstance() }.getOrNull()
+            if (cookies != null) {
+                suspendCancellableCoroutine { continuation ->
+                    runCatching {
+                        cookies.removeAllCookies {
+                            runCatching { cookies.flush() }
+                            if (continuation.isActive) continuation.resume(Unit)
+                        }
+                    }.onFailure {
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
+                }
+            }
+            runCatching { WebStorage.getInstance().deleteAllData() }
+        }
     }
 }

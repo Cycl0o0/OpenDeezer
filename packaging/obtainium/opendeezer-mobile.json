@@ -1,0 +1,11 @@
+{
+    "apps": [
+        {
+            "id": "fr.cyclooo.opendeezer",
+            "url": "https://github.com/Cycl0o0/OpenDeezer",
+            "author": "Cycl0o0",
+            "name": "OpenDeezer",
+            "additionalSettings": "{\"includePrereleases\":false,\"fallbackToOlderReleases\":true,\"versionExtractionRegEx\":\"^v?([0-9]+(?:\\\\.[0-9]+)*)$\",\"matchGroupToUse\":\"$1\",\"apkFilterRegEx\":\"^OpenDeezer-android(?:-(?:armeabi-v7a|arm64-v8a|x86|x86_64))?\\\\.apk$\",\"invertAPKFilter\":false,\"autoApkFilterByArch\":true,\"appName\":\"OpenDeezer\",\"appAuthor\":\"Cycl0o0\"}"
+        }
+    ]
+}

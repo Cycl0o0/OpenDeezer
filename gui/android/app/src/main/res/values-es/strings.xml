@@ -38,6 +38,8 @@
     <string name="login_error_empty_arl">ARL vacío</string>
     <string name="login_error_failed">Error de inicio de sesión — comprueba tu ARL y tu conexión.</string>
     <string name="login_error_account">No se pudo cargar la cuenta.</string>
+    <string name="login_error_secure_storage">No se pudo guardar el inicio de sesión de forma segura. Comprueba los ajustes de seguridad del dispositivo e inténtalo de nuevo.</string>
+    <string name="login_error_secure_clear">No se pudo eliminar el inicio de sesión guardado. Para evitar el inicio de sesión automático tras reiniciar, borra el almacenamiento de OpenDeezer en los ajustes de Android.</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">Sin conexión a Internet</string>

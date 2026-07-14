@@ -2,25 +2,184 @@ package fr.cyclooo.opendeezer.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import java.security.KeyStore
+import javax.crypto.AEADBadTagException
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Persists the Deezer ARL so the app can auto-login on next launch.
  *
- * Plain SharedPreferences is used deliberately (per the engine's threat model the
- * ARL is the only secret and app-private storage is sufficient); this avoids the
- * extra security-crypto dependency.
+ * The ARL is a bearer credential, so it is encrypted with a non-exportable key
+ * from Android Keystore before it enters SharedPreferences. The preference file
+ * is also excluded from cloud backup and device transfer in res/xml.
  */
 class Prefs(context: Context) {
     private val sp: SharedPreferences =
-        context.applicationContext.getSharedPreferences("opendeezer", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE)
+    private val secrets: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS_SECRETS, Context.MODE_PRIVATE)
+    private val legacy: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS_LEGACY, Context.MODE_PRIVATE)
 
-    var arl: String?
-        get() = sp.getString(KEY_ARL, null)?.takeIf { it.isNotBlank() }
-        set(value) {
-            sp.edit().apply {
-                if (value.isNullOrBlank()) remove(KEY_ARL) else putString(KEY_ARL, value)
-            }.apply()
+    init {
+        migrateLegacySettings()
+    }
+
+    /**
+     * Loads the encrypted ARL, migrating the legacy plaintext value when needed.
+     * Credential operations share one process-wide lock because several screens
+     * create their own [Prefs] instance while all instances use the same
+    * SharedPreferences files and Android Keystore alias.
+     */
+    fun loadArl(): String? = synchronized(CREDENTIAL_LOCK) {
+        val encoded = secrets.getString(KEY_ARL_ENCRYPTED, null)
+        if (encoded != null) {
+            val decryptResult = runCatching { decryptArl(encoded) }
+            val decrypted = decryptResult.getOrNull()
+            if (decrypted != null && decrypted.isNotBlank()) {
+                // A process kill may have interrupted an older migration
+                // after the encrypted commit but before plaintext cleanup.
+                // Cleanup failure does not invalidate a working ciphertext;
+                // leave the legacy value in place and retry on the next load.
+                removeLegacyArlBestEffort()
+                return@synchronized decrypted
+            }
+            val failure = decryptResult.exceptionOrNull()
+            if (decrypted != null || failure?.isPermanentDecryptFailure() == true) {
+                resetEncryptionState()
+            } else {
+                // Preserve ciphertext and alias on transient Keystore/provider
+                // failures so a later launch can retry instead of losing the
+                // credential permanently.
+                return@synchronized null
+            }
         }
+
+        // One-time migration from releases that stored the ARL as plaintext.
+        val legacyArl = legacy.getString(KEY_ARL_LEGACY, null)?.takeIf { it.isNotBlank() }
+            ?: return@synchronized null
+        // Fail closed: do not authenticate from plaintext once secure storage
+        // is required. Leave it in place so a later launch can retry migration.
+        legacyArl.takeIf { saveArlLocked(it) }
+    }
+
+    /**
+     * Encrypts and durably stores an ARL. Returns false instead of crashing if
+     * Android Keystore is unavailable or rejects the existing key.
+     */
+    fun saveArl(value: String): Boolean = synchronized(CREDENTIAL_LOCK) {
+        saveArlLocked(value)
+    }
+
+    private fun saveArlLocked(value: String): Boolean {
+        if (value.isBlank()) return false
+        return when (persistArl(value)) {
+            PersistResult.SUCCESS -> true
+            // A SharedPreferences disk failure is not evidence that the key is
+            // invalid. Preserve the existing alias/ciphertext instead of turning
+            // a transient storage error into destructive credential loss.
+            PersistResult.STORAGE_FAILURE -> false
+            // Likewise, a transient Keystore/provider failure must leave a
+            // previously valid key and ciphertext intact for a later retry.
+            PersistResult.TRANSIENT_CRYPTO_FAILURE -> false
+            PersistResult.PERMANENT_CRYPTO_FAILURE -> {
+                // A restored or invalidated key cannot encrypt new payloads
+                // reliably. Delete the unusable alias once and retry fresh.
+                resetEncryptionState()
+                when (persistArl(value)) {
+                    PersistResult.SUCCESS -> true
+                    PersistResult.STORAGE_FAILURE -> false
+                    PersistResult.TRANSIENT_CRYPTO_FAILURE -> false
+                    PersistResult.PERMANENT_CRYPTO_FAILURE -> {
+                        resetEncryptionState()
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    private fun persistArl(value: String): PersistResult {
+        val encrypted = runCatching { encryptArl(value) }
+            .getOrElse {
+                return if (it.hasPermanentlyInvalidatedKey()) {
+                    PersistResult.PERMANENT_CRYPTO_FAILURE
+                } else {
+                    PersistResult.TRANSIENT_CRYPTO_FAILURE
+                }
+            }
+        if (!secrets.edit().putString(KEY_ARL_ENCRYPTED, encrypted).commit()) {
+            return PersistResult.STORAGE_FAILURE
+        }
+        // The encrypted commit is the security boundary. A failed legacy-file
+        // cleanup is retried by loadArl() and must not delete the usable key/blob.
+        removeLegacyArlBestEffort()
+        return PersistResult.SUCCESS
+    }
+
+    private fun Throwable.isPermanentDecryptFailure(): Boolean =
+        generateSequence(this) { it.cause }.any {
+            it is AEADBadTagException ||
+                it is KeyPermanentlyInvalidatedException ||
+                it is IllegalArgumentException
+        }
+
+    private fun Throwable.hasPermanentlyInvalidatedKey(): Boolean =
+        generateSequence(this) { it.cause }
+            .any { it is KeyPermanentlyInvalidatedException }
+
+    private fun removeLegacyArlBestEffort() {
+        if (legacy.contains(KEY_ARL_LEGACY)) {
+            legacy.edit().remove(KEY_ARL_LEGACY).commit()
+        }
+    }
+
+    private fun resetEncryptionState() {
+        secrets.edit().remove(KEY_ARL_ENCRYPTED).commit()
+        runCatching {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (keyStore.containsAlias(KEYSTORE_ALIAS)) keyStore.deleteEntry(KEYSTORE_ALIAS)
+        }
+    }
+
+    /** Move non-secret preferences out of the old mixed file. The legacy file
+     * remains backup-excluded until its plaintext ARL has also been migrated. */
+    private fun migrateLegacySettings() {
+        val settingKeys = arrayOf(
+            KEY_MATERIAL_YOU,
+            KEY_CONNECT_HOST,
+            KEY_PHONE_REMOTE,
+            KEY_QUALITY,
+            KEY_REPLAYGAIN,
+            KEY_GAPLESS,
+            KEY_CROSSFADE,
+            KEY_MEDIA_CACHE,
+            KEY_DOWNLOAD_FOLDER,
+        )
+        val keys = settingKeys.filter { legacy.contains(it) }
+        if (keys.isEmpty()) return
+
+        val editor = sp.edit()
+        keys.filterNot(sp::contains).forEach { key ->
+            when (key) {
+                KEY_MATERIAL_YOU, KEY_CONNECT_HOST, KEY_PHONE_REMOTE ->
+                    editor.putBoolean(key, legacy.getBoolean(key, false))
+                KEY_QUALITY, KEY_REPLAYGAIN, KEY_GAPLESS, KEY_CROSSFADE, KEY_MEDIA_CACHE ->
+                    editor.putInt(key, legacy.getInt(key, -1))
+                KEY_DOWNLOAD_FOLDER -> editor.putString(key, legacy.getString(key, null))
+            }
+        }
+        if (editor.commit()) {
+            legacy.edit().apply { keys.forEach { remove(it) } }.apply()
+        }
+    }
 
     /**
      * Whether this device advertises itself as an OpenDeezer Connect host, so
@@ -96,12 +255,75 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_MATERIAL_YOU, false)
         set(value) { sp.edit().putBoolean(KEY_MATERIAL_YOU, value).apply() }
 
-    fun clear() {
-        sp.edit().remove(KEY_ARL).apply()
+    fun clear(): Boolean = synchronized(CREDENTIAL_LOCK) {
+        var secretsCleared = false
+        var legacyCleared = false
+        repeat(2) {
+            if (!secretsCleared) {
+                secretsCleared = runCatching {
+                    secrets.edit().remove(KEY_ARL_ENCRYPTED).commit()
+                }.getOrDefault(false)
+            }
+            if (!legacyCleared) {
+                legacyCleared = runCatching {
+                    legacy.edit().remove(KEY_ARL_LEGACY).commit()
+                }.getOrDefault(false)
+            }
+        }
+        secretsCleared && legacyCleared
+    }
+
+    private fun encryptionKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        (keyStore.getKey(KEYSTORE_ALIAS, null) as? SecretKey)?.let { return it }
+
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE).run {
+            init(
+                KeyGenParameterSpec.Builder(
+                    KEYSTORE_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .build(),
+            )
+            generateKey()
+        }
+    }
+
+    private fun encryptArl(value: String): String {
+        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey())
+        val ciphertext = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        val payload = byteArrayOf(PAYLOAD_VERSION, cipher.iv.size.toByte()) + cipher.iv + ciphertext
+        return Base64.encodeToString(payload, Base64.NO_WRAP)
+    }
+
+    private fun decryptArl(encoded: String): String {
+        val payload = Base64.decode(encoded, Base64.NO_WRAP)
+        require(payload.size >= 2 && payload[0] == PAYLOAD_VERSION) { "unsupported ARL payload" }
+        val ivLength = payload[1].toInt() and 0xff
+        require(ivLength in 12..32 && payload.size > 2 + ivLength) { "invalid ARL payload" }
+        val iv = payload.copyOfRange(2, 2 + ivLength)
+        val ciphertext = payload.copyOfRange(2 + ivLength, payload.size)
+        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, encryptionKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        return cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
     }
 
     companion object {
-        private const val KEY_ARL = "arl"
+        private val CREDENTIAL_LOCK = Any()
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEYSTORE_ALIAS = "opendeezer.arl"
+        private const val CIPHER_TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val GCM_TAG_BITS = 128
+        private const val PAYLOAD_VERSION: Byte = 1
+        private const val PREFS_LEGACY = "opendeezer"
+        private const val PREFS_SETTINGS = "opendeezer_settings"
+        private const val PREFS_SECRETS = "opendeezer_secrets"
+        private const val KEY_ARL_ENCRYPTED = "arl_encrypted_v1"
+        private const val KEY_ARL_LEGACY = "arl"
         private const val KEY_MATERIAL_YOU = "material_you"
         private const val KEY_CONNECT_HOST = "connect_host_enabled"
         private const val KEY_PHONE_REMOTE = "phone_remote_enabled"
@@ -111,5 +333,12 @@ class Prefs(context: Context) {
         private const val KEY_CROSSFADE = "audio_crossfade_ms"
         private const val KEY_MEDIA_CACHE = "media_cache_mb"
         private const val KEY_DOWNLOAD_FOLDER = "download_folder"
+    }
+
+    private enum class PersistResult {
+        SUCCESS,
+        STORAGE_FAILURE,
+        TRANSIENT_CRYPTO_FAILURE,
+        PERMANENT_CRYPTO_FAILURE,
     }
 }

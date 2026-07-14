@@ -3,15 +3,14 @@
 pkgname=opendeezer
 pkgver=3.1.3
 pkgrel=1
-pkgdesc="Terminal Deezer client — browse, stream (Free or HiFi) and download with your ARL"
+pkgdesc="Native terminal client for browsing and streaming a Deezer library"
 arch=('x86_64' 'aarch64')
 url="https://github.com/Cycl0o0/OpenDeezer"
-license=('AGPL-3.0-or-later')
+license=('AGPL-3.0-only')
 depends=('alsa-lib')
 makedepends=('go' 'git')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-# Replace with the real checksum after tagging (updpkgsums), or keep SKIP for VCS use.
-sha256sums=('SKIP')
+sha256sums=('eb493ad18a6f810463267da3279351ba98dbc84719db469f5985733f327c5688')
 
 build() {
   cd "OpenDeezer-$pkgver"

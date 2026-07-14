@@ -1,0 +1,2 @@
+Protect session credentials with Android Keystore encryption, publish smaller
+per-architecture APKs, and add F-Droid and Obtainium distribution metadata.

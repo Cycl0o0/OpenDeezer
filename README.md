@@ -142,7 +142,8 @@ make build          # -> ./opendeezer + ./opendeezer-mcp   (or: go build -o open
 
 Or pass it inline: `DEEZER_ARL=<your-arl> ./opendeezer`. For the GUIs, see each
 `gui/<platform>/README.md` for build steps. A Homebrew formula is in
-`packaging/homebrew/`.
+`packaging/homebrew/`. See the [distribution status](packaging/README.md) for
+F-Droid, Obtainium, Snap, WinGet, AUR, Scoop, and other provider manifests.
 
 Your ARL is the `arl` cookie from an authenticated `deezer.com` browser session
 (the GUI web-login grabs it for you). Treat it like a password — it grants

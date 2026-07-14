@@ -1,0 +1,17 @@
+OpenDeezer is a native, open-source Android client for the Deezer music service.
+
+Sign in using the embedded Deezer login page, then browse favorites, playlists,
+charts, artists, Flow and podcasts. Search for music, view synchronized lyrics,
+manage the playback queue and control playback from Android's media controls.
+
+Playback is handled locally by the included Go engine. It supports gapless
+playback, crossfade, ReplayGain, an equalizer, a sleep timer, selectable audio
+quality and OpenDeezer Connect. Accounts with the required Deezer entitlement
+can also save tracks to device storage.
+
+The application contains no Google Play Services, proprietary analytics or
+advertising SDKs. Its complete Kotlin and Go source code is available at
+https://github.com/Cycl0o0/OpenDeezer.
+
+A Deezer account and access to Deezer's proprietary network service are
+required. OpenDeezer is not affiliated with or endorsed by Deezer.

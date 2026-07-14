@@ -7,6 +7,18 @@ on:
       - "mobile/**"
       - "internal/**"
       - "gui/android/**"
+      - "go.mod"
+      - "go.sum"
+      - "scripts/build-mobile-tools.sh"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "internal/**"
+      - "gui/android/**"
+      - "go.mod"
+      - "go.sum"
+      - "scripts/build-mobile-tools.sh"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
@@ -43,14 +55,10 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.3.11579264
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          # Recent gomobile requires golang.org/x/mobile as a module dependency.
-          go get golang.org/x/mobile/bind@latest
-          gomobile init
+          scripts/build-mobile-tools.sh "$RUNNER_TEMP/opendeezer-mobile-tools"
+          export PATH="$RUNNER_TEMP/opendeezer-mobile-tools:$PATH"
           mkdir -p gui/android/app/libs
-          gomobile bind -target=android -androidapi 24 \
+          gomobile bind -trimpath -target=android -androidapi 24 \
             -o gui/android/app/libs/odmobile.aar ./mobile
 
       - name: Assemble debug APKs (phone + TV flavors)

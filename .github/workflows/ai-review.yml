@@ -97,7 +97,8 @@ jobs:
             --rawfile diff /tmp/pr.diff \
             '{
               model: $model,
-              max_tokens: 2048,
+              max_tokens: 8192,
+              output_config: { effort: "medium" },
               system: $system,
               messages: [ { role: "user", content: ("Review this pull request diff:\n\n```diff\n" + $diff + "\n```") } ]
             }' > /tmp/req.json

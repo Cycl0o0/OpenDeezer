@@ -63,7 +63,7 @@ gui/android/build.sh
 # -> app/build/outputs/apk/tv/debug/app-tv-debug.apk          (Android TV)
 ```
 
-`build.sh` (1) installs gomobile/gobind, (2) binds the Go engine
+`build.sh` (1) builds the gomobile/gobind versions pinned by `go.mod`, (2) binds the Go engine
 (`gomobile bind -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile`),
 and (3) runs `./gradlew --no-daemon assembleMobileDebug assembleTvDebug`. CI
 (`.github/workflows/android.yml`) does the same. Build a single flavor with
