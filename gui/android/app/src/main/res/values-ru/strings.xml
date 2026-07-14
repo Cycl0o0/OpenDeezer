@@ -38,6 +38,7 @@
     <string name="login_error_empty_arl">Пустой ARL</string>
     <string name="login_error_failed">Ошибка входа — проверьте ARL и подключение.</string>
     <string name="login_error_account">Не удалось загрузить аккаунт.</string>
+    <string name="login_error_secure_storage">Не удалось безопасно сохранить данные для входа. Проверьте настройки безопасности устройства и повторите попытку.</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">Нет подключения к Интернету</string>
@@ -262,8 +263,10 @@
     <string name="stream_cache_mb">%1$d MB</string>
     <string name="stream_cache_hint">Applies at next launch. 0 = off.</string>
     <plurals name="n_plays">
-        <item quantity="one">%1$d play</item>
-        <item quantity="other">%1$d plays</item>
+        <item quantity="one">%1$d прослушивание</item>
+        <item quantity="few">%1$d прослушивания</item>
+        <item quantity="many">%1$d прослушиваний</item>
+        <item quantity="other">%1$d прослушиваний</item>
     </plurals>
     <!-- Редактор очереди + загрузка офлайн -->
     <string name="action_play_next">Играть следующим</string>

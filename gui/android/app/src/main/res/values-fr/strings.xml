@@ -38,6 +38,7 @@
     <string name="login_error_empty_arl">ARL vide</string>
     <string name="login_error_failed">Échec de la connexion — vérifiez votre ARL et votre connexion.</string>
     <string name="login_error_account">Impossible de charger le compte.</string>
+    <string name="login_error_secure_storage">Impossible d’enregistrer votre connexion de manière sécurisée. Vérifiez les paramètres de sécurité de l’appareil et réessayez.</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">Pas de connexion Internet</string>

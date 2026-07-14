@@ -38,11 +38,12 @@ NO_MULTICAST=0
 
 echo "==> binding Go engine -> Odmobile.xcframework"
 cd "$ROOT"
-command -v gomobile >/dev/null || go install golang.org/x/mobile/cmd/gomobile@latest
-command -v gobind >/dev/null || go install golang.org/x/mobile/cmd/gobind@latest
-gomobile init
+TOOLS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opendeezer-mobile-tools.XXXXXX")"
+trap 'rm -rf "$TOOLS_DIR"' EXIT
+"$ROOT/scripts/build-mobile-tools.sh" "$TOOLS_DIR"
+export PATH="$TOOLS_DIR:$PATH"
 rm -rf "$IOS_DIR/Odmobile.xcframework"
-gomobile bind -target=ios -o "$IOS_DIR/Odmobile.xcframework" ./mobile
+gomobile bind -trimpath -target=ios -o "$IOS_DIR/Odmobile.xcframework" ./mobile
 
 echo "==> xcodegen generate"
 cd "$IOS_DIR"

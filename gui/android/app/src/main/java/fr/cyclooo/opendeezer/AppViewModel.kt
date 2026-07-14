@@ -13,7 +13,9 @@ import fr.cyclooo.opendeezer.engine.Account
 import fr.cyclooo.opendeezer.engine.Engine
 import fr.cyclooo.opendeezer.engine.UpdateInfo
 import fr.cyclooo.opendeezer.player.PlaybackService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class AuthStage { LOADING, NEEDS_LOGIN, NO_INTERNET, READY }
 
@@ -45,14 +47,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // Advertise this client to OpenDeezer Connect peers.
         Engine.setClientInfo("android", "OpenDeezer (Android)")
-        val saved = prefs.arl
-        if (saved.isNullOrBlank()) {
-            stage = AuthStage.NEEDS_LOGIN
-        } else {
-            login(saved, persist = false)
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { prefs.arl }
+            if (saved.isNullOrBlank()) {
+                stage = AuthStage.NEEDS_LOGIN
+            } else {
+                login(saved, persist = false)
+            }
         }
-        // Non-intrusive: one background check per launch, never blocks startup.
-        checkForUpdate()
+        // F-Droid builds disable every upstream update path and rely on the
+        // repository client. GitHub builds keep one non-blocking launch check.
+        if (BuildConfig.ENABLE_UPSTREAM_UPDATES) checkForUpdate()
 
         // Foreground playback service: runs while a track is loaded so audio
         // survives backgrounding and lock-screen controls are available.
@@ -114,30 +119,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 loginError = getApplication<Application>().getString(R.string.login_error_failed)
                 stage = AuthStage.NEEDS_LOGIN
                 if (persist) prefs.clear()
+                clearWebLoginData()
                 return@launch
             }
-            if (persist) prefs.arl = arl
             val acct = Engine.account()
+            if (acct == null || !acct.loggedIn) {
+                lastFailedArl = arl
+                loginError = getApplication<Application>().getString(R.string.login_error_account)
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+                if (persist) prefs.clear()
+                clearWebLoginData()
+                return@launch
+            }
+            if (persist && !withContext(Dispatchers.IO) { prefs.saveArl(arl) }) {
+                Engine.logout()
+                account = null
+                lastFailedArl = null
+                loginError = getApplication<Application>().getString(R.string.login_error_secure_storage)
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+                clearWebLoginData()
+                return@launch
+            }
             account = acct
             busy = false
-            when {
-                acct == null || !acct.loggedIn -> {
-                    lastFailedArl = arl
-                    loginError = getApplication<Application>().getString(R.string.login_error_account)
-                    stage = AuthStage.NEEDS_LOGIN
-                }
-                else -> {
-                    lastFailedArl = null
-                    // Free and premium accounts both reach the app — a Free account
-                    // streams full tracks at 128 kbps (not 30s previews). Only the
-                    // per-track Download action is premium-only, so record premium
-                    // before READY so every screen's TrackRow reads a stable value.
-                    player.premium = acct.premium
-                    stage = AuthStage.READY
-                    player.start()
-                    applyRemoteHosts()
-                }
-            }
+            lastFailedArl = null
+            clearWebLoginData()
+            // Free and premium accounts both reach the app — a Free account
+            // streams full tracks at 128 kbps (not 30s previews). Only the
+            // per-track Download action is premium-only, so record premium
+            // before READY so every screen's TrackRow reads a stable value.
+            player.premium = acct.premium
+            stage = AuthStage.READY
+            player.start()
+            applyRemoteHosts()
         }
     }
 
@@ -148,11 +164,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * expired ARL falls through to NEEDS_LOGIN.
      */
     fun retry() {
-        val saved = prefs.arl
-        if (saved.isNullOrBlank()) {
-            stage = AuthStage.NEEDS_LOGIN
-        } else {
-            login(saved, persist = false)
+        busy = true
+        stage = AuthStage.LOADING
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { prefs.arl }
+            if (saved.isNullOrBlank()) {
+                busy = false
+                stage = AuthStage.NEEDS_LOGIN
+            } else {
+                login(saved, persist = false)
+            }
         }
     }
 
@@ -191,12 +212,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Drop the WebView session too, or web sign-in silently re-captures the
         // old account's arl cookie and undoes the sign-out.
-        runCatching {
-            CookieManager.getInstance().removeAllCookies(null)
-            CookieManager.getInstance().flush()
-            WebStorage.getInstance().deleteAllData()
-        }
+        clearWebLoginData()
         account = null
         stage = AuthStage.NEEDS_LOGIN
+    }
+
+    private fun clearWebLoginData() {
+        runCatching {
+            val cookies = CookieManager.getInstance()
+            cookies.removeAllCookies { cookies.flush() }
+            WebStorage.getInstance().deleteAllData()
+        }
     }
 }

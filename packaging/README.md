@@ -1,77 +1,83 @@
-# Packaging
+# Distribution packaging
 
-Distribution manifests for OpenDeezer. After tagging a release, fill in the real
-SHA256 checksums (the release `checksums` job publishes `SHA256SUMS.txt`).
+These files prepare OpenDeezer for several distribution providers. They do not
+mean the application is already listed: public catalogs still require their
+maintainers' accounts, reviews, and policy decisions.
 
-The `publish-manifests` job in release.yml automatically:
-- downloads the sums,
-- updates versions + checksum placeholders in homebrew/, winget/, aur/,
-- opens a PR on this repo (branch: `release/manifests-<tag>`) via peter-evans/create-pull-request.
+| Provider | Repository support | Publication status |
+| --- | --- | --- |
+| F-Droid | Source-build recipe and upstream Fastlane text | Candidate validated locally; submit after a new tag and real screenshots |
+| Obtainium | Phone and TV import configurations | Ready for direct GitHub Releases use; catalog entry optional |
+| Snap Store | Strictly confined GNOME recipe | `amd64` pack validated; register the name, test on Ubuntu, then upload |
+| Homebrew | macOS/Linux TUI formula | Checksum-pinned; publish it to `Cycl0o0/homebrew-tap` |
+| WinGet | Windows TUI manifests, schema 1.12 | Checksum-pinned; submit to `microsoft/winget-pkgs` |
+| AUR | Source-building `PKGBUILD` and `.SRCINFO` | Checksum-pinned; publish through the AUR account |
+| Scoop | Windows TUI manifest | Direct manifest install supported; a bucket makes it discoverable |
+| Flathub | Existing local Flatpak drafts only | Blocked; do not submit the current files |
+| IzzyOnDroid | Uses the signed GitHub APKs | Deferred pending its current inclusion-policy review |
 
-**Follow-ups (no secrets configured here):**
-- Merge the PR, then manually (or via separate CI) push the updated homebrew formula to `Cycl0o0/homebrew-tap`.
-- `updpkgsums` + push the PKGBUILD/.SRCINFO to the AUR `opendeezer` repo.
-- Submit the winget manifests to microsoft/winget-pkgs (e.g. via wingetcreate or PR).
+## Release automation
 
-## Homebrew (`homebrew/opendeezer.rb`)
-Tap-installable TUI formula (downloads the per-OS release binary). Update
-`version` and the four `sha256` values, then publish to a tap
-(`Cycl0o0/homebrew-tap`):
-```sh
-brew install Cycl0o0/tap/opendeezer
-```
+The `publish-manifests` release job runs
+`scripts/update-package-manifests.sh`. It updates versions and real checksums in
+Homebrew, WinGet, AUR, Scoop, Snap, and the F-Droid candidate, preserves the
+result as a workflow artifact, and tries to open
+`release/manifests-<tag>`. PR creation is best-effort because a repository may
+disable PR creation by `GITHUB_TOKEN`; checksum or manifest validation failures
+still fail the job.
 
-## AUR (`aur/PKGBUILD`, `aur/.SRCINFO`)
-Builds the TUI from the tagged source (needs `go` + `alsa-lib`). Update `pkgver`,
-run `updpkgsums` to fill `sha256sums`, regenerate `.SRCINFO`
-(`makepkg --printsrcinfo > .SRCINFO`), then push to the AUR repo `opendeezer`.
-```sh
-yay -S opendeezer
-```
+After merging that PR, the remaining external actions are:
 
-## Flatpak (`flatpak/*.yaml`)
-Three variants:
-- `org.opendeezer.OpenDeezer.yaml` — GNOME (GTK4) client, GNOME runtime (WebKitGTK).
-- `org.opendeezer.OpenDeezer.kde.yaml` — KDE (Qt6) client, KDE runtime (QtWebEngine).
-- `org.opendeezer.OpenDeezer.unified.yaml` — unified dlopen launcher on the KDE
-  runtime (Qt backend in-sandbox; GTK desktops use the GNOME variant).
+- copy the formula to `Cycl0o0/homebrew-tap`;
+- push the AUR files to the `opendeezer` AUR repository;
+- submit the WinGet directory with `wingetcreate` or a pull request;
+- publish the Scoop manifest in a maintained bucket;
+- build, test, register, and upload the Snap;
+- update and submit the F-Droid recipe after the next Android tag.
 
-Local build (pick a manifest):
-```sh
-flatpak-builder --user --install --force-clean build packaging/flatpak/org.opendeezer.OpenDeezer.yaml
-```
-For **Flathub**, the build sandbox has no network: vendor the Go modules and
-remove the `--share=network` build-arg — generate a sources manifest with
-[flatpak-builder-tools](https://github.com/flatpak/flatpak-builder-tools)
-(`flatpak-go-mod`).
+## Android: F-Droid and Obtainium
 
-## winget (`winget/Cycl0o0.OpenDeezer.*.yaml`)
-Portable TUI exe. After release, set `InstallerSha256`, then submit the three
-manifests to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs)
-under `manifests/c/Cycl0o0/OpenDeezer/<version>/` (e.g. via `wingetcreate submit`).
-```sh
-winget install Cycl0o0.OpenDeezer
-```
+[`fdroid/`](fdroid/) contains a mainline F-Droid proposal that builds the Go AAR
+and APK from source. It declares the `NonFreeNet` and `TetheredNet`
+anti-features because a Deezer account and proprietary Deezer service are
+required. Canonical listing text is under `../fastlane/metadata/android/`.
+The F-Droid guide records the remaining signing, screenshot, reproducibility,
+and trademark review work.
 
-## F-Droid / IzzyOnDroid (`packaging/fdroid/`)
+[`obtainium/`](obtainium/) contains import files for the phone/tablet and TV
+application IDs. Obtainium needs no central listing: it can follow the signed,
+per-ABI APKs on GitHub Releases directly.
 
-Fastlane-style metadata for the Android client (phone + Android TV flavors):
+IzzyOnDroid is separate from F-Droid and does not index every GitHub release
+automatically. Its current inclusion policy requires a separate request and
+review, so it is intentionally not submitted here.
 
-```
-packaging/fdroid/metadata/en-US/
-  title.txt
-  short_description.txt
-  full_description.txt
-```
+## Linux: Snap and local Flatpak
 
-**IzzyOnDroid route (recommended for F-Droid users):**
-- IzzyOnDroid (https://apt.izzysoft.de/fdroid/) pulls signed release APKs directly from the GitHub Releases page (see the `android` job in `.github/workflows/release.yml`).
-- After a tag, the signed `OpenDeezer-android.apk` (and TV) are attached; IzzyOnDroid indexes them.
-- No manual submission step beyond tagging a release that includes the signed APKs.
+[`snap/`](snap/) packages the GNOME client with strict confinement. Its guide
+covers local build/install tests and the human Snap Store publication step.
 
-**Why not mainline F-Droid:**
-- OpenDeezer is a client for a proprietary streaming service (requires a Deezer account and authenticated requests to Deezer's closed APIs).
-- Full source rebuilds in F-Droid's build server environment would not be able to exercise the streaming/download paths without real credentials, defeating the purpose of reproducible builds for the media functionality.
-- The Android app is therefore distributed via GitHub releases (and IzzyOnDroid mirror) rather than the main F-Droid repository.
+The manifests under [`flatpak/`](flatpak/) remain useful for local Flatpak
+builds. They are not a Flathub submission. Current
+[Flathub requirements](https://docs.flathub.org/docs/for-app-authors/requirements)
+restrict AI-assisted applications and submission material and also impose
+third-party trademark rules. A human maintainer must obtain policy and naming
+clearance before replacing and submitting the stale `flatpak/flathub/` draft.
 
-Local fdroid build metadata lives here only for the IzzyOnDroid / self-hosting use-case. The actual APKs are produced in CI.
+## Terminal package managers
+
+- [`homebrew/opendeezer.rb`](homebrew/opendeezer.rb) installs the appropriate
+  macOS or Linux TUI release binary. After tap publication:
+  `brew install Cycl0o0/tap/opendeezer`.
+- [`winget/`](winget/) installs the portable 64-bit Windows TUI. After community
+  repository acceptance: `winget install Cycl0o0.OpenDeezer`.
+- [`aur/`](aur/) builds the TUI from tagged source. After AUR publication:
+  `yay -S opendeezer`.
+- [`scoop/opendeezer.json`](scoop/opendeezer.json) installs the 64-bit Windows
+  TUI and carries a checksum-aware autoupdate template. See its README for the
+  direct-manifest command and bucket publication.
+
+Commercial mobile and desktop stores are not prepared here. Apple, Google,
+Microsoft Store, and Amazon submissions need developer accounts, platform
+signing/provisioning, and—most importantly—clear permission to use Deezer's
+service and branding.

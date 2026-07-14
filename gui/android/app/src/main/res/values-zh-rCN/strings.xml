@@ -38,6 +38,7 @@
     <string name="login_error_empty_arl">ARL 为空</string>
     <string name="login_error_failed">登录失败 — 请检查你的 ARL 和网络连接。</string>
     <string name="login_error_account">无法加载账户。</string>
+    <string name="login_error_secure_storage">无法安全保存登录信息。请检查设备安全设置后重试。</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">无网络连接</string>

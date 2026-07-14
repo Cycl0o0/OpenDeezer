@@ -59,7 +59,8 @@ fun LoginScreen(
     onArl: (arl: String, auto: Boolean) -> Unit,
 ) {
     var manual by rememberSaveable { mutableStateOf(false) }
-    var arlField by rememberSaveable { mutableStateOf("") }
+    // Never put a bearer credential into Compose's saved-state Bundle.
+    var arlField by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize()) {
         Column(

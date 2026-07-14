@@ -4,6 +4,32 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.4]
+
+### Added
+- **Store-ready distribution packaging.** OpenDeezer now includes source-build
+  metadata for F-Droid, phone and TV configurations for Obtainium, a strictly
+  confined Snap recipe, and a Scoop manifest. Homebrew, WinGet and AUR metadata
+  now carry verified release checksums, with one release helper keeping every
+  provider in sync.
+- **Smaller Android downloads.** Tagged releases publish signed APKs for each
+  supported ABI alongside the universal phone and TV packages.
+
+### Changed
+- Android and iOS bindings use the exact `golang.org/x/mobile` revision pinned in
+  `go.mod`, eliminating mutable `@latest` tools from local and CI builds.
+- Tagged Android releases fail closed when signing credentials are missing and
+  verify every APK's v2/v3 signature and certificate before publication.
+
+### Fixed
+- **Android session credentials are protected at rest.** Existing plaintext ARL
+  credentials migrate into an AES-GCM value backed by Android Keystore; secret
+  preferences and WebView state are excluded from device and cloud backups.
+- Login, logout and secure-storage failures now clear WebView cookies and state
+  consistently instead of retaining a previous account session.
+- Package-release automation validates versions, checksums and monotonically
+  increasing Android/F-Droid version codes before changing any manifest.
+
 ## [3.1.3]
 
 ### Fixed

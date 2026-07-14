@@ -1,1 +1,0 @@
-Open-source Deezer client (TUI + native GUIs) by Cycl0o0. Local streaming, downloads, search, synced lyrics.

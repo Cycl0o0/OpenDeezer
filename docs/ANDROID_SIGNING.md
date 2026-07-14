@@ -7,8 +7,8 @@ macOS/Windows there is no CA or notarization — you self-sign; the keystore *is
 the identity.
 
 The `android` job in `.github/workflows/release.yml` builds **release-signed**
-APKs when the keystore secrets are present, and falls back to a debug build
-otherwise (so a secret-less run still ships installable APKs).
+universal and per-ABI APKs. It fails closed when any signing secret is absent,
+so a tagged release can never accidentally publish a debug-signed APK.
 
 ## The keystore
 
@@ -37,7 +37,7 @@ openssl pkcs12 -export -inkey k.pem -in c.pem -name opendeezer -out opendeezer-r
 
 ## GitHub repository secrets
 
-The job checks `ANDROID_KEYSTORE_BASE64` to decide whether to build signed.
+The job requires and checks all four values before it starts the release build.
 
 | Secret | Value |
 | --- | --- |
@@ -46,8 +46,11 @@ The job checks `ANDROID_KEYSTORE_BASE64` to decide whether to build signed.
 | `ANDROID_KEY_ALIAS` | `opendeezer` |
 | `ANDROID_KEY_PASSWORD` | same password (PKCS12 uses one password for store + key) |
 
-`gui/android/app/build.gradle.kts` reads these via env vars the workflow sets, so
-CI produces `app-mobile-release.apk` / `app-tv-release.apk`, signed with your key.
+`gui/android/app/build.gradle.kts` reads these via environment variables set by
+the workflow. CI produces a universal APK plus `armeabi-v7a`, `arm64-v8a`, `x86`
+and `x86_64` APKs for both the mobile and TV flavors, all signed with the same
+release key. The stable release names are `OpenDeezer-android*.apk` and
+`OpenDeezer-androidtv*.apk`.
 
 ## Notes
 

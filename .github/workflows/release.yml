@@ -332,13 +332,20 @@ jobs:
   android:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
-    # ANDROID_SIGN is 'true' when a release keystore secret is present: the job
-    # then builds release-signed APKs. Without it, it falls back to the debug
-    # build (unchanged) so the release still ships installable APKs.
-    env:
-      ANDROID_SIGN: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v6
+      - name: Validate Android release version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Android releases require a stable semver tag (vX.Y.Z)"
+            exit 1
+          fi
+          GRADLE_VERSION=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' gui/android/app/build.gradle.kts | head -1)
+          if [ "$GRADLE_VERSION" != "$VERSION" ]; then
+            echo "::error::Tag version $VERSION does not match Android versionName $GRADLE_VERSION"
+            exit 1
+          fi
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
@@ -357,27 +364,37 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.3.11579264
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          go get golang.org/x/mobile/bind@latest
-          gomobile init
+          scripts/build-mobile-tools.sh "$RUNNER_TEMP/opendeezer-mobile-tools"
+          export PATH="$RUNNER_TEMP/opendeezer-mobile-tools:$PATH"
           mkdir -p gui/android/app/libs
-          gomobile bind -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
-      # ---- signed release build (when the keystore secret is set) ----
-      - name: Assemble release APKs (signed, phone + TV)
-        if: env.ANDROID_SIGN == 'true'
-        working-directory: gui/android
+          gomobile bind -trimpath -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
+      - name: Require Android release-signing secrets
         env:
-          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/opendeezer-release.p12
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$ANDROID_KEYSTORE_FILE"
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required Android release secret $name is not configured"
+              exit 1
+            fi
+          done
+
+      - name: Assemble release APKs (signed, phone + TV)
+        working-directory: gui/android
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/opendeezer-release.p12
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
           chmod +x ./gradlew || true
-          ./gradlew --no-daemon assembleMobileRelease assembleTvRelease
-          rm -f "$ANDROID_KEYSTORE_FILE"
+          ./gradlew --no-daemon -PabiSplits=true assembleMobileRelease assembleTvRelease
       # Prove the signed APKs satisfy Google's sideload developer-verification
       # policy: they must carry an APK Signature Scheme v2/v3 block whose
       # certificate is the registered developer key. This verifies both APKs and
@@ -385,7 +402,6 @@ jobs:
       # fingerprint (defaults to the registered key; override with the repo
       # variable ANDROID_EXPECTED_CERT_SHA256 if the key is ever rotated).
       - name: Verify release signatures (Google sideload compliance)
-        if: env.ANDROID_SIGN == 'true'
         env:
           ANDROID_EXPECTED_CERT_SHA256: ${{ vars.ANDROID_EXPECTED_CERT_SHA256 }}
         run: |
@@ -395,68 +411,43 @@ jobs:
           verify_one() {
             local apk="$1"
             echo "== $apk =="
-            "$APKSIGNER" verify --print-certs --verbose "$apk"
-            # Require a v2 (and v3) signature block, not just the legacy v1 jar signature.
-            "$APKSIGNER" verify --print-certs --verbose "$apk" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" \
-              || { echo "::error::$apk is not signed with APK Signature Scheme v2"; exit 1; }
-            local got
-            got=$("$APKSIGNER" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ' :' | tr 'a-f' 'A-F')
+            local verification got
+            verification=$("$APKSIGNER" verify --print-certs --verbose "$apk")
+            echo "$verification"
+            # Require v2 and v3 blocks, not just the legacy v1 jar signature.
+            for scheme in v2 v3; do
+              echo "$verification" | grep -q "Verified using $scheme scheme (APK Signature Scheme $scheme): true" \
+                || { echo "::error::$apk is not signed with APK Signature Scheme $scheme"; exit 1; }
+            done
+            got=$(echo "$verification" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ' :' | tr 'a-f' 'A-F')
             echo "signing cert SHA-256: $got"
             if [ "$got" != "$WANT" ]; then
               echo "::error::$apk signing cert ($got) does not match the registered developer key ($WANT)"; exit 1
             fi
             echo "matches the registered developer key ✓"
           }
-          verify_one gui/android/app/build/outputs/apk/mobile/release/*.apk
-          verify_one gui/android/app/build/outputs/apk/tv/release/*.apk
+          for apk in gui/android/app/build/outputs/apk/mobile/release/*.apk \
+                     gui/android/app/build/outputs/apk/tv/release/*.apk; do
+            verify_one "$apk"
+          done
       - name: Stage release artifacts
-        if: env.ANDROID_SIGN == 'true'
         run: |
-          cp gui/android/app/build/outputs/apk/mobile/release/*.apk OpenDeezer-android.apk
-          cp gui/android/app/build/outputs/apk/tv/release/*.apk OpenDeezer-androidtv.apk
-
-      # ---- debug fallback (no release keystore secret) ----
-      - name: Install stable signing keystore (optional)
-        if: env.ANDROID_SIGN != 'true'
-        # Without a release keystore, Gradle debug-signs with the runner's
-        # auto-generated ~/.android/debug.keystore, whose key is random per runner
-        # — so APKs from different releases carry different signatures and Android
-        # refuses to upgrade (INSTALL_FAILED_UPDATE_INCOMPATIBLE). Set
-        # ANDROID_DEBUG_KEYSTORE_BASE64 to a base64 keystore with the standard
-        # debug credentials so every release signs with the same key. Generate once:
-        #   keytool -genkeypair -keystore debug.keystore -alias androiddebugkey \
-        #     -storepass android -keypass android -keyalg RSA -keysize 2048 \
-        #     -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        #   base64 -w0 debug.keystore   # -> secret value
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            mkdir -p ~/.android
-            printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
-            echo "Installed persistent debug keystore from secret."
-          else
-            echo "::warning::No release keystore (ANDROID_KEYSTORE_BASE64) and no ANDROID_DEBUG_KEYSTORE_BASE64 — APKs get an ephemeral per-run key; upgrades across releases will fail."
-          fi
-      - name: Assemble debug APKs (phone + TV)
-        if: env.ANDROID_SIGN != 'true'
-        working-directory: gui/android
-        run: |
-          chmod +x ./gradlew || true
-          ./gradlew --no-daemon assembleMobileDebug assembleTvDebug
-      - name: Stage debug artifacts
-        if: env.ANDROID_SIGN != 'true'
-        run: |
-          cp gui/android/app/build/outputs/apk/mobile/debug/*.apk OpenDeezer-android.apk
-          cp gui/android/app/build/outputs/apk/tv/debug/*.apk OpenDeezer-androidtv.apk
+          mobile=gui/android/app/build/outputs/apk/mobile/release
+          tv=gui/android/app/build/outputs/apk/tv/release
+          cp "$mobile/app-mobile-universal-release.apk" OpenDeezer-android.apk
+          cp "$tv/app-tv-universal-release.apk" OpenDeezer-androidtv.apk
+          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+            cp "$mobile/app-mobile-${abi}-release.apk" "OpenDeezer-android-${abi}.apk"
+            cp "$tv/app-tv-${abi}-release.apk" "OpenDeezer-androidtv-${abi}.apk"
+          done
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            OpenDeezer-android.apk
-            OpenDeezer-androidtv.apk
+            OpenDeezer-android*.apk
+          fail_on_unmatched_files: true
 
   # ---- iOS app (SwiftUI via gomobile xcframework) — unsigned .ipa for sideloading ----
   # No Apple Developer account, so we ship an UNSIGNED device build: sideload with
@@ -510,12 +501,9 @@ jobs:
           go-version: "1.25.12"
       - name: Build Odmobile.xcframework (gomobile bind ios)
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          go get golang.org/x/mobile/bind@latest
-          gomobile init
-          gomobile bind -target=ios -o gui/ios/Odmobile.xcframework ./mobile
+          scripts/build-mobile-tools.sh "$RUNNER_TEMP/opendeezer-mobile-tools"
+          export PATH="$RUNNER_TEMP/opendeezer-mobile-tools:$PATH"
+          gomobile bind -trimpath -target=ios -o gui/ios/Odmobile.xcframework ./mobile
       - name: Generate Xcode project (xcodegen)
         run: |
           brew install xcodegen
@@ -543,7 +531,9 @@ jobs:
   # ---- Checksums: gather every released asset and publish SHA256SUMS.txt ----
   checksums:
     needs: [tui, macos-app, gnome, kde, linux-unified, windows-gui, android, ios]
-    if: startsWith(github.ref, 'refs/tags/') && always()
+    if: >-
+      startsWith(github.ref, 'refs/tags/') && always() &&
+      needs.tui.result == 'success' && needs.android.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -556,7 +546,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist && cd dist
-          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" || true
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}"
       - name: Extract release notes section from CHANGELOG.md
         run: |
           TAG="${GITHUB_REF_NAME#v}"
@@ -577,8 +567,22 @@ jobs:
           # On re-runs the download above includes the previously published
           # SHA256SUMS.txt — drop it so the sums file never references itself.
           rm -f dist/SHA256SUMS.txt
-          cd dist && sha256sum * > ../SHA256SUMS.txt || true
-          cat ../SHA256SUMS.txt || true
+          for required in \
+            opendeezer-tui-darwin-arm64 \
+            opendeezer-tui-darwin-amd64 \
+            opendeezer-tui-linux-arm64 \
+            opendeezer-tui-linux-amd64 \
+            opendeezer-tui-windows-amd64.exe \
+            OpenDeezer-android.apk \
+            OpenDeezer-androidtv.apk; do
+            test -f "dist/$required" || {
+              echo "::error::Required release asset is missing: $required"
+              exit 1
+            }
+          done
+          (cd dist && sha256sum -- *) > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - name: Upload checksums
         uses: softprops/action-gh-release@v2
         with:
@@ -610,60 +614,59 @@ jobs:
       - name: Extract checksums
         id: sums
         run: |
-          # Parse the sums for the TUI artifacts (and others as needed)
-          get_sha() { grep " $1$" SHA256SUMS.txt | awk '{print $1}'; }
-          echo "darwin_arm64=$(get_sha opendeezer-tui-darwin-arm64)" >> $GITHUB_OUTPUT
-          echo "darwin_amd64=$(get_sha opendeezer-tui-darwin-amd64)" >> $GITHUB_OUTPUT
-          echo "linux_arm64=$(get_sha opendeezer-tui-linux-arm64)" >> $GITHUB_OUTPUT
-          echo "linux_amd64=$(get_sha opendeezer-tui-linux-amd64)" >> $GITHUB_OUTPUT
-          echo "windows_amd64=$(get_sha opendeezer-tui-windows-amd64.exe)" >> $GITHUB_OUTPUT
           TAG="${GITHUB_REF_NAME#v}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$TAG" >> $GITHUB_OUTPUT
-      - name: Update Homebrew formula
+      - name: Hash the tagged source archive
+        id: source
         run: |
-          TAG="${{ steps.sums.outputs.version }}"
-          sed -i "s/version \"[^\"]*\"/version \"${TAG}\"/" packaging/homebrew/opendeezer.rb
-          sed -i "s/REPLACE_WITH_DARWIN_ARM64_SHA256/${{ steps.sums.outputs.darwin_arm64 }}/" packaging/homebrew/opendeezer.rb
-          sed -i "s/REPLACE_WITH_DARWIN_AMD64_SHA256/${{ steps.sums.outputs.darwin_amd64 }}/" packaging/homebrew/opendeezer.rb
-          sed -i "s/REPLACE_WITH_LINUX_ARM64_SHA256/${{ steps.sums.outputs.linux_arm64 }}/" packaging/homebrew/opendeezer.rb
-          sed -i "s/REPLACE_WITH_LINUX_AMD64_SHA256/${{ steps.sums.outputs.linux_amd64 }}/" packaging/homebrew/opendeezer.rb
-      - name: Update winget manifests (version + sha)
+          VERSION="${{ steps.sums.outputs.version }}"
+          curl --fail --location --retry 3 \
+            "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${VERSION}.tar.gz" \
+            --output source.tar.gz
+          echo "sha256=$(sha256sum source.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - name: Update package manifests
         run: |
-          TAG="${{ steps.sums.outputs.version }}"
-          for f in packaging/winget/Cycl0o0.OpenDeezer*.yaml; do
-            sed -i "s/PackageVersion: [0-9.]\+/PackageVersion: ${TAG}/" "$f" || true
-          done
-          sed -i "s/InstallerSha256: REPLACE_WITH_SHA256_AFTER_RELEASE/InstallerSha256: ${{ steps.sums.outputs.windows_amd64 }}/" packaging/winget/Cycl0o0.OpenDeezer.installer.yaml
-      - name: Update AUR PKGBUILD (pkgver + sha256sums)
-        run: |
-          TAG="${{ steps.sums.outputs.version }}"
-          sed -i "s/^pkgver=.*/pkgver=${TAG}/" packaging/aur/PKGBUILD
-          # sha256sums is a bash array; replace the SKIP or previous with the source tarball sha (the release tarball)
-          TARBALL_SHA=$(grep "OpenDeezer-${TAG}.tar.gz" SHA256SUMS.txt | awk '{print $1}' || true)
-          if [ -n "$TARBALL_SHA" ]; then
-            sed -i "s/sha256sums=('[^']*')/sha256sums=('${TARBALL_SHA}')/" packaging/aur/PKGBUILD || \
-            sed -i "s/sha256sums=('SKIP')/sha256sums=('${TARBALL_SHA}')/" packaging/aur/PKGBUILD
-          fi
+          scripts/update-package-manifests.sh \
+            "${{ steps.sums.outputs.version }}" \
+            SHA256SUMS.txt \
+            "${{ steps.source.outputs.sha256 }}"
+      - name: Preserve updated manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-manifests-${{ github.ref_name }}
+          path: |
+            packaging/aur/
+            packaging/fdroid/
+            packaging/homebrew/
+            packaging/scoop/
+            packaging/snap/
+            packaging/winget/
+          include-hidden-files: true
       - name: Open PR with updated manifests
-        # Best-effort: opening a PR needs the repo setting "Allow GitHub Actions
-        # to create and approve pull requests" enabled. When it's off, the
-        # GITHUB_TOKEN can't create the PR — don't fail the whole release for an
-        # optional manifest-refresh PR (the manifests are still updated in this
-        # job's checkout; enable the setting or open the PR manually).
+        id: packaging_pr
+        # Some repositories disable PR creation by GITHUB_TOKEN. The validated
+        # manifests remain available as the artifact above if that setting is off.
         continue-on-error: true
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ github.token }}
           commit-message: "chore(release): update packaging manifests for ${{ github.ref_name }}"
           branch: release/manifests-${{ github.ref_name }}
+          base: ${{ github.event.repository.default_branch }}
+          add-paths: |
+            packaging/**
           title: "chore(release): update manifests for ${{ github.ref_name }}"
           body: |
             Automated update from release ${{ github.ref_name }}.
 
             - Bumped versions
-            - Injected real checksums from SHA256SUMS.txt into homebrew, winget, aur
+            - Injected real checksums into Homebrew, winget, AUR, and Scoop manifests
+            - Updated Snap and F-Droid candidate versions
             - (External follow-ups to taps/AUR/winget-pkgs are manual or use separate secrets; see packaging/README.md)
           labels: |
             release
             automated
+      - name: Report disabled manifest PR creation
+        if: steps.packaging_pr.outcome == 'failure'
+        run: |
+          echo "::warning::Could not open the package-manifest PR. Download the package-manifests-${GITHUB_REF_NAME} workflow artifact, or enable Actions PR creation."

@@ -38,6 +38,7 @@
     <string name="login_error_empty_arl">ARL فارغ</string>
     <string name="login_error_failed">فشل تسجيل الدخول — تحقق من ARL والاتصال.</string>
     <string name="login_error_account">تعذّر تحميل الحساب.</string>
+    <string name="login_error_secure_storage">تعذّر حفظ تسجيل دخولك بأمان. تحقّق من إعدادات أمان الجهاز وحاول مرة أخرى.</string>
 
     <!-- No internet (retry reuses action_retry) -->
     <string name="no_internet_title">لا يوجد اتصال بالإنترنت</string>
@@ -270,8 +271,12 @@
     <string name="stream_cache_mb">%1$d MB</string>
     <string name="stream_cache_hint">Applies at next launch. 0 = off.</string>
     <plurals name="n_plays">
-        <item quantity="one">%1$d play</item>
-        <item quantity="other">%1$d plays</item>
+        <item quantity="zero">%1$d مرة تشغيل</item>
+        <item quantity="one">%1$d مرة تشغيل</item>
+        <item quantity="two">%1$d مرتا تشغيل</item>
+        <item quantity="few">%1$d مرات تشغيل</item>
+        <item quantity="many">%1$d مرة تشغيل</item>
+        <item quantity="other">%1$d مرة تشغيل</item>
     </plurals>
     <!-- محرر قائمة الانتظار + التنزيل دون اتصال -->
     <string name="action_play_next">تشغيل التالي</string>

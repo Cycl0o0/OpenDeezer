@@ -59,6 +59,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import fr.cyclooo.opendeezer.BuildConfig
 import fr.cyclooo.opendeezer.R
 import fr.cyclooo.opendeezer.data.Prefs
 import fr.cyclooo.opendeezer.engine.Account
@@ -434,31 +435,33 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
 
             HorizontalDivider()
 
-            Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium)
-            SettingAction(
-                title = stringResource(R.string.update_check_title),
-                subtitle = if (checkingUpdate) stringResource(R.string.update_checking) else stringResource(R.string.update_check_sub),
-                enabled = !checkingUpdate,
-                trailing = {
-                    if (checkingUpdate) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    }
-                },
-                onClick = {
-                    checkingUpdate = true
-                    scope.launch {
-                        val info = Engine.checkUpdate()
-                        checkingUpdate = false
-                        updateResult = when {
-                            info == null -> UpdateCheckResult.Failed
-                            info.hasUpdate -> UpdateCheckResult.Available(info)
-                            else -> UpdateCheckResult.UpToDate(info.current)
+            if (BuildConfig.ENABLE_UPSTREAM_UPDATES) {
+                Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium)
+                SettingAction(
+                    title = stringResource(R.string.update_check_title),
+                    subtitle = if (checkingUpdate) stringResource(R.string.update_checking) else stringResource(R.string.update_check_sub),
+                    enabled = !checkingUpdate,
+                    trailing = {
+                        if (checkingUpdate) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
-                    }
-                },
-            )
+                    },
+                    onClick = {
+                        checkingUpdate = true
+                        scope.launch {
+                            val info = Engine.checkUpdate()
+                            checkingUpdate = false
+                            updateResult = when {
+                                info == null -> UpdateCheckResult.Failed
+                                info.hasUpdate -> UpdateCheckResult.Available(info)
+                                else -> UpdateCheckResult.UpToDate(info.current)
+                            }
+                        }
+                    },
+                )
 
-            HorizontalDivider()
+                HorizontalDivider()
+            }
 
             if (account != null) {
                 Text(stringResource(R.string.settings_account), style = MaterialTheme.typography.titleMedium)
@@ -486,7 +489,7 @@ fun SettingsScreen(account: Account?, onBack: () -> Unit, onEqualizer: () -> Uni
         }
     }
 
-    when (val result = updateResult) {
+    if (BuildConfig.ENABLE_UPSTREAM_UPDATES) when (val result = updateResult) {
         is UpdateCheckResult.UpToDate -> AlertDialog(
             onDismissRequest = { updateResult = null },
             confirmButton = { TextButton(onClick = { updateResult = null }) { Text(stringResource(R.string.action_ok)) } },

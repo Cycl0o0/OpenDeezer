@@ -1,0 +1,2 @@
+Fixed Android stream-cache persistence and synchronized-lyrics highlighting.
+Added optional Material You colors on Android 12 and newer.
