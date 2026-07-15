@@ -729,7 +729,7 @@ jobs:
             "$SOURCE_SHA256" \
             "$RELEASE_DATE"
       - name: Preserve updated manifests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-manifests-${{ github.ref_name }}
           path: |
