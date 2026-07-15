@@ -158,6 +158,7 @@ jobs:
           scripts/build-mobile-tools.sh "$GOPATH/bin"
           gomobile bind -trimpath -target=android -androidapi 24 \
             -bootclasspath "$ANDROID_HOME/platforms/android-34/android.jar" \
+            -ldflags="-s -w -buildid=" \
             -o gui/android/app/libs/odmobile.aar ./mobile
 
           cd gui/android/app
@@ -333,7 +334,12 @@ jobs:
           signed="$RUNNER_TEMP/signed/$APK_NAME"
           unsigned="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
           reconstructed="$RUNNER_TEMP/reconstructed.apk"
-          apksigcopier copy "$signed" "$unsigned" "$reconstructed"
+          python - "$signed" "$unsigned" "$reconstructed" <<'PY'
+          import sys
+          from apksigcopier import do_copy
+
+          do_copy(*sys.argv[1:], v1_only=False)
+          PY
           cmp --silent "$signed" "$reconstructed"
           echo "F-Droid signature reconstruction is byte-for-byte identical"
 
