@@ -49,7 +49,8 @@ The separate `OpenDeezer-android-fdroid-<version>.apk` is built with
 at F-Droid's canonical source path, signs it with APK Signature Schemes v2/v3,
 and reconstructs the result with `apksigcopier` before publication. The workflow
 is manual by design: publish only after its unsigned artifact matches the APK
-from the corresponding fdroiddata pipeline.
+from the corresponding fdroiddata pipeline, and after the main GitHub release
+has published its `SHA256SUMS.txt` asset.
 
 ## GitHub repository secrets
 

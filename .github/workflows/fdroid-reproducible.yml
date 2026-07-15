@@ -28,7 +28,7 @@ on:
 
 concurrency:
   group: fdroid-reproducible-${{ github.ref }}-${{ inputs.release_tag || github.ref_name }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -58,14 +58,33 @@ jobs:
       - name: Validate source and release
         id: metadata
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
           REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
 
           source_sha=$(git rev-parse HEAD)
+          gradle_version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
+            gui/android/app/build.gradle.kts | head -1)
+          version_code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\).*/\1/p' \
+            gui/android/app/build.gradle.kts | head -1)
+          if [[ -z "$gradle_version" || -z "$version_code" ]]; then
+            echo "::error::Could not determine the Android versionName/versionCode"
+            exit 1
+          fi
+
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
             release_tag="$REQUESTED_RELEASE_TAG"
+            if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::F-Droid releases require a stable semver tag (vX.Y.Z)"
+              exit 1
+            fi
+            version="${release_tag#v}"
+            if [[ "$gradle_version" != "$version" ]]; then
+              echo "::error::Release $release_tag does not match Android versionName $gradle_version"
+              exit 1
+            fi
             if [[ ! "$REQUESTED_SOURCE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
               echo "::error::source_ref must be a full 40-character commit SHA"
               exit 1
@@ -74,34 +93,15 @@ jobs:
               echo "::error::Checked-out commit does not match source_ref"
               exit 1
             fi
-            git fetch --no-tags origin main
-            if ! git merge-base --is-ancestor "$source_sha" origin/main; then
-              echo "::error::Manual signing is restricted to commits contained in main"
+            git fetch --no-tags origin \
+              "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+            if ! git merge-base --is-ancestor "$source_sha" "origin/$DEFAULT_BRANCH"; then
+              echo "::error::Manual signing is restricted to commits contained in $DEFAULT_BRANCH"
               exit 1
             fi
           else
-            gradle_version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
-              gui/android/app/build.gradle.kts | head -1)
-            release_tag="v$gradle_version"
-          fi
-
-          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::F-Droid releases require a stable semver tag (vX.Y.Z)"
-            exit 1
-          fi
-
-          version="${release_tag#v}"
-          gradle_version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
-            gui/android/app/build.gradle.kts | head -1)
-          version_code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\).*/\1/p' \
-            gui/android/app/build.gradle.kts | head -1)
-          if [[ "$gradle_version" != "$version" ]]; then
-            echo "::error::Release $release_tag does not match Android versionName $gradle_version"
-            exit 1
-          fi
-          if [[ -z "$version_code" ]]; then
-            echo "::error::Could not determine the Android versionCode"
-            exit 1
+            version="$gradle_version"
+            release_tag="v$version"
           fi
 
           source_date_epoch=$(git log -1 --pretty=%ct)
@@ -293,6 +293,7 @@ jobs:
 
   verify:
     name: Verify F-Droid signature copying
+    if: github.event_name == 'workflow_dispatch'
     needs:
       - build
       - sign
@@ -361,12 +362,15 @@ jobs:
           release_json=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets)
           local_sha=$(sha256sum "$ASSET_NAME" | cut -d ' ' -f1)
           remote_digest=$(jq -r --arg name "$ASSET_NAME" \
-            '.assets[] | select(.name == $name) | .digest' <<< "$release_json")
+            '.assets[] | select(.name == $name) | .digest // empty' <<< "$release_json")
 
           checksums="$RUNNER_TEMP/checksums"
           mkdir -p "$checksums"
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern SHA256SUMS.txt --dir "$checksums"
+          if ! gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern SHA256SUMS.txt --dir "$checksums"; then
+            echo "::error::Publish the main release and SHA256SUMS.txt before its F-Droid APK"
+            exit 1
+          fi
           manifest="$checksums/SHA256SUMS.txt"
           existing=$(awk -v name="$ASSET_NAME" '$2 == name { print $1 }' "$manifest")
           if [[ -n "$existing" && "$existing" != "$local_sha" ]]; then
