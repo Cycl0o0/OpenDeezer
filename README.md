@@ -502,4 +502,5 @@ Yes, AGPL-3.0. Read it, build it, audit exactly what it does.
 Personal/educational use, your own account, your own risk. It reaches Deezer the
 unofficial way and plays/decrypts your own entitled content locally, which almost
 certainly breaks Deezer's terms for third-party apps. Not affiliated with Deezer.
-AGPL-3.0.
+AGPL-3.0. See the [privacy policy](PRIVACY.md) for what the clients store locally
+and which third-party services they contact.

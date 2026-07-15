@@ -652,9 +652,16 @@ jobs:
           cat SHA256SUMS.txt
       - name: Extract checksums
         id: sums
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           echo "version=$TAG" >> $GITHUB_OUTPUT
+          RELEASE_DATE=$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --json publishedAt \
+            --jq '.publishedAt[:10]')
+          test -n "$RELEASE_DATE"
+          echo "release_date=$RELEASE_DATE" >> "$GITHUB_OUTPUT"
       - name: Hash the tagged source archive
         id: source
         run: |
@@ -668,7 +675,8 @@ jobs:
           scripts/update-package-manifests.sh \
             "${{ steps.sums.outputs.version }}" \
             SHA256SUMS.txt \
-            "${{ steps.source.outputs.sha256 }}"
+            "${{ steps.source.outputs.sha256 }}" \
+            "${{ steps.sums.outputs.release_date }}"
       - name: Preserve updated manifests
         uses: actions/upload-artifact@v4
         with:
