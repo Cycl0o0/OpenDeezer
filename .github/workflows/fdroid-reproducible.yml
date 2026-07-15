@@ -1,0 +1,400 @@
+name: F-Droid reproducible APK
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fdroid-reproducible.yml"
+      - "go.mod"
+      - "go.sum"
+      - "mobile/**"
+      - "scripts/build-mobile-tools.sh"
+      - "gui/android/**"
+      - "packaging/fdroid/**"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag to receive the APK
+        required: true
+        type: string
+      source_ref:
+        description: Full source commit SHA to build (must be contained in main)
+        required: true
+        type: string
+      publish:
+        description: Upload the verified APK to the GitHub release
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: fdroid-reproducible-${{ github.ref }}-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build F-Droid APK
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      version: ${{ steps.metadata.outputs.version }}
+      version_code: ${{ steps.metadata.outputs.version_code }}
+    env:
+      ANDROID_BUILD_TOOLS: 34.0.0
+      ANDROID_NDK_VERSION: 26.3.11579264
+      FIXED_ROOT: /home/vagrant/build/fr.cyclooo.opendeezer
+      LANG: en_US.UTF-8
+      TZ: UTC
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate source and release
+        id: metadata
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
+          REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+
+          source_sha=$(git rev-parse HEAD)
+          gradle_version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' \
+            gui/android/app/build.gradle.kts | head -1)
+          version_code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\).*/\1/p' \
+            gui/android/app/build.gradle.kts | head -1)
+          if [[ -z "$gradle_version" || -z "$version_code" ]]; then
+            echo "::error::Could not determine the Android versionName/versionCode"
+            exit 1
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            release_tag="$REQUESTED_RELEASE_TAG"
+            if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::F-Droid releases require a stable semver tag (vX.Y.Z)"
+              exit 1
+            fi
+            version="${release_tag#v}"
+            if [[ "$gradle_version" != "$version" ]]; then
+              echo "::error::Release $release_tag does not match Android versionName $gradle_version"
+              exit 1
+            fi
+            if [[ ! "$REQUESTED_SOURCE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              echo "::error::source_ref must be a full 40-character commit SHA"
+              exit 1
+            fi
+            if [[ "${source_sha,,}" != "${REQUESTED_SOURCE_REF,,}" ]]; then
+              echo "::error::Checked-out commit does not match source_ref"
+              exit 1
+            fi
+            git fetch --no-tags origin \
+              "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+            if ! git merge-base --is-ancestor "$source_sha" "origin/$DEFAULT_BRANCH"; then
+              echo "::error::Manual signing is restricted to commits contained in $DEFAULT_BRANCH"
+              exit 1
+            fi
+          else
+            version="$gradle_version"
+            release_tag="v$version"
+          fi
+
+          source_date_epoch=$(git log -1 --pretty=%ct)
+          echo "SOURCE_DATE_EPOCH=$source_date_epoch" >> "$GITHUB_ENV"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.12"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Install pinned Android toolchain
+        run: |
+          sdkmanager \
+            "ndk;$ANDROID_NDK_VERSION" \
+            "platforms;android-24" \
+            "platforms;android-34" \
+            "build-tools;$ANDROID_BUILD_TOOLS"
+
+      - name: Stage source at the F-Droid build path
+        env:
+          SOURCE_SHA: ${{ steps.metadata.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          sudo install -d -o "$USER" -g "$(id -gn)" "$(dirname "$FIXED_ROOT")"
+          rm -rf "$FIXED_ROOT"
+          git clone --quiet --no-local --no-checkout "$GITHUB_WORKSPACE" "$FIXED_ROOT"
+          git -C "$FIXED_ROOT" checkout --quiet --detach "$SOURCE_SHA"
+
+      - name: Build unsigned F-Droid APK
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION"
+          export ANDROID_NDK_HOME="$ANDROID_NDK"
+          export NDK="$ANDROID_NDK"
+          export GOROOT
+          GOROOT=$(go env GOROOT)
+          export GOPATH="$FIXED_ROOT/gui/android/app/.fdroid-gopath"
+          export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
+
+          cd "$FIXED_ROOT"
+          test "$(go list -m -f '{{.Dir}}')" = "$FIXED_ROOT"
+          scripts/build-mobile-tools.sh "$GOPATH/bin"
+          gomobile bind -trimpath -target=android -androidapi 24 \
+            -bootclasspath "$ANDROID_HOME/platforms/android-34/android.jar" \
+            -ldflags="-s -w -buildid=" \
+            -o gui/android/app/libs/odmobile.aar ./mobile
+
+          cd gui/android/app
+          ../gradlew --no-daemon -PupstreamUpdates=false assembleMobileRelease
+
+          unsigned=build/outputs/apk/mobile/release/app-mobile-release-unsigned.apk
+          test -f "$unsigned"
+          cp "$unsigned" "$RUNNER_TEMP/OpenDeezer-android-fdroid-unsigned.apk"
+          sha256sum "$RUNNER_TEMP/OpenDeezer-android-fdroid-unsigned.apk"
+
+      - name: Upload unsigned comparison APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendeezer-fdroid-unsigned
+          path: ${{ runner.temp }}/OpenDeezer-android-fdroid-unsigned.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  sign:
+    name: Sign F-Droid APK
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      ANDROID_BUILD_TOOLS: 34.0.0
+      APK_NAME: OpenDeezer-android-fdroid-${{ needs.build.outputs.version }}.apk
+      EXPECTED_CERT_SHA256: ${{ vars.ANDROID_EXPECTED_CERT_SHA256 || 'E5:C1:14:BA:5E:F3:48:2B:5A:44:14:85:92:38:35:C5:10:C7:24:01:3F:41:16:C9:A4:48:08:B3:47:DF:A2:30' }}
+
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Install pinned APK signing tools
+        run: sdkmanager "build-tools;$ANDROID_BUILD_TOOLS"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: opendeezer-fdroid-unsigned
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Validate unsigned APK identity
+        env:
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_VERSION_CODE: ${{ needs.build.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          apk="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
+          test -f "$apk"
+
+          badging=$("$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/aapt" dump badging "$apk" | head -1)
+          echo "$badging"
+          grep -q "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
+          grep -q "versionCode='$EXPECTED_VERSION_CODE'" <<< "$badging"
+          grep -q "versionName='$EXPECTED_VERSION'" <<< "$badging"
+
+          if "$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo "::error::The comparison APK is unexpectedly signed"
+            exit 1
+          fi
+
+      - name: Require Android signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required Android release secret $name is not configured"
+              exit 1
+            fi
+          done
+
+      - name: Sign F-Droid APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keystore="$RUNNER_TEMP/opendeezer-release.p12"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+
+          apksigner="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/apksigner"
+          "$apksigner" sign \
+            --ks "$keystore" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            --min-sdk-version 24 \
+            --out "$RUNNER_TEMP/$APK_NAME" \
+            "$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
+
+          verification=$("$apksigner" verify --verbose --print-certs "$RUNNER_TEMP/$APK_NAME")
+          echo "$verification"
+          for scheme in v2 v3; do
+            grep -q "Verified using $scheme scheme (APK Signature Scheme $scheme): true" <<< "$verification"
+          done
+
+          expected=$(tr -d ' :' <<< "$EXPECTED_CERT_SHA256" | tr '[:lower:]' '[:upper:]')
+          actual=$(sed -n 's/.*certificate SHA-256 digest: //p' <<< "$verification" \
+            | head -1 | tr -d ' :' | tr '[:lower:]' '[:upper:]')
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Signing certificate $actual does not match expected certificate $expected"
+            exit 1
+          fi
+          sha256sum "$RUNNER_TEMP/$APK_NAME"
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendeezer-fdroid-signed-${{ needs.build.outputs.version }}
+          path: ${{ runner.temp }}/${{ env.APK_NAME }}
+          if-no-files-found: error
+          retention-days: 14
+
+  verify:
+    name: Verify F-Droid signature copying
+    if: github.event_name == 'workflow_dispatch'
+    needs:
+      - build
+      - sign
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      APK_NAME: OpenDeezer-android-fdroid-${{ needs.build.outputs.version }}.apk
+
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: opendeezer-fdroid-unsigned
+          path: ${{ runner.temp }}/unsigned
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: opendeezer-fdroid-signed-${{ needs.build.outputs.version }}
+          path: ${{ runner.temp }}/signed
+
+      - name: Reconstruct the signed APK with F-Droid's signature copier
+        run: |
+          set -euo pipefail
+          wheel_dir="$RUNNER_TEMP/apksigcopier"
+          mkdir -p "$wheel_dir"
+          python -m pip download --disable-pip-version-check --no-deps \
+            --only-binary=:all: --dest "$wheel_dir" apksigcopier==1.1.1
+          wheel="$wheel_dir/apksigcopier-1.1.1-py3-none-any.whl"
+          echo "0834bb7d6f3607bb0994cf8cd2e26b8f0c9d481e13b75872e0fa9cec052e519b  $wheel" \
+            | sha256sum --check --strict
+          python -m pip install --disable-pip-version-check --no-deps "$wheel"
+
+          signed="$RUNNER_TEMP/signed/$APK_NAME"
+          unsigned="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
+          reconstructed="$RUNNER_TEMP/reconstructed.apk"
+          python - "$signed" "$unsigned" "$reconstructed" <<'PY'
+          import sys
+          from apksigcopier import do_copy
+
+          do_copy(*sys.argv[1:], v1_only=False)
+          PY
+          cmp --silent "$signed" "$reconstructed"
+          echo "F-Droid signature reconstruction is byte-for-byte identical"
+
+  publish:
+    name: Publish F-Droid APK
+    if: inputs.publish == true
+    needs:
+      - build
+      - sign
+      - verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: opendeezer-fdroid-signed-${{ needs.build.outputs.version }}
+
+      - name: Publish immutable APK and update release checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          ASSET_NAME: OpenDeezer-android-fdroid-${{ needs.build.outputs.version }}.apk
+        run: |
+          set -euo pipefail
+          release_json=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets)
+          local_sha=$(sha256sum "$ASSET_NAME" | cut -d ' ' -f1)
+          remote_digest=$(jq -r --arg name "$ASSET_NAME" \
+            '.assets[] | select(.name == $name) | .digest // empty' <<< "$release_json")
+
+          checksums="$RUNNER_TEMP/checksums"
+          mkdir -p "$checksums"
+          if ! gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern SHA256SUMS.txt --dir "$checksums"; then
+            echo "::error::Publish the main release and SHA256SUMS.txt before its F-Droid APK"
+            exit 1
+          fi
+          manifest="$checksums/SHA256SUMS.txt"
+          existing=$(awk -v name="$ASSET_NAME" '$2 == name { print $1 }' "$manifest")
+          if [[ -n "$existing" && "$existing" != "$local_sha" ]]; then
+            echo "::error::SHA256SUMS.txt contains a conflicting digest for $ASSET_NAME"
+            exit 1
+          fi
+
+          if [[ -n "$remote_digest" ]]; then
+            if [[ "$remote_digest" != "sha256:$local_sha" ]]; then
+              echo "::error::Release $RELEASE_TAG already contains a different $ASSET_NAME"
+              exit 1
+            fi
+            echo "$ASSET_NAME is already published with the same digest"
+          else
+            gh release upload "$RELEASE_TAG" "$ASSET_NAME" --repo "$GITHUB_REPOSITORY"
+          fi
+
+          if [[ -z "$existing" ]]; then
+            printf '%s  %s\n' "$local_sha" "$ASSET_NAME" >> "$manifest"
+            gh release upload "$RELEASE_TAG" "$manifest" --repo "$GITHUB_REPOSITORY" --clobber
+          fi
