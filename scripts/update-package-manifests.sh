@@ -7,6 +7,9 @@ VERSION="${1:-}"
 SUMS_FILE="${2:-}"
 SOURCE_SHA="${3:-}"
 RELEASE_DATE="${4:-}"
+FDROID_TMP=""
+
+trap 'if [[ -n "$FDROID_TMP" ]]; then rm -f "$FDROID_TMP"; fi' EXIT
 
 if [[ -z "$VERSION" || -z "$SUMS_FILE" || -z "$SOURCE_SHA" || -z "$RELEASE_DATE" ]]; then
   echo "usage: $0 <version> <SHA256SUMS.txt> <source-tarball-sha256> <release-date>" >&2
@@ -201,7 +204,7 @@ fi
 
 if [[ -f "$FDROID" ]]; then
   FDROID_TMP="$(mktemp "${TMPDIR:-/tmp}/opendeezer-fdroid.XXXXXX")"
-  trap 'if [[ -n "${FDROID_TMP:-}" ]]; then rm -f "$FDROID_TMP"; fi' EXIT
+  # Preserve the metadata file mode when the validated replacement is installed.
   cp -p "$FDROID" "$FDROID_TMP"
   awk -v version="$VERSION" -v base="$VERSION_CODE" -v commit="$FDROID_COMMIT" '
     /^  - versionName: / {

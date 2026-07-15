@@ -15,8 +15,9 @@ repository.
 The recipe builds `odmobile.aar` from the reviewed Go source; it never downloads
 or bundles the generated AAR. It pins Go through the `go` srclib, derives the
 exact `golang.org/x/mobile` version from `go.mod`, pins NDK r26d, and assembles
-four unsigned `mobileRelease` APKs for F-Droid to verify and sign. Each build
-selects exactly one ABI and has its own ordered version code. The Android TV
+four unsigned `mobileRelease` APKs for F-Droid to compare with the signed
+upstream binaries. Each build selects exactly one ABI and has its own ordered
+version code. The Android TV
 flavor has a different application ID (`fr.cyclooo.opendeezer.tv`) and needs a
 separate submission after the phone recipe is proven on the official build
 infrastructure.

@@ -445,7 +445,7 @@ jobs:
             esac
             expected_code=$((ANDROID_BASE_VERSION_CODE * 10 + offset))
             badging=$("$AAPT" dump badging "$apk")
-            grep -q "versionCode='$expected_code'" <<< "$badging" \
+            grep -Fq "versionCode='$expected_code'" <<< "$badging" \
               || { echo "::error::$apk does not use expected versionCode $expected_code"; exit 1; }
             native_abis=$(sed -n "s/^native-code: //p" <<< "$badging" | tr -d "'")
             if [ "$offset" -eq 0 ]; then

@@ -103,6 +103,27 @@ jobs:
               echo "::error::Manual signing is restricted to commits contained in $DEFAULT_BRANCH"
               exit 1
             fi
+
+            metadata_path=packaging/fdroid/fdroiddata/fr.cyclooo.opendeezer.yml
+            mapfile -t fdroid_commits < <(
+              git show "origin/$DEFAULT_BRANCH:$metadata_path" \
+                | sed -n 's/^    commit: \([0-9a-f]\{40\}\)$/\1/p'
+            )
+            if [[ "${#fdroid_commits[@]}" -ne 4 ]]; then
+              echo "::error::$metadata_path on $DEFAULT_BRANCH must contain four full source commits"
+              exit 1
+            fi
+            fdroid_source="${fdroid_commits[0]}"
+            for fdroid_commit in "${fdroid_commits[@]}"; do
+              if [[ "$fdroid_commit" != "$fdroid_source" ]]; then
+                echo "::error::F-Droid ABI builds do not pin one shared source commit"
+                exit 1
+              fi
+            done
+            if [[ "$fdroid_source" != "$source_sha" ]]; then
+              echo "::error::source_ref $source_sha does not match F-Droid source commit $fdroid_source"
+              exit 1
+            fi
           else
             version="$gradle_version"
             release_tag="v$version"
@@ -187,9 +208,9 @@ jobs:
             test -f "$unsigned"
             badging=$("$aapt" dump badging "$unsigned")
             head -1 <<< "$badging"
-            grep -q "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
-            grep -q "versionCode='$version_code'" <<< "$badging"
-            grep -q "versionName='$VERSION'" <<< "$badging"
+            grep -Fq "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
+            grep -Fq "versionCode='$version_code'" <<< "$badging"
+            grep -Fq "versionName='$VERSION'" <<< "$badging"
             native_abis=$(sed -n "s/^native-code: //p" <<< "$badging" | tr -d "'")
             [ "$native_abis" = "$abi" ] \
               || { echo "::error::$unsigned does not contain only $abi"; exit 1; }
@@ -256,9 +277,9 @@ jobs:
 
             badging=$("$aapt" dump badging "$apk")
             head -1 <<< "$badging"
-            grep -q "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
-            grep -q "versionCode='$version_code'" <<< "$badging"
-            grep -q "versionName='$VERSION'" <<< "$badging"
+            grep -Fq "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
+            grep -Fq "versionCode='$version_code'" <<< "$badging"
+            grep -Fq "versionName='$VERSION'" <<< "$badging"
             native_abis=$(sed -n "s/^native-code: //p" <<< "$badging" | tr -d "'")
             [ "$native_abis" = "$abi" ] \
               || { echo "::error::$apk does not contain only $abi"; exit 1; }
@@ -484,6 +505,5 @@ jobs:
           fi
           if [[ "${#checksum_lines[@]}" -gt 0 ]]; then
             printf '%s\n' "${checksum_lines[@]}" >> "$manifest"
-            sort -k2,2 -o "$manifest" "$manifest"
             gh release upload "$RELEASE_TAG" "$manifest" --repo "$GITHUB_REPOSITORY" --clobber
           fi
