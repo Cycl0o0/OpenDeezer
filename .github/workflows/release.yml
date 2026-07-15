@@ -394,7 +394,8 @@ jobs:
           trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
           chmod +x ./gradlew || true
-          ./gradlew --no-daemon -PabiSplits=true assembleMobileRelease assembleTvRelease
+          ./gradlew --no-daemon -PupstreamUpdates=true -PabiSplits=true \
+            assembleMobileRelease assembleTvRelease
       # Prove the signed APKs satisfy Google's sideload developer-verification
       # policy: they must carry an APK Signature Scheme v2/v3 block whose
       # certificate is the registered developer key. This verifies both APKs and

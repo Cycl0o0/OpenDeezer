@@ -12,14 +12,17 @@ so a tagged release can never accidentally publish a debug-signed APK.
 
 ## The keystore
 
-A 4096-bit PKCS12 keystore (alias `opendeezer`, valid to 2059) already exists and
-its secrets are set. It is backed up — **readably only** — at
-`~/Documents/opendeezer-signing/opendeezer-release.p12` (+ its password file).
+A stable PKCS12 keystore (alias `opendeezer`) is configured in the repository's
+GitHub Actions secrets. GitHub secrets are write-only deployment copies and do
+**not** count as a recoverable backup.
 
 > ⚠️ **Never lose this keystore.** If it's gone you can never ship a compatible
 > update — every existing install would have to be uninstalled and reinstalled
-> (losing its data). Back it up in a password manager / offline store. GitHub
-> secrets are write-only, so that folder is your only recoverable copy.
+> (losing its data). Keep at least two encrypted, tested copies in separate
+> locations, with one offline, and store the password separately. Never commit
+> the keystore or its password. Periodically confirm that a backup can be opened
+> and that its certificate SHA-256 is
+> `e5c114ba5ef3482b5a441485923835c510c724013f4116c9a44808b347dfa230`.
 
 To regenerate an equivalent keystore (only if starting fresh — a new key breaks
 upgrades for existing users):
@@ -34,6 +37,19 @@ openssl req -x509 -newkey rsa:4096 -keyout k.pem -out c.pem -days 12000 -nodes \
   -subj "/CN=Youssef Chabb/O=OpenDeezer/C=FR"
 openssl pkcs12 -export -inkey k.pem -in c.pem -name opendeezer -out opendeezer-release.p12
 ```
+
+## F-Droid APK
+
+The regular Android release is built explicitly with
+`-PupstreamUpdates=true`, so installs from GitHub keep the in-app update check.
+The separate `OpenDeezer-android-fdroid-<version>.apk` is built with
+`-PupstreamUpdates=false`, because F-Droid owns updates for that installation.
+
+`.github/workflows/fdroid-reproducible.yml` builds the unsigned F-Droid variant
+at F-Droid's canonical source path, signs it with APK Signature Schemes v2/v3,
+and reconstructs the result with `apksigcopier` before publication. The workflow
+is manual by design: publish only after its unsigned artifact matches the APK
+from the corresponding fdroiddata pipeline.
 
 ## GitHub repository secrets
 
