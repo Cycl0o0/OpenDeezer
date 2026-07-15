@@ -1,3 +1,5 @@
+import com.android.build.api.variant.FilterConfiguration
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,6 +10,28 @@ val upstreamUpdatesEnabled = providers.gradleProperty("upstreamUpdates")
     .orNull
     ?.toBooleanStrictOrNull()
     ?: true
+
+// Keep this order in sync with F-Droid's VercodeOperation entries. Compatible
+// devices can accept more than one ABI, so the preferred ABI needs the larger
+// version code. The base versionCode remains the release counter that tooling
+// reads and bumps; split APKs append the stable ABI digit below.
+val abiVersionCodeOffsets = linkedMapOf(
+    "armeabi-v7a" to 1,
+    "arm64-v8a" to 2,
+    "x86" to 3,
+    "x86_64" to 4,
+)
+val fdroidAbi = providers.gradleProperty("fdroidAbi").orNull
+if (fdroidAbi != null && fdroidAbi !in abiVersionCodeOffsets) {
+    throw GradleException(
+        "Unsupported fdroidAbi '$fdroidAbi'; expected one of ${abiVersionCodeOffsets.keys.joinToString()}",
+    )
+}
+if (fdroidAbi != null && upstreamUpdatesEnabled) {
+    throw GradleException("fdroidAbi requires -PupstreamUpdates=false")
+}
+val abiSplitsEnabled =
+    providers.gradleProperty("abiSplits").orNull == "true" || fdroidAbi != null
 
 android {
     namespace = "fr.cyclooo.opendeezer"
@@ -62,16 +86,19 @@ android {
         }
     }
 
-    // Store/release builds can emit one APK per ABI so F-Droid-compatible
-    // repositories do not have to mirror the much larger four-ABI universal
-    // package. Local and pull-request builds keep their single-APK behavior
-    // unless -PabiSplits=true is supplied explicitly.
+    // Store/release builds can emit one APK per ABI. Normal releases retain a
+    // universal APK; an F-Droid build selects exactly one ABI so fdroidserver
+    // sees a single output without a custom `output` metadata field.
     splits {
         abi {
-            isEnable = providers.gradleProperty("abiSplits").orNull == "true"
+            isEnable = abiSplitsEnabled
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-            isUniversalApk = true
+            if (fdroidAbi == null) {
+                include(*abiVersionCodeOffsets.keys.toTypedArray())
+            } else {
+                include(fdroidAbi)
+            }
+            isUniversalApk = fdroidAbi == null
         }
     }
 
@@ -107,6 +134,26 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+if (abiSplitsEnabled) {
+    val baseVersionCode = android.defaultConfig.versionCode
+        ?: throw GradleException("Android versionCode must be configured")
+    if (baseVersionCode !in 1..209_999_999) {
+        throw GradleException("Android base versionCode is outside the ABI-safe range")
+    }
+
+    androidComponents.onVariants(
+        androidComponents.selector().withBuildType("release"),
+    ) { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters
+                .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier
+            val offset = if (abi == null) 0 else abiVersionCodeOffsets.getValue(abi)
+            output.versionCode.set(baseVersionCode * 10 + offset)
         }
     }
 }

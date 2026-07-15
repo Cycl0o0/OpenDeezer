@@ -342,10 +342,17 @@ jobs:
           fi
           VERSION="${GITHUB_REF_NAME#v}"
           GRADLE_VERSION=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' gui/android/app/build.gradle.kts | head -1)
+          BASE_VERSION_CODE=$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\).*/\1/p' gui/android/app/build.gradle.kts | head -1)
           if [ "$GRADLE_VERSION" != "$VERSION" ]; then
             echo "::error::Tag version $VERSION does not match Android versionName $GRADLE_VERSION"
             exit 1
           fi
+          if ! [[ "$BASE_VERSION_CODE" =~ ^[0-9]+$ ]] || \
+             [ "$BASE_VERSION_CODE" -lt 1 ] || [ "$BASE_VERSION_CODE" -gt 209999999 ]; then
+            echo "::error::Android base versionCode is missing or outside the ABI-safe range"
+            exit 1
+          fi
+          echo "ANDROID_BASE_VERSION_CODE=$BASE_VERSION_CODE" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25.12"
@@ -407,6 +414,7 @@ jobs:
           ANDROID_EXPECTED_CERT_SHA256: ${{ vars.ANDROID_EXPECTED_CERT_SHA256 }}
         run: |
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/34.0.0/aapt"
           EXPECTED="${ANDROID_EXPECTED_CERT_SHA256:-E5:C1:14:BA:5E:F3:48:2B:5A:44:14:85:92:38:35:C5:10:C7:24:01:3F:41:16:C9:A4:48:08:B3:47:DF:A2:30}"
           WANT=$(echo "$EXPECTED" | tr -d ' :' | tr 'a-f' 'A-F')
           verify_one() {
@@ -424,6 +432,41 @@ jobs:
             echo "signing cert SHA-256: $got"
             if [ "$got" != "$WANT" ]; then
               echo "::error::$apk signing cert ($got) does not match the registered developer key ($WANT)"; exit 1
+            fi
+
+            local offset expected_code badging native_abis
+            case "$(basename "$apk")" in
+              *-universal-*) offset=0 ;;
+              *-armeabi-v7a-*) offset=1 ;;
+              *-arm64-v8a-*) offset=2 ;;
+              *-x86_64-*) offset=4 ;;
+              *-x86-*) offset=3 ;;
+              *) echo "::error::Unrecognized Android release output: $apk"; exit 1 ;;
+            esac
+            expected_code=$((ANDROID_BASE_VERSION_CODE * 10 + offset))
+            badging=$("$AAPT" dump badging "$apk")
+            grep -q "versionCode='$expected_code'" <<< "$badging" \
+              || { echo "::error::$apk does not use expected versionCode $expected_code"; exit 1; }
+            native_abis=$(sed -n "s/^native-code: //p" <<< "$badging" | tr -d "'")
+            if [ "$offset" -eq 0 ]; then
+              local present_abis
+              read -r -a present_abis <<< "$native_abis"
+              [ "${#present_abis[@]}" -eq 4 ] \
+                || { echo "::error::$apk does not contain exactly four ABIs"; exit 1; }
+              for expected_abi in armeabi-v7a arm64-v8a x86 x86_64; do
+                [[ " ${present_abis[*]} " == *" $expected_abi "* ]] \
+                  || { echo "::error::$apk is missing $expected_abi"; exit 1; }
+              done
+            else
+              local expected_abi
+              case "$offset" in
+                1) expected_abi=armeabi-v7a ;;
+                2) expected_abi=arm64-v8a ;;
+                3) expected_abi=x86 ;;
+                4) expected_abi=x86_64 ;;
+              esac
+              [ "$native_abis" = "$expected_abi" ] \
+                || { echo "::error::$apk does not contain only $expected_abi"; exit 1; }
             fi
             echo "matches the registered developer key ✓"
           }
