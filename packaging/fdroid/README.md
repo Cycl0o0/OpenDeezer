@@ -12,19 +12,21 @@ repository.
 - `fdroiddata/fr.cyclooo.opendeezer.yml` is a proposal to copy to
   `metadata/fr.cyclooo.opendeezer.yml` in an `fdroiddata` checkout.
 
-The recipe builds `odmobile.aar` from the tagged Go source; it never downloads
+The recipe builds `odmobile.aar` from the reviewed Go source; it never downloads
 or bundles the generated AAR. It pins Go through the `go` srclib, derives the
 exact `golang.org/x/mobile` version from `go.mod`, pins NDK r26d, and assembles
-the unsigned `mobileRelease` APK for F-Droid to sign. The Android TV flavor has
-a different application ID (`fr.cyclooo.opendeezer.tv`) and needs a separate
-submission after the phone recipe is proven on the official build infrastructure.
+four unsigned `mobileRelease` APKs for F-Droid to compare with the signed
+upstream binaries. Each build selects exactly one ABI and has its own ordered
+version code. The Android TV
+flavor has a different application ID (`fr.cyclooo.opendeezer.tv`) and needs a
+separate submission after the phone recipe is proven on the official build
+infrastructure.
 
 ## Before submitting
 
-1. Publish the `v3.1.4` tag targeted by the candidate recipe (or update its
-   version, version code and commit to a newer qualifying release). Never submit
-   a recipe for `v3.1.3`, which predates the credential-storage and F-Droid
-   updater gates.
+1. Keep all four build blocks on the same full source commit hash. That commit
+   must contain the `fdroidAbi` Gradle support and must match the source used by
+   the reproducible-binary workflow.
 2. Add an icon and real phone screenshots under
    `fastlane/metadata/android/en-US/images/`.
 3. Confirm that the OpenDeezer name and artwork do not infringe Deezer's
@@ -35,7 +37,9 @@ submission after the phone recipe is proven on the official build infrastructure
    cp packaging/fdroid/fdroiddata/fr.cyclooo.opendeezer.yml \
      /path/to/fdroiddata/metadata/
    fdroid lint fr.cyclooo.opendeezer
-   fdroid build --test fr.cyclooo.opendeezer:26
+   for code in 261 262 263 264; do
+     fdroid build --test "fr.cyclooo.opendeezer:$code"
+   done
    ```
 
 5. Test login, streaming, foreground playback, downloads and logout on a clean
@@ -48,13 +52,10 @@ submission after the phone recipe is proven on the official build infrastructure
 
 ## Known blockers and review notes
 
-- Two clean gomobile builds made in different checkout directories produced
-  different `libgojni.so` files even with `-trimpath` and `-ffile-prefix-map`.
-  Gomobile records its absolute local-module replacement in Go's build-info
-  section for every ABI. F-Droid's fixed build path should still allow its own
-  repeated builds to match, but upstream signature-copy reproducibility will
-  require matching that path or fixing the gomobile-generated module. Verify
-  this on F-Droid's Linux build image before declaring the APK reproducible.
+- Gomobile records its absolute local-module replacement in Go's build-info
+  section. The upstream reproducible workflow therefore builds at F-Droid's
+  canonical `/home/vagrant/build/fr.cyclooo.opendeezer` path. Keep that path and
+  the source commit identical when comparing the four binaries.
 - The tagged release currently requires Go 1.25.12. The recipe builds it from
   F-Droid's `go` srclib, using Debian's Go only as a bootstrap compiler. This is
   slower than a conventional Android build and has not yet been exercised on an
@@ -68,10 +69,9 @@ submission after the phone recipe is proven on the official build infrastructure
 - The F-Droid recipe disables both the automatic GitHub update check and the
   user-triggered Settings action through a compile-time Gradle property. GitHub
   builds retain both paths.
-- F-Droid will sign ordinary source builds with its own key. Users of the
-  GitHub-signed APK will therefore need to uninstall it before installing the
-  F-Droid build unless upstream reproducible-build signature publication is
-  configured later.
+- The candidate uses upstream reproducible binaries and pins the upstream
+  signing certificate through `AllowedAPKSigningKeys`. Do not publish or change
+  those binaries after F-Droid has reviewed them.
 - The v3.1.3 tag stores its ARL session credential in plain SharedPreferences.
   The current source encrypts it with Android Keystore and excludes the
   preference file from backup/device transfer; publish those fixes in a new tag

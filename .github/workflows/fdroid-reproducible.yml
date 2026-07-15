@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build F-Droid APK
+    name: Build F-Droid ABI APKs
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -69,8 +69,12 @@ jobs:
             gui/android/app/build.gradle.kts | head -1)
           version_code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\).*/\1/p' \
             gui/android/app/build.gradle.kts | head -1)
-          if [[ -z "$gradle_version" || -z "$version_code" ]]; then
+          if [[ -z "$gradle_version" || ! "$version_code" =~ ^[0-9]+$ ]]; then
             echo "::error::Could not determine the Android versionName/versionCode"
+            exit 1
+          fi
+          if (( version_code < 1 || version_code > 209999999 )); then
+            echo "::error::Android base versionCode is outside the ABI-safe range"
             exit 1
           fi
 
@@ -97,6 +101,27 @@ jobs:
               "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
             if ! git merge-base --is-ancestor "$source_sha" "origin/$DEFAULT_BRANCH"; then
               echo "::error::Manual signing is restricted to commits contained in $DEFAULT_BRANCH"
+              exit 1
+            fi
+
+            metadata_path=packaging/fdroid/fdroiddata/fr.cyclooo.opendeezer.yml
+            mapfile -t fdroid_commits < <(
+              git show "origin/$DEFAULT_BRANCH:$metadata_path" \
+                | sed -n 's/^    commit: \([0-9a-f]\{40\}\)$/\1/p'
+            )
+            if [[ "${#fdroid_commits[@]}" -ne 4 ]]; then
+              echo "::error::$metadata_path on $DEFAULT_BRANCH must contain four full source commits"
+              exit 1
+            fi
+            fdroid_source="${fdroid_commits[0]}"
+            for fdroid_commit in "${fdroid_commits[@]}"; do
+              if [[ "$fdroid_commit" != "$fdroid_source" ]]; then
+                echo "::error::F-Droid ABI builds do not pin one shared source commit"
+                exit 1
+              fi
+            done
+            if [[ "$fdroid_source" != "$source_sha" ]]; then
+              echo "::error::source_ref $source_sha does not match F-Droid source commit $fdroid_source"
               exit 1
             fi
           else
@@ -142,7 +167,10 @@ jobs:
           git clone --quiet --no-local --no-checkout "$GITHUB_WORKSPACE" "$FIXED_ROOT"
           git -C "$FIXED_ROOT" checkout --quiet --detach "$SOURCE_SHA"
 
-      - name: Build unsigned F-Droid APK
+      - name: Build unsigned F-Droid ABI APKs
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          BASE_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
         run: |
           set -euo pipefail
           export ANDROID_NDK="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION"
@@ -162,23 +190,50 @@ jobs:
             -o gui/android/app/libs/odmobile.aar ./mobile
 
           cd gui/android/app
-          ../gradlew --no-daemon -PupstreamUpdates=false assembleMobileRelease
+          unsigned_dir="$RUNNER_TEMP/fdroid-unsigned"
+          mkdir -p "$unsigned_dir"
+          aapt="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/aapt"
+          apksigner="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/apksigner"
+          abis=(armeabi-v7a arm64-v8a x86 x86_64)
+          for index in "${!abis[@]}"; do
+            abi="${abis[$index]}"
+            version_code=$((BASE_VERSION_CODE * 10 + index + 1))
+            ../gradlew --no-daemon clean \
+              -PupstreamUpdates=false \
+              -PfdroidAbi="$abi" \
+              assembleMobileRelease
 
-          unsigned=build/outputs/apk/mobile/release/app-mobile-release-unsigned.apk
-          test -f "$unsigned"
-          cp "$unsigned" "$RUNNER_TEMP/OpenDeezer-android-fdroid-unsigned.apk"
-          sha256sum "$RUNNER_TEMP/OpenDeezer-android-fdroid-unsigned.apk"
+            test "$(find build/outputs/apk/mobile/release -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 1
+            unsigned="build/outputs/apk/mobile/release/app-mobile-${abi}-release-unsigned.apk"
+            test -f "$unsigned"
+            badging=$("$aapt" dump badging "$unsigned")
+            head -1 <<< "$badging"
+            grep -Fq "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
+            grep -Fq "versionCode='$version_code'" <<< "$badging"
+            grep -Fq "versionName='$VERSION'" <<< "$badging"
+            native_abis=$(sed -n "s/^native-code: //p" <<< "$badging" | tr -d "'")
+            [ "$native_abis" = "$abi" ] \
+              || { echo "::error::$unsigned does not contain only $abi"; exit 1; }
+            if "$apksigner" verify "$unsigned" >/dev/null 2>&1; then
+              echo "::error::$unsigned is unexpectedly signed"
+              exit 1
+            fi
+            destination="$unsigned_dir/OpenDeezer-android-fdroid-${VERSION}-${version_code}-unsigned.apk"
+            cp "$unsigned" "$destination"
+            sha256sum "$destination"
+          done
+          test "$(find "$unsigned_dir" -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 4
 
-      - name: Upload unsigned comparison APK
+      - name: Upload unsigned comparison APKs
         uses: actions/upload-artifact@v4
         with:
           name: opendeezer-fdroid-unsigned
-          path: ${{ runner.temp }}/OpenDeezer-android-fdroid-unsigned.apk
+          path: ${{ runner.temp }}/fdroid-unsigned/*.apk
           if-no-files-found: error
           retention-days: 14
 
   sign:
-    name: Sign F-Droid APK
+    name: Sign F-Droid ABI APKs
     if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
@@ -186,7 +241,8 @@ jobs:
       contents: read
     env:
       ANDROID_BUILD_TOOLS: 34.0.0
-      APK_NAME: OpenDeezer-android-fdroid-${{ needs.build.outputs.version }}.apk
+      VERSION: ${{ needs.build.outputs.version }}
+      BASE_VERSION_CODE: ${{ needs.build.outputs.version_code }}
       EXPECTED_CERT_SHA256: ${{ vars.ANDROID_EXPECTED_CERT_SHA256 || 'E5:C1:14:BA:5E:F3:48:2B:5A:44:14:85:92:38:35:C5:10:C7:24:01:3F:41:16:C9:A4:48:08:B3:47:DF:A2:30' }}
 
     steps:
@@ -207,25 +263,32 @@ jobs:
           name: opendeezer-fdroid-unsigned
           path: ${{ runner.temp }}/unsigned
 
-      - name: Validate unsigned APK identity
-        env:
-          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
-          EXPECTED_VERSION_CODE: ${{ needs.build.outputs.version_code }}
+      - name: Validate unsigned APK identities
         run: |
           set -euo pipefail
-          apk="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
-          test -f "$apk"
+          aapt="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/aapt"
+          apksigner="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/apksigner"
+          abis=(armeabi-v7a arm64-v8a x86 x86_64)
+          for index in "${!abis[@]}"; do
+            abi="${abis[$index]}"
+            version_code=$((BASE_VERSION_CODE * 10 + index + 1))
+            apk="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-${VERSION}-${version_code}-unsigned.apk"
+            test -f "$apk"
 
-          badging=$("$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/aapt" dump badging "$apk" | head -1)
-          echo "$badging"
-          grep -q "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
-          grep -q "versionCode='$EXPECTED_VERSION_CODE'" <<< "$badging"
-          grep -q "versionName='$EXPECTED_VERSION'" <<< "$badging"
+            badging=$("$aapt" dump badging "$apk")
+            head -1 <<< "$badging"
+            grep -Fq "package: name='fr.cyclooo.opendeezer'" <<< "$badging"
+            grep -Fq "versionCode='$version_code'" <<< "$badging"
+            grep -Fq "versionName='$VERSION'" <<< "$badging"
+            native_abis=$(sed -n "s/^native-code: //p" <<< "$badging" | tr -d "'")
+            [ "$native_abis" = "$abi" ] \
+              || { echo "::error::$apk does not contain only $abi"; exit 1; }
 
-          if "$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/apksigner" verify "$apk" >/dev/null 2>&1; then
-            echo "::error::The comparison APK is unexpectedly signed"
-            exit 1
-          fi
+            if "$apksigner" verify "$apk" >/dev/null 2>&1; then
+              echo "::error::$apk is unexpectedly signed"
+              exit 1
+            fi
+          done
 
       - name: Require Android signing secrets
         env:
@@ -241,7 +304,7 @@ jobs:
             fi
           done
 
-      - name: Sign F-Droid APK
+      - name: Sign F-Droid ABI APKs
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -255,45 +318,54 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
 
           apksigner="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS/apksigner"
-          "$apksigner" sign \
-            --ks "$keystore" \
-            --ks-type PKCS12 \
-            --ks-key-alias "$ANDROID_KEY_ALIAS" \
-            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
-            --key-pass env:ANDROID_KEY_PASSWORD \
-            --v1-signing-enabled false \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --v4-signing-enabled false \
-            --min-sdk-version 24 \
-            --out "$RUNNER_TEMP/$APK_NAME" \
-            "$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
-
-          verification=$("$apksigner" verify --verbose --print-certs "$RUNNER_TEMP/$APK_NAME")
-          echo "$verification"
-          for scheme in v2 v3; do
-            grep -q "Verified using $scheme scheme (APK Signature Scheme $scheme): true" <<< "$verification"
-          done
-
           expected=$(tr -d ' :' <<< "$EXPECTED_CERT_SHA256" | tr '[:lower:]' '[:upper:]')
-          actual=$(sed -n 's/.*certificate SHA-256 digest: //p' <<< "$verification" \
-            | head -1 | tr -d ' :' | tr '[:lower:]' '[:upper:]')
-          if [[ "$actual" != "$expected" ]]; then
-            echo "::error::Signing certificate $actual does not match expected certificate $expected"
-            exit 1
-          fi
-          sha256sum "$RUNNER_TEMP/$APK_NAME"
+          signed_dir="$RUNNER_TEMP/fdroid-signed"
+          mkdir -p "$signed_dir"
+          abis=(armeabi-v7a arm64-v8a x86 x86_64)
+          for index in "${!abis[@]}"; do
+            version_code=$((BASE_VERSION_CODE * 10 + index + 1))
+            unsigned="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-${VERSION}-${version_code}-unsigned.apk"
+            signed="$signed_dir/OpenDeezer-android-fdroid-${VERSION}-${version_code}.apk"
+            "$apksigner" sign \
+              --ks "$keystore" \
+              --ks-type PKCS12 \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --key-pass env:ANDROID_KEY_PASSWORD \
+              --v1-signing-enabled false \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --v4-signing-enabled false \
+              --min-sdk-version 24 \
+              --out "$signed" \
+              "$unsigned"
 
-      - name: Upload signed APK artifact
+            verification=$("$apksigner" verify --verbose --print-certs "$signed")
+            echo "$verification"
+            for scheme in v2 v3; do
+              grep -q "Verified using $scheme scheme (APK Signature Scheme $scheme): true" <<< "$verification"
+            done
+
+            actual=$(sed -n 's/.*certificate SHA-256 digest: //p' <<< "$verification" \
+              | head -1 | tr -d ' :' | tr '[:lower:]' '[:upper:]')
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::Signing certificate $actual does not match expected certificate $expected"
+              exit 1
+            fi
+            sha256sum "$signed"
+          done
+          test "$(find "$signed_dir" -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 4
+
+      - name: Upload signed APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: opendeezer-fdroid-signed-${{ needs.build.outputs.version }}
-          path: ${{ runner.temp }}/${{ env.APK_NAME }}
+          path: ${{ runner.temp }}/fdroid-signed/*.apk
           if-no-files-found: error
           retention-days: 14
 
   verify:
-    name: Verify F-Droid signature copying
+    name: Verify F-Droid ABI signature copying
     if: github.event_name == 'workflow_dispatch'
     needs:
       - build
@@ -302,7 +374,8 @@ jobs:
     permissions:
       contents: read
     env:
-      APK_NAME: OpenDeezer-android-fdroid-${{ needs.build.outputs.version }}.apk
+      VERSION: ${{ needs.build.outputs.version }}
+      BASE_VERSION_CODE: ${{ needs.build.outputs.version_code }}
 
     steps:
       - uses: actions/setup-python@v6
@@ -319,7 +392,7 @@ jobs:
           name: opendeezer-fdroid-signed-${{ needs.build.outputs.version }}
           path: ${{ runner.temp }}/signed
 
-      - name: Reconstruct the signed APK with F-Droid's signature copier
+      - name: Reconstruct the signed APKs with F-Droid's signature copier
         run: |
           set -euo pipefail
           wheel_dir="$RUNNER_TEMP/apksigcopier"
@@ -331,20 +404,25 @@ jobs:
             | sha256sum --check --strict
           python -m pip install --disable-pip-version-check --no-deps "$wheel"
 
-          signed="$RUNNER_TEMP/signed/$APK_NAME"
-          unsigned="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-unsigned.apk"
-          reconstructed="$RUNNER_TEMP/reconstructed.apk"
-          python - "$signed" "$unsigned" "$reconstructed" <<'PY'
+          for offset in 1 2 3 4; do
+            version_code=$((BASE_VERSION_CODE * 10 + offset))
+            signed="$RUNNER_TEMP/signed/OpenDeezer-android-fdroid-${VERSION}-${version_code}.apk"
+            unsigned="$RUNNER_TEMP/unsigned/OpenDeezer-android-fdroid-${VERSION}-${version_code}-unsigned.apk"
+            reconstructed="$RUNNER_TEMP/reconstructed-${version_code}.apk"
+            test -f "$signed"
+            test -f "$unsigned"
+            python - "$signed" "$unsigned" "$reconstructed" <<'PY'
           import sys
           from apksigcopier import do_copy
 
           do_copy(*sys.argv[1:], v1_only=False)
           PY
-          cmp --silent "$signed" "$reconstructed"
-          echo "F-Droid signature reconstruction is byte-for-byte identical"
+            cmp --silent "$signed" "$reconstructed"
+            echo "F-Droid signature reconstruction is byte-for-byte identical for $version_code"
+          done
 
   publish:
-    name: Publish F-Droid APK
+    name: Publish F-Droid ABI APKs
     if: inputs.publish == true
     needs:
       - build
@@ -357,18 +435,17 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: opendeezer-fdroid-signed-${{ needs.build.outputs.version }}
+          path: ${{ runner.temp }}/signed
 
-      - name: Publish immutable APK and update release checksums
+      - name: Publish immutable ABI APKs and update release checksums
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
-          ASSET_NAME: OpenDeezer-android-fdroid-${{ needs.build.outputs.version }}.apk
+          VERSION: ${{ needs.build.outputs.version }}
+          BASE_VERSION_CODE: ${{ needs.build.outputs.version_code }}
         run: |
           set -euo pipefail
           release_json=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets)
-          local_sha=$(sha256sum "$ASSET_NAME" | cut -d ' ' -f1)
-          remote_digest=$(jq -r --arg name "$ASSET_NAME" \
-            '.assets[] | select(.name == $name) | .digest // empty' <<< "$release_json")
 
           checksums="$RUNNER_TEMP/checksums"
           mkdir -p "$checksums"
@@ -378,23 +455,55 @@ jobs:
             exit 1
           fi
           manifest="$checksums/SHA256SUMS.txt"
-          existing=$(awk -v name="$ASSET_NAME" '$2 == name { print $1 }' "$manifest")
-          if [[ -n "$existing" && "$existing" != "$local_sha" ]]; then
-            echo "::error::SHA256SUMS.txt contains a conflicting digest for $ASSET_NAME"
-            exit 1
-          fi
+          remote_check="$RUNNER_TEMP/remote-assets"
+          mkdir -p "$remote_check"
+          missing_assets=()
+          checksum_lines=()
 
-          if [[ -n "$remote_digest" ]]; then
-            if [[ "$remote_digest" != "sha256:$local_sha" ]]; then
-              echo "::error::Release $RELEASE_TAG already contains a different $ASSET_NAME"
+          # Detect known conflicts before the first upload. Uploads are
+          # idempotent, so rerunning repairs an interrupted partial upload.
+          for offset in 1 2 3 4; do
+            version_code=$((BASE_VERSION_CODE * 10 + offset))
+            asset_name="OpenDeezer-android-fdroid-${VERSION}-${version_code}.apk"
+            asset_path="$RUNNER_TEMP/signed/$asset_name"
+            test -f "$asset_path"
+            local_sha=$(sha256sum "$asset_path" | cut -d ' ' -f1)
+            existing=$(awk -v name="$asset_name" '$2 == name { print $1 }' "$manifest")
+            if [[ -n "$existing" && "$existing" != "$local_sha" ]]; then
+              echo "::error::SHA256SUMS.txt contains a conflicting digest for $asset_name"
               exit 1
             fi
-            echo "$ASSET_NAME is already published with the same digest"
-          else
-            gh release upload "$RELEASE_TAG" "$ASSET_NAME" --repo "$GITHUB_REPOSITORY"
-          fi
 
-          if [[ -z "$existing" ]]; then
-            printf '%s  %s\n' "$local_sha" "$ASSET_NAME" >> "$manifest"
+            remote_digest=$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)][0].digest // empty' <<< "$release_json")
+            remote_count=$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)] | length' <<< "$release_json")
+            if [[ "$remote_count" -gt 0 ]]; then
+              if [[ -n "$remote_digest" ]]; then
+                remote_sha="${remote_digest#sha256:}"
+              else
+                gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+                  --pattern "$asset_name" --dir "$remote_check"
+                remote_sha=$(sha256sum "$remote_check/$asset_name" | cut -d ' ' -f1)
+              fi
+              if [[ "$remote_sha" != "$local_sha" ]]; then
+                echo "::error::Release $RELEASE_TAG already contains a different $asset_name"
+                exit 1
+              fi
+              echo "$asset_name is already published with the same digest"
+            else
+              missing_assets+=("$asset_path")
+            fi
+
+            if [[ -z "$existing" ]]; then
+              checksum_lines+=("$local_sha  $asset_name")
+            fi
+          done
+
+          if [[ "${#missing_assets[@]}" -gt 0 ]]; then
+            gh release upload "$RELEASE_TAG" "${missing_assets[@]}" --repo "$GITHUB_REPOSITORY"
+          fi
+          if [[ "${#checksum_lines[@]}" -gt 0 ]]; then
+            printf '%s\n' "${checksum_lines[@]}" >> "$manifest"
             gh release upload "$RELEASE_TAG" "$manifest" --repo "$GITHUB_REPOSITORY" --clobber
           fi

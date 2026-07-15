@@ -6,7 +6,7 @@ maintainers' accounts, reviews, and policy decisions.
 
 | Provider | Repository support | Publication status |
 | --- | --- | --- |
-| F-Droid | Source-build recipe and upstream Fastlane text | Candidate validated locally; submit after a new tag and real screenshots |
+| F-Droid | Four ABI source-build recipes, reproducible binaries, and Fastlane text | Under fdroiddata review; publish all four immutable binaries before updating its metadata |
 | Obtainium | Phone and TV import configurations | Ready for direct GitHub Releases use; catalog entry optional |
 | Snap Store | Strictly confined GNOME recipe | `amd64` pack validated; register the name, test on Ubuntu, then upload |
 | Homebrew | macOS/Linux TUI formula | Checksum-pinned; publish it to `Cycl0o0/homebrew-tap` |
@@ -20,8 +20,8 @@ maintainers' accounts, reviews, and policy decisions.
 
 The `publish-manifests` release job runs
 `scripts/update-package-manifests.sh`. It updates versions and real checksums in
-Homebrew, WinGet, AUR, Scoop, Snap, and the F-Droid candidate, preserves the
-result as a workflow artifact, and tries to open
+Homebrew, WinGet, AUR, Scoop, Snap, and all four F-Droid ABI build blocks,
+preserves the result as a workflow artifact, and tries to open
 `release/manifests-<tag>`. PR creation is best-effort because a repository may
 disable PR creation by `GITHUB_TOKEN`; checksum or manifest validation failures
 still fail the job.
@@ -38,9 +38,10 @@ After merging that PR, the remaining external actions are:
 ## Android: F-Droid and Obtainium
 
 [`fdroid/`](fdroid/) contains a mainline F-Droid proposal that builds the Go AAR
-and APK from source. It declares the `NonFreeNet` and `TetheredNet`
-anti-features because a Deezer account and proprietary Deezer service are
-required. Canonical listing text is under `../fastlane/metadata/android/`.
+and one APK per supported ABI from source. It declares the `NonFreeNet` and
+`TetheredNet` anti-features because a Deezer account and proprietary Deezer
+service are required. Canonical listing text is under
+`../fastlane/metadata/android/`.
 The F-Droid guide records the remaining signing, screenshot, reproducibility,
 and trademark review work.
 

@@ -42,15 +42,26 @@ openssl pkcs12 -export -inkey k.pem -in c.pem -name opendeezer -out opendeezer-r
 
 The regular Android release is built explicitly with
 `-PupstreamUpdates=true`, so installs from GitHub keep the in-app update check.
-The separate `OpenDeezer-android-fdroid-<version>.apk` is built with
-`-PupstreamUpdates=false`, because F-Droid owns updates for that installation.
+The F-Droid binaries are built with `-PupstreamUpdates=false`, because F-Droid
+owns updates for that installation. There is one APK per ABI:
 
-`.github/workflows/fdroid-reproducible.yml` builds the unsigned F-Droid variant
-at F-Droid's canonical source path, signs it with APK Signature Schemes v2/v3,
-and reconstructs the result with `apksigcopier` before publication. The workflow
-is manual by design: publish only after its unsigned artifact matches the APK
-from the corresponding fdroiddata pipeline, and after the main GitHub release
-has published its `SHA256SUMS.txt` asset.
+- `OpenDeezer-android-fdroid-<version>-<versionCode>.apk`
+- `armeabi-v7a`: base Android version code × 10 + 1
+- `arm64-v8a`: base Android version code × 10 + 2
+- `x86`: base Android version code × 10 + 3
+- `x86_64`: base Android version code × 10 + 4
+
+For version `3.1.4` (base code `26`), the four APKs therefore use codes
+`261` through `264`. Normal phone and TV GitHub builds use the same mapping;
+their universal APKs use the `× 10` code. A later GitHub release can therefore
+still upgrade an installation that originated from F-Droid.
+
+`.github/workflows/fdroid-reproducible.yml` builds all four unsigned F-Droid
+variants at F-Droid's canonical source path, signs them with APK Signature
+Schemes v2/v3, and reconstructs each result with `apksigcopier` before
+publication. The workflow is manual by design. Its `source_ref` must be the full
+commit hash reviewed in fdroiddata, and the main GitHub release must already
+contain `SHA256SUMS.txt`.
 
 ## GitHub repository secrets
 

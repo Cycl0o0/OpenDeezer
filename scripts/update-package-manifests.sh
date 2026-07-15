@@ -7,6 +7,9 @@ VERSION="${1:-}"
 SUMS_FILE="${2:-}"
 SOURCE_SHA="${3:-}"
 RELEASE_DATE="${4:-}"
+FDROID_TMP=""
+
+trap 'if [[ -n "$FDROID_TMP" ]]; then rm -f "$FDROID_TMP"; fi' EXIT
 
 if [[ -z "$VERSION" || -z "$SUMS_FILE" || -z "$SOURCE_SHA" || -z "$RELEASE_DATE" ]]; then
   echo "usage: $0 <version> <SHA256SUMS.txt> <source-tarball-sha256> <release-date>" >&2
@@ -33,11 +36,59 @@ fi
 FDROID="$ROOT/packaging/fdroid/fdroiddata/fr.cyclooo.opendeezer.yml"
 VERSION_CODE=""
 if [[ -f "$FDROID" ]]; then
-  BUILD_COUNT="$(grep -c '^  - versionName:' "$FDROID" || true)"
-  if [[ "$BUILD_COUNT" != 1 ]]; then
-    echo "F-Droid candidate must contain exactly one build template; found $BUILD_COUNT" >&2
+  FDROID_COMMIT="$(git -C "$ROOT" rev-parse HEAD^{commit})"
+  if [[ ! "$FDROID_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "could not determine the full F-Droid source commit" >&2
     exit 1
   fi
+  BUILD_COUNT="$(grep -c '^  - versionName:' "$FDROID" || true)"
+  if [[ "$BUILD_COUNT" != 4 ]]; then
+    echo "F-Droid candidate must contain exactly four ABI build templates; found $BUILD_COUNT" >&2
+    exit 1
+  fi
+  for field in versionCode commit; do
+    FIELD_COUNT="$(grep -c "^    $field:" "$FDROID" || true)"
+    if [[ "$FIELD_COUNT" != 4 ]]; then
+      echo "F-Droid candidate must contain exactly four $field fields; found $FIELD_COUNT" >&2
+      exit 1
+    fi
+  done
+  if [[ "$(grep -Ec '^    commit: [0-9a-f]{40}$' "$FDROID" || true)" != 4 ]]; then
+    echo "F-Droid source commits must all be full 40-character hashes" >&2
+    exit 1
+  fi
+  EXPECTED_ABIS=$'armeabi-v7a\narm64-v8a\nx86\nx86_64'
+  FDROID_ABIS="$(sed -n 's/^      - fdroidAbi=//p' "$FDROID")"
+  if [[ "$FDROID_ABIS" != "$EXPECTED_ABIS" ]]; then
+    echo "F-Droid ABI build templates are missing, duplicated, or out of order" >&2
+    exit 1
+  fi
+  EXPECTED_VERCODE_OPERATIONS=$'  - 10 * %c + 1\n  - 10 * %c + 2\n  - 10 * %c + 3\n  - 10 * %c + 4'
+  FDROID_VERCODE_OPERATIONS="$(awk '
+    /^VercodeOperation:$/ { capture=1; next }
+    capture && /^  - / { print; next }
+    capture { exit }
+  ' "$FDROID")"
+  if [[ "$FDROID_VERCODE_OPERATIONS" != "$EXPECTED_VERCODE_OPERATIONS" ]]; then
+    echo "F-Droid VercodeOperation does not match the ABI version-code scheme" >&2
+    exit 1
+  fi
+  EXPECTED_BINARIES='Binaries: https://github.com/Cycl0o0/OpenDeezer/releases/download/v%v/OpenDeezer-android-fdroid-%v-%c.apk'
+  if [[ "$(grep -Fxc "$EXPECTED_BINARIES" "$FDROID" || true)" != 1 ]]; then
+    echo "F-Droid Binaries URL does not include the ABI version code" >&2
+    exit 1
+  fi
+  if grep -Eq '^[[:space:]]+output:' "$FDROID"; then
+    echo "F-Droid ABI build templates must not define output" >&2
+    exit 1
+  fi
+  for field in CurrentVersion CurrentVersionCode; do
+    FIELD_COUNT="$(grep -c "^$field:" "$FDROID" || true)"
+    if [[ "$FIELD_COUNT" != 1 ]]; then
+      echo "F-Droid candidate must contain exactly one $field field; found $FIELD_COUNT" >&2
+      exit 1
+    fi
+  done
   ANDROID_VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' "$ROOT/gui/android/app/build.gradle.kts" | head -1)"
   if [[ "$ANDROID_VERSION" != "$VERSION" ]]; then
     echo "Android versionName $ANDROID_VERSION does not match release version $VERSION" >&2
@@ -48,15 +99,20 @@ if [[ -f "$FDROID" ]]; then
     echo "could not read Android versionCode" >&2
     exit 1
   fi
+  if (( VERSION_CODE < 1 || VERSION_CODE > 209999999 )); then
+    echo "Android base versionCode is outside the ABI-safe range" >&2
+    exit 1
+  fi
+  FDROID_VERSION_CODE_MAX=$((VERSION_CODE * 10 + 4))
   FDROID_CURRENT_VERSION="$(sed -n 's/^CurrentVersion: //p' "$FDROID" | head -1)"
   FDROID_CURRENT_CODE="$(sed -n 's/^CurrentVersionCode: \([0-9][0-9]*\)$/\1/p' "$FDROID" | head -1)"
   if [[ ! "$FDROID_CURRENT_CODE" =~ ^[0-9]+$ ]]; then
     echo "could not read current F-Droid version code" >&2
     exit 1
   fi
-  if (( VERSION_CODE < FDROID_CURRENT_CODE )) || \
-     [[ "$VERSION" != "$FDROID_CURRENT_VERSION" && "$VERSION_CODE" -le "$FDROID_CURRENT_CODE" ]]; then
-    echo "Android versionCode must increase for a new F-Droid release ($FDROID_CURRENT_CODE -> $VERSION_CODE)" >&2
+  if (( FDROID_VERSION_CODE_MAX < FDROID_CURRENT_CODE )) || \
+     [[ "$VERSION" != "$FDROID_CURRENT_VERSION" && "$FDROID_VERSION_CODE_MAX" -le "$FDROID_CURRENT_CODE" ]]; then
+    echo "Android ABI versionCodes must increase for a new F-Droid release ($FDROID_CURRENT_CODE -> $FDROID_VERSION_CODE_MAX)" >&2
     exit 1
   fi
 fi
@@ -147,15 +203,49 @@ if [[ -f "$SNAP" ]]; then
 fi
 
 if [[ -f "$FDROID" ]]; then
-  sed -i.bak "s/^  - versionName: .*/  - versionName: $VERSION/" "$FDROID"
-  sed -i.bak "s/^    versionCode: .*/    versionCode: $VERSION_CODE/" "$FDROID"
-  sed -i.bak "s/^    commit: .*/    commit: v$VERSION/" "$FDROID"
-  sed -i.bak "s/^CurrentVersion: .*/CurrentVersion: $VERSION/" "$FDROID"
-  sed -i.bak "s/^CurrentVersionCode: .*/CurrentVersionCode: $VERSION_CODE/" "$FDROID"
-  rm -f "$FDROID.bak"
-  grep -Fq "  - versionName: $VERSION" "$FDROID"
-  grep -Fq "    versionCode: $VERSION_CODE" "$FDROID"
-  grep -Fq "    commit: v$VERSION" "$FDROID"
-  grep -Fq "CurrentVersion: $VERSION" "$FDROID"
-  grep -Fq "CurrentVersionCode: $VERSION_CODE" "$FDROID"
+  FDROID_TMP="$(mktemp "${TMPDIR:-/tmp}/opendeezer-fdroid.XXXXXX")"
+  # Preserve the metadata file mode when the validated replacement is installed.
+  cp -p "$FDROID" "$FDROID_TMP"
+  awk -v version="$VERSION" -v base="$VERSION_CODE" -v commit="$FDROID_COMMIT" '
+    /^  - versionName: / {
+      names++
+      print "  - versionName: " version
+      next
+    }
+    /^    versionCode: / {
+      codes++
+      if (codes > 4) exit 2
+      print "    versionCode: " (base * 10 + codes)
+      next
+    }
+    /^    commit: / {
+      commits++
+      print "    commit: " commit
+      next
+    }
+    /^CurrentVersion: / {
+      current_versions++
+      print "CurrentVersion: " version
+      next
+    }
+    /^CurrentVersionCode: / {
+      current_codes++
+      print "CurrentVersionCode: " (base * 10 + 4)
+      next
+    }
+    { print }
+    END {
+      if (names != 4 || codes != 4 || commits != 4 ||
+          current_versions != 1 || current_codes != 1) exit 3
+    }
+  ' "$FDROID" > "$FDROID_TMP"
+  [[ "$(grep -Fc "  - versionName: $VERSION" "$FDROID_TMP")" -eq 4 ]]
+  [[ "$(grep -Fc "    commit: $FDROID_COMMIT" "$FDROID_TMP")" -eq 4 ]]
+  for offset in 1 2 3 4; do
+    grep -Fq "    versionCode: $((VERSION_CODE * 10 + offset))" "$FDROID_TMP"
+  done
+  grep -Fq "CurrentVersion: $VERSION" "$FDROID_TMP"
+  grep -Fq "CurrentVersionCode: $FDROID_VERSION_CODE_MAX" "$FDROID_TMP"
+  mv "$FDROID_TMP" "$FDROID"
+  FDROID_TMP=""
 fi
