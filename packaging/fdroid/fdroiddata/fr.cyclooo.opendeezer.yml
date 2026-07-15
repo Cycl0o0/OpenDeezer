@@ -18,14 +18,15 @@ AutoName: OpenDeezer
 
 RepoType: git
 Repo: https://github.com/Cycl0o0/OpenDeezer.git
+Binaries: https://github.com/Cycl0o0/OpenDeezer/releases/download/v%v/OpenDeezer-android-fdroid-%v.apk
 
 Builds:
   - versionName: 3.1.4
     versionCode: 26
-    # This post-tag commit updates release/F-Droid metadata and adds the store
-    # screenshots; the Android and Go sources still match v3.1.4.
-    commit: b2a149c03c5125a01cc3bd29f8c019c2c611f718
-    subdir: gui/android
+    # This reviewed post-tag commit retains the v3.1.4 Android and Go sources
+    # while adding the reproducible F-Droid release workflow.
+    commit: b6c928d487ff94f7485c58c414de407e05ec79b1
+    subdir: gui/android/app
     sudo:
       - apt-get update
       - apt-get install -y gcc libc6-dev
@@ -49,28 +50,25 @@ Builds:
       - export GOROOT=$$go$$
       - export GOPATH=$(pwd)/.fdroid-gopath
       - export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
-      - cd ../..
-      - GOMOBILE_VERSION=$(go list -m -f '{{.Version}}' golang.org/x/mobile)
-      - GOBIN="$GOPATH/bin" go install "golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION"
-      - GOBIN="$GOPATH/bin" go install "golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION"
-      - gomobile init
-      # gomobile's C toolchain otherwise embeds the checkout path in libgojni.so.
-      - export CGO_CFLAGS="-ffile-prefix-map=$(pwd)=."
-      - export CGO_CPPFLAGS="-ffile-prefix-map=$(pwd)=."
-      - export CGO_CXXFLAGS="-ffile-prefix-map=$(pwd)=."
-      - gomobile bind -trimpath -target=android -androidapi 24 -o gui/android/app/libs/odmobile.aar ./mobile
+      - cd ../../..
+      # Build the pinned gomobile and gobind modules without `gomobile init`,
+      # which installs an unpinned gobind@latest.
+      - scripts/build-mobile-tools.sh "$GOPATH/bin"
+      # API 34 and stripped non-runtime Go metadata keep GitHub's official Go
+      # toolchain byte-identical to F-Droid's source-built Go toolchain.
+      - gomobile bind -trimpath -target=android -androidapi 24 -bootclasspath "$ANDROID_HOME/platforms/android-34/android.jar"
+        -ldflags="-s -w -buildid=" -o gui/android/app/libs/odmobile.aar ./mobile
     ndk: r26d
     gradle:
       - mobile
-    # The Android project keeps its application module under app/, outside the
-    # output locations fdroidserver discovers automatically from this subdir.
-    output: app/build/outputs/apk/mobile/release/app-mobile-release-unsigned.apk
     # F-Droid owns update discovery and delivery for this build. This removes
     # both the launch check and the Settings update action.
     gradleprops:
       - upstreamUpdates=false
 
-AutoUpdateMode: Version v%v
+AllowedAPKSigningKeys: e5c114ba5ef3482b5a441485923835c510c724013f4116c9a44808b347dfa230
+
+AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
 CurrentVersion: 3.1.4
 CurrentVersionCode: 26
