@@ -68,7 +68,7 @@ jobs:
           ./gradlew --no-daemon assembleMobileDebug assembleTvDebug
 
       - name: Upload APKs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: opendeezer-android-debug
           path: gui/android/app/build/outputs/apk/**/debug/*.apk
