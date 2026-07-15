@@ -2,9 +2,11 @@ AntiFeatures:
   NonFreeNet:
     en-US: The app depends on Deezer, a proprietary network service.
   TetheredNet:
-    en-US: A Deezer account is required and the service endpoint is not configurable.
+    en-US: A Deezer account is required and the service endpoint is not
+      configurable.
   Tracking:
-    en-US: Playback events are reported to Deezer for listening and free-tier accounting.
+    en-US: Playback events are reported to Deezer for listening and free-tier
+      accounting.
 Categories:
   - Multimedia
 License: AGPL-3.0-only
@@ -18,32 +20,27 @@ AutoName: OpenDeezer
 
 RepoType: git
 Repo: https://github.com/Cycl0o0/OpenDeezer.git
-Binaries: https://github.com/Cycl0o0/OpenDeezer/releases/download/v%v/OpenDeezer-android-fdroid-%v.apk
+Binaries: https://github.com/Cycl0o0/OpenDeezer/releases/download/v%v/OpenDeezer-android-fdroid-%v-%c.apk
 
 Builds:
   - versionName: 3.1.4
-    versionCode: 26
-    # This reviewed post-tag commit retains the v3.1.4 Android and Go sources
-    # while adding the reproducible F-Droid release workflow.
-    commit: b6c928d487ff94f7485c58c414de407e05ec79b1
+    versionCode: 261
+    commit: 19b49585516d1ec2efc04a6d94ee40ddf92368dd
     subdir: gui/android/app
     sudo:
       - apt-get update
       - apt-get install -y gcc libc6-dev
       - apt-get install -y -t trixie-backports golang-go
+    gradle:
+      - mobile
     srclibs:
       - go@go1.25.12
-    # These prebuilt macOS archives are unrelated to the Android build and are
-    # removed so F-Droid's source scanner never has to trust them.
     rm:
       - gui/macos/Clib/libdeezercore-amd64.a
       - gui/macos/Clib/libdeezercore-arm64.a
-    # gomobile needs the minimum API platform as well as the platform and build
-    # tools used by the Android application module.
-    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34' 'build-tools;34.0.0'
+    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34'
+      'build-tools;34.0.0'
     build:
-      # Build the exact Go release requested by go.mod. The Debian Go package is
-      # used only as its bootstrap compiler.
       - pushd $$go$$/src
       - ./make.bash
       - popd
@@ -51,24 +48,125 @@ Builds:
       - export GOPATH=$(pwd)/.fdroid-gopath
       - export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
       - cd ../../..
-      # Build the pinned gomobile and gobind modules without `gomobile init`,
-      # which installs an unpinned gobind@latest.
       - scripts/build-mobile-tools.sh "$GOPATH/bin"
-      # API 34 and stripped non-runtime Go metadata keep GitHub's official Go
-      # toolchain byte-identical to F-Droid's source-built Go toolchain.
-      - gomobile bind -trimpath -target=android -androidapi 24 -bootclasspath "$ANDROID_HOME/platforms/android-34/android.jar"
-        -ldflags="-s -w -buildid=" -o gui/android/app/libs/odmobile.aar ./mobile
+      - gomobile bind -trimpath -target=android -androidapi 24 -bootclasspath
+        "$ANDROID_HOME/platforms/android-34/android.jar" -ldflags="-s -w
+        -buildid=" -o gui/android/app/libs/odmobile.aar ./mobile
     ndk: r26d
-    gradle:
-      - mobile
-    # F-Droid owns update discovery and delivery for this build. This removes
-    # both the launch check and the Settings update action.
     gradleprops:
       - upstreamUpdates=false
+      - fdroidAbi=armeabi-v7a
+
+  - versionName: 3.1.4
+    versionCode: 262
+    commit: 19b49585516d1ec2efc04a6d94ee40ddf92368dd
+    subdir: gui/android/app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc6-dev
+      - apt-get install -y -t trixie-backports golang-go
+    gradle:
+      - mobile
+    srclibs:
+      - go@go1.25.12
+    rm:
+      - gui/macos/Clib/libdeezercore-amd64.a
+      - gui/macos/Clib/libdeezercore-arm64.a
+    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34'
+      'build-tools;34.0.0'
+    build:
+      - pushd $$go$$/src
+      - ./make.bash
+      - popd
+      - export GOROOT=$$go$$
+      - export GOPATH=$(pwd)/.fdroid-gopath
+      - export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
+      - cd ../../..
+      - scripts/build-mobile-tools.sh "$GOPATH/bin"
+      - gomobile bind -trimpath -target=android -androidapi 24 -bootclasspath
+        "$ANDROID_HOME/platforms/android-34/android.jar" -ldflags="-s -w
+        -buildid=" -o gui/android/app/libs/odmobile.aar ./mobile
+    ndk: r26d
+    gradleprops:
+      - upstreamUpdates=false
+      - fdroidAbi=arm64-v8a
+
+  - versionName: 3.1.4
+    versionCode: 263
+    commit: 19b49585516d1ec2efc04a6d94ee40ddf92368dd
+    subdir: gui/android/app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc6-dev
+      - apt-get install -y -t trixie-backports golang-go
+    gradle:
+      - mobile
+    srclibs:
+      - go@go1.25.12
+    rm:
+      - gui/macos/Clib/libdeezercore-amd64.a
+      - gui/macos/Clib/libdeezercore-arm64.a
+    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34'
+      'build-tools;34.0.0'
+    build:
+      - pushd $$go$$/src
+      - ./make.bash
+      - popd
+      - export GOROOT=$$go$$
+      - export GOPATH=$(pwd)/.fdroid-gopath
+      - export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
+      - cd ../../..
+      - scripts/build-mobile-tools.sh "$GOPATH/bin"
+      - gomobile bind -trimpath -target=android -androidapi 24 -bootclasspath
+        "$ANDROID_HOME/platforms/android-34/android.jar" -ldflags="-s -w
+        -buildid=" -o gui/android/app/libs/odmobile.aar ./mobile
+    ndk: r26d
+    gradleprops:
+      - upstreamUpdates=false
+      - fdroidAbi=x86
+
+  - versionName: 3.1.4
+    versionCode: 264
+    commit: 19b49585516d1ec2efc04a6d94ee40ddf92368dd
+    subdir: gui/android/app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc6-dev
+      - apt-get install -y -t trixie-backports golang-go
+    gradle:
+      - mobile
+    srclibs:
+      - go@go1.25.12
+    rm:
+      - gui/macos/Clib/libdeezercore-amd64.a
+      - gui/macos/Clib/libdeezercore-arm64.a
+    prebuild: sdkmanager 'platforms;android-24' 'platforms;android-34'
+      'build-tools;34.0.0'
+    build:
+      - pushd $$go$$/src
+      - ./make.bash
+      - popd
+      - export GOROOT=$$go$$
+      - export GOPATH=$(pwd)/.fdroid-gopath
+      - export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
+      - cd ../../..
+      - scripts/build-mobile-tools.sh "$GOPATH/bin"
+      - gomobile bind -trimpath -target=android -androidapi 24 -bootclasspath
+        "$ANDROID_HOME/platforms/android-34/android.jar" -ldflags="-s -w
+        -buildid=" -o gui/android/app/libs/odmobile.aar ./mobile
+    ndk: r26d
+    gradleprops:
+      - upstreamUpdates=false
+      - fdroidAbi=x86_64
 
 AllowedAPKSigningKeys: e5c114ba5ef3482b5a441485923835c510c724013f4116c9a44808b347dfa230
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
+VercodeOperation:
+  - 10 * %c + 1
+  - 10 * %c + 2
+  - 10 * %c + 3
+  - 10 * %c + 4
 CurrentVersion: 3.1.4
-CurrentVersionCode: 26
+CurrentVersionCode: 264
