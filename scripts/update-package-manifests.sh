@@ -6,9 +6,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-}"
 SUMS_FILE="${2:-}"
 SOURCE_SHA="${3:-}"
+RELEASE_DATE="${4:-}"
 
-if [[ -z "$VERSION" || -z "$SUMS_FILE" || -z "$SOURCE_SHA" ]]; then
-  echo "usage: $0 <version> <SHA256SUMS.txt> <source-tarball-sha256>" >&2
+if [[ -z "$VERSION" || -z "$SUMS_FILE" || -z "$SOURCE_SHA" || -z "$RELEASE_DATE" ]]; then
+  echo "usage: $0 <version> <SHA256SUMS.txt> <source-tarball-sha256> <release-date>" >&2
   exit 2
 fi
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -21,6 +22,10 @@ if [[ ! -f "$SUMS_FILE" ]]; then
 fi
 if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{64}$ ]]; then
   echo "invalid source tarball checksum" >&2
+  exit 2
+fi
+if [[ ! "$RELEASE_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "invalid release date: $RELEASE_DATE" >&2
   exit 2
 fi
 
@@ -85,9 +90,14 @@ for manifest in "$ROOT"/packaging/winget/Cycl0o0.OpenDeezer*.yaml; do
   rm -f "$manifest.bak"
 done
 INSTALLER="$ROOT/packaging/winget/Cycl0o0.OpenDeezer.installer.yaml"
+LOCALE="$ROOT/packaging/winget/Cycl0o0.OpenDeezer.locale.en-US.yaml"
 sed -i.bak "s#^    InstallerUrl: .*#    InstallerUrl: https://github.com/Cycl0o0/OpenDeezer/releases/download/v$VERSION/opendeezer-tui-windows-amd64.exe#" "$INSTALLER"
 sed -i.bak "s/^    InstallerSha256: .*/    InstallerSha256: $WINDOWS_AMD64/" "$INSTALLER"
+sed -i.bak "s/^ReleaseDate: .*/ReleaseDate: \"$RELEASE_DATE\"/" "$INSTALLER"
 rm -f "$INSTALLER.bak"
+sed -i.bak "s#^LicenseUrl: .*#LicenseUrl: https://github.com/Cycl0o0/OpenDeezer/blob/v$VERSION/LICENSE#" "$LOCALE"
+sed -i.bak "s#^ReleaseNotesUrl: .*#ReleaseNotesUrl: https://github.com/Cycl0o0/OpenDeezer/releases/tag/v$VERSION#" "$LOCALE"
+rm -f "$LOCALE.bak"
 
 PKGBUILD="$ROOT/packaging/aur/PKGBUILD"
 SRCINFO="$ROOT/packaging/aur/.SRCINFO"
@@ -109,6 +119,9 @@ for manifest in "$ROOT"/packaging/winget/Cycl0o0.OpenDeezer*.yaml; do
 done
 grep -Fq "releases/download/v$VERSION/opendeezer-tui-windows-amd64.exe" "$INSTALLER"
 grep -Fq "InstallerSha256: $WINDOWS_AMD64" "$INSTALLER"
+grep -Fq "ReleaseDate: \"$RELEASE_DATE\"" "$INSTALLER"
+grep -Fq "LicenseUrl: https://github.com/Cycl0o0/OpenDeezer/blob/v$VERSION/LICENSE" "$LOCALE"
+grep -Fq "ReleaseNotesUrl: https://github.com/Cycl0o0/OpenDeezer/releases/tag/v$VERSION" "$LOCALE"
 grep -Fq "pkgver=$VERSION" "$PKGBUILD"
 grep -Fq "sha256sums=('$SOURCE_SHA')" "$PKGBUILD"
 grep -Fq "pkgver = $VERSION" "$SRCINFO"

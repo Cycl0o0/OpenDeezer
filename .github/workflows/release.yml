@@ -652,23 +652,39 @@ jobs:
           cat SHA256SUMS.txt
       - name: Extract checksums
         id: sums
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           echo "version=$TAG" >> $GITHUB_OUTPUT
+          RELEASE_DATE=$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --json publishedAt \
+            --jq '.publishedAt[:10]')
+          if [[ ! "$RELEASE_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::Release $GITHUB_REF_NAME is not published with a valid date"
+            exit 1
+          fi
+          echo "release_date=$RELEASE_DATE" >> "$GITHUB_OUTPUT"
       - name: Hash the tagged source archive
         id: source
+        env:
+          VERSION: ${{ steps.sums.outputs.version }}
         run: |
-          VERSION="${{ steps.sums.outputs.version }}"
           curl --fail --location --retry 3 \
             "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${VERSION}.tar.gz" \
             --output source.tar.gz
           echo "sha256=$(sha256sum source.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Update package manifests
+        env:
+          VERSION: ${{ steps.sums.outputs.version }}
+          SOURCE_SHA256: ${{ steps.source.outputs.sha256 }}
+          RELEASE_DATE: ${{ steps.sums.outputs.release_date }}
         run: |
           scripts/update-package-manifests.sh \
-            "${{ steps.sums.outputs.version }}" \
+            "$VERSION" \
             SHA256SUMS.txt \
-            "${{ steps.source.outputs.sha256 }}"
+            "$SOURCE_SHA256" \
+            "$RELEASE_DATE"
       - name: Preserve updated manifests
         uses: actions/upload-artifact@v4
         with:
