@@ -363,16 +363,6 @@ jobs:
           remote_digest=$(jq -r --arg name "$ASSET_NAME" \
             '.assets[] | select(.name == $name) | .digest' <<< "$release_json")
 
-          if [[ -n "$remote_digest" ]]; then
-            if [[ "$remote_digest" != "sha256:$local_sha" ]]; then
-              echo "::error::Release $RELEASE_TAG already contains a different $ASSET_NAME"
-              exit 1
-            fi
-            echo "$ASSET_NAME is already published with the same digest"
-          else
-            gh release upload "$RELEASE_TAG" "$ASSET_NAME" --repo "$GITHUB_REPOSITORY"
-          fi
-
           checksums="$RUNNER_TEMP/checksums"
           mkdir -p "$checksums"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
@@ -383,8 +373,18 @@ jobs:
             echo "::error::SHA256SUMS.txt contains a conflicting digest for $ASSET_NAME"
             exit 1
           fi
+
+          if [[ -n "$remote_digest" ]]; then
+            if [[ "$remote_digest" != "sha256:$local_sha" ]]; then
+              echo "::error::Release $RELEASE_TAG already contains a different $ASSET_NAME"
+              exit 1
+            fi
+            echo "$ASSET_NAME is already published with the same digest"
+          else
+            gh release upload "$RELEASE_TAG" "$ASSET_NAME" --repo "$GITHUB_REPOSITORY"
+          fi
+
           if [[ -z "$existing" ]]; then
             printf '%s  %s\n' "$local_sha" "$ASSET_NAME" >> "$manifest"
-            LC_ALL=C sort -k2,2 -o "$manifest" "$manifest"
             gh release upload "$RELEASE_TAG" "$manifest" --repo "$GITHUB_REPOSITORY" --clobber
           fi
