@@ -95,7 +95,8 @@ func main() {
 
 	// Optional on-disk raw-stream cache (media.json: mediaCacheMB > 0 enables).
 	// Best-effort: a cache that fails to open just means uncached streaming.
-	if mb := config.LoadMedia().MediaCacheMB; mb > 0 {
+	// EnsureMedia writes a default media.json on first launch so it's editable.
+	if mb := config.EnsureMedia().MediaCacheMB; mb > 0 {
 		if dir, derr := config.Dir(); derr == nil {
 			if c, cerr := mediacache.New(filepath.Join(dir, "mediacache"), int64(mb)<<20); cerr == nil {
 				player.SetStreamCache(c)

@@ -303,8 +303,9 @@ func Init(arl string) bool {
 		player = p
 		// Opt-in on-disk raw-stream cache (media.json: mediaCacheMB > 0), attached
 		// once here — before any playback, as SetStreamCache requires. Best-effort:
-		// a cache failure only logs; playback simply runs uncached.
-		if mb := config.LoadMedia().MediaCacheMB; mb > 0 {
+		// a cache failure only logs; playback simply runs uncached. EnsureMedia
+		// writes a default media.json on first launch so the setting is visible.
+		if mb := config.EnsureMedia().MediaCacheMB; mb > 0 {
 			if dir, err := config.Dir(); err == nil {
 				if mc, err := mediacache.New(filepath.Join(dir, "mediacache"), int64(mb)<<20); err == nil {
 					player.SetStreamCache(mc)

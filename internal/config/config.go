@@ -5,9 +5,13 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -304,17 +308,78 @@ func LoadMedia() Media {
 }
 
 // SaveMedia persists the media settings to media.json in the config dir,
-// clamping a negative cache size to 0 (disabled) first.
+// clamping a negative cache size to 0 (disabled) first. The JSON is indented so
+// the file stays easy to edit by hand.
 func SaveMedia(m Media) error {
 	if m.MediaCacheMB < 0 {
 		m.MediaCacheMB = 0
 	}
-	b, err := json.Marshal(m)
+	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeFile("media.json", string(b))
+	return writeFile("media.json", string(b)+"\n")
 }
+
+// EnsureMedia is LoadMedia for startup: when no media.json exists yet it first
+// writes one holding the defaults, so the stream-cache setting can be found and
+// edited from the first launch instead of having to be created by hand. An
+// existing file — even one that doesn't parse — is never overwritten, and a
+// failed write is ignored (the defaults still apply).
+func EnsureMedia() Media {
+	if !configFileExists("media.json") {
+		_ = SaveMedia(Media{})
+	}
+	return LoadMedia()
+}
+
+// configFileExists reports whether name is present in either place readFile
+// looks (the platform config dir, then ~/.config/opendeezer), so a default is
+// never written over — or in front of — a file the user already has. A path
+// that can't be checked counts as present.
+func configFileExists(name string) bool {
+	var paths []string
+	if dir, err := Dir(); err == nil {
+		paths = append(paths, filepath.Join(dir, name))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".config", "opendeezer", name))
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return true
+		}
+	}
+	return false
+}
+
+// LoadVolume returns the persisted playback volume (0..1) from volume.txt in
+// the config dir. ok is false when none is saved or the value can't be read, and
+// the caller keeps its default (full volume). Like EQ, the audio engine loads
+// and saves it itself, so every client shares one level.
+func LoadVolume() (v float64, ok bool) {
+	s := readFile("volume.txt")
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, false
+	}
+	return clampVolume(v), true
+}
+
+// SaveVolume persists the playback volume, clamped to 0..1 and rounded to
+// 0.001 so the file holds a plain value like 0.35.
+func SaveVolume(v float64) error {
+	if math.IsNaN(v) {
+		return errors.New("config: volume is NaN")
+	}
+	v = math.Round(clampVolume(v)*1000) / 1000
+	return writeFile("volume.txt", strconv.FormatFloat(v, 'f', -1, 64))
+}
+
+func clampVolume(v float64) float64 { return math.Max(0, math.Min(1, v)) }
 
 // LoadDiscordAppID returns the Discord application id for Rich Presence, from
 // $OPENDEEZER_DISCORD_APP_ID or ~/.config/opendeezer/discord-app-id.txt. Empty

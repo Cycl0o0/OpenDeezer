@@ -4,6 +4,29 @@ All notable changes to OpenDeezer are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **GNOME: the window fits narrow and portrait screens.** The main window used
+  to need about 1240 px of width. As it narrows, the now-playing bar now stacks
+  into rows and the sidebar folds into its own page (reached with the back
+  button), so the window can shrink to 360 × 294 — portrait monitors, tiled
+  halves and small screens included.
+- **The volume level is remembered.** The playback engine saves the volume and
+  restores it on the next launch instead of starting every session at full
+  volume. Like the equalizer, the level is shared by the OpenDeezer apps on the
+  same machine.
+- **`media.json` is created on first launch.** The engine writes it with the
+  defaults (stream cache off), so the cache size can be edited by hand without
+  creating the file first. The GNOME app also sets it from Settings → Audio →
+  Stream cache (MB).
+- **GNOME: "Log in with Deezer" no longer crashes on Ubuntu 24.04** and other
+  systems that restrict unprivileged user namespaces. When WebKit's bubblewrap
+  sandbox can't start there, the login page now opens without it instead of the
+  app aborting with "Failed to fully launch dbus-proxy".
+- GNOME: no more "Theme parser error: Unknown name of pseudo-class" warning at
+  startup on GTK 4.14 and older.
+
 ## [3.1.4]
 
 ### Added

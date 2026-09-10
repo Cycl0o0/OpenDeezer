@@ -123,7 +123,8 @@ func (pl *Player) Format() string { return pl.p.Format() }
 // Volume returns the current volume (0.0–1.0).
 func (pl *Player) Volume() float64 { return pl.p.Volume() }
 
-// SetVolume sets the absolute volume (clamped to 0.0–1.0).
+// SetVolume sets the absolute volume (clamped to 0.0–1.0). The level persists
+// engine-side, shared by every client: the next NewPlayer starts at it.
 func (pl *Player) SetVolume(v float64) { pl.p.SetVolume(v) }
 
 // SetReplayGain enables (true) or disables (false) loudness normalisation using

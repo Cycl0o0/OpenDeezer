@@ -160,8 +160,9 @@ func DZInit(arl *C.char) C.int {
 		player = p
 		// Opt-in on-disk raw-stream cache (media.json: mediaCacheMB > 0), attached
 		// once here — before any playback, as SetStreamCache requires. Best-effort:
-		// a cache failure only logs; playback simply runs uncached.
-		if mb := config.LoadMedia().MediaCacheMB; mb > 0 {
+		// a cache failure only logs; playback simply runs uncached. EnsureMedia
+		// writes a default media.json on first launch so the setting is visible.
+		if mb := config.EnsureMedia().MediaCacheMB; mb > 0 {
 			if dir, err := config.Dir(); err == nil {
 				if mc, err := mediacache.New(filepath.Join(dir, "mediacache"), int64(mb)<<20); err == nil {
 					player.SetStreamCache(mc)
@@ -617,8 +618,15 @@ func DZVolume() C.double {
 	if routedRemote() != nil {
 		return C.double(remoteSnapshot().Volume)
 	}
-	var v float64 = 1
-	withPlayer(func(p *audio.Player) { v = p.Volume() })
+	v, ok := 1.0, false
+	withPlayer(func(p *audio.Player) { v, ok = p.Volume(), true })
+	if !ok {
+		// No player until DZInit creates one: report the persisted level it will
+		// start at, so a volume slider built before login shows the real value.
+		if saved, has := config.LoadVolume(); has {
+			v = saved
+		}
+	}
 	return C.double(v)
 }
 

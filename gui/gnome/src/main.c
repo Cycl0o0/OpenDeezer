@@ -273,6 +273,7 @@ typedef struct {
   AdwApplicationWindow *win;
   AdwToastOverlay      *toast;
   AdwNavigationPage    *content_page; /* title reflects the current source */
+  AdwNavigationSplitView *split;      /* sidebar | content; collapses on narrow windows */
 
   /* track table */
   GtkColumnView        *track_view;
@@ -291,6 +292,10 @@ typedef struct {
   GtkLabel             *cast_badge;   /* "Playing on <device>" pill; visible only while casting */
   GtkPicture           *np_cover;
   GtkScale             *seek, *volume;
+  GtkWidget            *np_bar;       /* outer box: one row when wide, stacked rows when narrow */
+  GtkWidget            *np_top;       /* track info + transport (split into two rows when narrower) */
+  GtkWidget            *np_transport; /* prev / play / next / repeat / shuffle */
+  GtkWidget            *np_titles;    /* title + subtitle column */
 
   gboolean              seeking;       /* user is dragging the scrubber */
   int                   current_index; /* index into track_store, -1 if none */
@@ -1045,6 +1050,9 @@ static void load_async(App *a, LoadKind kind, const char *arg) {
 static GtkWidget *make_side_row(const char *title, const char *subtitle, const char *icon,
                                 int kind, const char *id) {
   GtkWidget *row = adw_action_row_new();
+  /* AdwActionRow is unactivatable by default; sidebar rows need row-activated
+   * so tapping one opens its page while the split view is collapsed */
+  gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), TRUE);
   adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(row), FALSE);
   adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
   if (subtitle && *subtitle)
@@ -1086,6 +1094,18 @@ static void on_sidebar_selected(GtkListBox *box, GtkListBoxRow *row, gpointer da
   } else {
     load_async(a, LOAD_FAVORITES, NULL);
   }
+}
+
+/* When the window is narrow the split view collapses into two pages (see
+ * setup_adaptive_layout): tapping a destination — even the one already
+ * selected, which emits no row-selected — brings its content page up.
+ * Podcasts opens its own dialog, so the list stays put. */
+static void on_sidebar_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data) {
+  (void)box;
+  App *a = data;
+  if (!a->split || !row) return;
+  if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "kind")) != ROW_PODCASTS)
+    adw_navigation_split_view_set_show_content(a->split, TRUE);
 }
 
 static void playlists_worker(GTask *task, gpointer src, gpointer data, GCancellable *c) {
@@ -5045,6 +5065,11 @@ static void home_populate(App *a, const char *json) {
 
   /* ---- quick picks ---- */
   gtk_box_append(GTK_BOX(a->home_box), section_title(_("Quick Picks")));
+  /* in a horizontal scroller like the rails below, so on a narrow window the
+   * row scrolls instead of holding the whole page (and window) wide */
+  GtkWidget *qp_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(qp_scroll),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
   GtkWidget *qp_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_set_margin_bottom(qp_box, 4);
   /* sidebar indices: Home=0, Liked=1, Flow=2, Charts=3, Podcasts=4 */
@@ -5057,7 +5082,8 @@ static void home_populate(App *a, const char *json) {
   for (guint i = 0; i < G_N_ELEMENTS(picks); i++)
     gtk_box_append(GTK_BOX(qp_box),
                    make_quickpick_btn(a, picks[i].label, picks[i].icon, picks[i].row));
-  gtk_box_append(GTK_BOX(a->home_box), qp_box);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(qp_scroll), qp_box);
+  gtk_box_append(GTK_BOX(a->home_box), qp_scroll);
 
   /* parse the payload (best-effort: empty sections are silently skipped) */
   if (!json) return;
@@ -6551,14 +6577,19 @@ static void on_login(GSimpleAction *action, GVariant *param, gpointer data) {
  * ------------------------------------------------------------------------- */
 
 static void load_css(void) {
-  /* libadwaita >=1.6 reads the CSS custom properties; the @define-color block
-   * is the pre-1.6 fallback. Both are harmless to the other parser. */
-  static const char *css =
+  /* libadwaita >= 1.6 reads the accent from CSS custom properties, which GTK only
+   * parses from 4.15.1 on: older GTK (4.14 on Ubuntu 24.04) rejects this :root
+   * block with "Theme parser error: Unknown name of pseudo-class". It is added
+   * only when the running GTK supports it — checked at runtime, since the binary
+   * can run against a newer GTK than it was built with. */
+  static const char *accent_vars =
       ":root{"
       "  --accent-bg-color:" ACCENT ";"
       "  --accent-color:" ACCENT ";"
       "  --accent-fg-color:#ffffff;"
-      "}\n"
+      "}\n";
+  /* the @define-color block is the pre-1.6 fallback */
+  static const char *css =
       "@define-color accent_bg_color " ACCENT ";\n"
       "@define-color accent_color " ACCENT ";\n"
       "@define-color accent_fg_color #ffffff;\n"
@@ -6596,12 +6627,14 @@ static void load_css(void) {
       "  color:#ffffff;"
       "  background-color:" ACCENT ";"
       "}\n";
+  char *all = g_strconcat(gtk_check_version(4, 15, 1) == NULL ? accent_vars : "", css, NULL);
   GtkCssProvider *p = gtk_css_provider_new();
 #if GTK_CHECK_VERSION(4, 12, 0)
-  gtk_css_provider_load_from_string(p, css);
+  gtk_css_provider_load_from_string(p, all);
 #else
-  gtk_css_provider_load_from_data(p, css, -1);
+  gtk_css_provider_load_from_data(p, all, -1);
 #endif
+  g_free(all);
   gtk_style_context_add_provider_for_display(
       gdk_display_get_default(), GTK_STYLE_PROVIDER(p), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   g_object_unref(p);
@@ -6879,6 +6912,12 @@ static GtkWidget *build_connect_button(App *a) {
   return GTK_WIDGET(mb);
 }
 
+/* The bar is three groups: the current track (cover, titles, per-track
+ * actions), the transport, and the scrubber with the output controls. They sit
+ * in one row on a wide window; as it narrows, setup_adaptive_layout's
+ * breakpoints restack them — first the scrubber under the rest, then the
+ * transport on a row of its own — so every control stays reachable down to the
+ * window's minimum size. */
 static GtkWidget *build_now_playing(App *a) {
   GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
   gtk_widget_set_margin_start(bar, 12);
@@ -6886,12 +6925,24 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_margin_top(bar, 8);
   gtk_widget_set_margin_bottom(bar, 8);
 
+  GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);       /* info + transport */
+  GtkWidget *info = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);      /* the current track */
+  GtkWidget *transport = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12); /* prev … shuffle */
+  GtkWidget *scrub = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);     /* position … volume */
+  gtk_box_append(GTK_BOX(top), info);
+  gtk_box_append(GTK_BOX(top), transport);
+  gtk_box_append(GTK_BOX(bar), top);
+  gtk_box_append(GTK_BOX(bar), scrub);
+  a->np_bar = bar;
+  a->np_top = top;
+  a->np_transport = transport;
+
   /* cover */
   a->np_cover = GTK_PICTURE(gtk_picture_new());
   gtk_widget_set_size_request(GTK_WIDGET(a->np_cover), 48, 48);
   gtk_picture_set_content_fit(a->np_cover, GTK_CONTENT_FIT_COVER);
   gtk_widget_add_css_class(GTK_WIDGET(a->np_cover), "np-cover");
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->np_cover));
+  gtk_box_append(GTK_BOX(info), GTK_WIDGET(a->np_cover));
 
   /* title + subtitle */
   GtkWidget *titles = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -6920,7 +6971,8 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_box_append(GTK_BOX(title_row), a->np_preview);
   gtk_box_append(GTK_BOX(titles), title_row);
   gtk_box_append(GTK_BOX(titles), GTK_WIDGET(a->np_subtitle));
-  gtk_box_append(GTK_BOX(bar), titles);
+  gtk_box_append(GTK_BOX(info), titles);
+  a->np_titles = titles;
 
   /* casting badge — "Playing on <device>", shown only while routed to a Connect
    * device (the 300 ms tick sets its text + visibility from DZConnectedDevice) */
@@ -6930,7 +6982,7 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_label_set_max_width_chars(a->cast_badge, 22);
   gtk_widget_set_valign(GTK_WIDGET(a->cast_badge), GTK_ALIGN_CENTER);
   gtk_widget_set_visible(GTK_WIDGET(a->cast_badge), FALSE);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->cast_badge));
+  gtk_box_append(GTK_BOX(info), GTK_WIDGET(a->cast_badge));
 
   /* like / lyrics / artist shortcuts for the current track */
   a->like_btn = GTK_BUTTON(gtk_button_new_from_icon_name("emblem-favorite-symbolic"));
@@ -6938,7 +6990,7 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_valign(GTK_WIDGET(a->like_btn), GTK_ALIGN_CENTER);
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->like_btn), _("Like / unlike"));
   g_signal_connect(a->like_btn, "clicked", G_CALLBACK(on_like_clicked), a);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->like_btn));
+  gtk_box_append(GTK_BOX(info), GTK_WIDGET(a->like_btn));
 
   /* "Download for offline" — Premium-gated; the icon flips to a check once the
    * current track is saved (update_offline_button, driven by update_now_playing_ui) */
@@ -6948,21 +7000,21 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->offline_btn), _("Download for offline"));
   gtk_widget_set_sensitive(GTK_WIDGET(a->offline_btn), FALSE); /* enabled once a track plays */
   g_signal_connect(a->offline_btn, "clicked", G_CALLBACK(on_offline_clicked), a);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->offline_btn));
+  gtk_box_append(GTK_BOX(info), GTK_WIDGET(a->offline_btn));
 
   GtkWidget *lyrics_btn = gtk_button_new_from_icon_name("view-list-symbolic");
   gtk_widget_add_css_class(lyrics_btn, "flat");
   gtk_widget_set_valign(lyrics_btn, GTK_ALIGN_CENTER);
   gtk_widget_set_tooltip_text(lyrics_btn, _("Lyrics"));
   g_signal_connect(lyrics_btn, "clicked", G_CALLBACK(on_lyrics_clicked), a);
-  gtk_box_append(GTK_BOX(bar), lyrics_btn);
+  gtk_box_append(GTK_BOX(info), lyrics_btn);
 
   GtkWidget *artist_btn = gtk_button_new_from_icon_name("avatar-default-symbolic");
   gtk_widget_add_css_class(artist_btn, "flat");
   gtk_widget_set_valign(artist_btn, GTK_ALIGN_CENTER);
   gtk_widget_set_tooltip_text(artist_btn, _("Go to artist"));
   g_signal_connect(artist_btn, "clicked", G_CALLBACK(on_artist_clicked), a);
-  gtk_box_append(GTK_BOX(bar), artist_btn);
+  gtk_box_append(GTK_BOX(info), artist_btn);
 
   /* transport */
   a->prev_btn = transport_button("media-skip-backward-symbolic");
@@ -6974,9 +7026,9 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->prev_btn), _("Previous"));
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->play_btn), _("Play / Pause"));
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->next_btn), _("Next"));
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->prev_btn));
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->play_btn));
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->next_btn));
+  gtk_box_append(GTK_BOX(transport), GTK_WIDGET(a->prev_btn));
+  gtk_box_append(GTK_BOX(transport), GTK_WIDGET(a->play_btn));
+  gtk_box_append(GTK_BOX(transport), GTK_WIDGET(a->next_btn));
 
   /* repeat button (off → all → one cycling); initial state: off */
   a->repeat_btn = GTK_BUTTON(gtk_button_new_from_icon_name("media-playlist-repeat-symbolic"));
@@ -6984,7 +7036,7 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_valign(GTK_WIDGET(a->repeat_btn), GTK_ALIGN_CENTER);
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->repeat_btn), _("Repeat"));
   g_signal_connect(a->repeat_btn, "clicked", G_CALLBACK(on_repeat_clicked), a);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->repeat_btn));
+  gtk_box_append(GTK_BOX(transport), GTK_WIDGET(a->repeat_btn));
 
   /* shuffle button; initial state: off */
   a->shuffle_btn = GTK_BUTTON(gtk_button_new_from_icon_name("media-playlist-shuffle-symbolic"));
@@ -6992,14 +7044,14 @@ static GtkWidget *build_now_playing(App *a) {
   gtk_widget_set_valign(GTK_WIDGET(a->shuffle_btn), GTK_ALIGN_CENTER);
   gtk_widget_set_tooltip_text(GTK_WIDGET(a->shuffle_btn), _("Shuffle"));
   g_signal_connect(a->shuffle_btn, "clicked", G_CALLBACK(on_shuffle_clicked), a);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->shuffle_btn));
+  gtk_box_append(GTK_BOX(transport), GTK_WIDGET(a->shuffle_btn));
 
   /* position · scrubber · duration */
   a->pos_label = GTK_LABEL(gtk_label_new("0:00"));
   a->dur_label = GTK_LABEL(gtk_label_new("0:00"));
   gtk_widget_add_css_class(GTK_WIDGET(a->pos_label), "numeric");
   gtk_widget_add_css_class(GTK_WIDGET(a->dur_label), "numeric");
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->pos_label));
+  gtk_box_append(GTK_BOX(scrub), GTK_WIDGET(a->pos_label));
 
   a->seek = GTK_SCALE(gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 1));
   gtk_scale_set_draw_value(a->seek, FALSE);
@@ -7013,21 +7065,21 @@ static GtkWidget *build_now_playing(App *a) {
    * released always fire — otherwise a missed "released" leaves seeking stuck. */
   gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
   gtk_widget_add_controller(GTK_WIDGET(a->seek), GTK_EVENT_CONTROLLER(click));
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->seek));
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->dur_label));
+  gtk_box_append(GTK_BOX(scrub), GTK_WIDGET(a->seek));
+  gtk_box_append(GTK_BOX(scrub), GTK_WIDGET(a->dur_label));
 
   /* OpenDeezer Connect device picker (Spotify-Connect style) */
-  gtk_box_append(GTK_BOX(bar), build_connect_button(a));
+  gtk_box_append(GTK_BOX(scrub), build_connect_button(a));
 
   /* volume */
-  gtk_box_append(GTK_BOX(bar), gtk_image_new_from_icon_name("audio-volume-high-symbolic"));
+  gtk_box_append(GTK_BOX(scrub), gtk_image_new_from_icon_name("audio-volume-high-symbolic"));
   a->volume = GTK_SCALE(gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.01));
   gtk_scale_set_draw_value(a->volume, FALSE);
   gtk_range_set_value(GTK_RANGE(a->volume), DZVolume());
   gtk_widget_set_size_request(GTK_WIDGET(a->volume), 100, -1);
   gtk_widget_set_valign(GTK_WIDGET(a->volume), GTK_ALIGN_CENTER);
   g_signal_connect(a->volume, "value-changed", G_CALLBACK(on_volume_changed), a);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(a->volume));
+  gtk_box_append(GTK_BOX(scrub), GTK_WIDGET(a->volume));
 
   return bar;
 }
@@ -7041,6 +7093,7 @@ static GtkWidget *build_sidebar(App *a) {
   gtk_list_box_set_selection_mode(a->sidebar, GTK_SELECTION_SINGLE);
   gtk_widget_add_css_class(GTK_WIDGET(a->sidebar), "navigation-sidebar");
   g_signal_connect(a->sidebar, "row-selected", G_CALLBACK(on_sidebar_selected), a);
+  g_signal_connect(a->sidebar, "row-activated", G_CALLBACK(on_sidebar_activated), a);
 
   /* static entries; the user's playlists are appended after login.
    * Home is row 0 — the default landing page; keep it first. */
@@ -7103,6 +7156,55 @@ static GtkWidget *build_track_view(App *a) {
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), GTK_WIDGET(a->track_view));
   gtk_widget_set_vexpand(scroll, TRUE);
   return scroll;
+}
+
+/* ---------------------------------------------------------------------------
+ * adaptive layout
+ * ------------------------------------------------------------------------- */
+
+/* The compact now-playing bar: the scrubber row moves under the track and
+ * transport, and the title column trades its fixed width for the free space. */
+static void add_compact_bar_setters(AdwBreakpoint *bp, App *a) {
+  adw_breakpoint_add_setters(bp,
+      G_OBJECT(a->np_bar), "orientation", GTK_ORIENTATION_VERTICAL,
+      G_OBJECT(a->np_bar), "spacing", 6,
+      G_OBJECT(a->np_titles), "width-request", -1,
+      G_OBJECT(a->np_titles), "hexpand", TRUE,
+      NULL);
+}
+
+/* Without breakpoints the window could never be narrower than the sidebar plus
+ * the one-row now-playing bar (~1240 px), too wide for portrait monitors and
+ * tiled halves. Three breakpoints step the layout down instead:
+ *   <= 1300sp  the now-playing bar stacks into two rows
+ *   <=  800sp  the sidebar collapses into its own page (back button in the header)
+ *   <=  560sp  the transport gets a row of its own; the search entry may shrink
+ * When several breakpoints match, libadwaita applies only the last one added, so
+ * each repeats the setters of the wider states. With breakpoints the window no
+ * longer derives its minimum size from its content, so it is set explicitly —
+ * each state has to fit the narrowest width its breakpoint allows. */
+static void setup_adaptive_layout(App *a) {
+  gtk_widget_set_size_request(GTK_WIDGET(a->win), 360, 294);
+
+  AdwBreakpoint *bp = adw_breakpoint_new(adw_breakpoint_condition_parse("max-width: 1300sp"));
+  add_compact_bar_setters(bp, a);
+  adw_application_window_add_breakpoint(a->win, bp);
+
+  bp = adw_breakpoint_new(adw_breakpoint_condition_parse("max-width: 800sp"));
+  add_compact_bar_setters(bp, a);
+  adw_breakpoint_add_setters(bp, G_OBJECT(a->split), "collapsed", TRUE, NULL);
+  adw_application_window_add_breakpoint(a->win, bp);
+
+  bp = adw_breakpoint_new(adw_breakpoint_condition_parse("max-width: 560sp"));
+  add_compact_bar_setters(bp, a);
+  adw_breakpoint_add_setters(bp,
+      G_OBJECT(a->split), "collapsed", TRUE,
+      G_OBJECT(a->np_top), "orientation", GTK_ORIENTATION_VERTICAL,
+      G_OBJECT(a->np_top), "spacing", 6,
+      G_OBJECT(a->np_transport), "halign", GTK_ALIGN_CENTER,
+      G_OBJECT(a->search), "width-request", -1,
+      NULL);
+  adw_application_window_add_breakpoint(a->win, bp);
 }
 
 static void on_activate(GApplication *app, gpointer data) {
@@ -7251,10 +7353,15 @@ static void on_activate(GApplication *app, gpointer data) {
   adw_navigation_split_view_set_sidebar(split, side_page);
   adw_navigation_split_view_set_content(split, a->content_page);
   adw_navigation_split_view_set_min_sidebar_width(split, 240);
+  /* when the window is narrow enough to collapse the split view, open on the
+   * content page (its header's back button leads to the sidebar) */
+  adw_navigation_split_view_set_show_content(split, TRUE);
+  a->split = split;
   /* keep an extra ref so the main UI survives being swapped out for the
    * no-internet gate (show_no_internet / show_main_content). */
   a->root_content = g_object_ref_sink(GTK_WIDGET(split));
   adw_application_window_set_content(a->win, a->root_content);
+  setup_adaptive_layout(a);
 
   gtk_window_present(GTK_WINDOW(a->win));
 
@@ -7274,11 +7381,55 @@ static void on_activate(GApplication *app, gpointer data) {
   check_update_async(a, FALSE, NULL);
 }
 
+/* WebKitGTK runs web content inside a bubblewrap (bwrap) sandbox, which needs
+ * unprivileged user namespaces. Where those are restricted — Ubuntu 24.04+ limits
+ * them through AppArmor, some kernels and containers disable them — WebKit still
+ * tries, its helper processes fail, and it aborts the whole app ("Failed to
+ * fully launch dbus-proxy") the moment the login web view starts. So probe once,
+ * the way WebKit itself checks inside containers, and when bwrap can't build a
+ * sandbox here let WebKit show the login page without it instead of crashing.
+ * WebKit doesn't use bwrap inside Flatpak or Snap, so those are left alone, and
+ * an explicit WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS always wins. Called first
+ * thing in opendeezer_run: the variable must be set before the app starts any
+ * thread that reads the environment and before the first web view exists. */
+static void webkit_sandbox_fallback(void) {
+#ifdef __linux__
+  if (g_getenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS")) return;
+  if (g_file_test("/.flatpak-info", G_FILE_TEST_EXISTS)) return;
+  if (g_getenv("SNAP") && g_getenv("SNAP_NAME") && g_getenv("SNAP_REVISION")) return;
+
+  const char *why = NULL;
+  char *bwrap = g_find_program_in_path("bwrap");
+  char *proxy = g_find_program_in_path("xdg-dbus-proxy");
+  if (!bwrap) {
+    why = "bwrap is not installed";
+  } else if (!proxy) {
+    why = "xdg-dbus-proxy is not installed";
+  } else {
+    char *probe[] = {bwrap, "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
+                     "--unshare-all", "true", NULL};
+    int status = 0;
+    if (!g_spawn_sync(NULL, probe, NULL, G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+                      NULL, NULL, NULL, NULL, &status, NULL) ||
+        !g_spawn_check_wait_status(status, NULL))
+      why = "bwrap cannot create one here (unprivileged user namespaces are restricted)";
+  }
+  g_free(bwrap);
+  g_free(proxy);
+  if (!why) return;
+  g_setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1", TRUE);
+  g_message("WebKit sandbox unavailable: %s; the Deezer login page runs without it", why);
+#endif
+}
+
 /* Entry point. Exported so the unified Linux launcher (gui/linux) can dlopen
  * this backend as libopendeezer-gtk.so and call opendeezer_run; the standalone
  * opendeezer-gnome executable wraps it with a trivial main (standalone.c). */
 __attribute__((visibility("default")))
 int opendeezer_run(int argc, char **argv) {
+  /* keep the embedded login from aborting where WebKit's sandbox can't start */
+  webkit_sandbox_fallback();
+
   /* Localization: honour the user's locale and load our message catalogs from
    * LOCALEDIR (set by meson to <prefix>/<localedir>). Must run before any
    * translatable string is fetched, i.e. before the application is built. */

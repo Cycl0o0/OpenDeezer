@@ -12,6 +12,9 @@ decode, ALSA playback) is the Go core compiled to a C static archive
   Album · Time).
 - **Now-playing bar** pinned to the bottom: cover art, title/artist,
   prev/play-pause/next, a seek scrubber, position/duration, and a volume slider.
+- **Adaptive:** as the window narrows, the now-playing bar stacks into two, then
+  three rows and the sidebar folds into its own page (back button in the
+  header), so the window shrinks to 360 × 294 — see `setup_adaptive_layout`.
 - **Search** lives in the content header bar — press Enter to search Deezer.
 - **Theme:** Deezer "Electric Violet" `#A238FF` accent via a `GtkCssProvider`
   (libadwaita 1.6 accent variables with a pre-1.6 named-color fallback), forced
@@ -61,6 +64,13 @@ to start the session, and written to `~/.config/opendeezer/arl.txt` so the next
 launch auto-logs-in — no manual ARL needed. A manual-ARL paste box stays on the
 same screen as a fallback. The ARL is still read from `$DEEZER_ARL` first, then
 `~/.config/opendeezer/arl.txt`, at startup.
+
+The login page runs inside WebKitGTK's bubblewrap sandbox when the system allows
+it. Where unprivileged user namespaces are restricted (Ubuntu 24.04+ through
+AppArmor, some containers), bwrap can't start and WebKit would abort the app, so
+the client checks for this at startup and then shows the login page without the
+sandbox, logging a one-line `WebKit sandbox unavailable` message. Setting
+`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS` yourself skips that check.
 
 ## Files
 

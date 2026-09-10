@@ -251,6 +251,10 @@ type Player struct {
 	eqSaveMu    sync.Mutex
 	eqSaveTimer *time.Timer
 
+	// Debounced volume persistence (see saveVolumeSoon).
+	volSaveMu    sync.Mutex
+	volSaveTimer *time.Timer
+
 	stopMgr chan struct{}
 	mgrOnce sync.Once
 }
@@ -405,7 +409,7 @@ func NewPlayer() (*Player, error) {
 	p.gainFac.Store(math.Float64bits(1))
 	p.sleepGain.Store(math.Float64bits(1))
 	p.gapless.Store(true)
-	p.setVolume(1.0)
+	p.loadVolume()
 	p.loadEQ()
 	p.out.setLostHandler(p.onDeviceLost)
 	if err := p.out.start(p.readPCM); err != nil {
@@ -545,10 +549,18 @@ func (p *Player) setVolume(v float64) {
 }
 func (p *Player) Volume() float64 { return math.Float64frombits(p.volume.Load()) }
 
-// SetVolume sets the absolute volume (clamped to 0..1).
-func (p *Player) SetVolume(v float64) { p.setVolume(v) }
+// SetVolume sets the absolute volume (clamped to 0..1). The level persists
+// (debounced, see volume.go), so the next player starts at it.
+func (p *Player) SetVolume(v float64) {
+	p.setVolume(v)
+	p.saveVolumeSoon()
+}
+
+// AddVolume nudges the volume by delta (clamped to 0..1), persists it like
+// SetVolume and returns the new level.
 func (p *Player) AddVolume(delta float64) float64 {
 	p.setVolume(p.Volume() + delta)
+	p.saveVolumeSoon()
 	return p.Volume()
 }
 
@@ -933,6 +945,7 @@ func (p *Player) Close() {
 	if pending {
 		p.saveEQNow()
 	}
+	p.flushVolumeSave() // same for the volume
 	if p.out != nil {
 		p.out.close()
 	}
