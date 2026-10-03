@@ -733,4 +733,31 @@
   <data name="Offline_FailBody" xml:space="preserve">
     <value>This track couldn't be downloaded for offline.</value>
   </data>
+  <data name="Dialog_ProfilesTitle" xml:space="preserve">
+    <value>Who's listening?</value>
+  </data>
+  <data name="Btn_OtherAccount" xml:space="preserve">
+    <value>Use another account…</value>
+  </data>
+  <data name="Profile_Admin" xml:space="preserve">
+    <value>Admin</value>
+  </data>
+  <data name="Profile_Current" xml:space="preserve">
+    <value>Current</value>
+  </data>
+  <data name="Status_SwitchingProfile" xml:space="preserve">
+    <value>Switching profile…</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedTitle" xml:space="preserve">
+    <value>Couldn't switch profile</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedBody" xml:space="preserve">
+    <value>Deezer didn't let OpenDeezer open this profile. Check your connection and try again.</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedTitle" xml:space="preserve">
+    <value>Profile not saved</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedBody" xml:space="preserve">
+    <value>You're now on this profile, but OpenDeezer couldn't save the choice. The next launch will open your previous profile.</value>
+  </data>
 </root>

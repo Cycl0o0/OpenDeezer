@@ -36,6 +36,9 @@ internal sealed class Playlist { public string Id = "", Name = "", Owner = "", A
 // gates itself behind a block message (see ShowBlocked / FinishLogin).
 internal sealed class Account { public string UserId = "", Name = "", Offer = ""; public bool CanHq, CanHifi, LoggedIn, Premium; }
 
+// DZProfilesJSON: [{userId,name,pictureUrl,isKid,isAdmin,current}] (Deezer Family members)
+internal sealed class Profile { public string UserId = "", Name = "", PictureUrl = ""; public bool IsKid, IsAdmin, Current; }
+
 internal sealed class Podcast { public string Id = "", Name = "", Description = "", ArtworkUrl = ""; public int EpisodeCount; }
 
 internal sealed class Episode { public string Id = "", Title = "", Description = "", ArtworkUrl = "", ReleaseDate = ""; public long DurationMs; }
@@ -234,6 +237,25 @@ internal static class Wire
         var arr = doc.RootElement.Arr("tracks");
         if (arr.ValueKind == JsonValueKind.Array)
             foreach (var v in arr.EnumerateArray()) outl.Add(TrackFromObj(v));
+        return outl;
+    }
+
+    // DZProfilesJSON is a bare array (an error envelope parses to an empty list).
+    public static List<Profile> ParseProfiles(string json)
+    {
+        var outl = new List<Profile>();
+        using var doc = TryParse(json);
+        if (doc == null || doc.RootElement.ValueKind != JsonValueKind.Array) return outl;
+        foreach (var v in doc.RootElement.EnumerateArray())
+            outl.Add(new Profile
+            {
+                UserId = v.Str("userId"),
+                Name = v.Str("name"),
+                PictureUrl = v.Str("pictureUrl"),
+                IsKid = v.Bool("isKid"),
+                IsAdmin = v.Bool("isAdmin"),
+                Current = v.Bool("current"),
+            });
         return outl;
     }
 

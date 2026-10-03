@@ -400,6 +400,18 @@ func LoadAdsDisabled() bool {
 	return v == "1" || strings.EqualFold(v, "on") || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
 }
 
+// LoadProfileID returns the Deezer Family profile (USER_ID) to switch to after
+// login, from ~/.config/opendeezer/profile.txt. Empty means "the account's
+// default profile". Shared across every client.
+func LoadProfileID() string {
+	return readFile("profile.txt")
+}
+
+// SaveProfileID persists the selected Family profile. "" clears it.
+func SaveProfileID(id string) error {
+	return writeFile("profile.txt", strings.TrimSpace(id))
+}
+
 // SaveAdsDisabled persists the free-tier ads opt-out.
 func SaveAdsDisabled(disabled bool) error {
 	v := "0"

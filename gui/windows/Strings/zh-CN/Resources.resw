@@ -718,4 +718,31 @@
   <data name="Offline_FailBody" xml:space="preserve">
     <value>This track couldn't be downloaded for offline.</value>
   </data>
+  <data name="Dialog_ProfilesTitle" xml:space="preserve">
+    <value>谁在听？</value>
+  </data>
+  <data name="Btn_OtherAccount" xml:space="preserve">
+    <value>使用其他账户…</value>
+  </data>
+  <data name="Profile_Admin" xml:space="preserve">
+    <value>管理员</value>
+  </data>
+  <data name="Profile_Current" xml:space="preserve">
+    <value>当前</value>
+  </data>
+  <data name="Status_SwitchingProfile" xml:space="preserve">
+    <value>正在切换个人资料…</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedTitle" xml:space="preserve">
+    <value>无法切换个人资料</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedBody" xml:space="preserve">
+    <value>Deezer 未允许打开此个人资料。请检查网络连接后重试。</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedTitle" xml:space="preserve">
+    <value>未保存个人资料</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedBody" xml:space="preserve">
+    <value>你已切换到此个人资料，但 OpenDeezer 无法保存该选择。下次启动时将打开之前的个人资料。</value>
+  </data>
 </root>

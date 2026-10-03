@@ -184,7 +184,18 @@ func DZInit(arl *C.char) C.int {
 	// Login is a network round-trip (up to 30s): do it WITHOUT holding mu, so it
 	// can't block every other engine call meanwhile.
 	c := deezer.New(C.GoString(arl))
-	if err := c.Login(); err != nil {
+	// Re-enter the Family profile chosen last time (no-op for "" / non-Family).
+	if err := c.SetProfileID(config.LoadProfileID()); err != nil {
+		odlog.Warn("profile: %v", err)
+	}
+	err := c.Login()
+	if errors.Is(err, deezer.ErrProfileUnavailable) {
+		// Logged in as the default profile; forget the stale selection.
+		odlog.Warn("login: %v", err)
+		_ = config.SaveProfileID("")
+		err = nil
+	}
+	if err != nil {
 		atomic.StoreInt32(&lastLoginKind, loginKind(err))
 		odlog.Warn("login failed: %v", err)
 		return 0
@@ -814,6 +825,58 @@ func DZAccountJSON() *C.char {
 		return jsonStr(nil, errNotReady)
 	}
 	return jsonStr(c.Account(), nil)
+}
+
+// DZProfilesJSON lists the Deezer Family profiles this session can switch to:
+// [{userId, name, picture, pictureUrl, isKid, isAdmin, current}]. A non-Family
+// account returns [].
+//
+//export DZProfilesJSON
+func DZProfilesJSON() *C.char {
+	c := curClient()
+	if c == nil {
+		return jsonStr(nil, errNotReady)
+	}
+	ps, err := c.Profiles()
+	if err != nil {
+		return jsonStr(nil, err)
+	}
+	type wire struct {
+		deezer.Profile
+		PictureURL string `json:"pictureUrl"`
+	}
+	out := make([]wire, len(ps))
+	for i, p := range ps {
+		out[i] = wire{p, p.PictureURL(120)}
+	}
+	return jsonStr(out, nil)
+}
+
+// DZSwitchProfile switches the session to a Family profile (its userId) and
+// persists the choice so the next launch re-enters it. Returns 0 if the switch
+// failed (the previous profile is kept), 1 on success, 2 if the switch succeeded
+// but the choice couldn't be saved (the next launch reopens the old profile).
+// On 1 or 2 the caller should reload every library view (likes, playlists, Flow).
+//
+//export DZSwitchProfile
+func DZSwitchProfile(userID *C.char) C.int {
+	c := curClient()
+	if c == nil {
+		return 0
+	}
+	id := C.GoString(userID)
+	if err := c.SwitchProfile(id); err != nil {
+		odlog.Warn("switch profile: %v", err)
+		return 0
+	}
+	odlog.Info("switched profile: %s", c.Account().Name)
+	// The library now belongs to another user: don't keep serving the old one.
+	refreshControlServer(c)
+	if err := config.SaveProfileID(id); err != nil {
+		odlog.Warn("save profile: %v", err)
+		return 2
+	}
+	return 1
 }
 
 // DZChartsJSON returns the global top tracks/albums/artists/playlists.

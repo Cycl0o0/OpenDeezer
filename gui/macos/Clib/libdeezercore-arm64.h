@@ -151,6 +151,8 @@ extern int DZIsPreview(void);
 extern int DZSetAdsDisabled(int disabled);
 extern int DZAdsDisabled(void);
 extern char* DZAccountJSON(void);
+extern char* DZProfilesJSON(void);
+extern int DZSwitchProfile(char* userID);
 extern char* DZChartsJSON(void);
 extern char* DZHomeJSON(void);
 extern char* DZCheckUpdateJSON(void);

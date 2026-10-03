@@ -1153,6 +1153,70 @@ public sealed partial class MainWindow : Window
 
     // Login chooser: "Log in with Deezer" opens the embedded webview, "Enter ARL"
     // is the manual fallback. Cancel leaves the app idle (relaunch to retry).
+    // Account entry: on a Deezer Family plan, offer the members' profiles first
+    // ("Who's listening?", like deezer.com's picker); otherwise -- or via "Use
+    // another account…" -- fall through to the existing login chooser.
+    private async void ShowAccount()
+    {
+        if (!_loggedIn) { ShowLoginChoice(); return; }
+        var profiles = await Task.Run(() => DeezerCore.Profiles());
+        if (profiles.Count < 2) { ShowLoginChoice(); return; }
+
+        string picked = "";
+        var dlg = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = Loc.S("Dialog_ProfilesTitle"),
+            SecondaryButtonText = Loc.S("Btn_OtherAccount"),
+            CloseButtonText = Loc.S("Btn_Cancel"),
+        };
+        var list = new StackPanel { Spacing = 4, MinWidth = 320 };
+        foreach (var p in profiles)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+            var pic = new PersonPicture { Width = 40, Height = 40, DisplayName = p.Name };
+            if (!string.IsNullOrEmpty(p.PictureUrl)) pic.ProfilePicture = new BitmapImage(new Uri(p.PictureUrl));
+            row.Children.Add(pic);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = p.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            string caption = p.Current ? Loc.S("Profile_Current") : p.IsAdmin ? Loc.S("Profile_Admin") : "";
+            if (caption != "") text.Children.Add(new TextBlock { Text = caption, Opacity = 0.7, FontSize = 12 });
+            row.Children.Add(text);
+            var btn = new Button
+            {
+                Content = row,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(10, 6, 10, 6),
+                IsEnabled = !p.Current,
+            };
+            if (p.Current) btn.BorderBrush = (Brush)Application.Current.Resources["AccentBrush"];
+            string id = p.UserId;
+            btn.Click += (_, _) => { picked = id; dlg.Hide(); };
+            list.Children.Add(btn);
+        }
+        dlg.Content = list;
+        var res = await ShowDialog(dlg);
+        if (res == ContentDialogResult.Secondary) { ShowLoginChoice(); return; }
+        if (picked != "") await SwitchProfile(picked);
+    }
+
+    private async Task SwitchProfile(string userId)
+    {
+        _nowTitle.Text = Loc.S("Status_SwitchingProfile");
+        // 0 = failed (old profile kept), 1 = switched, 2 = switched but not saved.
+        int res = await Task.Run(() => DeezerCore.DZSwitchProfile(userId));
+        if (res == 0)
+        {
+            _nowTitle.Text = Loc.S("Status_NotPlaying");
+            await ShowMessage(Loc.S("Dialog_SwitchProfileFailedTitle"), Loc.S("Dialog_SwitchProfileFailedBody"));
+            return;
+        }
+        // Same reload path as an account switch: new tier, liked ids, Home.
+        FinishLogin();
+        if (res == 2) await ShowMessage(Loc.S("Dialog_ProfileNotSavedTitle"), Loc.S("Dialog_ProfileNotSavedBody"));
+    }
+
     private async void ShowLoginChoice()
     {
         _nowTitle.Text = Loc.S("Status_NotSignedIn");
@@ -1277,7 +1341,7 @@ public sealed partial class MainWindow : Window
             if (tag == "about") ShowAbout();
             else if (tag == "settings") ShowSettings();
             else if (tag == "phoneremote") ShowPhoneRemote();
-            else ShowLoginChoice();
+            else ShowAccount();
             _suppressNav = true;
             nav.SelectedItem = _lastContentItem ?? _homeItem;
             _suppressNav = false;

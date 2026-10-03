@@ -733,4 +733,31 @@
   <data name="Offline_FailBody" xml:space="preserve">
     <value>This track couldn't be downloaded for offline.</value>
   </data>
+  <data name="Dialog_ProfilesTitle" xml:space="preserve">
+    <value>कौन सुन रहा है?</value>
+  </data>
+  <data name="Btn_OtherAccount" xml:space="preserve">
+    <value>दूसरा खाता इस्तेमाल करें…</value>
+  </data>
+  <data name="Profile_Admin" xml:space="preserve">
+    <value>एडमिन</value>
+  </data>
+  <data name="Profile_Current" xml:space="preserve">
+    <value>वर्तमान</value>
+  </data>
+  <data name="Status_SwitchingProfile" xml:space="preserve">
+    <value>प्रोफ़ाइल बदली जा रही है…</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedTitle" xml:space="preserve">
+    <value>प्रोफ़ाइल नहीं बदली जा सकी</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedBody" xml:space="preserve">
+    <value>Deezer ने यह प्रोफ़ाइल खोलने की अनुमति नहीं दी। अपना कनेक्शन जाँचें और फिर कोशिश करें।</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedTitle" xml:space="preserve">
+    <value>प्रोफ़ाइल सहेजी नहीं गई</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedBody" xml:space="preserve">
+    <value>अब आप इस प्रोफ़ाइल पर हैं, लेकिन OpenDeezer यह चुनाव सहेज नहीं सका। अगली बार आपकी पिछली प्रोफ़ाइल खुलेगी।</value>
+  </data>
 </root>

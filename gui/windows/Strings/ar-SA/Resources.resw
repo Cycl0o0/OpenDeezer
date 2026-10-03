@@ -793,4 +793,31 @@
   <data name="Offline_FailBody" xml:space="preserve">
     <value>This track couldn't be downloaded for offline.</value>
   </data>
+  <data name="Dialog_ProfilesTitle" xml:space="preserve">
+    <value>من يستمع؟</value>
+  </data>
+  <data name="Btn_OtherAccount" xml:space="preserve">
+    <value>استخدام حساب آخر…</value>
+  </data>
+  <data name="Profile_Admin" xml:space="preserve">
+    <value>المسؤول</value>
+  </data>
+  <data name="Profile_Current" xml:space="preserve">
+    <value>الحالي</value>
+  </data>
+  <data name="Status_SwitchingProfile" xml:space="preserve">
+    <value>جارٍ تبديل الملف الشخصي…</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedTitle" xml:space="preserve">
+    <value>تعذّر تبديل الملف الشخصي</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedBody" xml:space="preserve">
+    <value>لم يسمح Deezer بفتح هذا الملف الشخصي. تحقّق من اتصالك وحاول مرة أخرى.</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedTitle" xml:space="preserve">
+    <value>لم يتم حفظ الملف الشخصي</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedBody" xml:space="preserve">
+    <value>أنت الآن على هذا الملف الشخصي، لكن تعذّر على OpenDeezer حفظ هذا الاختيار. سيُفتح ملفك الشخصي السابق عند التشغيل التالي.</value>
+  </data>
 </root>

@@ -733,4 +733,31 @@
   <data name="Offline_FailBody" xml:space="preserve">
     <value>Ce titre n'a pas pu être téléchargé hors ligne.</value>
   </data>
+  <data name="Dialog_ProfilesTitle" xml:space="preserve">
+    <value>Qui écoute ?</value>
+  </data>
+  <data name="Btn_OtherAccount" xml:space="preserve">
+    <value>Utiliser un autre compte…</value>
+  </data>
+  <data name="Profile_Admin" xml:space="preserve">
+    <value>Admin</value>
+  </data>
+  <data name="Profile_Current" xml:space="preserve">
+    <value>Actuel</value>
+  </data>
+  <data name="Status_SwitchingProfile" xml:space="preserve">
+    <value>Changement de profil…</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedTitle" xml:space="preserve">
+    <value>Impossible de changer de profil</value>
+  </data>
+  <data name="Dialog_SwitchProfileFailedBody" xml:space="preserve">
+    <value>Deezer n'a pas autorisé l'ouverture de ce profil. Vérifiez votre connexion et réessayez.</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedTitle" xml:space="preserve">
+    <value>Profil non enregistré</value>
+  </data>
+  <data name="Dialog_ProfileNotSavedBody" xml:space="preserve">
+    <value>Vous êtes maintenant sur ce profil, mais OpenDeezer n'a pas pu enregistrer ce choix. Au prochain lancement, votre profil précédent sera ouvert.</value>
+  </data>
 </root>

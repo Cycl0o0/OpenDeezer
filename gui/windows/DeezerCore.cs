@@ -57,6 +57,9 @@ internal static class DeezerCore
 
     // ---- v0.3 additions ------------------------------------------------------
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZAccountJSON();
+    // Deezer Family: list the switchable profiles / switch the session to one (1 = ok).
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZProfilesJSON();
+    [DllImport(Dll, CallingConvention = Cdecl)] internal static extern int DZSwitchProfile([MarshalAs(UnmanagedType.LPUTF8Str)] string userID);
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZChartsJSON();
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZArtistTopJSON([MarshalAs(UnmanagedType.LPUTF8Str)] string id);
     [DllImport(Dll, CallingConvention = Cdecl)] internal static extern IntPtr DZArtistProfileJSON([MarshalAs(UnmanagedType.LPUTF8Str)] string id);
@@ -252,6 +255,7 @@ internal static class DeezerCore
 
     // ---- typed convenience wrappers (keep MainWindow code clean) ------------
     internal static Account Account() => Wire.ParseAccount(TakeJson(DZAccountJSON()));
+    internal static System.Collections.Generic.List<Profile> Profiles() => Wire.ParseProfiles(TakeJson(DZProfilesJSON()));
     internal static System.Collections.Generic.List<Track> Favorites() => Wire.ParseTracks(TakeJson(DZFavoritesJSON()));
     internal static System.Collections.Generic.List<Track> Flow() => Wire.ParseTracks(TakeJson(DZFlowJSON()));
     internal static System.Collections.Generic.List<Track> PlaylistTracks(string id) => Wire.ParseTracks(TakeJson(DZPlaylistTracksJSON(id)));
